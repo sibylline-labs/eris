@@ -1,0 +1,134 @@
+# Read an environment variable through `readEnv` (src/runtime/env.ts), never by
+# indexing the env object with a name you were handed. An env object is a plain
+# object, so `env["__proto__"]` or `env["constructor"]` resolves to an inherited
+# value: an unset variable reads as set. It was fixed three times, once when
+# --token-env NAME of `__proto__` posted `Bearer [object Object]`.
+#
+# Matches a read (`env[k]`, `ctx.env[k]`, `process.env[k]`, `rawEnv[k]`) whose
+# key is not a literal. A literal key is a name the code wrote; an assignment
+# or a `delete` returns nothing inherited.
+#
+# A plugin may import core only through the SDK (plugin-imports-sdk-only), so
+# plugin files get their own document whose message names the SDK's readEnv.
+id: env-read-own-property
+language: typescript
+severity: error
+message: >-
+  An env object is indexed by a name here. Read it with readEnv(env, name)
+  (src/runtime/env.ts): env["__proto__"] and env["constructor"] resolve to
+  inherited values, so an unset variable would read as set.
+note: |
+  `readEnv` returns the value only for an own property and `undefined`
+  otherwise. The same defect was fixed three times. A key that is a string
+  literal needs no reader.
+files:
+  - src/**/*.ts
+  - ts/**/*.ts
+  - scripts/**/*.ts
+ignores:
+  # The reader itself: the one place that indexes after Object.hasOwn.
+  - src/runtime/env.ts
+rule:
+  kind: subscript_expression
+  all:
+    - has:
+        field: object
+        regex: ^(?:[\w$.]+\.)?(?:env|\w*Env)$
+    - not:
+        has:
+          field: index
+          any:
+            - kind: string
+            - kind: number
+    # Not a write or a delete: nothing inherited comes back.
+    - not:
+        inside:
+          kind: assignment_expression
+          field: left
+    - not:
+        inside:
+          kind: unary_expression
+          has:
+            field: operator
+            regex: ^delete$
+---
+id: env-read-own-property-tsx
+language: tsx
+severity: error
+message: >-
+  An env object is indexed by a name here. Read it with readEnv(env, name)
+  (src/runtime/env.ts): env["__proto__"] and env["constructor"] resolve to
+  inherited values, so an unset variable would read as set.
+note: |
+  `readEnv` returns the value only for an own property and `undefined`
+  otherwise. The same defect was fixed three times. A key that is a string
+  literal needs no reader.
+files:
+  - src/**/*.tsx
+  - ts/**/*.tsx
+ignores:
+  # The reader itself: the one place that indexes after Object.hasOwn.
+  - src/runtime/env.ts
+rule:
+  kind: subscript_expression
+  all:
+    - has:
+        field: object
+        regex: ^(?:[\w$.]+\.)?(?:env|\w*Env)$
+    - not:
+        has:
+          field: index
+          any:
+            - kind: string
+            - kind: number
+    # Not a write or a delete: nothing inherited comes back.
+    - not:
+        inside:
+          kind: assignment_expression
+          field: left
+    - not:
+        inside:
+          kind: unary_expression
+          has:
+            field: operator
+            regex: ^delete$
+---
+id: env-read-own-property-plugin
+language: typescript
+severity: error
+message: >-
+  An env object is indexed by a name here. Read it with readEnv(env, name),
+  imported from the plugin SDK (src/cli/plugin): env["__proto__"] and
+  env["constructor"] resolve to inherited values, so an unset variable would
+  read as set.
+note: |
+  `readEnv` returns the value only for an own property and `undefined`
+  otherwise. The same defect was fixed three times. A key that is a string
+  literal needs no reader.
+files:
+  - plugins/**/*.ts
+  - examples/plugins/**/*.ts
+  - tests/helpers/plugins/**/*.ts
+rule:
+  kind: subscript_expression
+  all:
+    - has:
+        field: object
+        regex: ^(?:[\w$.]+\.)?(?:env|\w*Env)$
+    - not:
+        has:
+          field: index
+          any:
+            - kind: string
+            - kind: number
+    # Not a write or a delete: nothing inherited comes back.
+    - not:
+        inside:
+          kind: assignment_expression
+          field: left
+    - not:
+        inside:
+          kind: unary_expression
+          has:
+            field: operator
+            regex: ^delete$

@@ -1,0 +1,21 @@
+{
+  "name": "eris",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.13",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0",
+    "bun-types": "1.3.13",
+    "typescript": "^6.0.3"
+  }
+}

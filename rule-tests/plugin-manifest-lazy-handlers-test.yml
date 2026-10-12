@@ -1,0 +1,23 @@
+id: plugin-manifest-lazy-handlers
+valid:
+  # The SDK is the one runtime import a manifest makes.
+  - import { definePlugin } from "../../src/cli/plugin";
+  - import { definePlugin } from "../../../../src/cli/plugin";
+  # Types are erased: they load nothing.
+  - import type { VerbHandler } from "../../src/cli/plugin";
+  - import { type Row } from "../../src/cli/plugin";
+  # Handlers load lazily, on dispatch only.
+  - |
+    export default definePlugin({
+      name: "widgets",
+      rows: { widgets: { impl: "ts", summary: "s" } },
+      handlers: { widgets: async () => (await import("./handlers")).runWidgets },
+    });
+invalid:
+  # A static import of the handler module puts plugin code on the completion path.
+  - import { runWidgets } from "./handlers";
+  - import * as handlers from "./handlers";
+  - import "./handlers";
+  # Reaching anything else at load time does the same.
+  - import { readFileSync } from "node:fs";
+  - export { runWidgets } from "./handlers";

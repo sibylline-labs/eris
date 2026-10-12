@@ -1,0 +1,160 @@
+name: ci
+
+# Every gate a change must pass. The jobs are independent (no `needs:`), so one
+# red gate never hides another. No job reads a secret.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned because each tool's output is what its gate reads: an unpinned tool
+  # makes "the code changed" and "the tool changed" the same red X. Each
+  # download is checked against the sha256 of that exact release asset, so a
+  # version bump changes its checksum in the same edit. bun's version comes from
+  # .bun-version.
+  SHELLCHECK_VERSION: v0.11.0
+  SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198 # shellcheck-v0.11.0.linux.x86_64.tar.xz
+  ASTGREP_VERSION: 0.39.9
+  ASTGREP_SHA256: ef0f01cd410bf4dafaa2877d592bc5ee0c0978f9a0854a4633ed6082a48963c6 # app-x86_64-unknown-linux-gnu.zip
+
+defaults:
+  run:
+    # bash with pipefail; the default `run:` shell has no pipefail.
+    shell: bash
+
+jobs:
+  bun:
+    name: bun (typecheck + test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      # The suite fails rather than skips when a tool it gates on is absent
+      # (tests/required-tools.txt): zsh for completion, script for the TTY rows.
+      - name: Install zsh and script
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zsh util-linux
+          zsh --version
+          command -v script
+
+      - run: bun install --frozen-lockfile
+      - run: bunx tsc --noEmit
+      - run: bun test ./tests
+
+  binary-oracle:
+    name: binary oracle (build + bun test, ERIS_BIN)
+    runs-on: ubuntu-latest
+    # A hung suite never fails on its own; the timeout makes it red.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install zsh and script
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zsh util-linux
+          zsh --version
+          command -v script
+
+      - run: bun install --frozen-lockfile
+
+      # scripts/build.ts prints the output path; this host is linux-x64.
+      - name: Build the binary
+        id: build
+        run: |
+          bin=$(bun scripts/build.ts)
+          [[ "$bin" == dist/eris-linux-x64 ]] || { echo "::error title=Wrong platform::built $bin, expected dist/eris-linux-x64"; exit 1; }
+          echo "bin=$PWD/$bin" >>"$GITHUB_OUTPUT"
+
+      # The same suite drives the binary; the tests about the checkout itself
+      # skip with a named reason.
+      - name: bun test (ERIS_BIN = the binary)
+        env:
+          ERIS_BIN: ${{ steps.build.outputs.bin }}
+        run: bun test ./tests
+
+  ast-grep:
+    name: ast-grep (scan + rule tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install ast-grep ${{ env.ASTGREP_VERSION }}
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/ast-grep.zip" \
+            "https://github.com/ast-grep/ast-grep/releases/download/${ASTGREP_VERSION}/app-x86_64-unknown-linux-gnu.zip"
+          echo "${ASTGREP_SHA256}  $RUNNER_TEMP/ast-grep.zip" | sha256sum -c -
+          unzip -q -o "$RUNNER_TEMP/ast-grep.zip" -d "$RUNNER_TEMP/ast-grep"
+          sudo install "$RUNNER_TEMP/ast-grep/ast-grep" /usr/local/bin/ast-grep
+          ast-grep --version
+
+      # sgconfig.yml: rules/ at error severity, with its cases in rule-tests/.
+      - run: ast-grep scan
+      - run: ast-grep test --skip-snapshot-tests
+
+  shellcheck:
+    name: shellcheck (-S warning, zero findings)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install shellcheck ${{ env.SHELLCHECK_VERSION }}
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/shellcheck.tar.xz" \
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          echo "${SHELLCHECK_SHA256}  $RUNNER_TEMP/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$RUNNER_TEMP"
+          sudo install "$RUNNER_TEMP/shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version
+
+      # The POSIX shim and installer, checked as sh: consumers run them under
+      # sh, dash and bash alike.
+      - run: shellcheck -s sh -S warning eris install.sh
+
+  scrub:
+    name: scrub-check (no private references, whole history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The full history: on a pull request HEAD is the merge commit, and
+      # --history scans every blob and message reachable from it, both
+      # parents included. It refuses a shallow clone rather than scan a cut one.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - run: bun scripts/scrub-check.ts --history

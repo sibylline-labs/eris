@@ -1,0 +1,13 @@
+# ShellCheck configuration for eris.
+#
+# The gate is:
+#   shellcheck -s sh -S warning eris install.sh
+# and it must report ZERO findings.
+#
+# Follow `source` directives, so a sourced file is analysed rather than
+# reported as SC1091 "not following".
+external-sources=true
+
+# NOTHING ELSE IS DISABLED HERE, DELIBERATELY. A false positive is suppressed
+# PER SITE with a stated reason, never globally: a blanket `disable=` would
+# also hide genuine findings.

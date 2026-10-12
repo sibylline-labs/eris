@@ -1,0 +1,28 @@
+{
+  "name": "@sibylline-labs/yak-contract",
+  "version": "0.1.0",
+  "description": "The Eris Yaks wire contract, v2: Zod schemas, inferred types and the JSON Schema they emit",
+  "license": "Apache-2.0",
+  "private": false,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./schema/yak-v2.schema.json"
+  },
+  "files": [
+    "src",
+    "schema"
+  ],
+  "scripts": {
+    "emit-schema": "bun scripts/emit-json-schema.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "bun-types": "1.3.13",
+    "typescript": "^6.0.3",
+    "zod-to-json-schema": "3.23.5"
+  }
+}

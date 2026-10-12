@@ -1,0 +1,38 @@
+id: env-read-own-property
+valid:
+  # The one reader.
+  - |
+    const token = readEnv(env, tokenVar);
+  # A literal key is a name the code wrote, not one it was handed.
+  - |
+    const home = env.HOME;
+  - |
+    const home = env["HOME"];
+  # Numeric index: a match array that happens to be called env.
+  - |
+    const name = env[1];
+  # Writing or deleting is not reading: nothing inherited comes back.
+  - |
+    env[name] = value;
+  - |
+    delete env[name];
+  # Not an environment map.
+  - |
+    const row = rows[name];
+  - |
+    const hit = registry[verb];
+invalid:
+  # --token-env NAME of `__proto__` or `constructor` read an
+  # inherited object, so an unset variable read as a token.
+  - |
+    const token = env[tokenVar];
+  - |
+    const token = env[name] ?? "";
+  - |
+    const v = ctx.env[name];
+  - |
+    const v = process.env[name];
+  - |
+    const v = rawEnv[`${prefix}_TOKEN`];
+  - |
+    if (env[k] === undefined) env[k] = v;

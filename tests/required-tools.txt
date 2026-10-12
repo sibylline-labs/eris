@@ -1,0 +1,23 @@
+# tests/required-tools.txt: the tools whose ABSENCE must fail a `bun test` run
+# rather than shrink it.
+#
+# `describe.skipIf(!HAVE_X)` reports GREEN when X is absent, so a tool nobody
+# installed would silently remove coverage instead of reporting it.
+# tests/repo-hygiene.test.ts holds this file against the suites' actual skip
+# guards: a guard naming a tool not listed here fails, and a listed tool that a
+# guard gates on must be on PATH in the run.
+#
+# Add a tool here in the same commit you add a skip guard on it. A tool here
+# with no guard is still required: a test runs it outright (git: the sandboxes'
+# `git init`).
+#
+# One tool per line; `#` comments and blank lines are ignored.
+#
+# EXEMPT: <tool> -- <reason> marks a skip guard that is deliberately allowed to
+# skip. The reason is the whole point of the line: an exemption without one is
+# indistinguishable from an oversight.
+
+bun
+zsh
+git
+script

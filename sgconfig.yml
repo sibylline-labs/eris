@@ -1,0 +1,9 @@
+# Code-quality rules for eris's own source, run by `ast-grep scan` from the repo
+# root at error severity. Nothing here is shipped to another repo.
+#
+# Exclusions live on each rule as a rule-level `ignores:` list; a top-level
+# `ignores:` is inert.
+ruleDirs:
+  - rules
+testConfigs:
+  - testDir: rule-tests

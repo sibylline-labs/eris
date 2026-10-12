@@ -1,0 +1,16 @@
+{
+  "_README": [
+    "The shell freeze in tests/source-is-text.test.ts.",
+    "eris's Bash implementation is deleted; the shell that remains is the POSIX `eris` shim",
+    "and install.sh.",
+    "FREEZE = that whole surface: `.sh` files, code lines (non-blank, not a whole-line comment)",
+    "and function definitions. One total, not per file. It only goes down: growth fails, and a",
+    "shrink fails until the count here is lowered in the same change. Do not hand-edit to make",
+    "a red test green without reading the rule's comment first."
+  ],
+  "FREEZE": {
+    "files": 1,
+    "loc": 53,
+    "functions": 0
+  }
+}
