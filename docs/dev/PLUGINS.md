@@ -243,8 +243,10 @@ and runs. Copy its shape.
 
 2. **Import core only as `eris/sdk`** (`src/sdk.ts`): the plugin SDK, core's
    rows and handlers, this build's plugin list, `composeCli`, `runProgram`,
-   `main`, the argv and output helpers, the runtime (subprocesses, logging,
-   the install root, `BUILD_ID`, `RELEASE_REPO`) and `build`. The package's
+   `main`, the argv and output helpers (`parseGlobal` and `GlobalFlagError`
+   included, for an entry that runs outside the router), the runtime
+   (subprocesses, the bounded pool `runPool`, logging, the install root,
+   `BUILD_ID`, `RELEASE_REPO`) and `build`. The package's
    `exports` map refuses any deeper path (`eris/src/...`), so a core refactor
    never breaks a distribution that compiles today. A distribution's plugin
    manifests import `eris/sdk` too, and load handler code lazily as above.

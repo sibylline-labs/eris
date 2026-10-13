@@ -56,6 +56,7 @@ describe("the package's exports", () => {
     expect(Object.keys(sdk).sort()).toEqual([
       "BUILD_ID",
       "CliExit",
+      "GlobalFlagError",
       "HANDLERS",
       "NO_ENTITLEMENTS",
       "PLUGINS",
@@ -78,14 +79,18 @@ describe("the package's exports", () => {
       "nodeRunner",
       "ok",
       "onPath",
+      "parseGlobal",
       "readArgs",
       "readEnv",
       "readVerbArgs",
       "refuseArg",
       "renderFailureBlock",
       "renderWarnLines",
+      "resolveConcurrency",
+      "resolveDeadlineMs",
       "rowsOfGroup",
       "runMany",
+      "runPool",
       "runProgram",
       "sanitizeDisplay",
       "signalTree",
@@ -102,6 +107,20 @@ describe("the package's exports", () => {
       (e: { code?: string }) => e.code,
     );
     expect(deep).toBe("ERR_MODULE_NOT_FOUND");
+  });
+
+  it("a distribution entry outside the router parses and refuses `--output` with the SDK's own parseGlobal and GlobalFlagError", async () => {
+    /** When the SDK's GlobalFlagError is not the class its parseGlobal throws (a copy, or a re-export of another module), a standalone entry's `catch` never matches and a bad `--output` ends as a stack trace instead of the `output-format-unknown` block: observed through the package specifier, as such an entry imports it. */
+    const { parseGlobal, GlobalFlagError } = await import("eris/sdk");
+    expect(parseGlobal(["--output", "json", "demo", "--", "-x"], REPO)).toEqual({ format: "json", argv: ["demo", "-x"] });
+    let caught: unknown;
+    try {
+      parseGlobal(["--output", "xml"], REPO);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(GlobalFlagError);
+    expect((caught as InstanceType<typeof GlobalFlagError>).block).toContain("slug: output-format-unknown\n");
   });
 });
 
