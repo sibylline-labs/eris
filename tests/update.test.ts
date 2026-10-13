@@ -324,6 +324,32 @@ describe("the token", () => {
     expect(w.fx.hits.map((h) => h.authorization)).toEqual([`Bearer ${TOKEN}`]);
   });
 
+  it("goes only to api.github.com or a loopback API: an ERIS_UPDATE_API on any other host gets none", async () => {
+    /** When the bearer follows ERIS_UPDATE_API to whatever host it names, a stray or planted variable hands the user's GitHub token to that host — observed at the headers eris hands fetch for a non-loopback https base, forwarded to the fixture. Paired: api.github.com, through the same forwarding, gets it. */
+    // No assets: their loopback http urls are refused under an https base, and --check needs none.
+    w.fx.publish({ tag: "v0.0.1", assets: {}, sums: null });
+    const real = globalThis.fetch;
+    const sent: [string, string | null][] = [];
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      sent.push([url.origin, new Headers(init?.headers).get("authorization")]);
+      return real(new URL(`${url.pathname}${url.search}`, w.fx.api), init);
+    }) as typeof fetch;
+    try {
+      for (const api of ["https://ghe.example.com", "https://api.github.com.example.com", "https://api.github.com"]) {
+        const r = await w.run(["update", "--check"], { env: { ERIS_UPDATE_API: api, GH_TOKEN: TOKEN } });
+        expect({ api, rc: r.rc, stderr: r.stderr }).toEqual({ api, rc: 0, stderr: "" });
+      }
+    } finally {
+      globalThis.fetch = real;
+    }
+    expect(sent).toEqual([
+      ["https://ghe.example.com", null],
+      ["https://api.github.com.example.com", null],
+      ["https://api.github.com", `Bearer ${TOKEN}`],
+    ]);
+  });
+
   it("reaches a private repository: 404 without it, the release with it", async () => {
     /** When update cannot authenticate, a private distribution's binary never updates — observed at the exit with and without the token against a fixture that 404s as GitHub does. */
     publish("v0.0.2");

@@ -104,9 +104,11 @@ former answers to a token.
 | Variable | Meaning |
 |---|---|
 | `GH_TOKEN`, `GITHUB_TOKEN` | A GitHub token, `GH_TOKEN` first; surrounding whitespace is ignored, and a value with a space or line break inside is refused ([`update-token-invalid`](ERRORS.md#update-token-invalid)). Needed to update from a private repository. Anonymous requests share a limit of 60 an hour per address ([`update-rate-limited`](ERRORS.md#update-rate-limited)); a token raises it. |
-| `ERIS_UPDATE_API` | Another API base: a GitHub Enterprise host (`https://ghe.example.com/api/v3`) or a test server. `https`, or `http` for `127.0.0.1`, `localhost` and `[::1]` only; no credentials, query or fragment. Default `https://api.github.com`. |
+| `ERIS_UPDATE_API` | Another API base: a GitHub Enterprise host (`https://ghe.example.com/api/v3`) or a test server. `https`, or `http` for `127.0.0.1`, `localhost` and `[::1]` only; no credentials, query or fragment. Default `https://api.github.com`. A base on any host other than `api.github.com` or a loopback host is sent no token, so a private repository on a GitHub Enterprise host cannot be updated from with this variable. |
 
-The token is sent to the API host and nowhere else. The asset download redirects to
+The token is read only when the API base is `https://api.github.com` or a loopback
+host, so a stray or planted `ERIS_UPDATE_API` never receives it. It is sent to that
+API host and nowhere else. The asset download redirects to
 GitHub's storage host, and the redirect is followed by hand so that hop carries no
 `Authorization` header; an asset url on any other host never receives it. The new
 binary is run without the token in its environment.

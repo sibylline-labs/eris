@@ -8,8 +8,11 @@
  *     `Accept: application/octet-stream`, never through `browser_download_url`:
  *     for a private repository the API url with a token answers (a redirect to
  *     storage) and the browser url answers 404.
- *   - The token (`GH_TOKEN`, else `GITHUB_TOKEN`) is sent only to the API's own
- *     origin. Redirects are followed by hand, so each hop is judged on its own:
+ *   - The token (`GH_TOKEN`, else `GITHUB_TOKEN`) is read only when the API base
+ *     is `https://api.github.com` or a loopback host (a test's server), so an
+ *     `ERIS_UPDATE_API` naming any other host never receives it (`sendsToken`).
+ *     It is sent only to the API's own origin. Redirects are followed by hand,
+ *     so each hop is judged on its own:
  *     the redirect to storage carries no `Authorization` (storage rejects a
  *     request that has both a signature and a token), and an asset url on
  *     another host never receives it.
@@ -50,6 +53,11 @@ export function parseApiBase(raw: string | undefined): URL | null {
   if (url.protocol === "http:" ? !LOOPBACK_HOSTS.has(url.hostname) : url.protocol !== "https:") return null;
   url.pathname = url.pathname.replace(/\/+$/, "") || "/";
   return url;
+}
+
+/** Whether the token may go to `api`: GitHub's own API, or a loopback host on any scheme. */
+export function sendsToken(api: URL): boolean {
+  return api.origin === new URL(DEFAULT_API).origin || LOOPBACK_HOSTS.has(api.hostname);
 }
 
 /** Whether a download may follow a redirect (or list an asset) at `to`: https always, http only under a loopback `http:` API. */

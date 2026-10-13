@@ -34,7 +34,7 @@ import { info, ok } from "../../runtime/logging";
 import { nodeRunner, type Runner } from "../../runtime/process";
 import { readVerbArgs, usageLine } from "../args";
 import { sanitizeDisplay } from "../output";
-import { GitHub, MAX_BINARY_BYTES, notFound, parseApiBase, TAG } from "./update/github";
+import { GitHub, MAX_BINARY_BYTES, notFound, parseApiBase, sendsToken, TAG } from "./update/github";
 import { checkWritable, discard, forgetOld, oldPath, onInterrupt, replace, restore, stage } from "./update/replace";
 import { Refusal } from "./update/refusal";
 import { compareVersions } from "./update/semver";
@@ -63,9 +63,12 @@ git pull or brew upgrade eris.
 Environment:
   GH_TOKEN, GITHUB_TOKEN   A GitHub token (GH_TOKEN first). Needed for a private
                            repository; raises the anonymous rate limit. Sent to
-                           the GitHub API only, never to the download host.
+                           api.github.com only (or a loopback test server),
+                           never to the download host.
   ERIS_UPDATE_API          Another API base, for a GitHub Enterprise host or a
-                           test server: https, or http on a loopback host.
+                           test server: https, or http on a loopback host. A
+                           host other than api.github.com or loopback is sent
+                           no token.
 
 --output json prints {current, latest, update_available, updated}.
 Refusals are explained in docs/ERRORS.md.
@@ -204,7 +207,8 @@ function preflight(host: UpdateHost, ctx: VerbContext, check: boolean): Target {
       fix: "set it to an https URL with no credentials, query or fragment (http only for a loopback host), or unset it to use https://api.github.com",
     });
   }
-  const token = tokenFrom(ctx.env);
+  // Another host gets no token: the variable may be stray or planted.
+  const token = sendsToken(api) ? tokenFrom(ctx.env) : undefined;
   if (!check) checkWritable(path);
   return { path, api, token };
 }
