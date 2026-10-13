@@ -1,0 +1,34 @@
+# A plugin's manifest (`<plugin>/index.ts`) is read on every command line, the
+# shell-start `eris completion` run included: the registry, the router and the
+# completion tree are composed from its rows (src/cli/compose.ts). It is data
+# plus handler thunks, so its only runtime import is the SDK module; handler
+# code loads through `async () => (await import("./handlers")).run`, on dispatch
+# only. A static import of anything else puts plugin code on the completion
+# path, where a syntax error or a missing package breaks every shell start
+# (the invariant tests/plugins.test.ts carries).
+id: plugin-manifest-lazy-handlers
+language: typescript
+severity: error
+message: A plugin manifest loads at shell start. Import only src/cli/plugin here (types are fine) and load handler code with a dynamic import() inside the handler thunk.
+note: |
+  docs/dev/PLUGINS.md#the-manifest. Rows are inline data; handlers are
+  `() => Promise<VerbHandler>` thunks that `await import()` their module.
+files:
+  - plugins/*/index.ts
+  - examples/plugins/*/index.ts
+  - tests/helpers/plugins/*/index.ts
+rule:
+  any:
+    - all:
+        - kind: import_statement
+        - not:
+            regex: ^import\s+type\s
+        - not:
+            has:
+              field: source
+              regex: src/cli/plugin["']$
+    - all:
+        - kind: export_statement
+        - has:
+            field: source
+            kind: string

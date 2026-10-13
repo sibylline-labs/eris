@@ -1,0 +1,38 @@
+id: adhoc-argv-parse
+valid:
+  # The one way: the verb's row parses its argv.
+  - |
+    const a = readVerbArgs("config list", args, ctx, { help: USAGE });
+    const [env = ""] = a.pos;
+  # Handing the whole argv to a parser is not indexing it.
+  - const argv = process.argv.slice(2);
+  # A placeholder and an arrow are not flags.
+  - if (value === "-") return null;
+  - const edge = from + "->" + to;
+  # A plain string compare, and a startsWith on a non-flag prefix.
+  - if (state === "on") flip();
+  - if (srn.startsWith("srn:")) ok();
+  # Building a flag is not parsing one.
+  - const flag = "--" + name;
+invalid:
+  # config set took an unknown flag as a word.
+  - |
+    for (const a of argv) {
+      if (a === "--issue") issue = argv[++i];
+      else rest.push(a);
+    }
+  - if (a.startsWith("-")) die(`Unknown flag '${a}'`);
+  - if (a.startsWith("--issue=")) issue = a.slice(8);
+  # 7711759: list read the env as argv[0] and dropped the rest.
+  - const env = process.argv[2];
+  - const verb = Bun.argv[2];
+  - |
+    switch (arg) {
+      case "--summary":
+        summary = next;
+    }
+  - if (args.includes("--help")) usage();
+  - const i = args.indexOf("--from");
+  - if ("-h" === a) usage();
+  - if (a !== "--") push(a);
+  - if (a === "--") break;

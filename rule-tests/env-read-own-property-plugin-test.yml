@@ -1,0 +1,17 @@
+id: env-read-own-property-plugin
+valid:
+  # The reader, from the plugin SDK.
+  - |
+    const token = readEnv(env, tokenVar);
+  - |
+    const home = env["HOME"];
+  - |
+    env[name] = value;
+invalid:
+  # An inherited name read as a set variable.
+  - |
+    const token = env[tokenVar];
+  - |
+    const v = ctx.env[name];
+  - |
+    const v = process.env[name];

@@ -1,0 +1,17 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.secret.env
+.secret.env.*
+.secret.env~
+!.secret.env.example
+*.log
+.DS_Store
+dist/
+# .claude/ is local state (worktrees, generated context)
+.claude/
+data/scratch/
+
+.idea
+.scratch/

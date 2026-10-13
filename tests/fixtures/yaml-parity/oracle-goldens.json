@@ -1,0 +1,155 @@
+{
+  "003100ee2101113d0e87aedb340783d51e9fc6858159fd1e9462a00adc720af4": {
+    "op": "bashRepo",
+    "label": "output::parse_global \"$@\" node show --output=text",
+    "answer": {
+      "status": 0,
+      "stdout": "text\n<node><show>",
+      "stderr": ""
+    }
+  },
+  "0b1c0cec5ec770ba0e6c40c07e5c3c9510d22cedf751348525629ee40e6d609b": {
+    "op": "errorsReport",
+    "label": "demo-slug | something broke | line one\nline two | docs/GRAPH.md#configuration",
+    "answer": {
+      "status": 1,
+      "stdout": "",
+      "stderr": "ERROR something broke\nslug: demo-slug\nfix: line one\nfix: line two\ndocs: <ERIS>/docs/GRAPH.md#configuration\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/GRAPH.md#configuration\n"
+    }
+  },
+  "0c6e3afb03041863b1a352a6ac292697e9212b44a9e6877a601c7f2d815f0c20": {
+    "op": "errorsReport",
+    "label": "quoting-slug | cannot read \"some file\": permission denied | chmod 0600 \"some fil",
+    "answer": {
+      "status": 1,
+      "stdout": "",
+      "stderr": "ERROR cannot read \"some file\": permission denied\nslug: quoting-slug\nfix: chmod 0600 \"some file\"\ndocs: <ERIS>/docs/ERRORS.md#quoting-slug\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/ERRORS.md#quoting-slug\n"
+    }
+  },
+  "3420477b2b929cf70ca686c7b181bc3045ef4e79c324540f9b073543405b684f": {
+    "op": "bashRepo",
+    "label": "output::parse_global \"$@\" --output= a",
+    "answer": {
+      "status": 0,
+      "stdout": "text\n<a>",
+      "stderr": ""
+    }
+  },
+  "39968a34ce01b282dc51f1394df615c712a5ad799af3fe30dee0f620d5a21368": {
+    "op": "bashRepo",
+    "label": "output::parse_global \"$@\" audit x",
+    "answer": {
+      "status": 0,
+      "stdout": "text\n<audit><x>",
+      "stderr": ""
+    }
+  },
+  "5b5784f39ca41eccebffdc98ac970c745687df1ec5d9159b1a2cca4532eedfb4": {
+    "op": "bashRepo",
+    "label": "output::parse_global \"$@\" ",
+    "answer": {
+      "status": 0,
+      "stdout": "text\n<>",
+      "stderr": ""
+    }
+  },
+  "5fdc8a86d93210842db33e4f7230c481ae8195c0150e35a1d382e381c59b252f": {
+    "op": "bashRepo",
+    "label": "output::parse_global \"$@\" --output=bogus a",
+    "answer": {
+      "status": 1,
+      "stdout": "",
+      "stderr": "ERROR --output takes 'text' or 'json' (got 'bogus')\nslug: output-format-unknown\nfix: eris --output json <command>     machine rendering (JSON on stdout)\nfix: eris --output text <command>     human rendering (the default)\ndocs: <ERIS>/docs/OUTPUT-CONTRACT.md#2-the-flag\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/OUTPUT-CONTRACT.md#2-the-flag\n"
+    }
+  },
+  "6770d9e2587c4d61f54fde292ab2a1ad6d6ee58faaa49b63a50813e5066ab490": {
+    "op": "errorsReport",
+    "label": "blank-line-slug | broke too | a\n\nb",
+    "answer": {
+      "status": 1,
+      "stdout": "",
+      "stderr": "ERROR broke too\nslug: blank-line-slug\nfix: a\nfix: \nfix: b\ndocs: <ERIS>/docs/ERRORS.md#blank-line-slug\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/ERRORS.md#blank-line-slug\n"
+    }
+  },
+  "6dbfe02509f5d5c459fccf2a072e7e6d5de202e0da9229107ba649d634c565b2": {
+    "op": "bashRepo",
+    "label": "output::parse_global \"$@\" -- --",
+    "answer": {
+      "status": 0,
+      "stdout": "text\n<-->",
+      "stderr": ""
+    }
+  },
+  "7373a9a4a24f4b13a5cc92fc6aaba63ae2e2c749955dbc13f07c68e2fd524115": {
+    "op": "errorsReport",
+    "label": "trailing-nl-slug | broke thrice | a\nb\n",
+    "answer": {
+      "status": 1,
+      "stdout": "",
+      "stderr": "ERROR broke thrice\nslug: trailing-nl-slug\nfix: a\nfix: b\nfix: \ndocs: <ERIS>/docs/ERRORS.md#trailing-nl-slug\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/ERRORS.md#trailing-nl-slug\n"
+    }
+  },
+  "b506aab0cf2711cae62e1b60d84db4e565f4a7bd3dd541838dcb824e4f726ca4": {
+    "op": "errorsReport",
+    "label": "my-slug | broke",
+    "answer": {
+      "status": 1,
+      "stdout": "",
+      "stderr": "ERROR broke\nslug: my-slug\ndocs: <ERIS>/docs/ERRORS.md#my-slug\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/ERRORS.md#my-slug\n"
+    }
+  },
+  "c287635089ea049cdb85366a31deed684c2cfe5a312a78f42eef244714896e6e": {
+    "op": "bashRepo",
+    "label": "output::parse_global \"$@\" --output bogus\u0007x a",
+    "answer": {
+      "status": 1,
+      "stdout": "",
+      "stderr": "ERROR --output takes 'text' or 'json' (got 'bogusx')\nslug: output-format-unknown\nfix: eris --output json <command>     machine rendering (JSON on stdout)\nfix: eris --output text <command>     human rendering (the default)\ndocs: <ERIS>/docs/OUTPUT-CONTRACT.md#2-the-flag\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/OUTPUT-CONTRACT.md#2-the-flag\n"
+    }
+  },
+  "d8c41bf9339ea2457cc49276658123f9bb330d7e98a874b562852a1aa5461220": {
+    "op": "bashRepo",
+    "label": "output::parse_global \"$@\" a --output",
+    "answer": {
+      "status": 1,
+      "stdout": "",
+      "stderr": "ERROR --output takes 'text' or 'json'\nslug: output-format-unknown\nfix: eris --output json <command>     machine rendering (JSON on stdout)\nfix: eris --output text <command>     human rendering (the default)\ndocs: <ERIS>/docs/OUTPUT-CONTRACT.md#2-the-flag\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/OUTPUT-CONTRACT.md#2-the-flag\n"
+    }
+  },
+  "e3d5f11a41f09052316ad6ab27181149ff2e37c4618607bfe139886ac8d6a330": {
+    "op": "bashRepo",
+    "label": "output::parse_global \"$@\" --output  a",
+    "answer": {
+      "status": 1,
+      "stdout": "",
+      "stderr": "ERROR --output takes 'text' or 'json'\nslug: output-format-unknown\nfix: eris --output json <command>     machine rendering (JSON on stdout)\nfix: eris --output text <command>     human rendering (the default)\ndocs: <ERIS>/docs/OUTPUT-CONTRACT.md#2-the-flag\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/OUTPUT-CONTRACT.md#2-the-flag\n"
+    }
+  },
+  "ec9dd767d5f2de709017f3b16aa6e3da8228ad6a7df92da7a5a9fe9d7c13b0a0": {
+    "op": "bashRepo",
+    "label": "output::parse_global \"$@\" a -- --output json",
+    "answer": {
+      "status": 0,
+      "stdout": "text\n<a><--output><json>",
+      "stderr": ""
+    }
+  },
+  "f18ef450acf7e1b19ae855c20aa252ed145c6584b21e50d334f3addcb9528ed0": {
+    "op": "bashRepo",
+    "label": "output::parse_global \"$@\" --output json node show",
+    "answer": {
+      "status": 0,
+      "stdout": "json\n<node><show>",
+      "stderr": ""
+    }
+  },
+  "fdb2ae842f3480b33dc203178a6cc42dca14e37da2fb85993250ededff7cb00c": {
+    "op": "bashRepo",
+    "label": "output::parse_global \"$@\" --output text --output json vars",
+    "answer": {
+      "status": 0,
+      "stdout": "json\n<vars>",
+      "stderr": ""
+    }
+  }
+}

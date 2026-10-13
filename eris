@@ -1,0 +1,40 @@
+#!/bin/sh
+# eris — the entrypoint. It finds bun and execs the TS program, src/main.ts,
+# which routes every command. POSIX sh: consumers run it as `bash eris`,
+# `sh eris` and `exec <repo>/eris` (the install.sh wrapper), so it uses
+# nothing a POSIX shell lacks.
+#
+# Invariants:
+#   - Nothing is exported. What the router needs rides only into bun's
+#     environment as _ERIS_SHIM_DIR: this directory (logical, so a `docs:` path
+#     names the checkout the caller ran).
+#   - bun never reads the caller's cwd: `--no-env-file` stops it loading a
+#     service dir's generated `.env` into the environment, and
+#     `--config=/dev/null` stops a cwd `bunfig.toml` preload from running.
+#   - BUN_CONFIG_VERBOSE_FETCH is the one caller variable removed: under it bun
+#     prints every fetch — Authorization bearer and body, which for a secret
+#     write is the base64 value — to stderr. bun reads it at fetch time from
+#     its own environment, and `delete process.env.X` does not reach that, so
+#     it has to be gone before bun starts.
+unset BUN_CONFIG_VERBOSE_FETCH
+
+case $0 in
+  */*) eris_dir=${0%/*} ;;
+  *) eris_dir=. ;;
+esac
+eris_dir=$(CDPATH='' cd -- "$eris_dir" && pwd) || exit 1
+
+if ! command -v bun >/dev/null 2>&1; then
+  doc=docs/ERRORS.md#eris-bun-missing
+  {
+    printf 'ERROR %s\n' "bun is not on PATH — eris routes every command through bun (src/main.ts)"
+    printf 'slug: %s\n' eris-bun-missing
+    printf 'fix: %s\n' "install bun (https://bun.sh), then run ./install.sh --checkout in $eris_dir"
+    printf 'docs: %s\n' "$eris_dir/$doc"
+    printf 'docs: %s\n' "https://github.com/sibylline-labs/eris/blob/main/$doc"
+  } >&2
+  exit 1
+fi
+
+_ERIS_SHIM_DIR=$eris_dir \
+  exec bun --no-env-file --config=/dev/null "$eris_dir/src/main.ts" "$@"

@@ -1,0 +1,49 @@
+id: plugin-imports-sdk-only
+valid:
+  - import { definePlugin, readArgs } from "../../src/cli/plugin";
+  - import type { VerbHandler } from "../../../../src/cli/plugin";
+  # The plugin's own files, packages and node builtins.
+  - import plugin from "./index";
+  - import { helper } from "./lib/helper";
+  - import { z } from "zod";
+  - import { join } from "node:path";
+  # The lazy handler thunk is a dynamic import of the plugin's own file.
+  - const run = (await import("./handlers")).runYakVerb;
+  - const sdk = await import("../../src/cli/plugin");
+  - const sdk = await import(`../../src/cli/plugin`);
+  # The plugin's own subfolders and a package's subpaths may be named src or ts.
+  - import x from "./src/helper";
+  - import { y } from "./ts/thing";
+  - import thing from "@scope/pkg/ts/thing";
+  - import { z } from "pkg/src/index";
+  - const run = (await import("./src/handlers")).run;
+  - const h = require("./src/helper");
+invalid:
+  # Core internals: the contract is the SDK module only.
+  - import { REGISTRY } from "../../src/cli/registry";
+  - import { renderFailureBlock } from "../../ts/lib/eris-fail";
+  - import type { CliContext } from "../../src/main";
+  - import { parseRow } from "../../../../src/cli/args";
+  - export { runConfig } from "../../src/cli/commands/config";
+  # A root-level core file lives under neither src/ nor ts/.
+  - import { run } from "../../harness";
+  - import { yak } from "../../yak";
+  - export { gcpToken } from "../../gcp";
+  # Escaping the plugin dir without reaching the root: a sibling plugin, or the composer.
+  - import { other } from "../other/index";
+  - import { PLUGINS } from "../index";
+  # A path that merely ends in the SDK's name is not the SDK.
+  - import { definePlugin } from "../../ts/src/cli/plugin";
+  # A dynamic import escapes the dir like a static one.
+  - const m = await import("../../harness");
+  - const m = await import("../../src/cli/registry");
+  # Every way TypeScript names a module, not only `import ... from`.
+  - const m = await import(`../../harness`);
+  - const m = await import(`../../src/cli/registry`);
+  - import c = require("../../harness");
+  - const c = require("../../harness");
+  - export * from "../../src/cli/registry";
+  # A climb hidden behind ./ still leaves the plugin dir.
+  - import { run } from "./../../harness";
+  # An absolute path is never the plugin's own file.
+  - import { run } from "/repo/harness";

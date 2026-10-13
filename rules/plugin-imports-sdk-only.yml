@@ -1,0 +1,62 @@
+# A plugin is registry rows plus handlers, and reaches eris core through one
+# module: the SDK, src/cli/plugin.ts. Anything else outside the plugin's own
+# directory is a core internal (src/, ts/, or a root-level file such as
+# harness.ts or gcp.ts) or another plugin, and a plugin that imports it couples
+# to a file a core refactor can move silently; the public/internal split could
+# not move core without moving the plugin. No reaching into core internals.
+#
+# The rule reads the import specifier alone (a rule test has no file path), so
+# it cannot tell how deep the file sits in its plugin directory. Every `..`
+# climb is therefore an error unless it lands on the SDK: a plugin reaches its
+# own files with `./`, and those may sit in subfolders of any name (`./src/x`).
+# A specifier that starts at `src/` or `ts/`, or at `/`, is refused too; a
+# package's own subpath (`@scope/pkg/ts/x`) is not core and passes.
+# Every way TypeScript names a module is held the same way: `import`/`export
+# ... from`, `import x = require()`, `require()`, and dynamic `import()` with a
+# quoted or template-literal specifier, since the lazy handler thunk
+# (plugin-manifest-lazy-handlers) makes `import()` the idiom a plugin copies.
+id: plugin-imports-sdk-only
+language: typescript
+severity: error
+message: A plugin imports eris core only through src/cli/plugin (the plugin SDK), and its own files with ./ . Ask for what you need to be exported there, or keep it inside the plugin.
+note: docs/dev/PLUGINS.md#what-a-plugin-may-import
+files:
+  - plugins/**/*.ts
+  - examples/plugins/**/*.ts
+  - tests/helpers/plugins/**/*.ts
+utils:
+  # A string or template literal naming a module.
+  specifier:
+    any:
+      - inside:
+          any:
+            - kind: import_statement
+            - kind: export_statement
+            - kind: import_require_clause
+          field: source
+      - inside:
+          kind: arguments
+          inside:
+            kind: call_expression
+            field: arguments
+            has:
+              field: function
+              any:
+                - kind: import
+                - kind: identifier
+                  regex: ^require$
+  # Starts at core's roots or at `/`, or climbs out of the importing file's directory.
+  reaches-core:
+    regex: ^["'`](/|(src|ts)/)|(^["'`]|/)\.\.(/|["'`]$)
+  # The SDK, and only the SDK: nothing else may precede `src/cli/plugin`.
+  is-sdk:
+    regex: ^["'`](\.\./)+src/cli/plugin["'`]$
+rule:
+  any:
+    - kind: string
+    - kind: template_string
+  all:
+    - matches: specifier
+    - matches: reaches-core
+    - not:
+        matches: is-sdk

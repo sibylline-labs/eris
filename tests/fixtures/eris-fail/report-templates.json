@@ -1,0 +1,10 @@
+{
+  "slugs_at_capture": 293,
+  "templates": {
+    "no-fix-arg": "ERROR the thing failed\nslug: <SLUG>\ndocs: <ERIS>/docs/ERRORS.md#<SLUG>\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/ERRORS.md#<SLUG>\n",
+    "multi-line-fix": "ERROR cannot read \"k\": 403\nslug: <SLUG>\nfix: run this:\nfix:   eris config pull dev\nfix: then retry\ndocs: <ERIS>/docs/ERRORS.md#<SLUG>\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/ERRORS.md#<SLUG>\n",
+    "fix-trailing-newline": "ERROR w\nslug: <SLUG>\nfix: a\nfix: \nfix: b\nfix: \ndocs: <ERIS>/docs/ERRORS.md#<SLUG>\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/ERRORS.md#<SLUG>\n",
+    "empty-fix-custom-docs": "ERROR w\nslug: <SLUG>\ndocs: <ERIS>/docs/REGISTRY.md#configuration\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/REGISTRY.md#configuration\n",
+    "empty-docs-defaults": "ERROR w\nslug: <SLUG>\nfix: one line\ndocs: <ERIS>/docs/ERRORS.md#<SLUG>\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/ERRORS.md#<SLUG>\n"
+  }
+}

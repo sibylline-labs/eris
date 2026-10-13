@@ -1,0 +1,57 @@
+# One way to parse a verb's argv: src/cli/args.ts, driven by the verb's row in
+# src/cli/registry.ts. A hand-rolled flag loop is how an unknown flag, a flag
+# missing its value or an extra word got accepted and dropped at exit 0, the
+# same defect fixed in four verbs.
+#
+# Matches, in the CLI surfaces only:
+#   - indexing process.argv / Bun.argv (handing the whole slice to a parser is fine)
+#   - comparing a value with a flag-shaped literal: `a === "--x"`,
+#     `case "--x":`, `a.startsWith("-")`, `args.includes("--help")`, ...
+id: adhoc-argv-parse
+language: typescript
+severity: error
+message: Argv is parsed by hand here. Declare the flag/positional on the verb's row in src/cli/registry.ts and read it from parseVerbArgs/readVerbArgs (src/cli/args.ts).
+note: |
+  The registry row is the single declaration: the parser refuses an
+  undeclared flag, a value flag with no value, and a word past the declared
+  positionals, uniformly. Help and completion read the same row.
+files:
+  - src/cli/**/*.ts
+  - src/main.ts
+  - plugins/**/*.ts
+  - scripts/**/*.ts
+ignores:
+  # The parser itself.
+  - src/cli/args.ts
+rule:
+  any:
+    - pattern: process.argv[$I]
+    - pattern: Bun.argv[$I]
+    # `a === "--x"`, either side, `===` or `!==`. (Written as one node rule:
+    # the reversed `$S === $A` pattern never matches under a constraint on S.)
+    - all:
+        - kind: binary_expression
+        - has:
+            field: operator
+            regex: ^[!=]==$
+        - has:
+            kind: string
+            regex: ^["'`](--|--?[A-Za-z][A-Za-z0-9-]*=?)["'`]$
+    - pattern: $X.startsWith($D)
+    - pattern: $X.includes($S)
+    - pattern: $X.indexOf($S)
+    - kind: switch_case
+      has:
+        field: value
+        kind: string
+        regex: ^["'`](--|--?[A-Za-z][A-Za-z0-9-]*=?)["'`]$
+constraints:
+  # A flag-shaped literal: `--`, `-h`, `--x`, `--x=`. Not `-` alone (a
+  # placeholder) and not `->` (an arrow).
+  S:
+    kind: string
+    regex: ^["'`](--|--?[A-Za-z][A-Za-z0-9-]*=?)["'`]$
+  # `startsWith("-")` is the unknown-flag test itself.
+  D:
+    kind: string
+    regex: ^["'`](-|--|--?[A-Za-z][A-Za-z0-9-]*=?)["'`]$

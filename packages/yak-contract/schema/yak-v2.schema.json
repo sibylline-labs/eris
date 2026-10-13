@@ -1,0 +1,416 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Eris Yaks wire contract v2",
+  "$ref": "#/definitions/YakSubmission",
+  "definitions": {
+    "YakSubmission": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "enum": [
+            "2.0.0"
+          ]
+        },
+        "verb": {
+          "type": "string",
+          "enum": [
+            "issue",
+            "suggest",
+            "fatal"
+          ]
+        },
+        "route": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "vendor"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "evidence": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "device_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "execution_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "idempotency_key": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "provenance": {
+          "type": "object",
+          "properties": {
+            "process": {
+              "type": "object",
+              "additionalProperties": {}
+            },
+            "device": {
+              "type": "object",
+              "additionalProperties": {}
+            },
+            "harness": {
+              "type": "object",
+              "additionalProperties": {}
+            },
+            "repo": {
+              "type": "object",
+              "properties": {
+                "target_repos": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "maxItems": 20
+                }
+              },
+              "additionalProperties": {}
+            },
+            "git": {
+              "type": "object",
+              "additionalProperties": {}
+            },
+            "execution": {
+              "type": "object",
+              "properties": {
+                "rung": {
+                  "type": "string",
+                  "enum": [
+                    "override",
+                    "session",
+                    "host-session",
+                    "shell-session",
+                    "shell",
+                    "ai-agent",
+                    "codex",
+                    "cursor"
+                  ]
+                }
+              },
+              "additionalProperties": {}
+            }
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "schema_version",
+        "verb",
+        "route",
+        "summary",
+        "body",
+        "device_id",
+        "execution_id"
+      ],
+      "additionalProperties": true
+    },
+    "YakReceipt": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "replay": {
+          "type": "boolean"
+        },
+        "contract_version": {
+          "type": "string",
+          "const": "2.0.0"
+        }
+      },
+      "required": [
+        "id",
+        "idempotency_key",
+        "replay",
+        "contract_version"
+      ],
+      "additionalProperties": true
+    },
+    "YakObservation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "verb": {
+          "type": "string",
+          "enum": [
+            "issue",
+            "suggest",
+            "fatal"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "processed",
+            "failed"
+          ]
+        },
+        "cluster_id": {
+          "type": "string"
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "next_attempt_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_error": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "type": "string",
+              "enum": [
+                "2.0.0"
+              ]
+            },
+            "verb": {
+              "type": "string",
+              "enum": [
+                "issue",
+                "suggest",
+                "fatal"
+              ]
+            },
+            "route": {
+              "type": "string",
+              "enum": [
+                "workspace",
+                "vendor"
+              ]
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "evidence": {
+              "type": "string",
+              "maxLength": 20000
+            },
+            "device_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "execution_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "idempotency_key": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "provenance": {
+              "type": "object",
+              "properties": {
+                "process": {
+                  "type": "object",
+                  "additionalProperties": {}
+                },
+                "device": {
+                  "type": "object",
+                  "additionalProperties": {}
+                },
+                "harness": {
+                  "type": "object",
+                  "additionalProperties": {}
+                },
+                "repo": {
+                  "type": "object",
+                  "properties": {
+                    "target_repos": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "maxItems": 20
+                    }
+                  },
+                  "additionalProperties": {}
+                },
+                "git": {
+                  "type": "object",
+                  "additionalProperties": {}
+                },
+                "execution": {
+                  "type": "object",
+                  "properties": {
+                    "rung": {
+                      "type": "string",
+                      "enum": [
+                        "override",
+                        "session",
+                        "host-session",
+                        "shell-session",
+                        "shell",
+                        "ai-agent",
+                        "codex",
+                        "cursor"
+                      ]
+                    }
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "schema_version",
+            "verb",
+            "route",
+            "summary",
+            "body",
+            "device_id",
+            "execution_id"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id",
+        "idempotency_key",
+        "verb",
+        "summary",
+        "source",
+        "received_at",
+        "status",
+        "attempts",
+        "data"
+      ],
+      "additionalProperties": true
+    },
+    "YakCluster": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "fatal",
+            "report"
+          ]
+        },
+        "canonical_summary": {
+          "type": "string"
+        },
+        "keywords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "observation_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "first_seen": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_seen": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "current_issue_id": {
+          "type": "string"
+        },
+        "current_issue_identifier": {
+          "type": "string"
+        },
+        "issue_history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "issue_id": {
+                "type": "string"
+              },
+              "issue_identifier": {
+                "type": "string"
+              },
+              "linked_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "closed_observed_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "issue_id",
+              "issue_identifier",
+              "linked_at"
+            ],
+            "additionalProperties": true
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "canonical_summary",
+        "observation_count",
+        "first_seen",
+        "last_seen"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
