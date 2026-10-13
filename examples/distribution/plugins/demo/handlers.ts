@@ -18,8 +18,8 @@ Commands:
   heavy                   Load a module a compiled binary carries only as a stub
 `;
 
-/** The asset, by its path under the install root (the checkout, or a binary's asset home). */
-const ASSET = "examples/distribution/assets/greeting.txt";
+/** The asset, by its path under the install root: the distribution's own directory from source, a binary's asset home compiled. */
+const ASSET = "assets/greeting.txt";
 
 export const runDemo: VerbHandler = async (args, ctx) => {
   const g = groupArgs(rows, "demo", args);

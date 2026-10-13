@@ -27,6 +27,9 @@ import { checkoutOnly, ERIS, oracleEnv, REPO, type Sandbox, sandbox } from "./he
 
 setDefaultTimeout(120_000);
 
+/** The example distribution's root: its own directory, not this package's. */
+const DIST_ROOT = join(REPO, "examples", "distribution");
+
 async function run(argv: string[]): Promise<{ rc: number; stdout: string; stderr: string }> {
   let stdout = "";
   let stderr = "";
@@ -168,7 +171,7 @@ describe("build() refuses before it bundles", () => {
   const cases: [string, Partial<Parameters<typeof build>[0]>, string | RegExp][] = [
     ["a plugin list that does not compose", { plugins: [...DISTRIBUTION_PLUGINS, yak] }, "plugin 'yak' is composed twice"],
     ["an asset root outside the root", { assetRoots: ["../outside"] }, "asset root '../outside' is not a path inside the root"],
-    ["an asset root that does not exist", { assetRoots: ["examples/distribution/missing"] }, `asset root 'examples/distribution/missing' does not exist under ${REPO}`],
+    ["an asset root that does not exist", { assetRoots: ["missing"] }, `asset root 'missing' does not exist under ${DIST_ROOT}`],
     ["a release repository that is not owner/name", { releaseRepo: "eris" }, 'releaseRepo must be owner/name: "eris"'],
   ];
   it.each(cases)("%s", async (_name, opts, message) => {
@@ -176,6 +179,44 @@ describe("build() refuses before it bundles", () => {
     const outfile = join(REPO, "dist", "fixture", "never-written");
     await expect(build({ ...BUILD, ...opts, outfile })).rejects.toThrow(message);
     expect(existsSync(outfile)).toBe(false);
+  });
+});
+
+describe.skipIf(checkoutOnly("runs the example distribution and core from this checkout's source"))("a distribution run from source", () => {
+  const bunRun = (sb: Sandbox, entry: string, argv: string[]) =>
+    sb.run(["--no-env-file", "--config=/dev/null", entry, ...argv], { program: process.execPath, env: { _ERIS_SHIM_DIR: undefined } });
+  let sb: Sandbox;
+  beforeAll(() => {
+    sb = sandbox("eris-dist-src-");
+  });
+  afterAll(() => sb?.cleanup());
+
+  it("resolves its install root to its own directory: it reads its files there and its blocks name its docs there", async () => {
+    /** When `runProgram` ignores `installRoot`, a distribution run from source (in a dependent repository, with core in node_modules/eris) reads its files and names its docs under the eris package's directory: `demo asset` cannot find its file and a failure block's `docs:` line points into core. Observed at the source run's stdout and stderr, with no shim. */
+    const asset = await bunRun(sb, join(DIST_ROOT, "main.ts"), ["demo", "asset"]);
+    expect({ status: asset.status, stdout: asset.stdout, stderr: asset.stderr }).toEqual({
+      status: 0,
+      stdout: readFileSync(join(DIST_ROOT, "assets", "greeting.txt"), "utf8"),
+      stderr: "",
+    });
+    const refused = await bunRun(sb, join(DIST_ROOT, "main.ts"), ["--output", "xml", "demo", "asset"]);
+    expect({ status: refused.status, stdout: refused.stdout }).toEqual({ status: 1, stdout: "" });
+    expect(refused.stderr).toContain(`docs: ${DIST_ROOT}/docs/OUTPUT-CONTRACT.md#2-the-flag\n`);
+    // PAIRED: core's own program, run the same way and handed no root, names this package's docs.
+    const core = await bunRun(sb, join(REPO, "src", "main.ts"), ["--output", "xml", "yak"]);
+    expect(core.stderr).toContain(`docs: ${REPO}/docs/OUTPUT-CONTRACT.md#2-the-flag\n`);
+    expect(core.stderr).not.toContain(DIST_ROOT);
+  });
+
+  it("refuses an install root that is not an absolute path", () => {
+    /** When `runProgram` accepts a relative `installRoot`, a distribution's docs lines and file reads follow the caller's working directory, differently on every run: observed at the entry's exit status and message. */
+    const r = spawnSync(process.execPath, ["--no-env-file", "--config=/dev/null", "-e", 'import { runProgram } from "eris/sdk"; runProgram({ installRoot: "examples/distribution" });'], {
+      cwd: REPO,
+      encoding: "utf8",
+      env: { PATH: process.env.PATH, HOME: process.env.HOME },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('installRoot must be an absolute path: "examples/distribution"');
   });
 });
 
@@ -210,12 +251,12 @@ describe.skipIf(checkoutOnly("builds its own binary from this checkout's source"
   it("carries its asset roots, its release repository and its stubs", async () => {
     /** When build() drops an asset root, bakes another build's release repository, or bundles a stubbed module, the binary reads a file that is not there, updates itself from the wrong repository, or carries what it must not: observed at the compiled fixture's output. */
     const asset = await sb.run(["demo", "asset"], { program: outfile });
-    expect({ status: asset.status, stdout: asset.stdout }).toEqual({ status: 0, stdout: readFileSync(join(REPO, "examples/distribution/assets/greeting.txt"), "utf8") });
+    expect({ status: asset.status, stdout: asset.stdout }).toEqual({ status: 0, stdout: readFileSync(join(DIST_ROOT, "assets", "greeting.txt"), "utf8") });
     expect(await sb.run(["demo", "release"], { program: outfile })).toMatchObject({ status: 0, stdout: "example-org/eris-distribution\n" });
     const heavy = await sb.run(["demo", "heavy"], { program: outfile });
     expect({ status: heavy.status, stdout: heavy.stdout }).toEqual({ status: 1, stdout: "" });
     expect(heavy.stderr).toContain("./heavy is not bundled into the compiled eris binary (demo-heavy-needs-checkout)");
-    // PAIRED: from the checkout, the same verbs read the checkout's file, report this repository, and load the module.
+    // PAIRED: from the checkout, the same verbs report this repository and load the module (the asset read from source is the source run's, above).
     expect(await run(["demo", "release"])).toEqual({ rc: 0, stdout: "sibylline-labs/eris\n", stderr: "" });
     expect(await run(["demo", "heavy"])).toEqual({ rc: 0, stdout: "heavy module loaded\n", stderr: "" });
   });

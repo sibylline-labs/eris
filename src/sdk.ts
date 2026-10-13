@@ -37,7 +37,7 @@ export { sanitizeDisplay } from "./cli/output";
 export { onPath } from "./cli/ts-verb";
 export type { Cli, ComposeOptions, Session } from "./cli/compose";
 export { composeCli, NO_ENTITLEMENTS, PluginCompositionError } from "./cli/compose";
-export type { MainOptions } from "./main";
+export type { MainOptions, ProgramOptions } from "./main";
 export { HANDLERS, main, runProgram } from "./main";
 export { PLUGINS } from "../plugins";
 export type { RunJob, RunOptions, RunResult, Runner } from "./runtime/process";

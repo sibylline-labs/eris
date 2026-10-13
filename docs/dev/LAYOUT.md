@@ -29,7 +29,8 @@ src/                    # The TS program the shim runs
 │                       #   update.ts + update/ (eris update: github.ts the releases API and the
 │                       #   download, replace.ts the staged rename and its restore, semver.ts)
 └── runtime/            #   logging, process (the one spawn adapter), settings (~/.eris/settings.json),
-                        #   env (readEnv), home (the install root: the checkout, or a compiled binary's
+                        #   env (readEnv), home (the install root: the checkout, a distribution's own root
+                        #   when its entry names one, or a compiled binary's
                         #   per-build asset home)
 ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN lines
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses

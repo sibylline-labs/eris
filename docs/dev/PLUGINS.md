@@ -256,6 +256,7 @@ and runs. Copy its shape.
 3. **Compose and run** from its entry:
 
    ```ts
+   import { join } from "node:path";
    import { composeCli, HANDLERS, PLUGINS, REGISTRY, runProgram } from "eris/sdk";
    import mine from "./plugins/mine";
 
@@ -263,8 +264,17 @@ and runs. Copy its shape.
      menu: async () => (await import("./menu")).runMenu,
    });
 
-   if (import.meta.main) runProgram({ cli: CLI });
+   if (import.meta.main) runProgram({ cli: CLI, installRoot: join(import.meta.dir, "..") });
    ```
+
+   `installRoot` is the distribution's root, an absolute path: the directory
+   `build()` takes as `root`, and (for an entry in `src/`) the one above it. Run
+   from source, a command's `ctx.erisDir` and the local `docs:` line of a failure
+   block are that directory, and a file the binary carries as an asset is read from
+   the same relative path. Left out, they are this package's directory, which in a
+   dependent repository is `node_modules/eris`, not the distribution. A compiled
+   binary ignores it (its root is its per-build asset home), and the `_ERIS_SHIM_DIR`
+   a distribution's own shim sets wins over it.
 
 4. **Build** with `build()` from `eris/sdk` (`src/build.ts` documents what the
    binary carries):
@@ -272,7 +282,7 @@ and runs. Copy its shape.
    | Option | Meaning |
    |---|---|
    | `entry` | The entry above. Required. |
-   | `root` | The distribution's root, which the paths below are relative to. Default: the nearest directory with a `package.json` at or above the entry's. |
+   | `root` | The distribution's root, which the paths below are relative to, and the `installRoot` its entry hands `runProgram`. Default: the nearest directory with a `package.json` at or above the entry's. |
    | `plugins` | The plugin list the entry composes, composed again before bundling so a refused plugin fails the build. |
    | `assetRoots` | Files, and directories of files, the binary carries and writes to its asset home, at the same relative paths. |
    | `docRoots` | Where a `docs/*.md` the source names is looked for, in order. Default: the root, then this package. |

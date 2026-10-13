@@ -6,7 +6,10 @@
  * Two ways to run, one answer each:
  *
  *   - From a checkout (the `eris` shim → `bun src/main.ts`): the checkout, two
- *     directories above this file.
+ *     directories above this file. A distribution run from source is a checkout
+ *     of its own: its entry names its root (`runProgram({ installRoot })`,
+ *     `adoptSourceRoot`), so the files it reads and the docs its blocks name are
+ *     its own, not those of the eris package in its node_modules.
  *   - As a compiled binary (`build()`, src/build.ts): the files ride inside the binary
  *     as the build-generated `eris:assets` module, and are written once per build
  *     to `${ERIS_CACHE_DIR:-${XDG_CACHE_HOME:-~/.cache}/eris}/<build id>/`, which is
@@ -32,7 +35,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 declare const __ERIS_BUILD_ID__: string | undefined;
 declare const __ERIS_RELEASE_REPO__: string | undefined;
@@ -121,6 +124,17 @@ export function materializeHome(base: string, buildId: string, assets: Readonly<
 }
 
 let compiledRoot: string | undefined;
+let sourceRoot: string | undefined;
+
+/**
+ * A distribution's own root, for a run from source (`runProgram({ installRoot })`,
+ * src/main.ts): `installRoot()` answers with it in place of `checkoutRoot()`.
+ * A compiled binary ignores it, because its asset home is its root.
+ */
+export function adoptSourceRoot(dir: string): void {
+  if (!isAbsolute(dir)) throw new Error(`installRoot must be an absolute path: ${JSON.stringify(dir)}`);
+  sourceRoot = dir;
+}
 
 /** The binary's asset home could not be written: the cache base is read-only, full, or not a directory. */
 export class HomeUnwritableError extends Error {
@@ -140,7 +154,7 @@ export class HomeUnwritableError extends Error {
  * call. Throws `HomeUnwritableError` when the home cannot be written.
  */
 export async function resolveInstallRoot(env: Env): Promise<string> {
-  if (!isCompiled) return checkoutRoot();
+  if (!isCompiled) return sourceRoot ?? checkoutRoot();
   if (compiledRoot === undefined) {
     const { ASSETS } = await import("eris:assets");
     const base = cacheBase(env);
@@ -172,7 +186,7 @@ export function installRootIsUnwritten(): boolean {
 
 /** The install root without materializing: a binary's must already be resolved by `main`. */
 export function installRoot(): string {
-  if (!isCompiled) return checkoutRoot();
+  if (!isCompiled) return sourceRoot ?? checkoutRoot();
   if (compiledRoot === undefined) throw new Error("eris install root read before main() resolved it");
   return compiledRoot;
 }

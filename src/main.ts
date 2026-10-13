@@ -19,7 +19,8 @@
  * composition directly.
  *
  * `erisDir` is the shim's directory when the shim ran, else the install root
- * (src/runtime/home.ts): the checkout, or a compiled binary's asset home. A
+ * (src/runtime/home.ts): the checkout, a distribution's own root when its entry
+ * named one (`runProgram({ installRoot })`), or a compiled binary's asset home. A
  * binary never reads `_ERIS_SHIM_DIR`: only the shim sets it, and a stray value
  * in a caller's environment must not move the files the binary reads.
  */
@@ -30,7 +31,7 @@ import { type Cli, composeCli, NO_ENTITLEMENTS, type Session } from "./cli/compo
 import { sanitizeDisplay } from "./cli/output";
 import { ARGV_SHAPES_NO_ASSETS, REGISTRY } from "./cli/registry";
 import { route, type Impl } from "./cli/router";
-import { adoptUnwrittenHome, HomeUnwritableError, isCompiled, resolveInstallRoot } from "./runtime/home";
+import { adoptSourceRoot, adoptUnwrittenHome, HomeUnwritableError, isCompiled, resolveInstallRoot } from "./runtime/home";
 import { warn } from "./runtime/logging";
 import { applySettings } from "./runtime/settings";
 
@@ -41,7 +42,7 @@ export interface Sink {
 }
 
 export interface CliContext {
-  /** The logical install root: the shim's directory, or a binary's asset home. */
+  /** The logical install root: the shim's directory, a distribution's declared root, or a binary's asset home. */
   erisDir: string;
   /** The caller's environment, shim variables removed. */
   env: Record<string, string | undefined>;
@@ -172,8 +173,22 @@ function exitAfterFlush(code: number): void {
   setTimeout(() => process.exit(code), 10_000).unref();
 }
 
+export interface ProgramOptions extends Pick<MainOptions, "cli" | "entitlements"> {
+  /**
+   * The distribution's root, an absolute path: what a run from source reads its
+   * files from and names its docs under (`ctx.erisDir`, a failure block's local
+   * `docs:` line), in place of this package's directory. Pass the directory
+   * `build()` takes as `root`, so a run from source and the binary read the
+   * same relative paths. A compiled binary ignores it (its asset home is its
+   * root), and the shim's `_ERIS_SHIM_DIR` wins over it.
+   */
+  installRoot?: string;
+}
+
 /** The process entry: this file's own when run, and a distribution's. */
-export function runProgram(opts: Pick<MainOptions, "cli" | "entitlements"> = {}): void {
+export function runProgram(opts: ProgramOptions = {}): void {
+  const { installRoot: root, ...mainOpts } = opts;
+  if (root !== undefined) adoptSourceRoot(root);
   // A compiled binary has no shim to unset BUN_CONFIG_VERBOSE_FETCH before bun
   // starts, and `delete` does not reach bun's reader — but an assignment does:
   // "0" turns verbose fetch off for this process (measured, bun 1.3.13).
@@ -188,7 +203,7 @@ export function runProgram(opts: Pick<MainOptions, "cli" | "entitlements"> = {})
   // written, mid idempotency-key digest) — and a loop that drains
   // with `main` still pending ends the process as a silent success.
   const hold = setInterval(() => {}, 1 << 30);
-  main(process.argv.slice(2), process.env, opts).finally(() => clearInterval(hold)).then(exitAfterFlush, (e) => {
+  main(process.argv.slice(2), process.env, mainOpts).finally(() => clearInterval(hold)).then(exitAfterFlush, (e) => {
     process.stderr.write(`ERROR ${e instanceof Error ? e.message : String(e)}\n`);
     exitAfterFlush(1);
   });
