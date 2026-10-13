@@ -8,8 +8,10 @@
  *   - From a checkout (the `eris` shim → `bun src/main.ts`): the checkout, two
  *     directories above this file. A distribution run from source is a checkout
  *     of its own: its entry names its root (`runProgram({ installRoot })`,
- *     `adoptSourceRoot`), so the files it reads and the docs its blocks name are
- *     its own, not those of the eris package in its node_modules.
+ *     `adoptSourceRoot`), so the files it reads are its own, not those of the
+ *     eris package in its node_modules. A failure block's `docs:` line names a doc
+ *     under that root when it holds the doc, else under the eris package's (the
+ *     order `build()` takes docs in, `docsRoot`).
  *   - As a compiled binary (`build()`, src/build.ts): the files ride inside the binary
  *     as the build-generated `eris:assets` module, and are written once per build
  *     to `${ERIS_CACHE_DIR:-${XDG_CACHE_HOME:-~/.cache}/eris}/<build id>/`, which is
@@ -38,7 +40,7 @@
 // no `files` entry of its own for the declaration.
 
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
@@ -194,4 +196,29 @@ export function installRoot(): string {
   if (!isCompiled) return sourceRoot ?? checkoutRoot();
   if (compiledRoot === undefined) throw new Error("eris install root read before main() resolved it");
   return compiledRoot;
+}
+
+/**
+ * The first of `roots` that holds the repo-relative doc `rel` (an `#anchor` is
+ * ignored) as a file. `build()` takes each doc the source names from its doc
+ * roots by this rule, and `docsRoot` names a run from source's by it, so a
+ * binary and the source run point at the same copy.
+ */
+export function firstDocRoot(roots: readonly string[], rel: string): string | undefined {
+  const file = rel.split("#")[0]!;
+  return roots.find((r) => existsSync(join(r, file)) && statSync(join(r, file)).isFile());
+}
+
+/**
+ * The root a failure block's local `docs:` line names `rel` under, given the
+ * `home` it was handed. When `home` is the install root of a run from source, that
+ * is the install root, then this package's root, as `build()` falls back for the
+ * binary: a distribution carries only the docs it owns, and a line naming a core
+ * doc under its root would name a file that is not there. A compiled binary's home
+ * already holds every doc its source names; an `ERIS_DIR` or any other `home` is
+ * the caller's say, and a doc that neither root holds keeps `home`.
+ */
+export function docsRoot(home: string, rel: string): string {
+  if (isCompiled || home !== installRoot()) return home;
+  return firstDocRoot([home, checkoutRoot()], rel) ?? home;
 }

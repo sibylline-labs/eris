@@ -41,6 +41,9 @@ async function run(argv: string[]): Promise<{ rc: number; stdout: string; stderr
   return { rc, stdout, stderr };
 }
 
+/** The file the first `docs:` line of a failure block names, its `#anchor` dropped. */
+const localDoc = (stderr: string): string => stderr.split("\n").find((l) => l.startsWith("docs: "))!.slice("docs: ".length).split("#")[0]!;
+
 /** One tab press under macOS's /bin/bash 3.2: COMPREPLY, one word per entry. */
 function press(script: string, words: string[]): string[] {
   const quoted = words.map((w) => `'${w}'`).join(" ");
@@ -195,20 +198,36 @@ describe.skipIf(checkoutOnly("runs the example distribution and core from this c
   });
   afterAll(() => sb?.cleanup());
 
-  it("resolves its install root to its own directory: it reads its files there and its blocks name its docs there", async () => {
-    /** When `runProgram` ignores `installRoot`, a distribution run from source (in a dependent repository, with core in node_modules/eris) reads its files and names its docs under the eris package's directory: `demo asset` cannot find its file and a failure block's `docs:` line points into core. Observed at the source run's stdout and stderr, with no shim. */
+  it("resolves its install root to its own directory: it reads its files there", async () => {
+    /** When `runProgram` ignores `installRoot`, a distribution run from source (in a dependent repository, with core in node_modules/eris) reads its files under the eris package's directory: `demo asset` cannot find its file. Observed at the source run's stdout and stderr, with no shim. */
     const asset = await bunRun(sb, join(DIST_ROOT, "main.ts"), ["demo", "asset"]);
     expect({ status: asset.status, stdout: asset.stdout, stderr: asset.stderr }).toEqual({
       status: 0,
       stdout: readFileSync(join(DIST_ROOT, "assets", "greeting.txt"), "utf8"),
       stderr: "",
     });
+  });
+
+  it("names a doc under the first root that holds it, the distribution's own then core's: a docs line never names a file that is not there", async () => {
+    /** When the local `docs:` line is always the install root's, a distribution that carries none of core's docs (the example's only files are its assets) prints a path that does not exist, as a compiled binary never does (`build()` takes each doc from its doc roots in order); when it is always core's, a doc the distribution carries names core's copy instead of its own. Observed at the source run's stderr, with no shim. */
     const refused = await bunRun(sb, join(DIST_ROOT, "main.ts"), ["--output", "xml", "demo", "asset"]);
     expect({ status: refused.status, stdout: refused.stdout }).toEqual({ status: 1, stdout: "" });
-    expect(refused.stderr).toContain(`docs: ${DIST_ROOT}/docs/OUTPUT-CONTRACT.md#2-the-flag\n`);
-    // PAIRED: core's own program, run the same way and handed no root, names this package's docs.
+    expect(localDoc(refused.stderr)).toBe(join(REPO, "docs", "OUTPUT-CONTRACT.md"));
+    expect(existsSync(localDoc(refused.stderr))).toBe(true);
+    // PAIRED: a distribution that carries the doc (its own copy, here a root made for the run) names that copy, and core's own program, handed no root, names this package's.
+    const own = join(REPO, ".scratch", `distribution-docs-${process.pid}`);
+    mkdirSync(join(own, "docs"), { recursive: true });
+    try {
+      writeFileSync(join(own, "docs", "OUTPUT-CONTRACT.md"), "# the distribution's own copy\n");
+      writeFileSync(join(own, "main.ts"), 'import { runProgram } from "eris/sdk";\nrunProgram({ installRoot: import.meta.dir });\n');
+      const owned = await bunRun(sb, join(own, "main.ts"), ["--output", "xml", "version"]);
+      expect({ status: owned.status, stdout: owned.stdout }).toEqual({ status: 1, stdout: "" });
+      expect(localDoc(owned.stderr)).toBe(join(own, "docs", "OUTPUT-CONTRACT.md"));
+    } finally {
+      rmSync(own, { recursive: true, force: true });
+    }
     const core = await bunRun(sb, join(REPO, "src", "main.ts"), ["--output", "xml", "yak"]);
-    expect(core.stderr).toContain(`docs: ${REPO}/docs/OUTPUT-CONTRACT.md#2-the-flag\n`);
+    expect(localDoc(core.stderr)).toBe(join(REPO, "docs", "OUTPUT-CONTRACT.md"));
     expect(core.stderr).not.toContain(DIST_ROOT);
   });
 
@@ -287,6 +306,16 @@ describe.skipIf(checkoutOnly("builds its own binary from this checkout's source"
     // PAIRED: from the checkout, the same verbs report this repository and load the module (the asset read from source is the source run's, above).
     expect(await run(["demo", "release"])).toEqual({ rc: 0, stdout: "sibylline-labs/eris\n", stderr: "" });
     expect(await run(["demo", "heavy"])).toEqual({ rc: 0, stdout: "heavy module loaded\n", stderr: "" });
+  });
+
+  it("names core's doc in a file its asset home holds, as the source run does", async () => {
+    /** When build() stops taking a doc the source names from core's root after the distribution's (`docRoots`), or the binary's block names a path outside its asset home, the compiled distribution's local `docs:` line names a file that is not there: observed at the compiled fixture's stderr, read back from disk. */
+    const refused = await sb.run(["--output", "xml", "demo", "asset"], { program: outfile });
+    expect({ status: refused.status, stdout: refused.stdout }).toEqual({ status: 1, stdout: "" });
+    const doc = localDoc(refused.stderr);
+    expect(readFileSync(doc, "utf8")).toBe(readFileSync(join(REPO, "docs", "OUTPUT-CONTRACT.md"), "utf8"));
+    // PAIRED: the binary's own copy in its asset home, not the checkout's file the content equals.
+    expect(doc).not.toBe(join(REPO, "docs", "OUTPUT-CONTRACT.md"));
   });
 
   it("completes its domain slot from the script the binary emits", () => {

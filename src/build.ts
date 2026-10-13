@@ -51,7 +51,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { composeCli } from "./cli/compose";
 import type { ErisPlugin } from "./cli/plugin";
 import { REGISTRY } from "./cli/registry";
-import { checkoutRoot, DEFAULT_DOCS_BASE, DEFAULT_RELEASE_REPO } from "./runtime/home";
+import { checkoutRoot, DEFAULT_DOCS_BASE, DEFAULT_RELEASE_REPO, firstDocRoot } from "./runtime/home";
 
 /** This package's root: core's source, and the docs core names. */
 const CORE = checkoutRoot();
@@ -169,7 +169,7 @@ function namedDocs(sources: readonly { abs: string }[], docRoots: readonly strin
   const docs: Record<string, string> = {};
   const missing: string[] = [];
   for (const doc of [...named].sort()) {
-    const from = docRoots.find((r) => existsSync(join(r, doc)) && statSync(join(r, doc)).isFile());
+    const from = firstDocRoot(docRoots, doc);
     if (from === undefined) missing.push(doc);
     else docs[doc] = readFileSync(join(from, doc), "utf8");
   }

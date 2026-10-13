@@ -283,12 +283,14 @@ and runs. Copy its shape.
 
    `installRoot` is the distribution's root, an absolute path: the directory
    `build()` takes as `root`, and (for an entry in `src/`) the one above it. Run
-   from source, a command's `ctx.erisDir` and the local `docs:` line of a failure
-   block are that directory, and a file the binary carries as an asset is read from
-   the same relative path. Left out, they are this package's directory, which in a
-   dependent repository is `node_modules/eris`, not the distribution. A compiled
-   binary ignores it (its root is its per-build asset home), and the `_ERIS_SHIM_DIR`
-   a distribution's own shim sets wins over it.
+   from source, a command's `ctx.erisDir` is that directory, and a file the binary
+   carries as an asset is read from the same relative path. The local `docs:` line
+   of a failure block names its doc under that directory when it holds the doc,
+   else under this package's (`docRoots`' order), so the line names a file that
+   exists, as it does in the binary. Left out, `ctx.erisDir` is this package's
+   directory, which in a dependent repository is `node_modules/eris`, not the
+   distribution. A compiled binary ignores it (its root is its per-build asset
+   home), and the `_ERIS_SHIM_DIR` a distribution's own shim sets wins over it.
 
 4. **Build** with `build()` from `eris/sdk` (`src/build.ts` documents what the
    binary carries):

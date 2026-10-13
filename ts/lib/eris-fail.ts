@@ -46,7 +46,7 @@
  * including a trailing-newline fix and an empty fix, against the real bash.
  */
 
-import { DOCS_BASE, installRoot, installRootIsUnwritten } from "../../src/runtime/home";
+import { DOCS_BASE, docsRoot, installRoot, installRootIsUnwritten } from "../../src/runtime/home";
 
 export interface ErisFailureInput {
   /** Stable machine key, `^[a-z0-9]+(-[a-z0-9]+)+$` — a `docs/ERRORS.md`
@@ -67,8 +67,10 @@ export interface ErisFailureInput {
 
 /**
  * `$ERIS_HOME`: `ERIS_DIR` wins when set; otherwise the install root (src/runtime/home.ts): the
- * checkout this file sits in, or a compiled binary's asset home, so a `docs:`
- * line names a file that exists either way.
+ * checkout this file sits in, a distribution's own root, or a compiled binary's
+ * asset home. The local `docs:` line names the doc under that root, or under this
+ * package's when a distribution run from source does not carry it (`docsRoot`), so it
+ * names a file that exists every way eris runs.
  */
 export function erisHome(env: Record<string, string | undefined> = process.env): string {
   const override = env.ERIS_DIR;
@@ -112,7 +114,7 @@ export function failureLines(input: ErisFailureInput, home: string | null): stri
   }
   const docsRel = input.docs && input.docs.length > 0 ? input.docs : `docs/ERRORS.md#${input.slug}`;
   const local = home === null || (installRootIsUnwritten() && home === installRoot()) ? null : home;
-  lines.push(`docs: ${local === null ? docsRel : `${local}/${docsRel}`}`);
+  lines.push(`docs: ${local === null ? docsRel : `${docsRoot(local, docsRel)}/${docsRel}`}`);
   lines.push(`docs: ${DOCS_BASE}/${docsRel}`);
   return lines;
 }
