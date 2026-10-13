@@ -1,0 +1,24 @@
+id: runtime-imports-no-testing-depth-2
+# A file one directory down (src/cli/x.ts, ts/lib/x.ts, plugins/yak/x.ts): two
+# climbs reach the repo root.
+valid:
+  # One climb lands inside the tree: the directory beside the importing one
+  # (a plugin or core directory that is itself named testing), not the root's.
+  - import { helper } from "../testing/helper";
+  - export * from "../testing";
+  - const t = await import("../testing");
+  - const t = require("../testing");
+  # Three climbs leave the repository.
+  - import { createFakeRunner } from "../../../testing";
+  # A plugin's own folder, and names that merely end in testing.
+  - import { helper } from "./testing/helper";
+  - import x from "../../testing-utils";
+  - import y from "../../shared/testing";
+invalid:
+  - import { createFakeRunner } from "../../testing";
+  - import { buildInChild } from "../../testing/build-child";
+  - import { createFakeRunner } from "./../../testing/fake-runner";
+  - export * from "../../testing";
+  - const t = await import("../../testing");
+  - const t = await import(`../../testing/index`);
+  - const t = require("../../testing");

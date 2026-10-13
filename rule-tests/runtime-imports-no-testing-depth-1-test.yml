@@ -1,0 +1,19 @@
+id: runtime-imports-no-testing-depth-1
+# A file directly in src/, ts/ or plugins/ (src/main.ts, plugins/index.ts): one
+# climb reaches the repo root.
+valid:
+  # Zero climbs, or a name that merely ends in testing.
+  - import { helper } from "./testing/helper";
+  - import x from "../testing-utils";
+  - import y from "../shared/testing";
+  # Two climbs leave the repository.
+  - import { createFakeRunner } from "../../testing";
+  - import { runMany } from "./runtime/process";
+invalid:
+  - import { createFakeRunner } from "../testing";
+  - import { buildInChild } from "../testing/build-child";
+  - import { createFakeRunner } from "./../testing/fake-runner";
+  - export * from "../testing";
+  - const t = await import("../testing");
+  - const t = await import(`../testing/index`);
+  - const t = require("../testing");

@@ -5,9 +5,23 @@
 # reach `build()`, which is build-time only (src/build.ts). Import them from a
 # test, never from the program.
 #
-# Like plugin-imports-sdk-only, the rule reads the specifier alone: a climb
-# that ends at the `testing` directory, or the package subpath. A plugin's own
-# `./testing/...` folder is its own and passes.
+# Two ways name them. The package subpath `eris/sdk/testing` is the same from any
+# file: the first document. The directory is a relative climb, and a climb
+# reaches the repo-root testing/ only when it has as many `../` as the importing
+# file has directories between it and the root (src/main.ts: 1, plugins/yak/x.ts:
+# 2). `../testing` is the root's from src/main.ts, but from plugins/yak/x.ts it is
+# plugins/testing, a directory of its own, and that passes. A rule reads the
+# specifier, not the file's path, so the climb forms get one document per depth:
+# `files` takes that depth and deeper, `ignores` the next depth and deeper, and
+# the regex counts that many `../`. The last document takes every file four or
+# more directories down, where the exact depth is not known, and refuses any
+# climb of five or more (it errs toward the error); add the exact depth above it
+# when a source file goes that deep. A plugin's own `./testing/...` folder is its
+# own and passes.
+#
+# Every way TypeScript names a module is held the same way (as in
+# plugin-imports-sdk-only): `import`/`export ... from`, `require()`, and dynamic
+# `import()` with a quoted or template-literal specifier.
 id: runtime-imports-no-testing
 language: typescript
 severity: error
@@ -47,4 +61,225 @@ rule:
     - kind: template_string
   all:
     - matches: specifier
-    - regex: ^["'`](\./)?(\.\./)+testing(/[^"'`]*)?["'`]$|^["'`]eris/sdk/testing["'`]$
+    - regex: ^["'`]eris/sdk/testing["'`]$
+---
+id: runtime-imports-no-testing-depth-1
+language: typescript
+severity: error
+message: >-
+  The program and its plugins never import the test helpers (testing/ or
+  `eris/sdk/testing`): they would be compiled into every binary. Import them
+  from a test.
+note: docs/dev/PLUGINS.md#testing-a-distribution
+files:
+  - src/**/*.ts
+  - ts/**/*.ts
+  - plugins/**/*.ts
+ignores:
+  - src/*/**/*.ts
+  - ts/*/**/*.ts
+  - plugins/*/**/*.ts
+utils:
+  # A string or template literal naming a module.
+  specifier:
+    any:
+      - inside:
+          any:
+            - kind: import_statement
+            - kind: export_statement
+            - kind: import_require_clause
+          field: source
+      - inside:
+          kind: arguments
+          inside:
+            kind: call_expression
+            field: arguments
+            has:
+              field: function
+              any:
+                - kind: import
+                - kind: identifier
+                  regex: ^require$
+rule:
+  any:
+    - kind: string
+    - kind: template_string
+  all:
+    - matches: specifier
+    - regex: ^["'`](\./)?(\.\./){1}testing(/[^"'`]*)?["'`]$
+---
+id: runtime-imports-no-testing-depth-2
+language: typescript
+severity: error
+message: >-
+  The program and its plugins never import the test helpers (testing/ or
+  `eris/sdk/testing`): they would be compiled into every binary. Import them
+  from a test.
+note: docs/dev/PLUGINS.md#testing-a-distribution
+files:
+  - src/*/**/*.ts
+  - ts/*/**/*.ts
+  - plugins/*/**/*.ts
+ignores:
+  - src/*/*/**/*.ts
+  - ts/*/*/**/*.ts
+  - plugins/*/*/**/*.ts
+utils:
+  # A string or template literal naming a module.
+  specifier:
+    any:
+      - inside:
+          any:
+            - kind: import_statement
+            - kind: export_statement
+            - kind: import_require_clause
+          field: source
+      - inside:
+          kind: arguments
+          inside:
+            kind: call_expression
+            field: arguments
+            has:
+              field: function
+              any:
+                - kind: import
+                - kind: identifier
+                  regex: ^require$
+rule:
+  any:
+    - kind: string
+    - kind: template_string
+  all:
+    - matches: specifier
+    - regex: ^["'`](\./)?(\.\./){2}testing(/[^"'`]*)?["'`]$
+---
+id: runtime-imports-no-testing-depth-3
+language: typescript
+severity: error
+message: >-
+  The program and its plugins never import the test helpers (testing/ or
+  `eris/sdk/testing`): they would be compiled into every binary. Import them
+  from a test.
+note: docs/dev/PLUGINS.md#testing-a-distribution
+files:
+  - src/*/*/**/*.ts
+  - ts/*/*/**/*.ts
+  - plugins/*/*/**/*.ts
+ignores:
+  - src/*/*/*/**/*.ts
+  - ts/*/*/*/**/*.ts
+  - plugins/*/*/*/**/*.ts
+utils:
+  # A string or template literal naming a module.
+  specifier:
+    any:
+      - inside:
+          any:
+            - kind: import_statement
+            - kind: export_statement
+            - kind: import_require_clause
+          field: source
+      - inside:
+          kind: arguments
+          inside:
+            kind: call_expression
+            field: arguments
+            has:
+              field: function
+              any:
+                - kind: import
+                - kind: identifier
+                  regex: ^require$
+rule:
+  any:
+    - kind: string
+    - kind: template_string
+  all:
+    - matches: specifier
+    - regex: ^["'`](\./)?(\.\./){3}testing(/[^"'`]*)?["'`]$
+---
+id: runtime-imports-no-testing-depth-4
+language: typescript
+severity: error
+message: >-
+  The program and its plugins never import the test helpers (testing/ or
+  `eris/sdk/testing`): they would be compiled into every binary. Import them
+  from a test.
+note: docs/dev/PLUGINS.md#testing-a-distribution
+files:
+  - src/*/*/*/**/*.ts
+  - ts/*/*/*/**/*.ts
+  - plugins/*/*/*/**/*.ts
+ignores:
+  - src/*/*/*/*/**/*.ts
+  - ts/*/*/*/*/**/*.ts
+  - plugins/*/*/*/*/**/*.ts
+utils:
+  # A string or template literal naming a module.
+  specifier:
+    any:
+      - inside:
+          any:
+            - kind: import_statement
+            - kind: export_statement
+            - kind: import_require_clause
+          field: source
+      - inside:
+          kind: arguments
+          inside:
+            kind: call_expression
+            field: arguments
+            has:
+              field: function
+              any:
+                - kind: import
+                - kind: identifier
+                  regex: ^require$
+rule:
+  any:
+    - kind: string
+    - kind: template_string
+  all:
+    - matches: specifier
+    - regex: ^["'`](\./)?(\.\./){4}testing(/[^"'`]*)?["'`]$
+---
+id: runtime-imports-no-testing-depth-5-plus
+language: typescript
+severity: error
+message: >-
+  The program and its plugins never import the test helpers (testing/ or
+  `eris/sdk/testing`): they would be compiled into every binary. Import them
+  from a test.
+note: docs/dev/PLUGINS.md#testing-a-distribution
+files:
+  - src/*/*/*/*/**/*.ts
+  - ts/*/*/*/*/**/*.ts
+  - plugins/*/*/*/*/**/*.ts
+utils:
+  # A string or template literal naming a module.
+  specifier:
+    any:
+      - inside:
+          any:
+            - kind: import_statement
+            - kind: export_statement
+            - kind: import_require_clause
+          field: source
+      - inside:
+          kind: arguments
+          inside:
+            kind: call_expression
+            field: arguments
+            has:
+              field: function
+              any:
+                - kind: import
+                - kind: identifier
+                  regex: ^require$
+rule:
+  any:
+    - kind: string
+    - kind: template_string
+  all:
+    - matches: specifier
+    - regex: ^["'`](\./)?(\.\./){5,}testing(/[^"'`]*)?["'`]$

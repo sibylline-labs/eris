@@ -3,19 +3,18 @@ valid:
   - import { runMany } from "../runtime/process";
   - import { definePlugin } from "../../src/cli/plugin";
   - import { z } from "zod";
+  # The SDK itself, and a path under it that is not the testing subpath.
+  - import { definePlugin } from "eris/sdk";
+  - import x from "eris/sdk/testing-utils";
+  - import y from "eris/sdk/testing/extra";
+  - import z from "my-eris/sdk/testing";
   # A plugin's own folder of that name is the plugin's.
   - import { helper } from "./testing/helper";
   - const run = (await import("./handlers")).runDemo;
-  # Another directory that merely ends in the name.
-  - import x from "../shared/testing";
-  - import y from "../testing-utils";
 invalid:
-  - import { createFakeRunner } from "../../testing";
-  - import { buildInChild } from "../../../testing/build-child";
-  - import { createFakeRunner } from "./../testing/fake-runner";
-  - export * from "../testing";
-  - const t = await import("../testing");
-  - const t = await import(`../../testing/index`);
-  - const t = require("../testing");
   - import { createFakeRunner } from "eris/sdk/testing";
+  - import { buildInChild } from 'eris/sdk/testing';
+  - export * from "eris/sdk/testing";
   - const t = await import("eris/sdk/testing");
+  - const t = await import(`eris/sdk/testing`);
+  - const t = require("eris/sdk/testing");
