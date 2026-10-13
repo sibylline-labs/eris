@@ -316,6 +316,18 @@ and runs. Copy its shape.
    composition, and by running the binary `build()` writes
    ([below](#testing-a-distribution)).
 
+### Starting without node_modules
+
+When a package a verb needs is not installed, core ends the command with the
+`eris-deps-not-installed` block, naming the distribution's `installRoot` in its
+`fix:` line. The SDK does not export that renderer (`missingDependencyBlock`): an
+export would sit in `eris/sdk`, which cannot load when `eris` itself is the missing
+package, the one case a distribution's entry must handle before it has loaded
+anything. Such an entry loads its composition with a dynamic `import()`, and writes
+the block by hand for a package that import cannot resolve (the grammar is
+[OUTPUT-CONTRACT.md](../OUTPUT-CONTRACT.md) §4, the slug's text
+[ERRORS.md](../ERRORS.md#eris-deps-not-installed)), leaving every other failure a crash.
+
 ### Testing a distribution
 
 Two seams: `main(argv, env, { cli })` with the distribution's composition, which
