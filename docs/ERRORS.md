@@ -157,7 +157,8 @@ Fix: build eris from source for this platform and run that build; see
 
 Homebrew installed this eris: its real path (symlinks resolved) is under a
 Homebrew `Cellar` (`/opt/homebrew/Cellar`, `/usr/local/Cellar` or
-`/home/linuxbrew/.linuxbrew/Cellar`). Replacing a file Homebrew owns leaves its
+`/home/linuxbrew/.linuxbrew/Cellar`), or in a keg under any other prefix
+(a path holding `/Cellar/<formula>/<version>/`). Replacing a file Homebrew owns leaves its
 receipt and the file disagreeing, and the next `brew upgrade` or
 `brew uninstall` misbehaves.
 

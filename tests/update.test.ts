@@ -411,6 +411,31 @@ describe("eris update refuses, naming the fix", () => {
       expect(readFileSync(real, "utf8")).toBe(fakeEris("v0.0.1"));
     });
 
+    it("when Homebrew installed it under a custom prefix, by its Cellar/<name>/<version>/ path", async () => {
+      /** When only the three default prefixes count as Homebrew's, a brew with a custom prefix (HOMEBREW_PREFIX=~/brew) has its binary overwritten behind brew's back — observed at the block, with the default cellars and no request made. */
+      const real = join(w.dir, "custom-brew", "Cellar", "eris", "0.0.1", "bin", "eris");
+      mkdirSync(join(real, ".."), { recursive: true });
+      writeFileSync(real, fakeEris("v0.0.1"));
+      chmodSync(real, 0o755);
+      const linked = join(w.bin, "brewed");
+      symlinkSync(real, linked);
+      const r = await w.run(["update"], { host: { execPath: linked } });
+      expectFailBlock(asRun(r), "update-brew-managed");
+      expect(w.fx.hits).toEqual([]);
+      expect(readFileSync(real, "utf8")).toBe(fakeEris("v0.0.1"));
+    });
+
+    it.each([
+      ["/home/me/brew/Cellar/eris/0.2.0/bin/eris", true],
+      ["/opt/homebrew/Cellar/eris/0.2.0_1/bin/eris", true],
+      ["/home/me/Cellar/eris", false],
+      ["/home/me/bin/eris", false],
+      ["/home/me/NotCellar/eris/0.2.0/bin/eris", false],
+    ])("brewManaged(%p) is %p", (path, managed) => {
+      /** When the Cellar test matches a word inside another directory name, or misses a keg path, update refuses a user's own copy or overwrites brew's — observed at the decision. */
+      expect(brewManaged(path, defaultHost().cellars)).toBe(managed);
+    });
+
     it.skipIf(isRoot)("when the directory cannot be written, before downloading anything", async () => {
       /** When the write permission is found only after the download, a user on a read-only install waits for 60 MB and then fails — observed at the block and at the fixture, which saw no request. */
       chmodSync(w.bin, 0o555);

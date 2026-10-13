@@ -77,7 +77,7 @@ Refusals are explained in docs/ERRORS.md.
 /** The platforms releases publish a binary for. */
 const SUPPORTED = new Set(["darwin-arm64", "linux-x64"]);
 
-/** Where Homebrew keeps the files it owns, per platform. */
+/** Where Homebrew keeps the files it owns under its default prefixes; a keg under any other prefix is found by its path (`brewManaged`). */
 const BREW_CELLARS = ["/opt/homebrew/Cellar/", "/usr/local/Cellar/", "/home/linuxbrew/.linuxbrew/Cellar/"] as const;
 
 /** How long the new binary has to answer `--version`. */
@@ -120,9 +120,12 @@ export function defaultHost(): UpdateHost {
   };
 }
 
-/** Whether `realPath` (symlinks resolved) is a file Homebrew installed. */
+/** A keg: `<prefix>/Cellar/<formula>/<version>/`, wherever the prefix is (HOMEBREW_PREFIX may be anywhere). */
+const KEG = /\/Cellar\/[^/]+\/[^/]+\//;
+
+/** Whether `realPath` (symlinks resolved) is a file Homebrew installed: under a known cellar, or in a keg under any prefix. */
 export function brewManaged(realPath: string, cellars: readonly string[]): boolean {
-  return cellars.some((cellar) => realPath.startsWith(cellar));
+  return KEG.test(realPath) || cellars.some((cellar) => realPath.startsWith(cellar));
 }
 
 /** The checksum SHA256SUMS lists for `name` (`<hex>  <name>`, or `<hex> *<name>`), lower-case. */
