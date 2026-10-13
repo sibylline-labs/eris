@@ -15,9 +15,13 @@
 import { join, relative } from "node:path";
 import { parseArgs as parseCliArgs } from "node:util";
 import { PLUGINS } from "../plugins";
-import { build } from "../src/build";
+import { build, type BuildOptions } from "../src/build";
 
 const REPO = join(import.meta.dir, "..");
+
+/** This repository's binary: `src/main.ts` composed with this build's plugins.
+ *  Exported, like examples/distribution/build.ts's, for `buildInChild` (eris/sdk/testing). */
+export const BUILD: BuildOptions = { entry: join(REPO, "src/main.ts"), root: REPO, plugins: PLUGINS };
 
 function parseArgs(argv: string[]): { outfile?: string; tag?: string } {
   try {
@@ -36,7 +40,7 @@ function parseArgs(argv: string[]): { outfile?: string; tag?: string } {
 if (import.meta.main) {
   try {
     const args = parseArgs(process.argv.slice(2));
-    const r = await build({ entry: join(REPO, "src/main.ts"), root: REPO, plugins: PLUGINS, ...args });
+    const r = await build({ ...BUILD, ...args });
     process.stdout.write(`${relative(process.cwd(), r.outfile) || r.outfile}\n`);
     process.stderr.write(`INFO build ${r.buildId}, ${r.assets} assets\n`);
   } catch (e) {

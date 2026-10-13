@@ -1,8 +1,10 @@
 /**
  * sdk.ts — `eris/sdk`, the one module another repository imports from this
  * package: a distribution's entry, its plugins and the libraries they share
- * (docs/dev/PLUGINS.md#distributions). The package's `exports` map names it and
- * nothing deeper, so a core file can move without breaking a distribution.
+ * (docs/dev/PLUGINS.md#distributions). The package's `exports` map names it,
+ * `eris/sdk/testing` (the test helpers, testing/, which this module does not
+ * export, so no binary carries them) and nothing deeper, so a core file can
+ * move without breaking a distribution.
  *
  * What it carries:
  *

@@ -14,6 +14,7 @@ import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from "bu
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { buildInChild } from "eris/sdk/testing";
 import { BUILD } from "../examples/distribution/build";
 import { DISTRIBUTION, DISTRIBUTION_PLUGINS } from "../examples/distribution/main";
 import yak from "../plugins/yak";
@@ -23,7 +24,6 @@ import type { ErisPlugin } from "../src/cli/plugin";
 import { REGISTRY } from "../src/cli/registry";
 import { CLI, HANDLERS, main } from "../src/main";
 import { checkoutOnly, ERIS, oracleEnv, REPO, type Sandbox, sandbox } from "./helpers/blackbox";
-import { buildInChild } from "./helpers/build-child";
 
 setDefaultTimeout(120_000);
 
@@ -122,6 +122,12 @@ describe("the package's exports", () => {
     expect(caught).toBeInstanceOf(GlobalFlagError);
     expect((caught as InstanceType<typeof GlobalFlagError>).block).toContain("slug: output-format-unknown\n");
   });
+
+  it("eris/sdk/testing carries the test helpers a distribution's suites need, and eris/sdk (the list above) none of them", async () => {
+    /** When a test helper moves into `eris/sdk` it ships in every distribution's SDK surface, and when one leaves the subpath a distribution's suites copy it again: observed through the package specifier, as a dependent repository's tests import it. */
+    const testing = await import("eris/sdk/testing");
+    expect(Object.keys(testing).sort()).toEqual(["buildInChild", "createFakeRunner"]);
+  });
 });
 
 describe("this build's composition", () => {
@@ -179,7 +185,7 @@ describe.skipIf(checkoutOnly("builds its own binary from this checkout's source"
   let script: string;
   beforeAll(async () => {
     rmSync(join(REPO, "dist", "fixture"), { recursive: true, force: true });
-    const r = buildInChild({ preset: "distribution", outfile });
+    const r = buildInChild({ module: join(REPO, "examples", "distribution", "build.ts"), outfile });
     expect(r).toMatchObject({ outfile, releaseRepo: "example-org/eris-distribution" });
     sb = sandbox("eris-dist-");
     const c = await sb.run(["completion", "bash"], { program: outfile });

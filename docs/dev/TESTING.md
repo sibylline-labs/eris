@@ -32,10 +32,13 @@ checkout itself (the shim, a copy of the tree, the shell surface) is guarded by
 skip list. A black-box test that names the install root (a `docs:` line) asks
 `installRoot()`, never `REPO`.
 
-A suite that needs a binary of its own compiles it with `buildInChild`
-(`tests/helpers/build-child.ts`), one child bun per build, never `build()` in the test
-process: on Linux a compile in a later test file fails reading a module an earlier
-file's compile read. A `build()` refusal that throws before bundling stays in-process.
+A suite that needs a binary of its own compiles it with `buildInChild` from
+`eris/sdk/testing` (`testing/build-child.ts`, which a distribution's suites use too),
+one child bun per build, never `build()` in the test process: on Linux a compile in a
+later test file fails reading a module an earlier file's compile read. It takes the
+file of a build, a module exporting `BUILD` (`scripts/build.ts` for this repository's
+binary, `examples/distribution/build.ts` for the fixture). A `build()` refusal that
+throws before bundling stays in-process.
 
 ## Kinds of test
 

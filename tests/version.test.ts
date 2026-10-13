@@ -10,13 +10,16 @@
 
 import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { join } from "node:path";
+import { buildInChild } from "eris/sdk/testing";
 import { PLUGINS } from "../plugins";
 import { build, type BuildOptions } from "../src/build";
 import { main } from "../src/main";
 import { checkoutOnly, expectFailBlock, REPO, type Sandbox, sandbox } from "./helpers/blackbox";
-import { buildInChild } from "./helpers/build-child";
 
 setDefaultTimeout(120_000);
+
+/** This repository's own build options (scripts/build.ts): the module a child bun builds from. */
+const CORE_BUILD = join(REPO, "scripts", "build.ts");
 
 async function run(argv: string[]): Promise<{ rc: number; stdout: string; stderr: string }> {
   let stdout = "";
@@ -74,14 +77,14 @@ describe.skipIf(checkoutOnly("builds its own binaries from this checkout's sourc
   let sb: Sandbox;
   beforeAll(() => {
     buildInChild({
-      preset: "core",
+      module: CORE_BUILD,
       outfile: tagged,
       tag: "v0.0.1",
       releaseRepo: "example-org/eris-fork",
       versionExtra: "core example-pin",
       docsBase: "https://docs.example.com/eris/blob/main/",
     });
-    buildInChild({ preset: "core", outfile: plain });
+    buildInChild({ module: CORE_BUILD, outfile: plain });
     sb = sandbox("eris-version-");
   });
   afterAll(() => sb?.cleanup());

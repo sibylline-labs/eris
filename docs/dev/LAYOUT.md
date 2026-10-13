@@ -43,19 +43,22 @@ packages/yak-contract/  # the Yaks wire contract v2, a bun workspace package tha
 examples/plugins/widgets/  # the worked plugin example tests/plugins.test.ts composes
 examples/distribution/  # the worked distribution: an entry importing eris/sdk alone, a demo plugin with a
                         #   completion domain, a menu, and build.ts; tests/distribution.test.ts builds and runs it
+testing/                # `eris/sdk/testing` (package.json exports): the test helpers a distribution's suites
+                        #   reuse. fake-runner.ts (createFakeRunner), build-child.ts (buildInChild: build() in a
+                        #   child bun, from a module exporting BUILD). Outside src/, so no binary carries it
 scripts/build.ts        # `bun scripts/build.ts` → dist/eris-<os>-<arch> (gitignored): this repo's binary,
-                        #   through src/build.ts
+                        #   through src/build.ts; exports its options as BUILD
 scripts/render-formula.ts  # the Homebrew formula for a release, from packaging/homebrew/eris.rb.tmpl
 .github/workflows/      # ci.yml (the PR gates) · release.yml (tag → build, oracle, publish, tap)
 sgconfig.yml            # the code-quality rules over eris's OWN source (ruleDirs: rules; cases in rule-tests/):
 rules/                  #   adhoc-argv-parse (one argv parser), env-read-own-property(-plugin) (env names
 rule-tests/             #   are read through readEnv), plugin-manifest-lazy-handlers + plugin-imports-sdk-only
-                        #   (the plugin contract), distribution-imports-sdk-only (eris/sdk alone)
+                        #   (the plugin contract), distribution-imports-sdk-only (eris/sdk alone),
+                        #   runtime-imports-no-testing (the program never imports testing/)
 tests/                  # `bun test ./tests` — the whole suite. helpers/blackbox.ts drives the real
                         #   `./eris` in a physical per-test sandbox (PATH fakes, hideReal); helpers/plugins/
                         #   holds a tripwire plugin; helpers/release-fixture.ts is GitHub's releases API
-                        #   on loopback, for eris update; helpers/build-child.ts compiles a test's binary
-                        #   with build() in a child bun
+                        #   on loopback, for eris update
 packaging/homebrew/     # eris.rb.tmpl, the formula the release workflow renders into the tap
 docs/                   # ARCHITECTURE.md, OUTPUT-CONTRACT.md, ERRORS.md, the verb docs, dev/
 ```

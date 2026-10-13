@@ -289,7 +289,25 @@ and runs. Copy its shape.
    describes.
 
 5. **Test** by driving `main(argv, env, { cli })` with the distribution's
-   composition, and by running the binary `build()` writes.
+   composition, and by running the binary `build()` writes
+   ([below](#testing-a-distribution)).
+
+### Testing a distribution
+
+Two seams: `main(argv, env, { cli })` with the distribution's composition, which
+every command line crosses, and the binary `build()` writes, driven as a
+subprocess. A distribution's suites import their helpers from **`eris/sdk/testing`**
+rather than copying them:
+
+| Export | Use |
+|---|---|
+| `createFakeRunner(respond)`, `FakeRunner` | A `Runner` (`eris/sdk`) that records every call in `calls` and answers from `respond`, to inject in place of `nodeRunner`. |
+| `buildInChild({ module, outfile, tag?, releaseRepo?, versionExtra?, docsBase? })` | `build()` in a child bun, returning its `BuildResult`. `module` is the absolute path of a file that exports `BUILD`, the distribution's `BuildOptions` (`examples/distribution/build.ts` is one); the rest overrides it. Use it for every test that compiles a binary: a compile in the test process fails on Linux in a later test file ([TESTING.md](TESTING.md#the-binary-oracle)). |
+
+The subpath is for tests. It is a separate module and `eris/sdk` does not export
+it, so a binary does not carry it: keep it out of the distribution's own source
+(`distribution-imports-sdk-only` refuses it in the example, and this repository's
+`runtime-imports-no-testing` rule keeps core and its plugins from importing it).
 
 ## Testing a plugin
 

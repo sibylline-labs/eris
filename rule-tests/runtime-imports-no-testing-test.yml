@@ -1,0 +1,21 @@
+id: runtime-imports-no-testing
+valid:
+  - import { runMany } from "../runtime/process";
+  - import { definePlugin } from "../../src/cli/plugin";
+  - import { z } from "zod";
+  # A plugin's own folder of that name is the plugin's.
+  - import { helper } from "./testing/helper";
+  - const run = (await import("./handlers")).runDemo;
+  # Another directory that merely ends in the name.
+  - import x from "../shared/testing";
+  - import y from "../testing-utils";
+invalid:
+  - import { createFakeRunner } from "../../testing";
+  - import { buildInChild } from "../../../testing/build-child";
+  - import { createFakeRunner } from "./../testing/fake-runner";
+  - export * from "../testing";
+  - const t = await import("../testing");
+  - const t = await import(`../../testing/index`);
+  - const t = require("../testing");
+  - import { createFakeRunner } from "eris/sdk/testing";
+  - const t = await import("eris/sdk/testing");

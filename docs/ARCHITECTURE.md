@@ -117,7 +117,9 @@ it is not a verb, but it renders JSON under `--output` and reads no file from th
 - **A plugin imports the SDK and nothing else of core.** `src/cli/plugin.ts` is the one core module
   under `plugins/` may import (`plugin-imports-sdk-only`, in `rules/`).
 - **A distribution imports `eris/sdk` and nothing else of core.** The `exports` map refuses a
-  deeper path; `distribution-imports-sdk-only` holds the example distribution to it.
+  deeper path; `distribution-imports-sdk-only` holds the example distribution to it. Its suites
+  may also import `eris/sdk/testing` (`testing/`), which no source the binary bundles imports
+  (`runtime-imports-no-testing`).
 - **Completion imports the registry and nothing else.** `source <(eris completion bash)` runs on
   every shell start, so a broken source file elsewhere must not break a login shell.
   `tests/completion.test.ts` corrupts every other verb and every plugin's handler code in a copied

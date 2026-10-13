@@ -11,12 +11,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeou
 import { spawn } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { buildInChild } from "eris/sdk/testing";
 import { checkoutOnly, expectFailBlock, REPO, type Sandbox, sandbox } from "./helpers/blackbox";
-import { buildInChild } from "./helpers/build-child";
 import { releaseFixture, type ReleaseFixture } from "./helpers/release-fixture";
 
 setDefaultTimeout(180_000);
 
+/** This repository's own build options (scripts/build.ts): the module a child bun builds from. */
+const CORE_BUILD = join(REPO, "scripts", "build.ts");
 const REPOSITORY = "example-org/eris-fork";
 const ASSET = `eris-${process.platform}-${process.arch}`;
 const TOKEN = ["ghp", "_", "b".repeat(36)].join("");
@@ -34,8 +36,8 @@ describe.skipIf(checkoutOnly("builds its own binaries from this checkout's sourc
   beforeAll(() => {
     expect(["darwin-arm64", "linux-x64"], `these tests run on a platform releases publish for, not ${process.platform}-${process.arch}`).toContain(`${process.platform}-${process.arch}`);
     rmSync(dist, { recursive: true, force: true });
-    buildInChild({ preset: "core", releaseRepo: REPOSITORY, outfile: v1, tag: "v0.0.1" });
-    buildInChild({ preset: "core", releaseRepo: REPOSITORY, outfile: v2, tag: "v0.0.2", versionExtra: "core example-pin", docsBase: DOCS_BASE });
+    buildInChild({ module: CORE_BUILD, releaseRepo: REPOSITORY, outfile: v1, tag: "v0.0.1" });
+    buildInChild({ module: CORE_BUILD, releaseRepo: REPOSITORY, outfile: v2, tag: "v0.0.2", versionExtra: "core example-pin", docsBase: DOCS_BASE });
     fx = releaseFixture(REPOSITORY);
     fx.publish({ tag: "v0.0.2", assets: { [ASSET]: readFileSync(v2) } });
   });

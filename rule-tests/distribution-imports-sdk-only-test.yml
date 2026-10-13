@@ -19,6 +19,9 @@ invalid:
   - const m = await import(`eris/src/main`);
   - const r = require("eris/src/cli/args");
   - export * from "eris/src/cli/plugin";
+  # The test helpers are for a distribution's suites, never its source: the binary would carry them.
+  - import { createFakeRunner } from "eris/sdk/testing";
+  - const t = await import("eris/sdk/testing");
   # The package's entry is the program, not the SDK.
   - import { main } from "eris";
   # A climb out of the distribution, into core's files in this repository.

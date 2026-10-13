@@ -7,6 +7,9 @@
 # this repository could otherwise make. A distribution that imports past the
 # SDK breaks when core moves a file it was never promised.
 #
+# `eris/sdk/testing` is refused here as well: it is for a distribution's suites,
+# and a distribution's source is what its binary bundles.
+#
 # Like plugin-imports-sdk-only, the rule reads the specifier alone, so every
 # `..` climb is an error: a distribution reaches its own files with `./`.
 id: distribution-imports-sdk-only

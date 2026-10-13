@@ -2,8 +2,8 @@
  * process.ts — the subprocess adapter.
  *
  * Every external binary the TS side runs goes through a `Runner`, so tests
- * inject `createFakeRunner` instead of stubbing PATH, and the safety rules
- * live in ONE place:
+ * inject a fake (`createFakeRunner`, testing/fake-runner.ts) instead of stubbing
+ * PATH, and the safety rules live in ONE place:
  *
  *   - argv arrays only, never a shell string (`shell` is never set).
  *   - stdout/stderr captured as Buffers. The ONLY stderr a result exposes is
@@ -366,23 +366,7 @@ export const nodeRunner: Runner = {
   },
 };
 
-// --- fakes and fan-out -------------------------------------------------------------
-
-export type FakeRunner = Runner & { calls: Array<{ argv: readonly string[]; opts: RunOptions }> };
-
-/** A Runner that records every call and answers from `respond`. */
-export function createFakeRunner(
-  respond: (argv: readonly string[], opts: RunOptions) => RunResult | Promise<RunResult>,
-): FakeRunner {
-  const calls: FakeRunner["calls"] = [];
-  return {
-    calls,
-    async run(argv, opts) {
-      calls.push({ argv, opts });
-      return respond(argv, opts);
-    },
-  };
-}
+// --- fan-out -------------------------------------------------------------
 
 export interface RunJob {
   argv: readonly string[];
