@@ -184,12 +184,37 @@ describe("a distribution owns the bare program", () => {
       expect({ help, rc: r.rc, stderr: r.stderr }).toEqual({ help, rc: 0, stderr: "" });
       expect(r.stdout).toStartWith("Usage: eris <command> [args]\n");
       expect(r.stdout).toContain("\n  widgets ");
+      // The usage points at the menu the bare program now owns.
+      expect(r.stdout).toEndWith("\nRun 'eris <command> --help' for command-specific usage.\nRun 'eris' without arguments for interactive mode.\n");
     }
-    // PAIRED: without the option, bare `eris` is core's usage.
-    expect((await run([], { cli: withWidgets })).stdout).toStartWith("Usage: eris <command> [args]\n");
+    // PAIRED: without the option, bare `eris` is core's usage, and it promises no interactive mode.
+    const plain = await run([], { cli: withWidgets });
+    expect(plain.stdout).toStartWith("Usage: eris <command> [args]\n");
+    expect(plain.stdout).toEndWith("\nRun 'eris <command> --help' for command-specific usage.\n");
+    expect(plain.stdout).not.toContain("interactive mode");
     expect(() => composeCli(REGISTRY, HANDLERS, [], { menu: "launcher" as unknown as () => Promise<VerbHandler> })).toThrow(
       new PluginCompositionError("menu must be a handler thunk, () => Promise<VerbHandler>"),
     );
+  });
+
+  it("a distribution adds its own paragraph to `eris completion --help`, and without one the text is core's", async () => {
+    /** When the completion note is dropped, a distribution whose domains complete more than core's (env names, say) cannot say so in the help its users read: observed through `main`. */
+    const note = "Also completes widget names.\nThey come from the local cache.";
+    const noted = composeCli(REGISTRY, HANDLERS, [widgets], { completionNote: note });
+    for (const argv of [["completion"], ["completion", "--help"]]) {
+      const r = await run(argv, { cli: noted });
+      expect({ argv, rc: r.rc, stderr: r.stderr }).toEqual({ argv, rc: 0, stderr: "" });
+      expect(r.stdout).toContain(`never runs eris and never touches the network.\n${note}\nSee docs/COMPLETION.md.\n`);
+    }
+    // PAIRED: without the option, core's text, with nothing between its description and the doc pointer.
+    const core = await run(["completion", "--help"], { cli: withWidgets });
+    expect(core.stdout).toContain("never runs eris and never touches the network.\nSee docs/COMPLETION.md.\n");
+    expect(core.stdout).not.toContain("widget names");
+    for (const bad of ["", "tab\there", "line\n\nbreak", "café", 7 as unknown as string]) {
+      expect(() => composeCli(REGISTRY, HANDLERS, [], { completionNote: bad })).toThrow(
+        new PluginCompositionError("completionNote must be one or more non-empty lines of printable ASCII"),
+      );
+    }
   });
 });
 

@@ -21,10 +21,14 @@
  *   - a completion slot the emitted script cannot hold (`complete` on a row, core's
  *     or a plugin's): a word that is not shell-safe, a domain helper or library text that fails
  *     src/cli/commands/completion/domain.ts, or one domain (or one helper
- *     function) given two different texts across the build.
+ *     function) given two different texts across the build;
+ *   - a `menu` that is not a handler thunk, or a `completionNote` that is not
+ *     one or more non-empty lines of printable ASCII.
  *
  * A distribution may own the bare program (`eris` with no arguments): its
- * `menu` handler replaces core's usage there; `-h` and `--help` stay the usage.
+ * `menu` handler replaces core's usage there; `-h` and `--help` stay the usage,
+ * and say that bare `eris` is interactive. It may also add a paragraph to
+ * `eris completion --help` (`completionNote`).
  *
  * Entitlements are not composition: a `Cli` says which product each plugin
  * group belongs to, and `lockedProduct` checks a workspace's entitlements
@@ -63,6 +67,10 @@ export interface Cli {
   readonly jsonFix: string;
   /** The plugin groups, in composition order. */
   readonly groups: readonly PluginGroup[];
+  /** Whether the bare program is a distribution's menu: the top-level usage then points at it. */
+  readonly hasMenu: boolean;
+  /** The distribution's paragraph of `eris completion --help` (`ComposeOptions.completionNote`), or null. */
+  readonly completionNote: string | null;
 }
 
 /** A composed CLI and the workspace's entitlements: what one command line runs against. */
@@ -76,10 +84,17 @@ export interface Session {
 export const NO_ENTITLEMENTS: ReadonlySet<string> = new Set();
 
 const COMMAND_NAME = /^[a-z][a-z0-9-]*$/;
+/** Lines of printable ASCII, none empty, as `eris completion --help` prints them. */
+const COMPLETION_NOTE = /^[\x20-\x7e]+(?:\n[\x20-\x7e]+)*$/;
 
 export interface ComposeOptions {
-  /** The bare program's handler (`eris` with no arguments); core's usage when absent. */
+  /** The bare program's handler (`eris` with no arguments); core's usage when absent.
+   *  The top-level usage then also says `Run 'eris' without arguments for interactive mode.` */
   readonly menu?: () => Promise<VerbHandler>;
+  /** A paragraph `eris completion --help` prints after core's description: what
+   *  this distribution's completion domains offer. One or more lines of printable
+   *  ASCII, none empty, no trailing newline. */
+  readonly completionNote?: string;
 }
 
 /** The completion domains a build has seen, so one name or function keeps one text. */
@@ -125,6 +140,9 @@ export function composeCli(coreRows: Rows, coreHandlers: Handlers, plugins: read
   if (opts.menu !== undefined) {
     if (typeof opts.menu !== "function") throw new PluginCompositionError("menu must be a handler thunk, () => Promise<VerbHandler>");
     handlers[""] = opts.menu;
+  }
+  if (opts.completionNote !== undefined && (typeof opts.completionNote !== "string" || !COMPLETION_NOTE.test(opts.completionNote))) {
+    throw new PluginCompositionError("completionNote must be one or more non-empty lines of printable ASCII");
   }
   const owner = new Map<string, string | null>();
   for (const k of [...Object.keys(ARGV_SHAPES), ...Object.keys(coreRows).filter((k) => !k.includes(" "))]) owner.set(k, null);
@@ -192,6 +210,8 @@ export function composeCli(coreRows: Rows, coreHandlers: Handlers, plugins: read
     jsonSurfaces: deriveJsonSurfaces(registry),
     jsonFix: unsupportedFix(fixLines),
     groups,
+    hasMenu: opts.menu !== undefined,
+    completionNote: opts.completionNote ?? null,
   };
 }
 

@@ -16,6 +16,7 @@ export const DISTRIBUTION_PLUGINS: readonly ErisPlugin[] = [...PLUGINS, demo];
 
 export const DISTRIBUTION = composeCli(REGISTRY, HANDLERS, DISTRIBUTION_PLUGINS, {
   menu: async () => (await import("./menu")).runMenu,
+  completionNote: "Also completes the names 'eris demo hello' greets (see the demo plugin).",
 });
 
 // This directory is the distribution's root (./build.ts builds from it too).

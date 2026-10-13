@@ -14,7 +14,7 @@ import type { Session } from "../compose";
 import { runBash } from "./completion/bash";
 import { runZsh } from "./completion/zsh";
 
-const USAGE = `Usage: eris completion <shell>
+const USAGE_HEAD = `Usage: eris completion <shell>
 
 Shells:
   bash    Emit the bash completion script (bash 3.2+ clean)
@@ -26,14 +26,21 @@ Make permanent:               echo 'source <(eris completion bash)' >> ~/.bashrc
 
 Completes command groups, verbs, flags and file-valued flags. A tab press
 never runs eris and never touches the network.
-See docs/COMPLETION.md.
 `;
+
+const USAGE_TAIL = `See docs/COMPLETION.md.
+`;
+
+/** Core's text, with a distribution's paragraph (`composeCli`'s `completionNote`) between the two halves. */
+function usageText(note: string | null): string {
+  return `${USAGE_HEAD}${note === null ? "" : `${note}\n`}${USAGE_TAIL}`;
+}
 
 export async function runCompletion(args: string[], ctx: CliContext & { session?: Session }): Promise<number> {
   const g = groupArgs("completion", args);
   if (g.kind === "sub") return (g.sub === "bash" ? runBash : runZsh)(g.rest, ctx);
   if (g.kind === "bare" || g.kind === "help") {
-    ctx.stdout.write(USAGE);
+    ctx.stdout.write(usageText(ctx.session?.cli.completionNote ?? null));
     return 0;
   }
   ctx.stderr.write(`ERROR Unknown completion shell: ${g.sub} (supported: bash, zsh)\n`);

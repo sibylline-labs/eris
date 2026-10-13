@@ -142,6 +142,9 @@ describe("this build's composition", () => {
     expect(help.status).toBe(0);
     const commands = help.stdout.split("\nCommands:\n")[1]!.split("\n\n")[0]!.split("\n").map((l) => l.trim().split(/\s+/)[0]);
     expect(commands).toEqual(["completion", "update", "yak"]);
+    // The public program has no menu, so it promises no interactive mode (the example distribution's usage does).
+    expect(help.stdout).toContain("\nRun 'eris <command> --help' for command-specific usage.\n");
+    expect(help.stdout).not.toContain("interactive mode");
   });
 });
 
@@ -150,7 +153,8 @@ describe("the example distribution, composed", () => {
     /** When a distribution's composition drops a layer (core, this build's plugins, its own) or its menu, a private build silently loses verbs or its launcher: observed through `main` with the fixture's composition. */
     expect(await run([])).toEqual({ rc: 0, stdout: "example distribution: yak, demo (eris --help for usage)\n", stderr: "" });
     const help = await run(["--help"]);
-    for (const line of ["\n  completion ", "\n  yak ", "\n  demo "]) expect(help.stdout).toContain(line);
+    for (const line of ["\n  completion ", "\n  yak ", "\n  demo ", "\nRun 'eris' without arguments for interactive mode.\n"]) expect(help.stdout).toContain(line);
+    expect((await run(["completion", "--help"])).stdout).toContain("never touches the network.\nAlso completes the names 'eris demo hello' greets (see the demo plugin).\nSee docs/COMPLETION.md.\n");
     expect(await run(["demo", "hello", "loud", "ada"])).toEqual({ rc: 0, stdout: "HELLO ADA\n", stderr: "" });
     expect((await run(["yak", "issue", "--help"])).stdout).toStartWith("usage: eris yak <issue|suggest|fatal>");
   });

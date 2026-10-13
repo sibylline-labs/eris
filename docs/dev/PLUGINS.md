@@ -196,8 +196,8 @@ from anything read at runtime.
 
 ## Composition and what it refuses
 
-`composeCli(coreRows, coreHandlers, plugins, { menu? })` (`src/cli/compose.ts`)
-merges the rows and throws `PluginCompositionError` on:
+`composeCli(coreRows, coreHandlers, plugins, { menu?, completionNote? })`
+(`src/cli/compose.ts`) merges the rows and throws `PluginCompositionError` on:
 
 - a group that collides with a built-in, an argv shape (`-h`), or another plugin's group;
 - a group that is not `impl: "ts"`, or a sub row with another impl (a JavaScript plugin can name one the type does not admit);
@@ -206,10 +206,18 @@ merges the rows and throws `PluginCompositionError` on:
 - `json: true` on a group with subs;
 - a completion slot word that is not shell-safe, or a completion domain whose
   name, helper or library fails the rules above;
-- the same plugin name composed twice.
+- the same plugin name composed twice;
+- a `completionNote` that is not one or more non-empty lines of printable ASCII.
 
 `menu`, when given, is the handler for the bare program (`eris` with no
-arguments) in place of core's usage; `-h` and `--help` stay the usage.
+arguments) in place of core's usage; `-h` and `--help` stay the usage, and end
+with `Run 'eris' without arguments for interactive mode.` A build without a
+`menu` prints neither the line nor a menu.
+
+`completionNote`, when given, is a paragraph `eris completion --help` prints
+after core's description, before the pointer to the docs: say what the
+distribution's completion domains offer (core's text only knows its own flags
+and file names). Without it the help is core's text, byte for byte.
 
 Composition runs in `build()` before bundling, so a refused plugin fails the
 build. It also runs when the program starts, and in every test that imports
@@ -267,6 +275,7 @@ and runs. Copy its shape.
 
    export const CLI = composeCli(REGISTRY, HANDLERS, [...PLUGINS, mine], {
      menu: async () => (await import("./menu")).runMenu,
+     completionNote: "Also completes mine's names.",
    });
 
    if (import.meta.main) runProgram({ cli: CLI, installRoot: join(import.meta.dir, "..") });

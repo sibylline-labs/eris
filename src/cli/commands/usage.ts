@@ -5,7 +5,8 @@
  * A composed build lists each plugin group after the built-in commands, a
  * locked one marked, every summary in one column (src/cli/compose.ts). The `--output` paragraph names every
  * json surface of the composed CLI, plugin rows included;
- * tests/cli-router.test.ts holds it against the `json` rows.
+ * tests/cli-router.test.ts holds it against the `json` rows. A build whose bare
+ * program is a distribution's menu says so in the last line.
  */
 
 import { CLI, type CliContext } from "../../main";
@@ -50,7 +51,7 @@ Global flags:
 ${fill(words)}  --version            Print this build's version and release repository.
 
 Run 'eris <command> --help' for command-specific usage.
-`;
+${cli.hasMenu ? "Run 'eris' without arguments for interactive mode.\n" : ""}`;
 }
 
 /** The top-level usage of one session's composed CLI. */
