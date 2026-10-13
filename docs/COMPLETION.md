@@ -57,8 +57,11 @@ declared by a plugin, completes with no other edit.
   after one is never completed as a positional and never counted as one.
   A value flag whose row says `file: true` completes file names: yak's
   `--body-file` and `--evidence-file`. A plugin declares its own the same way.
-- **Positional domains** (literal words, or `@file` for file names) are the
-  `SLOTS` table in `emit.ts`, keyed by command path. A verb with no entry
+- **Positional slots are on the row** (`complete`, one entry per slot): literal
+  words, `@file` for file names, or a completion domain, whose words only a
+  shell function can list at tab-press time. A domain's helper text is emitted
+  once and its function is called with the words typed in the earlier slots
+  ([PLUGINS.md](dev/PLUGINS.md#completion-domains)). A row with no `complete`
   completes no positionals.
 
 Emission imports the registry and nothing else. It runs on every shell start,
@@ -67,7 +70,9 @@ cannot break a login shell. Emission itself needs no `yq`.
 
 **A tab press never invokes eris and never touches the network.** It reads
 only the tree embedded in the script, and offers nothing rather than erroring:
-a tab press must never print to stderr or hang.
+a tab press must never print to stderr or hang. A domain's helper is held to
+the same: composition refuses one that would run anything when the script is
+sourced or leave a quote or body open (`src/cli/commands/completion/domain.ts`).
 
 ## zsh route
 

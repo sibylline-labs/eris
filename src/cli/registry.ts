@@ -56,7 +56,34 @@ export interface Row {
   readonly usage?: string;
   /** Said in the extra-word refusal, e.g. "quote the statement". */
   readonly extraHint?: string;
+  /** Tab completion for the positional operands, one entry per slot, in
+   *  order: the words a slot offers. A word is a literal, `@file` (file
+   *  names: the slot offers nothing else), or a `CompletionDomain`. A slot
+   *  past the last entry completes nothing. Checked at composition. */
+  readonly complete?: readonly (readonly SlotWord[])[];
 }
+
+/**
+ * A slot whose words only a shell function can list at tab-press time: names
+ * the distribution keeps in a file, say. `helper` is shell text, bash-3.2
+ * clean (the zsh route loads the same body), holding function definitions
+ * only: `__eris_dom_<name>` for `@<name>`, plus any other `__eris_dom_`
+ * functions it shares. That function is called with the words typed in the
+ * earlier positional slots and prints its words; `compgen -W` expands them,
+ * so it must print shell-safe words only.
+ *
+ * The text bypasses the emitter's word checks, so composition checks it
+ * instead (src/cli/commands/completion/domain.ts). It is trusted like a
+ * plugin's handler code: the check keeps a mistake from breaking or running
+ * code in every shell that sources `eris completion`, not a hostile author out.
+ */
+export interface CompletionDomain {
+  /** `@` then lower-case letters, digits, `_`; `@file` is built in. */
+  readonly domain: `@${string}`;
+  readonly helper: string;
+}
+
+export type SlotWord = string | CompletionDomain;
 
 /** Every verb, as declared: the literal types the parser derives a handler's
  *  argument type from. `REGISTRY` is the same object for code that walks it.

@@ -13,7 +13,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import widgets from "../examples/plugins/widgets";
 import { composeCli, PluginCompositionError } from "../src/cli/compose";
-import type { ErisPlugin } from "../src/cli/plugin";
+import type { ErisPlugin, VerbHandler } from "../src/cli/plugin";
 import { UNSUPPORTED_FIX } from "../src/cli/output";
 import { REGISTRY } from "../src/cli/registry";
 import { HANDLERS, main, type MainOptions } from "../src/main";
@@ -79,6 +79,9 @@ describe("the three carried invariants", () => {
       const r = await run(["completion", shell], { cli });
       expect({ shell, rc: r.rc, stderr: r.stderr }).toEqual({ shell, rc: 0, stderr: "" });
       expect(r.stdout).toMatch(/\btripwire\b/);
+      // The row's completion domain is emitted from the manifest's data: its helper text and the slot that calls it.
+      expect(r.stdout).toContain("__eris_dom_trip() {\n  echo armed\n}\n");
+      expect(r.stdout).toContain(`"tripwire 0") echo "$(__eris_dom_trip "$@")" ;;`);
     }
     // The tripwire is live: dispatching to it does evaluate the handler module.
     await expect(run(["tripwire"], { cli })).rejects.toThrow("tripwire: handler module evaluated");
@@ -136,6 +139,72 @@ describe("composition refuses a plugin that would break a plane", () => {
   it.each(cases)("%s", (_name, plugins, message) => {
     /** When a malformed plugin composes, the binary routes to a script that does not exist, offers a verb nothing handles, or accepts --output json for subs with no rendering — observed at composeCli. */
     expect(() => composeCli(REGISTRY, HANDLERS, plugins)).toThrow(new PluginCompositionError(message));
+  });
+
+  /** A row whose slot 0 completes `tokens`. */
+  const slotted = (name: string, ...tokens: unknown[]): ErisPlugin =>
+    plugin({ name, rows: { [`g${name}`]: { ...ts, complete: [tokens] } as typeof ts }, handlers: { [`g${name}`]: h } });
+  const fn = (name: string, body = "  echo x") => `${name}() {\n${body}\n}\n`;
+  const domainCases: [string, unknown[], string][] = [
+    ["a slot word that is not shell-safe", ["a b"], "row 'gp' slot 0: 'a b' is not a completion word (letters, digits, '_', '?', '-'), '@file' or a domain"],
+    ["an '@' word that is not '@file'", ["@env"], "row 'gp' slot 0: '@env' is not a completion word (letters, digits, '_', '?', '-'), '@file' or a domain"],
+    ["a domain name outside the grammar", [{ domain: "@Env", helper: fn("__eris_dom_Env") }], "row 'gp' slot 0: domain '@Env' is not a domain name ('@', then lower-case letters, digits, '_')"],
+    ["the built-in file domain as an object", [{ domain: "@file", helper: fn("__eris_dom_file") }], "row 'gp' slot 0: '@file' is built in: write it as the word '@file'"],
+    ["a helper that does not define its function", [{ domain: "@x", helper: fn("__eris_dom_y") }], "domain '@x': its helper does not define __eris_dom_x"],
+    ["a helper with no final newline", [{ domain: "@x", helper: "__eris_dom_x() {\n  echo x\n}" }], "domain '@x': its helper does not end with a newline"],
+    ["a helper carrying a control character", [{ domain: "@x", helper: fn("__eris_dom_x", "  echo \x1b[31m") }], "domain '@x': its helper carries a control character (line 2)"],
+    ["a helper carrying a bidi override", [{ domain: "@x", helper: fn("__eris_dom_x", "  echo ‮") }], "domain '@x': its helper carries a control character (line 2)"],
+    ["a helper that runs a command when sourced", [{ domain: "@x", helper: `${fn("__eris_dom_x")}touch pwned\n` }], "domain '@x': its helper runs a command when sourced (line 4): outside a function only definitions, comments and blank lines may sit"],
+    ["a helper defining a core function", [{ domain: "@x", helper: `${fn("__eris_dom_x")}${fn("_eris_completions")}` }], "domain '@x': its helper defines '_eris_completions' (line 4), outside the __eris_dom_ namespace"],
+    ["a helper with a function inside a function", [{ domain: "@x", helper: fn("__eris_dom_x", "  __eris_comp_groups() { :; }") }], "domain '@x': its helper defines a function inside a function (line 2)"],
+    ["a helper with a heredoc", [{ domain: "@x", helper: fn("__eris_dom_x", "  cat <<EOF\n}\nEOF") }], "domain '@x': its helper uses a heredoc (line 2): its body is text the script's framing cannot see"],
+    ["a helper with a backtick substitution", [{ domain: "@x", helper: fn("__eris_dom_x", "  echo `ls`") }], "domain '@x': its helper uses a backtick substitution (line 2): use $( ) instead"],
+    ["a helper ending inside a quote", [{ domain: "@x", helper: fn("__eris_dom_x", '  echo "open') }], "domain '@x': its helper ends inside a quote, expansion or substitution"],
+    ["a helper ending inside a substitution", [{ domain: "@x", helper: fn("__eris_dom_x", "  echo $(ls") }], "domain '@x': its helper ends inside a quote, expansion or substitution"],
+    ["a helper ending inside a function body", [{ domain: "@x", helper: "__eris_dom_x() {\n  { echo x\n}\n" }], "domain '@x': its helper ends inside a function body"],
+    ["text after a closing brace", [{ domain: "@x", helper: "__eris_dom_x() { echo x; } ; touch pwned\n" }], "domain '@x': its helper puts text after a function's closing brace (line 1)"],
+  ];
+  it.each(domainCases)("%s", (_name, tokens, message) => {
+    /** When composition accepts a completion slot the emitted script cannot hold — a word that breaks out of its quotes, a helper that runs a command when sourced, leaves a quote or body open (swallowing the rest of the script), or redefines core's functions — every shell that sources `eris completion` breaks or runs code at start: observed at composeCli. */
+    expect(() => composeCli(REGISTRY, HANDLERS, [slotted("p", ...tokens)])).toThrow(new PluginCompositionError(`plugin 'p': ${message}`));
+  });
+
+  it("one domain carries one helper across the build, and one helper function has one definition", () => {
+    /** When two plugins hand the same domain (or the same helper function) different text, whichever the script defines last silently wins, and the other plugin's slot completes the wrong words: observed at composeCli. */
+    const x = (body: string) => ({ domain: "@x", helper: fn("__eris_dom_x", body) });
+    expect(() => composeCli(REGISTRY, HANDLERS, [slotted("a", x("  echo a")), slotted("b", x("  echo b"))])).toThrow(
+      new PluginCompositionError("plugin 'b': domain '@x': it carries a different helper from plugin 'a'"),
+    );
+    const lib = (body: string) => fn("__eris_dom_lib", body);
+    expect(() =>
+      composeCli(REGISTRY, HANDLERS, [
+        slotted("a", { domain: "@x", helper: `${lib("  echo a")}${fn("__eris_dom_x")}` }),
+        slotted("b", { domain: "@y", helper: `${lib("  echo b")}${fn("__eris_dom_y")}` }),
+      ]),
+    ).toThrow(new PluginCompositionError("plugin 'b': domain '@y': its helper defines '__eris_dom_lib', which plugin 'a' defines with other text"));
+    // PAIRED: the same text in both plugins is one helper, shared.
+    const shared = { domain: "@x", helper: fn("__eris_dom_x") };
+    expect(composeCli(REGISTRY, HANDLERS, [slotted("a", shared), slotted("b", { ...shared })]).groups.map((g) => g.group)).toEqual(["ga", "gb"]);
+  });
+});
+
+describe("a distribution owns the bare program", () => {
+  it("its menu runs for bare `eris`; -h and --help stay the usage, and core's usage is the default", async () => {
+    /** When the menu option is dropped or reaches the wrong argv shape, a distribution's bare `eris` prints core's usage instead of its launcher, or `eris --help` stops printing usage: observed through `main`. */
+    const menu: VerbHandler = async (args, ctx) => (ctx.stdout.write(`menu ${JSON.stringify(args)} ${ctx.format}\n`), 0);
+    const cli = composeCli(REGISTRY, HANDLERS, [widgets], { menu: async () => menu });
+    expect(await run([], { cli })).toEqual({ rc: 0, stdout: "menu [] text\n", stderr: "" });
+    for (const help of ["-h", "--help"]) {
+      const r = await run([help], { cli });
+      expect({ help, rc: r.rc, stderr: r.stderr }).toEqual({ help, rc: 0, stderr: "" });
+      expect(r.stdout).toStartWith("Usage: eris <command> [args]\n");
+      expect(r.stdout).toContain("\n  widgets ");
+    }
+    // PAIRED: without the option, bare `eris` is core's usage.
+    expect((await run([], { cli: withWidgets })).stdout).toStartWith("Usage: eris <command> [args]\n");
+    expect(() => composeCli(REGISTRY, HANDLERS, [], { menu: "launcher" as unknown as () => Promise<VerbHandler> })).toThrow(
+      new PluginCompositionError("menu must be a handler thunk, () => Promise<VerbHandler>"),
+    );
   });
 });
 

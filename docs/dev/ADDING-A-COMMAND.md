@@ -20,8 +20,8 @@ adding `eris completion fish`:
    a flag the row does not declare can be neither passed nor read. The router
    table, the `--output json` allow-list and the completion tree derive from the
    row with no further edit (`tests/cli-router.test.ts` pins the derived table).
-   A positional with a completable domain gets a `SLOTS` entry in
-   `src/cli/commands/completion/emit.ts`.
+   A positional with a completable domain says so on the same row
+   (`complete`, [COMPLETION.md](../COMPLETION.md#how-it-works)).
 
 3. **Output.** Payload on stdout, every diagnostic on stderr
    ([OUTPUT-CONTRACT.md](../OUTPUT-CONTRACT.md)). A machine rendering means

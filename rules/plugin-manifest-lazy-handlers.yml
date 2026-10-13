@@ -5,11 +5,13 @@
 # code loads through `async () => (await import("./handlers")).run`, on dispatch
 # only. A static import of anything else puts plugin code on the completion
 # path, where a syntax error or a missing package breaks every shell start
-# (the invariant tests/plugins.test.ts carries).
+# (the invariant tests/plugins.test.ts carries). A distribution's manifest
+# (examples/distribution) is held the same way, with the SDK imported as
+# `eris/sdk`.
 id: plugin-manifest-lazy-handlers
 language: typescript
 severity: error
-message: A plugin manifest loads at shell start. Import only src/cli/plugin here (types are fine) and load handler code with a dynamic import() inside the handler thunk.
+message: A plugin manifest loads at shell start. Import only the SDK here (src/cli/plugin, or eris/sdk in a distribution; types are fine) and load handler code with a dynamic import() inside the handler thunk.
 note: |
   docs/dev/PLUGINS.md#the-manifest. Rows are inline data; handlers are
   `() => Promise<VerbHandler>` thunks that `await import()` their module.
@@ -17,6 +19,7 @@ files:
   - plugins/*/index.ts
   - examples/plugins/*/index.ts
   - tests/helpers/plugins/*/index.ts
+  - examples/distribution/plugins/*/index.ts
 rule:
   any:
     - all:
@@ -26,7 +29,7 @@ rule:
         - not:
             has:
               field: source
-              regex: src/cli/plugin["']$
+              regex: (src/cli/plugin|^["']eris/sdk)["']$
     - all:
         - kind: export_statement
         - has:

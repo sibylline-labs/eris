@@ -19,6 +19,7 @@ files:
   - src/cli/**/*.ts
   - src/main.ts
   - plugins/**/*.ts
+  - examples/distribution/**/*.ts
   - scripts/**/*.ts
 ignores:
   # The parser itself.

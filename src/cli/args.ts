@@ -375,9 +375,12 @@ export interface ReadOptions {
   readonly refuse?: (e: ArgError, what: string) => void;
 }
 
-/** Write `e`'s uniform refusal and stop with exit 1. */
-export function refuseArg(path: VerbPath, e: ArgError, io: ArgSinks): never {
-  io.stderr.write(argErrorText(path, e, io.erisDir));
+/** Write `e`'s uniform refusal and stop with exit 1. A row core's registry
+ *  does not hold (a plugin's) is passed with its path. */
+export function refuseArg(path: VerbPath, e: ArgError, io: ArgSinks): never;
+export function refuseArg(path: string, e: ArgError, io: ArgSinks, row: Row): never;
+export function refuseArg(path: string, e: ArgError, io: ArgSinks, row: Row = rowOf(path)): never {
+  io.stderr.write(argErrorText(path, e, io.erisDir, row));
   throw new CliExit(1);
 }
 

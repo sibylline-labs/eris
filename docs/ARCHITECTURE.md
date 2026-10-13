@@ -16,6 +16,10 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
 - **`eris`** finds bun and execs `src/main.ts`. Nothing else.
 - **`src/main.ts`** routes every command line.
 - **`plugins/index.ts`** lists the plugins this build compiles in.
+- **`src/sdk.ts`** is `eris/sdk`, the one module another repository imports from this package
+  (the `exports` map names nothing deeper). A **distribution** depends on this package, composes
+  core with this build's plugins and its own, and compiles its own binary with `build()`
+  ([`dev/PLUGINS.md`](dev/PLUGINS.md#distributions)).
 - **`packages/yak-contract`** is the Yaks wire contract v2, a bun workspace package that builds
   standalone.
 
@@ -26,7 +30,8 @@ writes a `~/.local/bin/eris` wrapper around the checkout. There is no build step
 `bash <checkout>/eris`, `sh <checkout>/eris` and the wrapper all run it as it stands.
 
 `bun scripts/build.ts` also compiles the same program into one executable,
-`dist/eris-<os>-<arch>`. It carries the docs the source names and writes them once per
+`dist/eris-<os>-<arch>`, through `build()` (`src/build.ts`), the same call a distribution makes
+with its own entry. It carries the docs the source names and writes them once per
 build to `${ERIS_CACHE_DIR:-${XDG_CACHE_HOME:-~/.cache}/eris}/<build id>/`, its install root
 (`src/runtime/home.ts`), so a failure block's `docs:` line names a file that exists.
 
@@ -37,6 +42,7 @@ build to `${ERIS_CACHE_DIR:-${XDG_CACHE_HOME:-~/.cache}/eris}/<build id>/`, its 
 ```
   eris                        POSIX sh shim: unset BUN_CONFIG_VERBOSE_FETCH; exec bun src/main.ts
    └─ src/main.ts             settings fill → route → handler (lazy import) | unknown
+       ├─ src/sdk.ts          eris/sdk: what a distribution imports · src/build.ts: build()
        ├─ src/cli/            registry.ts (core's verbs) · compose.ts (core + plugins) · plugin.ts
        │                      (the SDK) · router.ts · args.ts (argv + the global --output pre-pass)
        │                      · output.ts (the json allow-list) · ts-verb.ts
@@ -100,6 +106,8 @@ The top-level usage (`src/cli/commands/usage.ts`) is a `HANDLERS` row too: bare 
 
 - **A plugin imports the SDK and nothing else of core.** `src/cli/plugin.ts` is the one core module
   under `plugins/` may import (`plugin-imports-sdk-only`, in `rules/`).
+- **A distribution imports `eris/sdk` and nothing else of core.** The `exports` map refuses a
+  deeper path; `distribution-imports-sdk-only` holds the example distribution to it.
 - **Completion imports the registry and nothing else.** `source <(eris completion bash)` runs on
   every shell start, so a broken source file elsewhere must not break a login shell.
   `tests/completion.test.ts` corrupts every other verb and every plugin's handler code in a copied
@@ -123,7 +131,9 @@ carries the payload and nothing else. Stated in [`OUTPUT-CONTRACT.md`](OUTPUT-CO
 by `tests/output-contract.test.ts`.
 
 **C3 — `eris completion` emits without loading any other verb**, and its output is
-byte-deterministic for a given composed registry.
+byte-deterministic for a given composed registry. A row's completion domain is data on the row:
+its helper text is checked at composition (`src/cli/commands/completion/domain.ts`) so sourcing
+the script runs nothing and no helper can swallow core's text.
 
 **C4 — the shell only shrinks.** The shim and `install.sh` are frozen as one total (`.sh` files,
 code lines, function definitions) by `tests/source-is-text.test.ts` against

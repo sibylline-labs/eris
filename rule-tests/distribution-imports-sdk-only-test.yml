@@ -1,0 +1,27 @@
+id: distribution-imports-sdk-only
+valid:
+  - import { composeCli, HANDLERS, PLUGINS, REGISTRY, runProgram } from "eris/sdk";
+  - import type { VerbHandler } from "eris/sdk";
+  - const sdk = await import("eris/sdk");
+  # The distribution's own files, packages and node builtins.
+  - import demo from "./plugins/demo";
+  - const run = (await import("./handlers")).runDemo;
+  - import { z } from "zod";
+  - import { join } from "node:path";
+  # A package whose name merely starts with eris is another package.
+  - import x from "eris-utils/x";
+  - import y from "erisx";
+invalid:
+  # A core file by its package path: the exports map refuses it too.
+  - import { composeCli } from "eris/src/cli/compose";
+  - import { PLUGINS } from "eris/plugins";
+  - const m = await import("eris/src/main");
+  - const m = await import(`eris/src/main`);
+  - const r = require("eris/src/cli/args");
+  - export * from "eris/src/cli/plugin";
+  # The package's entry is the program, not the SDK.
+  - import { main } from "eris";
+  # A climb out of the distribution, into core's files in this repository.
+  - import { REGISTRY } from "../../src/cli/registry";
+  - import { run } from "./../../src/main";
+  - import x from "/repo/src/main";

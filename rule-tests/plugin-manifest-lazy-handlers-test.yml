@@ -3,6 +3,9 @@ valid:
   # The SDK is the one runtime import a manifest makes.
   - import { definePlugin } from "../../src/cli/plugin";
   - import { definePlugin } from "../../../../src/cli/plugin";
+  # A distribution's manifest imports the SDK as the package's `eris/sdk`.
+  - import { definePlugin } from "eris/sdk";
+  - import { type CompletionDomain, definePlugin } from "eris/sdk";
   # Types are erased: they load nothing.
   - import type { VerbHandler } from "../../src/cli/plugin";
   - import { type Row } from "../../src/cli/plugin";
@@ -21,3 +24,6 @@ invalid:
   # Reaching anything else at load time does the same.
   - import { readFileSync } from "node:fs";
   - export { runWidgets } from "./handlers";
+  # The package's entry is the whole program, not the SDK.
+  - import { definePlugin } from "eris";
+  - import { definePlugin } from "eris/sdk/extra";

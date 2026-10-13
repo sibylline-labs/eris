@@ -7,7 +7,7 @@
  *
  *   - From a checkout (the `eris` shim → `bun src/main.ts`): the checkout, two
  *     directories above this file.
- *   - As a compiled binary (`scripts/build.ts`): the files ride inside the binary
+ *   - As a compiled binary (`build()`, src/build.ts): the files ride inside the binary
  *     as the build-generated `eris:assets` module, and are written once per build
  *     to `${ERIS_CACHE_DIR:-${XDG_CACHE_HOME:-~/.cache}/eris}/<build id>/`, which is
  *     the root. The build id is a content hash of the assets and the source, so a
@@ -35,13 +35,21 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 declare const __ERIS_BUILD_ID__: string | undefined;
+declare const __ERIS_RELEASE_REPO__: string | undefined;
 
 type Env = Record<string, string | undefined>;
 
 /** The compiled binary's build id; null when running from a checkout. */
 export const BUILD_ID: string | null = typeof __ERIS_BUILD_ID__ === "undefined" ? null : __ERIS_BUILD_ID__;
 
-/** True inside a binary built by `scripts/build.ts`. */
+/** The GitHub repository (`owner/name`) this repository's releases are published to. */
+export const DEFAULT_RELEASE_REPO = "sibylline-labs/eris";
+
+/** Where this build's own releases are published: the `releaseRepo` its build
+ *  was given (src/build.ts), else `DEFAULT_RELEASE_REPO`, a checkout included. */
+export const RELEASE_REPO: string = typeof __ERIS_RELEASE_REPO__ === "undefined" ? DEFAULT_RELEASE_REPO : __ERIS_RELEASE_REPO__;
+
+/** True inside a binary built by `build()` (src/build.ts). */
 export const isCompiled = BUILD_ID !== null;
 
 /** The file whose presence marks a home as completely written. */

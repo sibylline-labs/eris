@@ -92,6 +92,11 @@ in `src/cli/plugin.ts`. Start with [docs/dev/PLUGINS.md](docs/dev/PLUGINS.md)
 and copy the worked example in [`examples/plugins/widgets/`](examples/plugins/widgets).
 A build's plugin list is `plugins/index.ts`.
 
+To ship your own binary with plugins of your own, write a distribution: depend
+on this repository, import `eris/sdk`, compose, and build with `build()`
+([docs/dev/PLUGINS.md#distributions](docs/dev/PLUGINS.md#distributions); the
+worked example is [`examples/distribution/`](examples/distribution)).
+
 ## The Yaks wire contract
 
 [`packages/yak-contract`](packages/yak-contract) is `@sibylline-labs/yak-contract`:
