@@ -208,6 +208,30 @@ describe.skipIf(checkoutOnly("runs the example distribution and core from this c
     expect(core.stderr).not.toContain(DIST_ROOT);
   });
 
+  it("typechecks under a tsconfig that lists only the distribution's sources: core's ambient declarations come with the SDK", () => {
+    /** When core's source reaches an ambient module nothing references (`eris:assets`, which `build()` supplies at bundle time), a dependent repository's own `tsc` fails inside the dependency (TS2307 in node_modules/eris) until it adds a `files` entry for a path in node_modules: observed by running tsc over the example distribution with a minimal tsconfig. */
+    mkdirSync(join(REPO, ".scratch"), { recursive: true });
+    const config = join(REPO, ".scratch", `consumer-${process.pid}.tsconfig.json`);
+    writeFileSync(
+      config,
+      JSON.stringify({
+        compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", strict: true, noEmit: true, skipLibCheck: true, types: ["bun-types"] },
+        include: ["../examples/distribution/**/*.ts"],
+      }),
+    );
+    try {
+      const r = spawnSync(process.execPath, [join(REPO, "node_modules", "typescript", "bin", "tsc"), "-p", config, "--listFiles"], { cwd: REPO, encoding: "utf8" });
+      // tsc reports on stdout, beside the file list.
+      const files = r.stdout.split("\n");
+      expect({ status: r.status, diagnostics: files.filter((l) => l.includes("error TS")), stderr: r.stderr }).toEqual({ status: 0, diagnostics: [], stderr: "" });
+      // PAIRED: the program did reach the file that imports the ambient module, and pulled its declaration in by reference.
+      expect(files).toContain(join(REPO, "src", "runtime", "home.ts"));
+      expect(files).toContain(join(REPO, "src", "runtime", "eris-assets.d.ts"));
+    } finally {
+      rmSync(config, { force: true });
+    }
+  });
+
   it("refuses an install root that is not an absolute path", () => {
     /** When `runProgram` accepts a relative `installRoot`, a distribution's docs lines and file reads follow the caller's working directory, differently on every run: observed at the entry's exit status and message. */
     const r = spawnSync(process.execPath, ["--no-env-file", "--config=/dev/null", "-e", 'import { runProgram } from "eris/sdk"; runProgram({ installRoot: "examples/distribution" });'], {

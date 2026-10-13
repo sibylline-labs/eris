@@ -32,6 +32,11 @@
  * on with the home's path, which then names a directory that does not exist.
  */
 
+/// <reference path="./eris-assets.d.ts" />
+// The `eris:assets` module `build()` supplies at bundle time: referenced here so a
+// program that imports this file (a distribution through eris/sdk) typechecks with
+// no `files` entry of its own for the declaration.
+
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";

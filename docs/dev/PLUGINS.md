@@ -251,7 +251,12 @@ and runs. Copy its shape.
    never breaks a distribution that compiles today. A distribution's plugin
    manifests import `eris/sdk` too, and load handler code lazily as above.
    The `distribution-imports-sdk-only` rule holds this for the example; a
-   distribution keeps its own copy for its tree.
+   distribution keeps its own copy for its tree. The `exports` map points at
+   TypeScript, so the distribution's own `tsc` checks core's source too; it needs
+   `"moduleResolution": "Bundler"` and `bun-types`, and no `files` entry for core's
+   declarations (`src/runtime/home.ts` references the `eris:assets` one, the module
+   `build()` supplies at bundle time). `tests/distribution.test.ts` typechecks the
+   example under a tsconfig that lists only its sources.
 
 3. **Compose and run** from its entry:
 
