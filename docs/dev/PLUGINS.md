@@ -46,7 +46,8 @@ export default definePlugin({
   header for the fields (`flags`, `pos`, `usage`, `json`, `extraHint`). The
   group row (one word) says `impl: "ts"`. Each sub row hangs off a row the
   plugin declares. A value flag whose value is a file name says `file: true`,
-  and tab completion offers file names after it.
+  and tab completion offers file names after it. A row's positional slots
+  complete what its `complete` lists ([Completion domains](#completion-domains)).
 - **`handlers`** has one thunk per group. The type checker requires a thunk for
   every group the rows declare. A thunk must `await import()` its module.
 - **The manifest makes no other runtime import.** It loads on every command
@@ -134,21 +135,93 @@ The handler never loads while the group is locked. Entitlements reach `main`
 as `MainOptions.entitlements`. When none are given, `NO_ENTITLEMENTS` applies
 and no product is entitled.
 
+## Completion domains
+
+A row's `complete` lists what tab completion offers for each positional slot,
+in order. A slot's words are literals, `@file` (file names, and nothing else),
+or a **completion domain**: words only a shell function can list at tab-press
+time, such as names the plugin keeps in a local file.
+
+```ts
+import { type CompletionDomain, definePlugin } from "../../src/cli/plugin";
+
+/** The names to greet; the tone typed in the slot before picks their case. */
+const NAME: CompletionDomain = {
+  domain: "@demo_name",
+  helper: `__eris_dom_demo_name() {
+  case "\${1:-}" in
+    loud) echo "ADA GRACE" ;;
+    *) echo "ada grace" ;;
+  esac
+}
+`,
+};
+
+// rows:
+"demo hello": { summary: "Greet a name", pos: ["tone", "name?"], complete: [["loud", "quiet"], [NAME]] },
+```
+
+The helper is shell text that `eris completion` writes into the script every
+shell sources at start, once per distinct text however many rows use it:
+
+- It is exactly one function definition, `__eris_dom_<name>() {` for
+  `@<name>`, starting at the text's first character and closing at its final
+  `}`, then a newline. Nothing sits before or after it, so sourcing the script
+  defines it and runs nothing. Functions it calls go in `library`, a list of
+  texts held to the same rule, each defining one `__eris_dom_…` function.
+  Domains that share a library hand over the same texts, emitted once.
+- The function is called with the words typed in the earlier positional slots
+  (`$1` is slot 0's) and prints its words. `compgen -W` expands what it prints,
+  so print shell-safe words only. Like the rest of the script it never runs
+  eris and never reaches the network, and it stays silent when it has nothing.
+- It is bash-3.2 clean (macOS `/bin/bash`); zsh loads the same body through
+  `bashcompinit`. The check does not model shell quoting: it accepts a subset
+  whose framing both shells agree on and refuses the rest, even when it is
+  valid shell. Printable ASCII only; no comment (keep it in the TypeScript
+  beside the text), backtick, heredoc or here-string, `$'…'`, `$"…"`, `$[…]`
+  or nested function; a backslash only inside quotes and before a letter or
+  digit, so no line continuation; `${ }` holds a name and its operators only;
+  `{` as a word only in command position and `}` only after `;` or a newline,
+  closing a group; no `case` and no unbalanced parenthesis in a quote inside
+  `$( )`.
+- One domain has one helper and library across a build. Two plugins may hand
+  over the same domain with the same texts, which are emitted once. A function
+  defined by two different texts is refused.
+
+Composition checks all of this (`src/cli/commands/completion/domain.ts`) and
+refuses with the line at fault. The helper is trusted like a plugin's handler
+code, and the check is not a sandbox: it stops a mistake from breaking, or
+running code in, every shell that loads completion. Never build helper text
+from anything read at runtime.
+
 ## Composition and what it refuses
 
-`composeCli(coreRows, coreHandlers, plugins)` (`src/cli/compose.ts`) merges the
-rows and throws `PluginCompositionError` on:
+`composeCli(coreRows, coreHandlers, plugins, { menu?, completionNote? })`
+(`src/cli/compose.ts`) merges the rows and throws `PluginCompositionError` on:
 
 - a group that collides with a built-in, an argv shape (`-h`), or another plugin's group;
 - a group that is not `impl: "ts"`, or a sub row with another impl (a JavaScript plugin can name one the type does not admit);
 - a sub row whose parent the plugin does not declare;
 - a group with no handler, or a handler with no group;
 - `json: true` on a group with subs;
-- the same plugin name composed twice.
+- a completion slot word that is not shell-safe, or a completion domain whose
+  name, helper or library fails the rules above;
+- the same plugin name composed twice;
+- a `completionNote` that is not one or more non-empty lines of printable ASCII.
 
-Composition runs in `scripts/build.ts` before bundling, so a refused plugin
-fails the build. It also runs when the program starts, and in every test that
-imports `src/main.ts`.
+`menu`, when given, is the handler for the bare program (`eris` with no
+arguments) in place of core's usage; `-h` and `--help` stay the usage, and end
+with `Run 'eris' without arguments for interactive mode.` A build without a
+`menu` prints neither the line nor a menu.
+
+`completionNote`, when given, is a paragraph `eris completion --help` prints
+after core's description, before the pointer to the docs: say what the
+distribution's completion domains offer (core's text only knows its own flags
+and file names). Without it the help is core's text, byte for byte.
+
+Composition runs in `build()` before bundling, so a refused plugin fails the
+build. It also runs when the program starts, and in every test that imports
+`src/main.ts`.
 
 ## Adding a plugin to a build
 
@@ -159,18 +232,138 @@ import widgets from "./widgets";
 export const PLUGINS: readonly ErisPlugin[] = [widgets];
 ```
 
-That is the only edit, and nothing under `src/` changes. A distribution with a
-different plugin set writes its own entry and composes its own list:
+That is the only edit, and nothing under `src/` changes. A different plugin set
+is a distribution.
 
-```ts
-import { composeCli } from "eris/src/cli/compose";
-import { REGISTRY } from "eris/src/cli/registry";
-import { HANDLERS, runProgram } from "eris/src/main";
-import { PLUGINS } from "eris/plugins";
-import internal from "./plugins/internal";
+## Distributions
 
-runProgram({ cli: composeCli(REGISTRY, HANDLERS, [...PLUGINS, internal]) });
-```
+A distribution is another repository that ships its own eris binary: core, this
+build's plugins, and plugins of its own. The worked example is
+`examples/distribution/`, which `tests/distribution.test.ts` composes, builds
+and runs. Copy its shape.
+
+1. **Depend on this package** as a git dependency pinned to a merge commit on
+   `main`, never a branch:
+
+   ```json
+   "dependencies": { "eris": "github:sibylline-labs/eris#<merge commit sha>" }
+   ```
+
+2. **Import core only as `eris/sdk`** (`src/sdk.ts`): the plugin SDK, core's
+   rows and handlers, this build's plugin list, `composeCli`, `runProgram`,
+   `main`, the argv and output helpers (`parseGlobal` and `GlobalFlagError`
+   included, for an entry that runs outside the router), the runtime
+   (subprocesses, the bounded pool `runPool`, logging, the install root,
+   `BUILD_ID`, `releaseRepo()`, the `DistributionIdentity` type) and `build`. The package's
+   `exports` map refuses any deeper path (`eris/src/...`), so a core refactor
+   never breaks a distribution that compiles today. A distribution's plugin
+   manifests import `eris/sdk` too, and load handler code lazily as above.
+   The `distribution-imports-sdk-only` rule holds this for the example; a
+   distribution keeps its own copy for its tree. The `exports` map points at
+   TypeScript, so the distribution's own `tsc` checks core's source too; it needs
+   `"moduleResolution": "Bundler"` and `bun-types`, and no `files` entry for core's
+   declarations (`src/runtime/home.ts` references the `eris:assets` one, the module
+   `build()` supplies at bundle time). `tests/distribution.test.ts` typechecks the
+   example under a tsconfig that lists only its sources.
+
+3. **Compose and run** from its entry:
+
+   ```ts
+   import { join } from "node:path";
+   import { composeCli, type DistributionIdentity, HANDLERS, PLUGINS, REGISTRY, runProgram } from "eris/sdk";
+   import mine from "./plugins/mine";
+
+   export const IDENTITY: DistributionIdentity = {
+     releaseRepo: "my-org/my-eris",
+     versionExtra: "core <pinned sha>",
+     docsBase: "https://github.com/my-org/my-eris/blob/main",
+   };
+
+   export const CLI = composeCli(REGISTRY, HANDLERS, [...PLUGINS, mine], {
+     menu: async () => (await import("./menu")).runMenu,
+     completionNote: "Also completes mine's names.",
+   });
+
+   if (import.meta.main) runProgram({ cli: CLI, installRoot: join(import.meta.dir, ".."), identity: IDENTITY });
+   ```
+
+   `installRoot` is the distribution's root, an absolute path: the directory
+   `build()` takes as `root`, and (for an entry in `src/`) the one above it. Run
+   from source, a command's `ctx.erisDir` is that directory, and a file the binary
+   carries as an asset is read from the same relative path. The local `docs:` line
+   of a failure block names its doc under that directory when it holds the doc,
+   else under this package's (`docRoots`' order), so the line names a file that
+   exists, as it does in the binary. Left out, `ctx.erisDir` is this package's
+   directory, which in a dependent repository is `node_modules/eris`, not the
+   distribution. A compiled binary ignores it (its root is its per-build asset
+   home), and the `_ERIS_SHIM_DIR` a distribution's own shim sets wins over it.
+
+   `identity` is who the distribution is: `releaseRepo`, `versionExtra` and
+   `docsBase`, the same three fields `build()` takes (step 4). Run from source,
+   `eris --version`, `eris update`, `releaseRepo()` and a failure block's second
+   `docs:` line report them in place of this repository's; left out, a run from
+   source says it is public eris and links public docs, which hold none of the
+   distribution's slugs. Keep the values in one module that both the entry and
+   the build import (the example's `IDENTITY`), so the two cannot drift.
+   `runProgram` checks them as `build()` does. **Precedence:** a compiled binary
+   reports the identity its build baked and ignores `identity`, so what a binary
+   says it is, and where it updates from, is fixed when it is built; no
+   environment variable moves either, in a binary or from source.
+
+4. **Build** with `build()` from `eris/sdk` (`src/build.ts` documents what the
+   binary carries):
+
+   | Option | Meaning |
+   |---|---|
+   | `entry` | The entry above. Required. |
+   | `root` | The distribution's root, which the paths below are relative to, and the `installRoot` its entry hands `runProgram`. Default: the nearest directory with a `package.json` at or above the entry's. |
+   | `plugins` | The plugin list the entry composes, composed again before bundling so a refused plugin fails the build. |
+   | `assetRoots` | Files, and directories of files, the binary carries and writes to its asset home, at the same relative paths. |
+   | `docRoots` | Where a `docs/*.md` the source names is looked for, in order. Default: the root, then this package. |
+   | `sourceRoots` | What is hashed into the build id and scanned for docs. Default: `src`, `ts` and `plugins` where present, the entry, `package.json` and the lockfile. This package's source is always added. |
+   | `stubs` | `{ match, reason }`: specifiers bundled as a module that throws `<specifier> is not bundled into the compiled eris binary (<reason>)` if evaluated, for a module the binary must not carry. |
+   | `releaseRepo` | `owner/name` the binary's own releases are published to, reported by `releaseRepo()` and `eris --version` and read by `eris update`. Default: `sibylline-labs/eris`. |
+   | `versionExtra` | One printable line `eris --version` prints after the version line, and `extra` in its JSON record: the core a distribution was built on. Default: none. |
+   | `docsBase` | An https URL (no query, fragment or space) the doc paths in a failure block's second `docs:` line are appended to, so a distribution links its own docs. Default: this repository's public docs. |
+   | `outfile`, `target`, `tag` | The output path (default `dist/eris-<os>-<arch>`), a bun compile target (default: the host), and a release tag: prefixed to the build id, printed by `eris --version` and compared by `eris update` (an untagged build reports `dev`). |
+
+   `eris --version` and `eris update` are core's: a distribution gets both, and its binary
+   updates from its own `releaseRepo`, never from this repository's releases. To be updatable
+   it publishes each release in the shape [RELEASING.md](RELEASING.md#a-distributions-releases)
+   describes.
+
+5. **Test** by driving `main(argv, env, { cli })` with the distribution's
+   composition, and by running the binary `build()` writes
+   ([below](#testing-a-distribution)).
+
+### Starting without node_modules
+
+When a package a verb needs is not installed, core ends the command with the
+`eris-deps-not-installed` block, naming the distribution's `installRoot` in its
+`fix:` line. The SDK does not export that renderer (`missingDependencyBlock`): an
+export would sit in `eris/sdk`, which cannot load when `eris` itself is the missing
+package, the one case a distribution's entry must handle before it has loaded
+anything. Such an entry loads its composition with a dynamic `import()`, and writes
+the block by hand for a package that import cannot resolve (the grammar is
+[OUTPUT-CONTRACT.md](../OUTPUT-CONTRACT.md) §4, the slug's text
+[ERRORS.md](../ERRORS.md#eris-deps-not-installed)), leaving every other failure a crash.
+
+### Testing a distribution
+
+Two seams: `main(argv, env, { cli })` with the distribution's composition, which
+every command line crosses, and the binary `build()` writes, driven as a
+subprocess. A distribution's suites import their helpers from **`eris/sdk/testing`**
+rather than copying them:
+
+| Export | Use |
+|---|---|
+| `createFakeRunner(respond)`, `FakeRunner` | A `Runner` (`eris/sdk`) that records every call in `calls` and answers from `respond`, to inject in place of `nodeRunner`. |
+| `buildInChild({ module, outfile, tag?, releaseRepo?, versionExtra?, docsBase? })` | `build()` in a child bun, returning its `BuildResult`. `module` is the absolute path of a file that exports `BUILD`, the distribution's `BuildOptions` (`examples/distribution/build.ts` is one); the rest overrides it. Use it for every test that compiles a binary: a compile in the test process fails on Linux in a later test file ([TESTING.md](TESTING.md#the-binary-oracle)). |
+
+The subpath is for tests. It is a separate module and `eris/sdk` does not export
+it, so a binary does not carry it: keep it out of the distribution's own source
+(`distribution-imports-sdk-only` refuses it in the example, and this repository's
+`runtime-imports-no-testing` rule keeps core and its plugins from importing it).
 
 ## Testing a plugin
 

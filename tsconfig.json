@@ -15,7 +15,7 @@
     "verbatimModuleSyntax": false,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["packages/**/*.ts", "plugins/**/*.ts", "examples/**/*.ts", "src/**/*.ts", "ts/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
+  "include": ["packages/**/*.ts", "plugins/**/*.ts", "examples/**/*.ts", "src/**/*.ts", "ts/**/*.ts", "testing/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
   // tests/fixtures holds inputs the tests read or run as data, never import.
   "exclude": ["node_modules", "dist", ".claude", "tests/fixtures"]
 }

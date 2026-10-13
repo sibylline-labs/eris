@@ -127,6 +127,181 @@ it for you: an inline install is unbounded and reaches the network mid-command.
 Only a missing PACKAGE is reported this way. A missing relative module is a defect
 in the checkout's own source and still crashes with bun's message.
 
+### update-not-compiled
+
+> Raised by `eris update` before any request.
+
+This eris runs from a source checkout (`./eris`, or the `~/.local/bin/eris`
+wrapper `install.sh --checkout` writes), not from a compiled release binary. A
+checkout has no single file to replace: it is a working tree under version
+control.
+
+Fix: update the checkout, `git pull && bun install --frozen-lockfile` in the
+directory the `fix:` line names. To run a release binary instead, run
+`./install.sh` (see the README).
+
+### update-unsupported-platform
+
+> Raised by `eris update` before any request.
+
+Releases publish a binary for `darwin-arm64` and `linux-x64` only, and this eris
+was compiled for another platform (built from source on a machine with another
+OS or CPU). There is no asset to download for it.
+
+Fix: build eris from source for this platform and run that build; see
+"From source" in the README. Updating means pulling and building again.
+
+### update-brew-managed
+
+> Raised by `eris update` before any request.
+
+Homebrew installed this eris: its real path (symlinks resolved) is under a
+Homebrew `Cellar` (`/opt/homebrew/Cellar`, `/usr/local/Cellar` or
+`/home/linuxbrew/.linuxbrew/Cellar`), or in a keg under any other prefix
+(a path holding `/Cellar/<formula>/<version>/`). Replacing a file Homebrew owns leaves its
+receipt and the file disagreeing, and the next `brew upgrade` or
+`brew uninstall` misbehaves.
+
+Fix: `brew upgrade eris`.
+
+### update-api-invalid
+
+> Raised by `eris update` before any request.
+
+`ERIS_UPDATE_API`, the override for the releases API base (a GitHub Enterprise
+host, or a test server), is set to something eris will not use: it is not a URL,
+its scheme is neither `https` nor `http`, it is `http` to a host that is not
+loopback, or it carries credentials, a query or a fragment. The refusal exists so
+a stray variable cannot send a token in clear text to a host nobody chose. The
+`ERROR` line shows the scheme and host only.
+
+Fix: set it to an `https://` URL (for example `https://ghe.example.com/api/v3`),
+or unset it to use `https://api.github.com`.
+
+### update-token-invalid
+
+> Raised by `eris update` before any request.
+
+`GH_TOKEN` (or, when it is unset or blank, `GITHUB_TOKEN`) holds something no
+GitHub token contains: a space or line break inside the value, or a non-ASCII
+character. Leading and trailing whitespace is ignored, so a token read from a file
+with its newline still works. The refusal names the variable and never shows its
+value: sending such a value makes the HTTP client report an error that quotes it.
+
+Fix: set the variable to the token alone, or unset it.
+
+### update-unreachable
+
+> Raised by `eris update` when the releases API or the download host does not
+> answer.
+
+The connection was refused, the name did not resolve, the connection dropped, or
+a host went quiet: the API did not answer within 30 seconds, or a download sent
+nothing for 60 seconds. Nothing was changed; a download in progress is removed.
+
+Fix: check the network connection (eris update needs https access to
+`api.github.com`, and to GitHub's release storage host for the download), then
+run `eris update` again.
+
+### update-rate-limited
+
+> Raised by `eris update` when GitHub refuses the request for its rate limit.
+
+GitHub answered 429, or 403 with the rate limit spent. An anonymous client gets
+60 requests an hour per address; an authenticated one gets far more. `eris
+update` makes up to three API requests per run. When GitHub reported when the
+limit resets, the `ERROR` line says so.
+
+Fix: set `GH_TOKEN` (or `GITHUB_TOKEN`) to a GitHub token. Any token works for
+a public repository, with no scopes. If one is already set, its own limit is
+spent: wait for the reset time, then run `eris update` again.
+
+### update-needs-token
+
+> Raised by `eris update` when GitHub answers 404 and no token is set.
+
+GitHub answers 404, not 403, to a request that is not allowed to see a private
+repository, so an anonymous 404 does not say whether the release is missing or
+the repository is private. This refusal is the anonymous case.
+
+Fix: if the repository is private, set `GH_TOKEN` (or `GITHUB_TOKEN`) to a token
+that can read it and run `eris update` again. Otherwise the release does not
+exist: list them at `https://github.com/<owner>/<repo>/releases`.
+
+### update-release-not-found
+
+> Raised by `eris update` when the release is not installable.
+
+Either GitHub answered 404 to a request that carried a token, so the repository
+has no such release (or the token cannot see the repository), or the release
+found is a draft, or a prerelease that `--to` did not name. `eris update` installs
+the latest published release; a prerelease only with `--to <tag>`.
+
+Fix: check the tag against the repository's releases page. With a private
+repository, the token must be able to read it.
+
+### update-api-error
+
+> Raised by `eris update` for any other answer the API gives.
+
+An answer that is not a release and not one of the cases above: a 500, a 403 that
+is not the rate limit, a 401 (the token was rejected, or the API wants one), a
+body that is not a release record, a redirect chain that is too long or leaves
+for a scheme eris will not follow, or a download larger than eris will accept.
+The `ERROR` line names the host and the status.
+
+Fix: for a 401, unset `GH_TOKEN` or replace it with a valid token. For a 403 on a
+private repository, the token must be able to read it. Otherwise retry in a few
+minutes.
+
+### update-asset-missing
+
+> Raised by `eris update` before it downloads the binary.
+
+The release exists but cannot be installed: it lists no `eris-<os>-<arch>` for
+this platform, no `SHA256SUMS`, or a `SHA256SUMS` with no line for this
+platform's binary. eris never installs a binary it cannot check, so a release
+without its checksum is refused. The same slug covers an asset the release lists
+but the API answers 404 for.
+
+Fix: choose another release with `eris update --to <tag>`.
+
+### update-checksum-mismatch
+
+> Raised by `eris update` after the download, before anything is replaced.
+
+The downloaded binary's sha256 differs from the one in the release's
+`SHA256SUMS`. The `ERROR` line gives both. The partial file is removed and the
+installed binary is untouched.
+
+Fix: run `eris update` again. If it repeats, the release is corrupt or has been
+tampered with: do not install it.
+
+### update-target-unwritable
+
+> Raised by `eris update`, before any request when it can tell.
+
+The directory that holds the eris binary cannot be written, or a file there could
+not be created: a read-only filesystem, a directory owned by another user (a
+system-wide install), a full disk. `eris update` stages the new binary beside the
+old one, so it needs write access to that directory, not only to the binary.
+
+Fix: run `eris update` as a user who owns the directory, or reinstall eris into a
+directory you own (`install.sh` installs to `~/.local/bin`).
+
+### update-smoke-failed
+
+> Raised by `eris update` after the replacement.
+
+The new binary was renamed into place and then run once (`eris --output json
+--version`); it did not start, exited non-zero, did not answer within 20 seconds,
+or reported a version other than the release's tag. The previous binary is put
+back from `<binary>.old` and the `ERROR` line says so. If it could not be put
+back, the `ERROR` line says that and the `fix:` line gives the `mv` that does it.
+
+Fix: the release may be broken. Retry later, or install another with `eris update
+--to <tag>`.
+
 ### yak-unknown-verb
 
 `eris yak <verb>` was called with a verb other than `issue`, `suggest`, or

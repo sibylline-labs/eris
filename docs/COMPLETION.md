@@ -52,13 +52,16 @@ declared by a plugin, completes with no other edit.
 - **Flags are per command path.** `eris yak issue --<TAB>` offers exactly the
   flags `yak issue` accepts. Before a verb is typed (`eris yak --<TAB>`), or
   after a verb the registry does not know, the group's whole set is offered.
-  `--help` is always offered.
+  `--help` is always offered, and `eris <TAB>` offers `--help` and `--version` beside the groups.
 - **Value-taking flags come from the registry too** (`takesValue`): the word
   after one is never completed as a positional and never counted as one.
   A value flag whose row says `file: true` completes file names: yak's
   `--body-file` and `--evidence-file`. A plugin declares its own the same way.
-- **Positional domains** (literal words, or `@file` for file names) are the
-  `SLOTS` table in `emit.ts`, keyed by command path. A verb with no entry
+- **Positional slots are on the row** (`complete`, one entry per slot): literal
+  words, `@file` for file names, or a completion domain, whose words only a
+  shell function can list at tab-press time. A domain's helper and library texts are
+  emitted once and its function is called with the words typed in the earlier slots
+  ([PLUGINS.md](dev/PLUGINS.md#completion-domains)). A row with no `complete`
   completes no positionals.
 
 Emission imports the registry and nothing else. It runs on every shell start,
@@ -67,7 +70,11 @@ cannot break a login shell. Emission itself needs no `yq`.
 
 **A tab press never invokes eris and never touches the network.** It reads
 only the tree embedded in the script, and offers nothing rather than erroring:
-a tab press must never print to stderr or hang.
+a tab press must never print to stderr or hang. A domain's helper is held to
+the same: each helper and library text must be exactly one function definition
+in a subset of shell that bash and zsh frame alike, so sourcing the script
+defines it and runs nothing; composition refuses anything else
+(`src/cli/commands/completion/domain.ts`).
 
 ## zsh route
 

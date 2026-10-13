@@ -8,7 +8,7 @@
  * plugin's rows reach every plane a core row does with no core edit.
  *
  * A plugin that would break a plane is refused here, at composition, which
- * runs when the build validates its plugin list (scripts/build.ts) and when the
+ * runs when the build validates its plugin list (src/build.ts) and when the
  * program starts:
  *
  *   - a group that collides with a built-in, an argv shape or another plugin;
@@ -17,7 +17,18 @@
  *   - a sub row with no parent, a group with no handler, a handler with no group;
  *   - `json: true` on a group that has subs: the allow-list would accept every
  *     sub, including one added later with no machine rendering. Each sub that
- *     renders JSON says so on its own row, so the allow-list fails closed.
+ *     renders JSON says so on its own row, so the allow-list fails closed;
+ *   - a completion slot the emitted script cannot hold (`complete` on a row, core's
+ *     or a plugin's): a word that is not shell-safe, a domain helper or library text that fails
+ *     src/cli/commands/completion/domain.ts, or one domain (or one helper
+ *     function) given two different texts across the build;
+ *   - a `menu` that is not a handler thunk, or a `completionNote` that is not
+ *     one or more non-empty lines of printable ASCII.
+ *
+ * A distribution may own the bare program (`eris` with no arguments): its
+ * `menu` handler replaces core's usage there; `-h` and `--help` stay the usage,
+ * and say that bare `eris` is interactive. It may also add a paragraph to
+ * `eris completion --help` (`completionNote`).
  *
  * Entitlements are not composition: a `Cli` says which product each plugin
  * group belongs to, and `lockedProduct` checks a workspace's entitlements
@@ -27,7 +38,8 @@
 import type { VerbHandler } from "../main";
 import { helpText } from "./args";
 import { renderFailureBlock } from "../../ts/lib/eris-fail";
-import { unsupportedFix } from "./output";
+import { domainFunction, helperTexts, scanHelper, slotWordRefusal } from "./commands/completion/domain";
+import { jsonFixLine, unsupportedFix } from "./output";
 import type { ErisPlugin } from "./plugin";
 import { ARGV_SHAPES, deriveJsonSurfaces, deriveTable, type Impl, type Row } from "./registry";
 
@@ -55,6 +67,10 @@ export interface Cli {
   readonly jsonFix: string;
   /** The plugin groups, in composition order. */
   readonly groups: readonly PluginGroup[];
+  /** Whether the bare program is a distribution's menu: the top-level usage then points at it. */
+  readonly hasMenu: boolean;
+  /** The distribution's paragraph of `eris completion --help` (`ComposeOptions.completionNote`), or null. */
+  readonly completionNote: string | null;
 }
 
 /** A composed CLI and the workspace's entitlements: what one command line runs against. */
@@ -68,18 +84,76 @@ export interface Session {
 export const NO_ENTITLEMENTS: ReadonlySet<string> = new Set();
 
 const COMMAND_NAME = /^[a-z][a-z0-9-]*$/;
+/** Lines of printable ASCII, none empty, as `eris completion --help` prints them. */
+const COMPLETION_NOTE = /^[\x20-\x7e]+(?:\n[\x20-\x7e]+)*$/;
 
-/** The column a json surface's description starts at in the fix text. */
-const FIX_COLUMN = 43;
+export interface ComposeOptions {
+  /** The bare program's handler (`eris` with no arguments); core's usage when absent.
+   *  The top-level usage then also says `Run 'eris' without arguments for interactive mode.` */
+  readonly menu?: () => Promise<VerbHandler>;
+  /** A paragraph `eris completion --help` prints after core's description: what
+   *  this distribution's completion domains offer. One or more lines of printable
+   *  ASCII, none empty, no trailing newline. */
+  readonly completionNote?: string;
+}
 
-export function composeCli(coreRows: Rows, coreHandlers: Handlers, plugins: readonly ErisPlugin[]): Cli {
+/** The completion domains a build has seen, so one name or function keeps one text. */
+interface DomainLedger {
+  readonly domains: Map<string, { readonly texts: readonly string[]; readonly by: string }>;
+  readonly functions: Map<string, { readonly text: string; readonly by: string }>;
+}
+
+/** Refuses a row whose `complete` slots the emitted script cannot hold. `by` names the row's owner in a later refusal. */
+function checkSlots(path: string, row: Row, by: string, ledger: DomainLedger, refuse: (what: string) => never): void {
+  (row.complete ?? []).forEach((slot, n) => {
+    for (const word of slot) {
+      const why = slotWordRefusal(word);
+      if (why !== null) refuse(`row '${path}' slot ${n}: ${why}`);
+      if (typeof word === "string") continue;
+      const d = `domain '${word.domain}'`;
+      const texts = helperTexts(word);
+      const prior = ledger.domains.get(word.domain);
+      if (prior !== undefined) {
+        if (prior.texts.join("\0") !== texts.join("\0")) refuse(`${d}: it carries a different helper or library from ${prior.by}`);
+        continue;
+      }
+      const defined: string[] = [];
+      texts.forEach((text, k) => {
+        const what = k === texts.length - 1 ? "its helper" : `its library text ${k}`;
+        const scan = scanHelper(text);
+        if (!scan.ok) return refuse(`${d}: ${what} ${scan.why}`);
+        if (k === texts.length - 1 && scan.function !== domainFunction(word.domain)) refuse(`${d}: its helper defines ${scan.function}, not ${domainFunction(word.domain)}`);
+        if (k < texts.length - 1 && scan.function === domainFunction(word.domain)) refuse(`${d}: its library defines ${scan.function}, which is its helper's`);
+        const other = ledger.functions.get(scan.function);
+        if (other !== undefined && other.text !== text) refuse(`${d}: ${what} defines '${scan.function}', which ${other.by} defines with other text`);
+        defined.push(scan.function);
+      });
+      texts.forEach((text, k) => ledger.functions.set(defined[k]!, { text, by }));
+      ledger.domains.set(word.domain, { texts, by });
+    }
+  });
+}
+
+export function composeCli(coreRows: Rows, coreHandlers: Handlers, plugins: readonly ErisPlugin[], opts: ComposeOptions = {}): Cli {
   const registry: Record<string, Row> = { ...coreRows };
   const handlers: Record<string, () => Promise<VerbHandler>> = { ...coreHandlers };
+  if (opts.menu !== undefined) {
+    if (typeof opts.menu !== "function") throw new PluginCompositionError("menu must be a handler thunk, () => Promise<VerbHandler>");
+    handlers[""] = opts.menu;
+  }
+  if (opts.completionNote !== undefined && (typeof opts.completionNote !== "string" || !COMPLETION_NOTE.test(opts.completionNote))) {
+    throw new PluginCompositionError("completionNote must be one or more non-empty lines of printable ASCII");
+  }
   const owner = new Map<string, string | null>();
   for (const k of [...Object.keys(ARGV_SHAPES), ...Object.keys(coreRows).filter((k) => !k.includes(" "))]) owner.set(k, null);
   const names = new Set<string>();
   const groups: PluginGroup[] = [];
   const fixLines: string[] = [];
+  const ledger: DomainLedger = { domains: new Map(), functions: new Map() };
+  const refuseCore = (what: string): never => {
+    throw new PluginCompositionError(`core: ${what}`);
+  };
+  for (const [path, row] of Object.entries(coreRows)) checkSlots(path, row, "core", ledger, refuseCore);
 
   for (const p of plugins) {
     const refuse = (what: string): never => {
@@ -108,10 +182,10 @@ export function composeCli(coreRows: Rows, coreHandlers: Handlers, plugins: read
         if (!Object.hasOwn(p.rows, parent)) refuse(`row '${path}' hangs off '${parent}', which the plugin does not declare`);
         if (row.impl !== undefined && row.impl !== "ts") refuse(`row '${path}' must not name an impl other than 'ts'`);
       }
+      checkSlots(path, row, `plugin '${p.name}'`, ledger, refuse);
       if (row.json === true) {
         if (paths.some((k) => k.startsWith(`${path} `))) refuse(`row '${path}' has subs, so json goes on each sub that renders it`);
-        const head = `  eris ${path}`;
-        generated.push(`${head}${" ".repeat(Math.max(1, FIX_COLUMN - head.length))}${row.summary}\n`);
+        generated.push(jsonFixLine(path, row.summary));
       }
     }
     for (const h of Object.keys(p.handlers)) if (!own.includes(h)) refuse(`handler '${h}' has no group row`);
@@ -136,6 +210,8 @@ export function composeCli(coreRows: Rows, coreHandlers: Handlers, plugins: read
     jsonSurfaces: deriveJsonSurfaces(registry),
     jsonFix: unsupportedFix(fixLines),
     groups,
+    hasMenu: opts.menu !== undefined,
+    completionNote: opts.completionNote ?? null,
   };
 }
 

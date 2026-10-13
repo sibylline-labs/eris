@@ -26,12 +26,12 @@
 
 import type { CliContext, VerbContext, VerbHandler } from "../main";
 import { type ArgSinks, type GroupArgs, groupArgsIn, type ReadOptions, readRowArgs, type RowArgs } from "./args";
-import type { Flag, FlagName, Row } from "./registry";
+import type { CompletionDomain, Flag, FlagName, Row, SlotWord } from "./registry";
 
 export { erisHome, renderFailureBlock, renderWarnLines } from "../../ts/lib/eris-fail";
 export { readEnv } from "../runtime/env";
 export { CliExit } from "./args";
-export type { ArgSinks, CliContext, Flag, FlagName, GroupArgs, ReadOptions, Row, RowArgs, VerbContext, VerbHandler };
+export type { ArgSinks, CliContext, CompletionDomain, Flag, FlagName, GroupArgs, ReadOptions, Row, RowArgs, SlotWord, VerbContext, VerbHandler };
 
 type Rows = Readonly<Record<string, Row>>;
 

@@ -1,0 +1,17 @@
+id: runtime-imports-no-testing-depth-5-plus
+# A file four or more directories down. The depth is not known from here, so any
+# climb of five or more that ends at a testing directory is refused (it errs
+# toward the error); a file this deep wants the exact depth added above.
+valid:
+  # Four climbs or fewer are the exact-depth documents' business.
+  - import { helper } from "../../../../testing/helper";
+  - const t = await import("../../../testing");
+  - import { helper } from "./testing/helper";
+  - import x from "../../../../../testing-utils";
+invalid:
+  - import { createFakeRunner } from "../../../../../testing";
+  - import { buildInChild } from "../../../../../../testing/build-child";
+  - export * from "../../../../../testing";
+  - const t = await import("../../../../../../../testing");
+  - const t = await import(`../../../../../testing/index`);
+  - const t = require("../../../../../testing");

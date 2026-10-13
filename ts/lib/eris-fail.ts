@@ -17,7 +17,12 @@
  *   slug: <slug>
  *   fix: <line>            — zero or more, one per line of the fix text
  *   docs: <local path>     — $ERIS_HOME/<relpath>
- *   docs: <github url>     — https://github.com/sibylline-labs/eris/blob/main/<relpath>
+ *   docs: <github url>     — <docs base>/<relpath>
+ *
+ * The docs base is https://github.com/sibylline-labs/eris/blob/main unless a
+ * distribution named its own: baked by `build({ docsBase })` (src/build.ts), or
+ * handed to `runProgram({ identity })` for a run from source (`identity()` in
+ * src/runtime/home.ts).
  *
  * All on stderr; stdout is never touched by anything in this file. Field
  * order is fixed, every prefix carries its single trailing space, and the
@@ -42,10 +47,7 @@
  * including a trailing-newline fix and an empty fix, against the real bash.
  */
 
-import { installRoot, installRootIsUnwritten } from "../../src/runtime/home";
-
-/** The public source the second `docs:` line links into. */
-const GITHUB_BLOB = "https://github.com/sibylline-labs/eris/blob/main";
+import { docsRoot, identity, installRoot, installRootIsUnwritten } from "../../src/runtime/home";
 
 export interface ErisFailureInput {
   /** Stable machine key, `^[a-z0-9]+(-[a-z0-9]+)+$` — a `docs/ERRORS.md`
@@ -66,8 +68,10 @@ export interface ErisFailureInput {
 
 /**
  * `$ERIS_HOME`: `ERIS_DIR` wins when set; otherwise the install root (src/runtime/home.ts): the
- * checkout this file sits in, or a compiled binary's asset home, so a `docs:`
- * line names a file that exists either way.
+ * checkout this file sits in, a distribution's own root, or a compiled binary's
+ * asset home. The local `docs:` line names the doc under that root, or under this
+ * package's when a distribution run from source does not carry it (`docsRoot`), so it
+ * names a file that exists every way eris runs.
  */
 export function erisHome(env: Record<string, string | undefined> = process.env): string {
   const override = env.ERIS_DIR;
@@ -111,8 +115,8 @@ export function failureLines(input: ErisFailureInput, home: string | null): stri
   }
   const docsRel = input.docs && input.docs.length > 0 ? input.docs : `docs/ERRORS.md#${input.slug}`;
   const local = home === null || (installRootIsUnwritten() && home === installRoot()) ? null : home;
-  lines.push(`docs: ${local === null ? docsRel : `${local}/${docsRel}`}`);
-  lines.push(`docs: ${GITHUB_BLOB}/${docsRel}`);
+  lines.push(`docs: ${local === null ? docsRel : `${docsRoot(local, docsRel)}/${docsRel}`}`);
+  lines.push(`docs: ${identity().docsBase}/${docsRel}`);
   return lines;
 }
 

@@ -19,7 +19,8 @@
  * composition directly.
  *
  * `erisDir` is the shim's directory when the shim ran, else the install root
- * (src/runtime/home.ts): the checkout, or a compiled binary's asset home. A
+ * (src/runtime/home.ts): the checkout, a distribution's own root when its entry
+ * named one (`runProgram({ installRoot })`), or a compiled binary's asset home. A
  * binary never reads `_ERIS_SHIM_DIR`: only the shim sets it, and a stray value
  * in a caller's environment must not move the files the binary reads.
  */
@@ -28,9 +29,9 @@ import { PLUGINS } from "../plugins";
 import { asksForHelp, locateVerb } from "./cli/args";
 import { type Cli, composeCli, NO_ENTITLEMENTS, type Session } from "./cli/compose";
 import { sanitizeDisplay } from "./cli/output";
-import { REGISTRY } from "./cli/registry";
+import { ARGV_SHAPES_NO_ASSETS, REGISTRY } from "./cli/registry";
 import { route, type Impl } from "./cli/router";
-import { adoptUnwrittenHome, HomeUnwritableError, isCompiled, resolveInstallRoot } from "./runtime/home";
+import { adoptSourceIdentity, adoptSourceRoot, adoptUnwrittenHome, type DistributionIdentity, HomeUnwritableError, isCompiled, resolveInstallRoot } from "./runtime/home";
 import { warn } from "./runtime/logging";
 import { applySettings } from "./runtime/settings";
 
@@ -41,7 +42,7 @@ export interface Sink {
 }
 
 export interface CliContext {
-  /** The logical install root: the shim's directory, or a binary's asset home. */
+  /** The logical install root: the shim's directory, a distribution's declared root, or a binary's asset home. */
   erisDir: string;
   /** The caller's environment, shim variables removed. */
   env: Record<string, string | undefined>;
@@ -61,7 +62,9 @@ export const HANDLERS: Readonly<Record<string, () => Promise<VerbHandler>>> = {
   "": async () => (await import("./cli/commands/usage")).runUsage,
   "-h": async () => (await import("./cli/commands/usage")).runUsage,
   "--help": async () => (await import("./cli/commands/usage")).runUsage,
+  "--version": async () => (await import("./cli/commands/version")).runVersion,
   completion: async () => (await import("./cli/commands/completion")).runCompletion,
+  update: async () => (await import("./cli/commands/update")).runUpdate,
 };
 
 /** Core composed with the build's plugin list. */
@@ -90,7 +93,7 @@ export interface MainOptions {
 
 /**
  * A command line that reads nothing from the install root: usage, a `--help`
- * ahead of any `--`, and `completion`. A binary whose asset home cannot be
+ * ahead of any `--`, `--version`, and `completion`. A binary whose asset home cannot be
  * written still runs these, because they are what an operator reaches for to
  * find out how to fix it (and `completion` runs on every shell start). Every
  * other command line is refused with `eris-cache-unwritable`. Only consulted
@@ -99,7 +102,8 @@ export interface MainOptions {
  * own missing file instead of the block.
  */
 export function readsNoAssets(argv: readonly string[]): boolean {
-  return locateVerb(argv)[0] === "completion" || asksForHelp(argv);
+  const verb = locateVerb(argv)[0];
+  return verb === "completion" || (verb !== undefined && ARGV_SHAPES_NO_ASSETS.includes(verb)) || asksForHelp(argv);
 }
 
 /**
@@ -169,8 +173,33 @@ function exitAfterFlush(code: number): void {
   setTimeout(() => process.exit(code), 10_000).unref();
 }
 
+export interface ProgramOptions extends Pick<MainOptions, "cli" | "entitlements"> {
+  /**
+   * The distribution's root, an absolute path: what a run from source reads its
+   * files from and names its docs under (`ctx.erisDir`, a failure block's local
+   * `docs:` line), in place of this package's directory. Pass the directory
+   * `build()` takes as `root`, so a run from source and the binary read the
+   * same relative paths. A compiled binary ignores it (its asset home is its
+   * root), and the shim's `_ERIS_SHIM_DIR` wins over it.
+   */
+  installRoot?: string;
+  /**
+   * Who the distribution is (`releaseRepo`, `versionExtra`, `docsBase`), for a
+   * run from source: what `eris --version` prints, the repository `eris update`
+   * and `releaseRepo()` name, and the base of a failure block's second `docs:`
+   * line, in place of this repository's. Pass the values `build()` is given, so a
+   * run from source and the binary say the same. Checked as `build()` checks
+   * them. A compiled binary keeps the identity its build baked, whatever is
+   * passed here; no environment variable moves either.
+   */
+  identity?: DistributionIdentity;
+}
+
 /** The process entry: this file's own when run, and a distribution's. */
-export function runProgram(opts: Pick<MainOptions, "cli" | "entitlements"> = {}): void {
+export function runProgram(opts: ProgramOptions = {}): void {
+  const { installRoot: root, identity, ...mainOpts } = opts;
+  if (root !== undefined) adoptSourceRoot(root);
+  if (identity !== undefined) adoptSourceIdentity(identity);
   // A compiled binary has no shim to unset BUN_CONFIG_VERBOSE_FETCH before bun
   // starts, and `delete` does not reach bun's reader — but an assignment does:
   // "0" turns verbose fetch off for this process (measured, bun 1.3.13).
@@ -185,7 +214,7 @@ export function runProgram(opts: Pick<MainOptions, "cli" | "entitlements"> = {})
   // written, mid idempotency-key digest) — and a loop that drains
   // with `main` still pending ends the process as a silent success.
   const hold = setInterval(() => {}, 1 << 30);
-  main(process.argv.slice(2), process.env, opts).finally(() => clearInterval(hold)).then(exitAfterFlush, (e) => {
+  main(process.argv.slice(2), process.env, mainOpts).finally(() => clearInterval(hold)).then(exitAfterFlush, (e) => {
     process.stderr.write(`ERROR ${e instanceof Error ? e.message : String(e)}\n`);
     exitAfterFlush(1);
   });

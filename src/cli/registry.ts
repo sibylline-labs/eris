@@ -56,25 +56,72 @@ export interface Row {
   readonly usage?: string;
   /** Said in the extra-word refusal, e.g. "quote the statement". */
   readonly extraHint?: string;
+  /** Tab completion for the positional operands, one entry per slot, in
+   *  order: the words a slot offers. A word is a literal, `@file` (file
+   *  names: the slot offers nothing else), or a `CompletionDomain`. A slot
+   *  past the last entry completes nothing. Checked at composition. */
+  readonly complete?: readonly (readonly SlotWord[])[];
 }
+
+/**
+ * A slot whose words only a shell function can list at tab-press time: names
+ * the distribution keeps in a file, say. `helper` is shell text, bash-3.2
+ * clean (the zsh route loads the same body), holding exactly one function
+ * definition, `__eris_dom_<name>` for `@<name>`. That function is called with
+ * the words typed in the earlier positional slots and prints its words;
+ * `compgen -W` expands them, so it must print shell-safe words only. Functions
+ * it calls go in `library`, one definition per text, each `__eris_dom_…`;
+ * domains that share a library hand over the same texts, emitted once.
+ *
+ * The texts bypass the emitter's word checks, so composition checks them
+ * instead (src/cli/commands/completion/domain.ts). They are trusted like a
+ * plugin's handler code: the check keeps a mistake from breaking or running
+ * code in every shell that sources `eris completion`, not a hostile author out.
+ */
+export interface CompletionDomain {
+  /** `@` then lower-case letters, digits, `_`; `@file` is built in. */
+  readonly domain: `@${string}`;
+  readonly helper: string;
+  readonly library?: readonly string[];
+}
+
+export type SlotWord = string | CompletionDomain;
 
 /** Every verb, as declared: the literal types the parser derives a handler's
  *  argument type from. `REGISTRY` is the same object for code that walks it.
- *  Core declares only `completion`; every other group is a plugin's
+ *  Core declares `completion` and `update`; every other group is a plugin's
  *  (plugins/index.ts, composed by src/cli/compose.ts). */
 export const VERBS = {
   completion: { impl: "ts", summary: "Emit shell tab-completion script (bash, zsh)" },
   "completion bash": { summary: "Emit the bash completion script" },
   "completion zsh": { summary: "Emit the zsh completion script" },
+  update: {
+    impl: "ts",
+    summary: "Update this eris binary to the latest release (--check, --to)",
+    json: true,
+    usage: "[--check] [--to <tag>]",
+    flags: [
+      { name: "--check", takesValue: false },
+      { name: "--to", takesValue: true },
+    ],
+  },
 } as const satisfies Readonly<Record<string, Row>>;
 
 export type VerbPath = keyof typeof VERBS;
 
 export const REGISTRY: Readonly<Record<string, Row>> = VERBS;
 
-/** The argv shapes that are not verbs: the bare program and the top-level
- *  help. */
-export const ARGV_SHAPES: Readonly<Record<string, Impl>> = { "": "ts", "-h": "ts", "--help": "ts" };
+/** The argv shapes that are not verbs: the bare program, the top-level
+ *  help and the version. */
+export const ARGV_SHAPES: Readonly<Record<string, Impl>> = { "": "ts", "-h": "ts", "--help": "ts", "--version": "ts" };
+
+/** The argv shapes that render JSON under the global `--output`. */
+export const ARGV_SHAPE_JSON: readonly string[] = ["--version"];
+
+/** The argv shapes, beyond a `--help`, that print from the binary alone and
+ *  read nothing from the install root. The bare program is not one: a
+ *  distribution's menu may read it. */
+export const ARGV_SHAPES_NO_ASSETS: readonly string[] = ["--version"];
 
 export function groupOf(path: string): string {
   return path.split(" ")[0]!;
@@ -128,7 +175,7 @@ export function deriveTable(reg: Readonly<Record<string, Row>> = REGISTRY): Reco
 /** The `--output json` allow-list: a group maps to `true` (every sub) or to
  *  the subs that qualify. */
 export function deriveJsonSurfaces(reg: Readonly<Record<string, Row>> = REGISTRY): Record<string, true | readonly string[]> {
-  const out: Record<string, true | string[]> = {};
+  const out: Record<string, true | string[]> = Object.fromEntries(ARGV_SHAPE_JSON.map((shape) => [shape, true as const]));
   for (const [path, row] of Object.entries(reg)) {
     if (row.json !== true) continue;
     const words = path.split(" ");

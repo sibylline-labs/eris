@@ -6,12 +6,22 @@
  * Two ways to run, one answer each:
  *
  *   - From a checkout (the `eris` shim → `bun src/main.ts`): the checkout, two
- *     directories above this file.
- *   - As a compiled binary (`scripts/build.ts`): the files ride inside the binary
+ *     directories above this file. A distribution run from source is a checkout
+ *     of its own: its entry names its root (`runProgram({ installRoot })`,
+ *     `adoptSourceRoot`), so the files it reads are its own, not those of the
+ *     eris package in its node_modules. A failure block's `docs:` line names a doc
+ *     under that root when it holds the doc, else under the eris package's (the
+ *     order `build()` takes docs in, `docsRoot`).
+ *   - As a compiled binary (`build()`, src/build.ts): the files ride inside the binary
  *     as the build-generated `eris:assets` module, and are written once per build
  *     to `${ERIS_CACHE_DIR:-${XDG_CACHE_HOME:-~/.cache}/eris}/<build id>/`, which is
  *     the root. The build id is a content hash of the assets and the source, so a
  *     build never reuses another build's files.
+ *
+ * The build's identity (release repository, `--version` line, docs base) follows
+ * the same split: a binary's is baked by `build()` and always wins; a run from
+ * source reports the one its entry adopted (`runProgram({ identity })`,
+ * `adoptSourceIdentity`), else this repository's.
  *
  * Only the build defines `__ERIS_BUILD_ID__`, so `typeof` tells the two apart; a
  * plain `bun` run never reaches the `eris:assets` import, which only the build's
@@ -29,20 +39,113 @@
  * on with the home's path, which then names a directory that does not exist.
  */
 
+/// <reference path="./eris-assets.d.ts" />
+// The `eris:assets` module `build()` supplies at bundle time: referenced here so a
+// program that imports this file (a distribution through eris/sdk) typechecks with
+// no `files` entry of its own for the declaration.
+
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 declare const __ERIS_BUILD_ID__: string | undefined;
+declare const __ERIS_RELEASE_REPO__: string | undefined;
+declare const __ERIS_VERSION__: string | undefined;
+declare const __ERIS_VERSION_EXTRA__: string | null | undefined;
+declare const __ERIS_DOCS_BASE__: string | undefined;
 
 type Env = Record<string, string | undefined>;
 
 /** The compiled binary's build id; null when running from a checkout. */
 export const BUILD_ID: string | null = typeof __ERIS_BUILD_ID__ === "undefined" ? null : __ERIS_BUILD_ID__;
 
-/** True inside a binary built by `scripts/build.ts`. */
+/** The GitHub repository (`owner/name`) this repository's releases are published to: a build's or a run's, unless its distribution names its own. */
+export const DEFAULT_RELEASE_REPO = "sibylline-labs/eris";
+
+/** The release tag a build was given (`build({ tag })`); `dev` for an untagged build and for a checkout. */
+export const VERSION: string = typeof __ERIS_VERSION__ === "string" ? __ERIS_VERSION__ : "dev";
+
+/** Where a failure block's second `docs:` line points: this repository's public docs. */
+export const DEFAULT_DOCS_BASE = "https://github.com/sibylline-labs/eris/blob/main";
+
+/** True inside a binary built by `build()` (src/build.ts). */
 export const isCompiled = BUILD_ID !== null;
+
+/**
+ * Who a distribution is: what `build()` bakes into its binary (src/build.ts) and
+ * what its entry hands `runProgram({ identity })` for a run from source. Each
+ * field left out is this repository's.
+ */
+export interface DistributionIdentity {
+  /** `owner/name` the distribution's own releases are published to: `eris --version` names it and `eris update` reads it. */
+  readonly releaseRepo?: string;
+  /** One printable line `eris --version` prints after the version line: the core a distribution was built on, say. */
+  readonly versionExtra?: string;
+  /** An https URL (no query, fragment or space) a failure block's second `docs:` line appends the doc path to. */
+  readonly docsBase?: string;
+}
+
+/** A `DistributionIdentity` checked and filled in. */
+export interface Identity {
+  readonly releaseRepo: string;
+  readonly versionExtra: string | null;
+  readonly docsBase: string;
+}
+
+const RELEASE_REPO_SHAPE = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/;
+/** One line of printable ASCII, visible at both ends. */
+const VERSION_LINE = /^[\x21-\x7e](?:[\x20-\x7e]{0,118}[\x21-\x7e])?$/;
+/** An https URL with no query, fragment or space, whose trailing slashes are dropped. */
+const DOCS_BASE_URL = /^https:\/\/[A-Za-z0-9.-]+(?::\d+)?(?:\/[A-Za-z0-9._~%/-]*)?$/;
+
+/** `id` checked and filled in with this repository's defaults; the one rule `build()` and `runProgram` both apply. */
+export function resolveIdentity(id: DistributionIdentity = {}): Identity {
+  const releaseRepo = id.releaseRepo ?? DEFAULT_RELEASE_REPO;
+  if (!RELEASE_REPO_SHAPE.test(releaseRepo)) throw new Error(`releaseRepo must be owner/name: ${JSON.stringify(releaseRepo)}`);
+  const versionExtra = id.versionExtra ?? null;
+  if (versionExtra !== null && !VERSION_LINE.test(versionExtra)) {
+    throw new Error(`versionExtra must be one printable line of at most 120 characters: ${JSON.stringify(versionExtra)}`);
+  }
+  const docsBase = (id.docsBase ?? DEFAULT_DOCS_BASE).replace(/\/+$/, "");
+  if (!DOCS_BASE_URL.test(docsBase)) throw new Error(`docsBase must be an https URL with no query, fragment or space: ${JSON.stringify(id.docsBase)}`);
+  return { releaseRepo, versionExtra, docsBase };
+}
+
+/**
+ * The binary's identity, as its build baked it; null outside a binary. Baked
+ * values always win: a binary reports what it was built and released as, and
+ * nothing its entry, its caller or the environment says at run time moves it.
+ */
+const BAKED: Identity | null = isCompiled
+  ? {
+      releaseRepo: typeof __ERIS_RELEASE_REPO__ === "string" ? __ERIS_RELEASE_REPO__ : DEFAULT_RELEASE_REPO,
+      versionExtra: typeof __ERIS_VERSION_EXTRA__ === "string" ? __ERIS_VERSION_EXTRA__ : null,
+      docsBase: typeof __ERIS_DOCS_BASE__ === "string" ? __ERIS_DOCS_BASE__ : DEFAULT_DOCS_BASE,
+    }
+  : null;
+
+let sourceIdentity: Identity = resolveIdentity();
+
+/**
+ * A distribution's identity, for a run from source (`runProgram({ identity })`,
+ * src/main.ts): what `identity()` answers with in place of this repository's.
+ * Checked as `build()` checks it, so a source run never reports what its binary
+ * could not; a compiled binary checks it too, then keeps its baked identity.
+ */
+export function adoptSourceIdentity(id: DistributionIdentity): void {
+  sourceIdentity = resolveIdentity(id);
+}
+
+/** This process's identity: a binary's baked one, else the one its entry adopted, else this repository's. */
+export function identity(): Identity {
+  return BAKED ?? sourceIdentity;
+}
+
+/** Where this build's own releases are published (`identity().releaseRepo`): what `eris update` reads. */
+export function releaseRepo(): string {
+  return identity().releaseRepo;
+}
 
 /** The file whose presence marks a home as completely written. */
 export const HOME_MARKER = ".eris-home-complete";
@@ -97,6 +200,17 @@ export function materializeHome(base: string, buildId: string, assets: Readonly<
 }
 
 let compiledRoot: string | undefined;
+let sourceRoot: string | undefined;
+
+/**
+ * A distribution's own root, for a run from source (`runProgram({ installRoot })`,
+ * src/main.ts): `installRoot()` answers with it in place of `checkoutRoot()`.
+ * A compiled binary ignores it, because its asset home is its root.
+ */
+export function adoptSourceRoot(dir: string): void {
+  if (!isAbsolute(dir)) throw new Error(`installRoot must be an absolute path: ${JSON.stringify(dir)}`);
+  sourceRoot = dir;
+}
 
 /** The binary's asset home could not be written: the cache base is read-only, full, or not a directory. */
 export class HomeUnwritableError extends Error {
@@ -116,7 +230,7 @@ export class HomeUnwritableError extends Error {
  * call. Throws `HomeUnwritableError` when the home cannot be written.
  */
 export async function resolveInstallRoot(env: Env): Promise<string> {
-  if (!isCompiled) return checkoutRoot();
+  if (!isCompiled) return sourceRoot ?? checkoutRoot();
   if (compiledRoot === undefined) {
     const { ASSETS } = await import("eris:assets");
     const base = cacheBase(env);
@@ -148,7 +262,32 @@ export function installRootIsUnwritten(): boolean {
 
 /** The install root without materializing: a binary's must already be resolved by `main`. */
 export function installRoot(): string {
-  if (!isCompiled) return checkoutRoot();
+  if (!isCompiled) return sourceRoot ?? checkoutRoot();
   if (compiledRoot === undefined) throw new Error("eris install root read before main() resolved it");
   return compiledRoot;
+}
+
+/**
+ * The first of `roots` that holds the repo-relative doc `rel` (an `#anchor` is
+ * ignored) as a file. `build()` takes each doc the source names from its doc
+ * roots by this rule, and `docsRoot` names a run from source's by it, so a
+ * binary and the source run point at the same copy.
+ */
+export function firstDocRoot(roots: readonly string[], rel: string): string | undefined {
+  const file = rel.split("#")[0]!;
+  return roots.find((r) => existsSync(join(r, file)) && statSync(join(r, file)).isFile());
+}
+
+/**
+ * The root a failure block's local `docs:` line names `rel` under, given the
+ * `home` it was handed. When `home` is the install root of a run from source, that
+ * is the install root, then this package's root, as `build()` falls back for the
+ * binary: a distribution carries only the docs it owns, and a line naming a core
+ * doc under its root would name a file that is not there. A compiled binary's home
+ * already holds every doc its source names; an `ERIS_DIR` or any other `home` is
+ * the caller's say, and a doc that neither root holds keeps `home`.
+ */
+export function docsRoot(home: string, rel: string): string {
+  if (isCompiled || home !== installRoot()) return home;
+  return firstDocRoot([home, checkoutRoot()], rel) ?? home;
 }

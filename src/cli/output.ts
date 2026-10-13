@@ -28,13 +28,21 @@ export function sanitizeDisplay(s: string): string {
  */
 export const JSON_SURFACES: Readonly<Record<string, true | readonly string[]>> = deriveJsonSurfaces();
 
-/** The refusal's fix text. Core has no json surface of its own, so the list
- *  is this header plus each plugin's lines (src/cli/compose.ts): the plugin's
- *  own `jsonFix`, else a line per json row. A json row added to core's
- *  registry is named here too (tests/cli-router.test.ts holds the two
- *  together). */
+/** The column a json surface's shape starts at in the refusal's fix text. */
+export const FIX_COLUMN = 43;
+
+/** One line of the refusal's fix text: `  eris <path>`, then from `FIX_COLUMN` what it prints. */
+export function jsonFixLine(path: string, shape: string): string {
+  const head = `  eris ${path}`;
+  return `${head}${" ".repeat(Math.max(1, FIX_COLUMN - head.length))}${shape}\n`;
+}
+
+/** The refusal's fix text: this header and core's own json surfaces, then each
+ *  plugin's lines (src/cli/compose.ts): the plugin's own `jsonFix`, else a
+ *  line per json row. A json row or argv shape added to core is named here too
+ *  (tests/cli-router.test.ts holds the two together). */
 export const UNSUPPORTED_FIX_SURFACES = `the surfaces that accept --output json are:
-`;
+${jsonFixLine("--version", "{version, release_repo, build_id, extra}")}${jsonFixLine("update", "{current, latest, update_available, updated}")}`;
 
 /** The fix text with `lines` (each ending in a newline) after the header. The
  *  last newline is dropped: a trailing one renders as an empty `fix:` line. */

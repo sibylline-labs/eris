@@ -1,0 +1,17 @@
+id: runtime-imports-no-testing-depth-4
+# A file three directories down: four climbs reach the repo root.
+valid:
+  # Three climbs land inside the tree.
+  - import { helper } from "../../../testing/helper";
+  - const t = await import("../../../testing");
+  # Five climbs leave the repository.
+  - import { createFakeRunner } from "../../../../../testing";
+  - import { helper } from "./testing/helper";
+  - import x from "../../../../testing-utils";
+invalid:
+  - import { createFakeRunner } from "../../../../testing";
+  - import { buildInChild } from "../../../../testing/build-child";
+  - export * from "../../../../testing";
+  - const t = await import("../../../../testing");
+  - const t = await import(`../../../../testing/index`);
+  - const t = require("../../../../testing");

@@ -17,8 +17,8 @@ import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from "bu
 import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { emitScript, SLOTS, type Slots } from "../src/cli/commands/completion/emit";
-import type { FlagName, Row } from "../src/cli/registry";
+import { emitScript } from "../src/cli/commands/completion/emit";
+import type { CompletionDomain, FlagName, Row } from "../src/cli/registry";
 import { REGISTRY } from "./helpers/build-cli";
 import { onPath } from "../src/cli/ts-verb";
 import { checkoutOnly, ERIS, ERIS_BIN, oracleEnv } from "./helpers/blackbox";
@@ -212,9 +212,16 @@ describe("tab presses: the tree from the registry", () => {
   it("completes the groups at the first word, and a prefix narrows them", () => {
     /** When the generated group list drops a verb, `eris <TAB>` stops offering it. */
     const all = press(["eris", ""]);
-    expect(all).toEqual(expect.arrayContaining(["completion", "yak", "--help"]));
+    expect(all).toEqual(expect.arrayContaining(["completion", "update", "yak", "--help", "--version"]));
     expect(press(["eris", "co"])).toEqual(["completion"]);
     expect(press(["eris", "y"])).toEqual(["yak"]);
+    expect(press(["eris", "--v"])).toEqual(["--version"]);
+  });
+
+  it("update offers its own flags, and completes nothing for --to's value", () => {
+    /** When a core verb's row is not read by the generated tree, `eris update --<TAB>` offers nothing, or a tag is completed as a file. */
+    expect(sorted(press(["eris", "update", "--"]))).toEqual(["--check", "--help", "--to"]);
+    expect(press(["eris", "update", "--to", ""])).toEqual([]);
   });
 
   it("yak issue --<TAB> offers exactly the flags its row declares", () => {
@@ -265,9 +272,8 @@ describe("the emitter: one registry edit is the whole change", () => {
     frob: { impl: "ts", summary: "test verb", flags: [v("--zing"), f("--manifest")] },
     "frob zap": { summary: "test sub", flags: [b("--zoom")] },
     "frob zap deep": { summary: "test nested sub" },
-    plain: { impl: "ts", summary: "test verb with operands and no subs", flags: [v("--level"), b("--quiet")] },
+    plain: { impl: "ts", summary: "test verb with operands and no subs", flags: [v("--level"), b("--quiet")], complete: [["alpha", "beta"], ["on", "off"], ["@file"]] },
   };
-  const slots: Slots = { plain: [["alpha", "beta"], ["on", "off"], ["@file"]] };
 
   it("a registry-only verb, sub, nested sub and flag complete in the emitted bash", () => {
     /** When the emitter reads anything but the registry it is given, a new verb needs a second edit to complete. */
@@ -284,7 +290,7 @@ describe("the emitter: one registry edit is the whole change", () => {
   it("a positional slot completes its words, and flags and their values are skipped when counting positionals", () => {
     /** When the value of a value flag is counted as a positional, every later slot completes the wrong domain. */
     const script = join(tmp, "slots.bash");
-    writeFileSync(script, emitScript("bash", reg, slots));
+    writeFileSync(script, emitScript("bash", reg));
     expect(press(["eris", "plain", "--level", ""], { script })).toEqual([]);
     expect(sorted(press(["eris", "plain", "--level", "3", "--quiet", ""], { script }))).toEqual(["alpha", "beta"]);
     expect(sorted(press(["eris", "plain", "alpha", ""], { script }))).toEqual(["off", "on"]);
@@ -292,9 +298,35 @@ describe("the emitter: one registry edit is the whole change", () => {
     expect(press(["eris", "plain", "alpha", "on", "x", ""], { script })).toEqual([]);
   });
 
-  it("every positional slot names a path the real registry has", () => {
-    /** When a verb is renamed in the registry, its slot silently stops, because the emitter skips a path it does not know. */
-    for (const path of Object.keys(SLOTS)) expect({ path, inRegistry: Object.hasOwn(REGISTRY, path) }).toEqual({ path, inRegistry: true });
+  /** A domain whose words depend on the word typed in slot 0 (the tone picks the colours), shared by two rows. */
+  const COLOR: CompletionDomain = {
+    domain: "@color",
+    helper: `__eris_dom_color() {
+  case "\${1:-}" in
+    warm) echo "red orange" ;;
+    *) echo "blue green" ;;
+  esac
+}
+`,
+  };
+  const painted: Record<string, Row> = {
+    paint: { impl: "ts", summary: "test verb whose second slot is a domain", complete: [["warm", "cool"], [COLOR, "clear"]] },
+    tint: { impl: "ts", summary: "test verb sharing the domain", complete: [[COLOR]] },
+  };
+
+  it("a slot's domain completes the words its helper prints, given the words typed in the earlier slots", () => {
+    /** When the emitter drops a domain's helper or calls it without the earlier slots' words, a slot whose words only the distribution can list (names for the env typed first) completes nothing or the wrong set: observed at a tab press on the emitted bash. */
+    const script = join(tmp, "domain.bash");
+    const text = emitScript("bash", { ...reg, ...painted });
+    writeFileSync(script, text);
+    expect(sorted(press(["eris", "paint", ""], { script }))).toEqual(["cool", "warm"]);
+    expect(sorted(press(["eris", "paint", "warm", ""], { script }))).toEqual(["clear", "orange", "red"]);
+    expect(sorted(press(["eris", "paint", "cool", ""], { script }))).toEqual(["blue", "clear", "green"]);
+    expect(sorted(press(["eris", "tint", ""], { script }))).toEqual(["blue", "green"]);
+    // Two rows, one domain: its helper is emitted once.
+    expect(text.split("__eris_dom_color() {").length - 1).toBe(1);
+    // PAIRED: a registry with no domain emits no helper text at all.
+    expect(emitScript("bash", reg)).not.toContain("__eris_dom_");
   });
 
   it("the file flags the yak plugin declares complete file names in the real script", () => {
@@ -316,7 +348,7 @@ describe("the emitter: one registry edit is the whole change", () => {
   it.skipIf(!HAS_ZSH)("the same registry edit completes in the emitted zsh, loaded through a real compinit + bashcompinit", () => {
     /** When the zsh wrapper diverges from the shared body, zsh users lose a verb bash users have. */
     const script = join(tmp, "injected.zsh");
-    writeFileSync(script, emitScript("zsh", reg, slots));
+    writeFileSync(script, emitScript("zsh", { ...reg, ...painted }));
     expect(spawnSync("zsh", ["-n", script]).status).toBe(0);
     const r = spawnSync(
       "zsh",
@@ -327,14 +359,16 @@ source '${script}'
 setopt ksharrays
 COMP_WORDS=(eris frob ''); COMP_CWORD=2; _eris_completions; print -r -- "\${COMPREPLY[@]}"
 COMP_WORDS=(eris frob zap --); COMP_CWORD=3; _eris_completions; print -r -- "\${COMPREPLY[@]}"
-COMP_WORDS=(eris plain ''); COMP_CWORD=2; _eris_completions; print -r -- "\${COMPREPLY[@]}"`,
+COMP_WORDS=(eris plain ''); COMP_CWORD=2; _eris_completions; print -r -- "\${COMPREPLY[@]}"
+COMP_WORDS=(eris paint warm ''); COMP_CWORD=3; _eris_completions; print -r -- "\${COMPREPLY[@]}"`,
       ],
       { cwd: work, env: { PATH: process.env.PATH, HOME: home }, encoding: "utf8" },
     );
     expect({ status: r.status, stderr: r.stderr }).toEqual({ status: 0, stderr: "" });
-    const [verbs = "", flags = "", words = ""] = r.stdout.split("\n");
+    const [verbs = "", flags = "", words = "", domain = ""] = r.stdout.split("\n");
     expect(verbs).toBe("zap");
     expect(flags.split(" ").sort()).toEqual(["--help", "--zoom"]);
     expect(words.split(" ").sort()).toEqual(["alpha", "beta"]);
+    expect(domain.split(" ").sort()).toEqual(["clear", "orange", "red"]);
   });
 });

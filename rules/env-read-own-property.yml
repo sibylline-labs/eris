@@ -98,9 +98,9 @@ language: typescript
 severity: error
 message: >-
   An env object is indexed by a name here. Read it with readEnv(env, name),
-  imported from the plugin SDK (src/cli/plugin): env["__proto__"] and
-  env["constructor"] resolve to inherited values, so an unset variable would
-  read as set.
+  imported from the plugin SDK (src/cli/plugin, or eris/sdk in a
+  distribution): env["__proto__"] and env["constructor"] resolve to inherited
+  values, so an unset variable would read as set.
 note: |
   `readEnv` returns the value only for an own property and `undefined`
   otherwise. The same defect was fixed three times. A key that is a string
@@ -108,6 +108,7 @@ note: |
 files:
   - plugins/**/*.ts
   - examples/plugins/**/*.ts
+  - examples/distribution/**/*.ts
   - tests/helpers/plugins/**/*.ts
 rule:
   kind: subscript_expression

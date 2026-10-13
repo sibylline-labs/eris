@@ -13,7 +13,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import widgets from "../examples/plugins/widgets";
 import { composeCli, PluginCompositionError } from "../src/cli/compose";
-import type { ErisPlugin } from "../src/cli/plugin";
+import type { ErisPlugin, VerbHandler } from "../src/cli/plugin";
 import { UNSUPPORTED_FIX } from "../src/cli/output";
 import { REGISTRY } from "../src/cli/registry";
 import { HANDLERS, main, type MainOptions } from "../src/main";
@@ -79,6 +79,9 @@ describe("the three carried invariants", () => {
       const r = await run(["completion", shell], { cli });
       expect({ shell, rc: r.rc, stderr: r.stderr }).toEqual({ shell, rc: 0, stderr: "" });
       expect(r.stdout).toMatch(/\btripwire\b/);
+      // The row's completion domain is emitted from the manifest's data: its helper text and the slot that calls it.
+      expect(r.stdout).toContain("__eris_dom_trip() {\n  echo armed\n}\n");
+      expect(r.stdout).toContain(`"tripwire 0") echo "$(__eris_dom_trip "$@")" ;;`);
     }
     // The tripwire is live: dispatching to it does evaluate the handler module.
     await expect(run(["tripwire"], { cli })).rejects.toThrow("tripwire: handler module evaluated");
@@ -89,8 +92,8 @@ describe("the three carried invariants", () => {
     const refused = await run(["--output", "json", "widgets", "count", "2"], { cli: withWidgets });
     expect({ rc: refused.rc, stdout: refused.stdout }).toEqual({ rc: 1, stdout: "" });
     expect(refused.stderr).toContain("slug: output-json-unsupported");
-    // Under the header, the description at column 43 as core's own lines were.
-    expect(refused.stderr).toContain("fix: the surfaces that accept --output json are:\nfix:   eris widgets ping                        Reply with a pong\n");
+    // After core's own lines, the plugin's, the description at column 43 as core's shapes are.
+    expect(refused.stderr).toContain("fix:   eris update                              {current, latest, update_available, updated}\nfix:   eris widgets ping                        Reply with a pong\n");
     expect(refused.stderr).not.toContain("eris widgets count ");
     expect(withWidgets.jsonSurfaces.widgets).toEqual(["ping"]);
     // Core's own refusal text is unchanged by an empty plugin set.
@@ -103,7 +106,7 @@ describe("the three carried invariants", () => {
     const cli = composeCli(REGISTRY, HANDLERS, [{ ...widgets, jsonFix }]);
     const refused = await run(["--output", "json", "widgets", "count", "2"], { cli });
     // In the plugin slot after the header, and the last line of the fix (no empty `fix: ` after it).
-    expect(refused.stderr).toContain("fix: the surfaces that accept --output json are:\nfix:   eris widgets ping                        {pong}\ndocs: ");
+    expect(refused.stderr).toContain("fix:   eris update                              {current, latest, update_available, updated}\nfix:   eris widgets ping                        {pong}\ndocs: ");
     expect(refused.stderr).not.toContain("Reply with a pong");
   });
 
@@ -136,6 +139,82 @@ describe("composition refuses a plugin that would break a plane", () => {
   it.each(cases)("%s", (_name, plugins, message) => {
     /** When a malformed plugin composes, the binary routes to a script that does not exist, offers a verb nothing handles, or accepts --output json for subs with no rendering — observed at composeCli. */
     expect(() => composeCli(REGISTRY, HANDLERS, plugins)).toThrow(new PluginCompositionError(message));
+  });
+
+  /** A row whose slot 0 completes `tokens`. */
+  const slotted = (name: string, ...tokens: unknown[]): ErisPlugin =>
+    plugin({ name, rows: { [`g${name}`]: { ...ts, complete: [tokens] } as typeof ts }, handlers: { [`g${name}`]: h } });
+  const fn = (name: string, body = "  echo x") => `${name}() {\n${body}\n}\n`;
+  const domainCases: [string, unknown[], string][] = [
+    ["a slot word that is not shell-safe", ["a b"], "row 'gp' slot 0: 'a b' is not a completion word (letters, digits, '_', '?', '-'), '@file' or a domain"],
+    ["an '@' word that is not '@file'", ["@env"], "row 'gp' slot 0: '@env' is not a completion word (letters, digits, '_', '?', '-'), '@file' or a domain"],
+    ["a domain name outside the grammar", [{ domain: "@Env", helper: fn("__eris_dom_Env") }], "row 'gp' slot 0: domain '@Env' is not a domain name ('@', then lower-case letters, digits, '_')"],
+    ["the built-in file domain as an object", [{ domain: "@file", helper: fn("__eris_dom_file") }], "row 'gp' slot 0: '@file' is built in: write it as the word '@file'"],
+    ["a helper that defines another function", [{ domain: "@x", helper: fn("__eris_dom_y") }], "domain '@x': its helper defines __eris_dom_y, not __eris_dom_x"],
+    // Each refusal of the helper check itself is in tests/completion-helper.test.ts; this row holds that composition runs it.
+    ["a helper the check refuses", [{ domain: "@x", helper: `${fn("__eris_dom_x")}touch pwned\n` }], "domain '@x': its helper puts text after the function's closing brace (line 3): one function per helper text"],
+    ["a library that is not a list of texts", [{ domain: "@x", helper: fn("__eris_dom_x"), library: "oops" }], "row 'gp' slot 0: domain '@x': library must be a list of helper texts"],
+  ];
+  it.each(domainCases)("%s", (_name, tokens, message) => {
+    /** When composition accepts a completion slot the emitted script cannot hold — a word that breaks out of its quotes, a helper that runs a command when sourced, leaves a quote or body open (swallowing the rest of the script), or redefines core's functions — every shell that sources `eris completion` breaks or runs code at start: observed at composeCli. */
+    expect(() => composeCli(REGISTRY, HANDLERS, [slotted("p", ...tokens)])).toThrow(new PluginCompositionError(`plugin 'p': ${message}`));
+  });
+
+  it("one domain carries one helper across the build, and one helper function has one definition", () => {
+    /** When two plugins hand the same domain (or the same helper function) different text, whichever the script defines last silently wins, and the other plugin's slot completes the wrong words: observed at composeCli. */
+    const x = (body: string) => ({ domain: "@x", helper: fn("__eris_dom_x", body) });
+    expect(() => composeCli(REGISTRY, HANDLERS, [slotted("a", x("  echo a")), slotted("b", x("  echo b"))])).toThrow(
+      new PluginCompositionError("plugin 'b': domain '@x': it carries a different helper or library from plugin 'a'"),
+    );
+    // A helper function given two texts across domains is refused in tests/completion-helper.test.ts ("a domain's library").
+    // PAIRED: the same text in both plugins is one helper, shared.
+    const shared = { domain: "@x", helper: fn("__eris_dom_x") };
+    expect(composeCli(REGISTRY, HANDLERS, [slotted("a", shared), slotted("b", { ...shared })]).groups.map((g) => g.group)).toEqual(["ga", "gb"]);
+  });
+});
+
+describe("a distribution owns the bare program", () => {
+  it("its menu runs for bare `eris`; -h and --help stay the usage, and core's usage is the default", async () => {
+    /** When the menu option is dropped or reaches the wrong argv shape, a distribution's bare `eris` prints core's usage instead of its launcher, or `eris --help` stops printing usage: observed through `main`. */
+    const menu: VerbHandler = async (args, ctx) => (ctx.stdout.write(`menu ${JSON.stringify(args)} ${ctx.format}\n`), 0);
+    const cli = composeCli(REGISTRY, HANDLERS, [widgets], { menu: async () => menu });
+    expect(await run([], { cli })).toEqual({ rc: 0, stdout: "menu [] text\n", stderr: "" });
+    for (const help of ["-h", "--help"]) {
+      const r = await run([help], { cli });
+      expect({ help, rc: r.rc, stderr: r.stderr }).toEqual({ help, rc: 0, stderr: "" });
+      expect(r.stdout).toStartWith("Usage: eris <command> [args]\n");
+      expect(r.stdout).toContain("\n  widgets ");
+      // The usage points at the menu the bare program now owns.
+      expect(r.stdout).toEndWith("\nRun 'eris <command> --help' for command-specific usage.\nRun 'eris' without arguments for interactive mode.\n");
+    }
+    // PAIRED: without the option, bare `eris` is core's usage, and it promises no interactive mode.
+    const plain = await run([], { cli: withWidgets });
+    expect(plain.stdout).toStartWith("Usage: eris <command> [args]\n");
+    expect(plain.stdout).toEndWith("\nRun 'eris <command> --help' for command-specific usage.\n");
+    expect(plain.stdout).not.toContain("interactive mode");
+    expect(() => composeCli(REGISTRY, HANDLERS, [], { menu: "launcher" as unknown as () => Promise<VerbHandler> })).toThrow(
+      new PluginCompositionError("menu must be a handler thunk, () => Promise<VerbHandler>"),
+    );
+  });
+
+  it("a distribution adds its own paragraph to `eris completion --help`, and without one the text is core's", async () => {
+    /** When the completion note is dropped, a distribution whose domains complete more than core's (env names, say) cannot say so in the help its users read: observed through `main`. */
+    const note = "Also completes widget names.\nThey come from the local cache.";
+    const noted = composeCli(REGISTRY, HANDLERS, [widgets], { completionNote: note });
+    for (const argv of [["completion"], ["completion", "--help"]]) {
+      const r = await run(argv, { cli: noted });
+      expect({ argv, rc: r.rc, stderr: r.stderr }).toEqual({ argv, rc: 0, stderr: "" });
+      expect(r.stdout).toContain(`never runs eris and never touches the network.\n${note}\nSee docs/COMPLETION.md.\n`);
+    }
+    // PAIRED: without the option, core's text, with nothing between its description and the doc pointer.
+    const core = await run(["completion", "--help"], { cli: withWidgets });
+    expect(core.stdout).toContain("never runs eris and never touches the network.\nSee docs/COMPLETION.md.\n");
+    expect(core.stdout).not.toContain("widget names");
+    for (const bad of ["", "tab\there", "line\n\nbreak", "café", 7 as unknown as string]) {
+      expect(() => composeCli(REGISTRY, HANDLERS, [], { completionNote: bad })).toThrow(
+        new PluginCompositionError("completionNote must be one or more non-empty lines of printable ASCII"),
+      );
+    }
   });
 });
 

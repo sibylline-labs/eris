@@ -23,7 +23,7 @@ describe("router table", () => {
     /** When a group routes to anything else, it reaches nothing: there is no Bash dispatcher left. */
     const groups = Object.keys(TABLE).filter((k) => !k.includes(" "));
     for (const g of groups) expect({ g, impl: TABLE[g] }).toEqual({ g, impl: "ts" });
-    expect(groups).toEqual(expect.arrayContaining(["", "-h", "--help", "completion", "yak"]));
+    expect(groups).toEqual(expect.arrayContaining(["", "-h", "--help", "--version", "completion", "update", "yak"]));
   });
 
   it("the table derived from the registry is the routing table it replaced", () => {
@@ -32,9 +32,11 @@ describe("router table", () => {
       "": "ts",
       "-h": "ts",
       "--help": "ts",
+      "--version": "ts",
       completion: "ts",
       "completion bash": "ts",
       "completion zsh": "ts",
+      update: "ts",
       yak: "ts",
       "yak fatal": "ts",
       "yak issue": "ts",
@@ -142,6 +144,8 @@ describe("the --output json surfaces, from the registry", () => {
   it("the allow-list derived from the registry's json rows is the list it replaced", () => {
     /** When a json row is dropped or added by mistake, a machine caller is refused (or handed human text) on a surface that changed silently. */
     expect(JSON_SURFACES).toEqual({
+      "--version": true,
+      update: true,
       yak: ["fatal", "issue", "suggest"],
     });
   });

@@ -1,0 +1,293 @@
+name: release
+
+# Compiles eris into one executable per target, runs the black-box oracle against
+# each, publishes both binaries and a SHA256SUMS to a GitHub release, then updates
+# the Homebrew formula in the tap. install.sh, `eris update` and the formula all
+# read that release: `eris-<os>-<arch>` and SHA256SUMS, one `<sha256>  <name>`
+# line per binary.
+#
+# Triggers:
+#   - push of a tag `v*`: releases that tag. A tag with a hyphen (v0.3.0-rc.1) is a
+#     pre-release, which `releases/latest`, install.sh and `eris update` skip, and
+#     which the tap does not follow.
+#   - workflow_dispatch (`tag`, `prerelease`): builds the dispatched ref and creates
+#     or updates the release for `tag`, creating the tag at that commit when it does
+#     not exist yet. A tag that already exists must be at that commit, or the `plan`
+#     job refuses (rebuild it with `--ref <tag>`):
+#       gh workflow run release.yml --ref <branch> -f tag=v0.3.0-rc.1 -f prerelease=true
+#
+# Each target builds NATIVELY on its own runner: a bun compile targets its host.
+#
+# Secrets: none, except TAP_PUSH_TOKEN, read by the tap job alone. Without it the
+# release is published and the tap is left as it was.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and publish, e.g. v0.3.0-rc.1 (created at the dispatched ref if absent)"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark the release as a pre-release"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    # bash with pipefail; the default `run:` shell has no pipefail.
+    shell: bash
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The tag and the pre-release flag, validated once. A dispatch input reaches the
+  # shell only through `env:`, never by interpolation into the script.
+  plan:
+    name: plan (tag, pre-release flag)
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+    steps:
+      # A full clone, so the tag guard below can read every tag from local refs. It
+      # needs no token afterwards.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          if [[ "$EVENT" == workflow_dispatch ]]; then
+            tag="$INPUT_TAG"
+            pre="$INPUT_PRERELEASE"
+          else
+            tag="$REF_NAME"
+            if [[ "$tag" == *-* ]]; then pre=true; else pre=false; fi
+          fi
+          # The grammar `eris update` orders releases by (RELEASE_TAG in
+          # src/cli/commands/update/semver.ts), and the formula's version comes from.
+          if ! [[ "$tag" =~ ^v[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error title=Bad release tag::'$tag' must look like v0.2.0 or v0.3.0-rc.1"
+            exit 1
+          fi
+          # A dispatch over a tag that already exists must build that tag's commit.
+          # `gh release create --target` is ignored when the tag exists, and
+          # `gh release upload --clobber` would put binaries built from this ref under
+          # a tag that names other source. Re-dispatch from the tag itself
+          # (`--ref <tag>`) to rebuild it. A tag push builds the tag it was pushed for.
+          if [[ "$EVENT" == workflow_dispatch ]]; then
+            at=$(git rev-parse --verify --quiet "refs/tags/$tag^{commit}" || true)
+            if [[ -n "$at" && "$at" != "$GITHUB_SHA" ]]; then
+              echo "::error title=Tag exists at another commit::$tag is at $at, but this run builds $GITHUB_SHA. Dispatch with --ref $tag to rebuild it, or pick a new tag."
+              exit 1
+            fi
+          fi
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+          echo "prerelease=$pre" >>"$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  build:
+    name: build + oracle (${{ matrix.target }})
+    needs: plan
+    runs-on: ${{ matrix.os }}
+    # A regression that hangs a suite (an orphan holding a capture pipe) never
+    # fails it: the timeout is what turns that into a red leg.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: macos-latest
+            target: darwin-arm64
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      # The suite needs zsh, git and script (tests/required-tools.txt); macOS ships them.
+      - name: Install zsh and script
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zsh util-linux
+          zsh --version
+          command -v script
+
+      - run: bun install --frozen-lockfile
+
+      # scripts/build.ts prints the output path. It is checked against the matrix
+      # target so an asset can never be published under a platform it was not built
+      # on (a runner image changing architecture would otherwise mislabel it).
+      - name: Build the binary
+        id: build
+        run: |
+          bin=$(bun scripts/build.ts --tag "$TAG")
+          if [[ "$bin" != "dist/eris-${TARGET}" ]]; then
+            echo "::error title=Wrong platform::built $bin on a runner that is not $TARGET"
+            exit 1
+          fi
+          echo "bin=$PWD/$bin" >>"$GITHUB_OUTPUT"
+
+      # The oracle: every suite runs, and the black-box ones drive the binary.
+      - name: bun test (ERIS_BIN = the binary)
+        env:
+          ERIS_BIN: ${{ steps.build.outputs.bin }}
+        run: bun test ./tests
+
+      # The tag is the version the binary reports: `eris update` compares it with
+      # the next release's tag, and the formula's test matches it.
+      - name: The binary reports its tag
+        env:
+          ERIS_BIN: ${{ steps.build.outputs.bin }}
+        run: |
+          out=$("$ERIS_BIN" --version)
+          got=${out%%$'\n'*}
+          [[ "$got" == "eris $TAG ("* ]] || { echo "::error title=Wrong version::'$got' does not start with 'eris $TAG ('"; exit 1; }
+          echo "$got"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eris-${{ matrix.target }}
+          path: dist/eris-${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # The only job that can write the repository: it holds `contents: write` and runs
+  # no repo code.
+  publish:
+    name: publish (GitHub release)
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.plan.outputs.tag }}
+      PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: eris-*
+          merge-multiple: true
+          path: assets
+
+      # install.sh, `eris update` and the formula read this file: one line per
+      # binary, `<sha256>  eris-<os>-<arch>`, bare names, so `sha256sum -c` works
+      # beside them.
+      - name: SHA256SUMS
+        working-directory: assets
+        run: |
+          sha256sum eris-* > SHA256SUMS
+          cat SHA256SUMS
+
+      # A new release is created with its assets in one step, so no moment exists in
+      # which "latest" names a release without them. An existing release (a re-run,
+      # or a dispatch over an earlier rc) gets its assets replaced.
+      - name: Publish
+        working-directory: assets
+        run: |
+          files=(eris-linux-x64 eris-darwin-arm64 SHA256SUMS)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber
+            gh release edit "$TAG" --prerelease="$PRERELEASE"
+          else
+            gh release create "$TAG" "${files[@]}" --target "$GITHUB_SHA" --title "$TAG" --generate-notes --prerelease="$PRERELEASE"
+          fi
+          gh release view "$TAG" --json tagName,isPrerelease,assets --jq '{tagName, isPrerelease, assets: [.assets[].name]}'
+
+  # ---------------------------------------------------------------------------
+  # The Homebrew formula, rendered from the published SHA256SUMS and pushed to the
+  # tap. It runs only for a stable release, and only when TAP_PUSH_TOKEN (a token
+  # that can push to the tap repository and nothing else) is set: the `secrets`
+  # context is not available to an `if`, so the job reads it into `env` first and
+  # each step tests that.
+  tap:
+    name: tap (Homebrew formula)
+    needs: [plan, publish]
+    if: needs.plan.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: tap-formula
+      cancel-in-progress: false
+    env:
+      HAVE_TAP: ${{ secrets.TAP_PUSH_TOKEN != '' }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.plan.outputs.tag }}
+    steps:
+      - name: The tap token is not set
+        if: env.HAVE_TAP != 'true'
+        run: echo "::notice title=Homebrew tap not updated::TAP_PUSH_TOKEN is not set, so Formula/eris.rb was left as it was."
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: env.HAVE_TAP == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: env.HAVE_TAP == 'true'
+        with:
+          bun-version-file: .bun-version
+
+      # Repo code (the render script) runs here, before the tap token is on disk.
+      - name: Render the formula
+        if: env.HAVE_TAP == 'true'
+        run: |
+          gh release download "$TAG" --pattern SHA256SUMS --dir sums
+          bun scripts/render-formula.ts --tag "$TAG" --sums sums/SHA256SUMS --repo "$GITHUB_REPOSITORY" --out eris.rb
+          cat eris.rb
+
+      # The tap's own checkout keeps the token, which is what lets it push. Nothing
+      # from this repository runs after it.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: env.HAVE_TAP == 'true'
+        with:
+          repository: ${{ github.repository_owner }}/homebrew-tap
+          token: ${{ secrets.TAP_PUSH_TOKEN }}
+          path: tap
+
+      - name: Commit and push
+        if: env.HAVE_TAP == 'true'
+        working-directory: tap
+        run: |
+          mkdir -p Formula
+          cp ../eris.rb Formula/eris.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/eris.rb
+          if git diff --cached --quiet; then
+            echo "Formula/eris.rb is already at $TAG"
+            exit 0
+          fi
+          git commit -m "eris $TAG"
+          git pull --rebase
+          git push

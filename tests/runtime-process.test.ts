@@ -14,7 +14,8 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createFakeRunner, nodeRunner, runMany, type RunResult } from "../src/runtime/process";
+import { createFakeRunner } from "eris/sdk/testing";
+import { nodeRunner, runMany, type RunResult } from "../src/runtime/process";
 
 const REPO_ROOT = join(import.meta.dir, "..");
 const scratch = mkdtempSync(join(tmpdir(), "eris-runtime-process-"));

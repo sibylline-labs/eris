@@ -1,0 +1,56 @@
+# A distribution (an entry that composes core with its own plugins, built with
+# `build()`) reaches eris core through one specifier, `eris/sdk`. The
+# package's exports map already refuses a deep path such as `eris/src/...` at
+# resolution; this rule also holds what the map lets through: the package's
+# entry (`eris`, the program rather than the SDK), and a relative climb out of
+# the distribution's directory into core's files, which a distribution inside
+# this repository could otherwise make. A distribution that imports past the
+# SDK breaks when core moves a file it was never promised.
+#
+# `eris/sdk/testing` is refused here as well: it is for a distribution's suites,
+# and a distribution's source is what its binary bundles.
+#
+# Like plugin-imports-sdk-only, the rule reads the specifier alone, so every
+# `..` climb is an error: a distribution reaches its own files with `./`.
+id: distribution-imports-sdk-only
+language: typescript
+severity: error
+message: A distribution imports eris core only as `eris/sdk`, and its own files with ./ . Ask for what you need to be exported from src/sdk.ts.
+note: docs/dev/PLUGINS.md#distributions
+files:
+  - examples/distribution/**/*.ts
+utils:
+  # A string or template literal naming a module.
+  specifier:
+    any:
+      - inside:
+          any:
+            - kind: import_statement
+            - kind: export_statement
+            - kind: import_require_clause
+          field: source
+      - inside:
+          kind: arguments
+          inside:
+            kind: call_expression
+            field: arguments
+            has:
+              field: function
+              any:
+                - kind: import
+                - kind: identifier
+                  regex: ^require$
+rule:
+  any:
+    - kind: string
+    - kind: template_string
+  all:
+    - matches: specifier
+    - any:
+        # The package itself, or any path in it but the SDK.
+        - all:
+            - regex: ^["'`]eris(/[^"'`]*)?["'`]$
+            - not:
+                regex: ^["'`]eris/sdk["'`]$
+        # An absolute path, or a climb out of the importing file's directory.
+        - regex: ^["'`]/|(^["'`]|/)\.\.(/|["'`]$)

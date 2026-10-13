@@ -116,9 +116,9 @@ describe.skipIf(binaryOnly("a compiled binary's own startup and refusals"))("a c
       if (existsSync(ro)) chmodSync(ro, 0o755);
     });
 
-    it.skipIf(isRoot && byMode)("still answers --help and completion, which read no asset", async () => {
-      /** When the asset home is written before anything else, an unwritable cache dir bricks every command, `--help` and the `eris completion` in a shell profile included, with a bare EACCES and no slug — observed at the exit, stdout and stderr. */
-      for (const argv of [["--help"], ["-h"], ["yak", "issue", "--help"], ["completion", "bash"]]) {
+    it.skipIf(isRoot && byMode)("still answers --help, --version and completion, which read no asset", async () => {
+      /** When the asset home is written before anything else, an unwritable cache dir bricks every command, `--help`, `--version` and the `eris completion` in a shell profile included, with a bare EACCES and no slug — observed at the exit, stdout and stderr. */
+      for (const argv of [["--help"], ["-h"], ["--version"], ["--output", "json", "--version"], ["yak", "issue", "--help"], ["completion", "bash"]]) {
         const r = await sb.run(argv, { env: { ERIS_CACHE_DIR: cache } });
         expect({ argv, status: r.status, stderr: r.stderr }).toEqual({ argv, status: 0, stderr: "" });
         expect(r.stdout.length).toBeGreaterThan(0);
