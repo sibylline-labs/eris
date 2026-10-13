@@ -14,6 +14,7 @@ import { PLUGINS } from "../plugins";
 import { build, type BuildOptions } from "../src/build";
 import { main } from "../src/main";
 import { checkoutOnly, expectFailBlock, REPO, type Sandbox, sandbox } from "./helpers/blackbox";
+import { buildInChild } from "./helpers/build-child";
 
 setDefaultTimeout(120_000);
 
@@ -71,17 +72,16 @@ describe.skipIf(checkoutOnly("builds its own binaries from this checkout's sourc
   const tagged = join(dist, "eris-version-tagged");
   const plain = join(dist, "eris-version-plain");
   let sb: Sandbox;
-  beforeAll(async () => {
-    const common = { entry: join(REPO, "src/main.ts"), root: REPO, plugins: PLUGINS };
-    await build({
-      ...common,
+  beforeAll(() => {
+    buildInChild({
+      preset: "core",
       outfile: tagged,
       tag: "v0.0.1",
       releaseRepo: "example-org/eris-fork",
       versionExtra: "core example-pin",
       docsBase: "https://docs.example.com/eris/blob/main/",
     });
-    await build({ ...common, outfile: plain });
+    buildInChild({ preset: "core", outfile: plain });
     sb = sandbox("eris-version-");
   });
   afterAll(() => sb?.cleanup());

@@ -23,6 +23,7 @@ import type { ErisPlugin } from "../src/cli/plugin";
 import { REGISTRY } from "../src/cli/registry";
 import { CLI, HANDLERS, main } from "../src/main";
 import { checkoutOnly, ERIS, oracleEnv, REPO, type Sandbox, sandbox } from "./helpers/blackbox";
+import { buildInChild } from "./helpers/build-child";
 
 setDefaultTimeout(120_000);
 
@@ -159,7 +160,7 @@ describe.skipIf(checkoutOnly("builds its own binary from this checkout's source"
   let script: string;
   beforeAll(async () => {
     rmSync(join(REPO, "dist", "fixture"), { recursive: true, force: true });
-    const r = await build({ ...BUILD, outfile });
+    const r = buildInChild({ preset: "distribution", outfile });
     expect(r).toMatchObject({ outfile, releaseRepo: "example-org/eris-distribution" });
     sb = sandbox("eris-dist-");
     const c = await sb.run(["completion", "bash"], { program: outfile });

@@ -54,7 +54,8 @@ rule-tests/             #   are read through readEnv), plugin-manifest-lazy-hand
 tests/                  # `bun test ./tests` — the whole suite. helpers/blackbox.ts drives the real
                         #   `./eris` in a physical per-test sandbox (PATH fakes, hideReal); helpers/plugins/
                         #   holds a tripwire plugin; helpers/release-fixture.ts is GitHub's releases API
-                        #   on loopback, for eris update
+                        #   on loopback, for eris update; helpers/build-child.ts compiles a test's binary
+                        #   with build() in a child bun
 packaging/homebrew/     # eris.rb.tmpl, the formula the release workflow renders into the tap
 docs/                   # ARCHITECTURE.md, OUTPUT-CONTRACT.md, ERRORS.md, the verb docs, dev/
 ```

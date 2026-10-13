@@ -11,9 +11,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeou
 import { spawn } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { PLUGINS } from "../plugins";
-import { build } from "../src/build";
 import { checkoutOnly, expectFailBlock, REPO, type Sandbox, sandbox } from "./helpers/blackbox";
+import { buildInChild } from "./helpers/build-child";
 import { releaseFixture, type ReleaseFixture } from "./helpers/release-fixture";
 
 setDefaultTimeout(180_000);
@@ -32,12 +31,11 @@ describe.skipIf(checkoutOnly("builds its own binaries from this checkout's sourc
   let bin: string;
   let installed: string;
 
-  beforeAll(async () => {
+  beforeAll(() => {
     expect(["darwin-arm64", "linux-x64"], `these tests run on a platform releases publish for, not ${process.platform}-${process.arch}`).toContain(`${process.platform}-${process.arch}`);
     rmSync(dist, { recursive: true, force: true });
-    const common = { entry: join(REPO, "src/main.ts"), root: REPO, plugins: PLUGINS, releaseRepo: REPOSITORY };
-    await build({ ...common, outfile: v1, tag: "v0.0.1" });
-    await build({ ...common, outfile: v2, tag: "v0.0.2", versionExtra: "core example-pin", docsBase: DOCS_BASE });
+    buildInChild({ preset: "core", releaseRepo: REPOSITORY, outfile: v1, tag: "v0.0.1" });
+    buildInChild({ preset: "core", releaseRepo: REPOSITORY, outfile: v2, tag: "v0.0.2", versionExtra: "core example-pin", docsBase: DOCS_BASE });
     fx = releaseFixture(REPOSITORY);
     fx.publish({ tag: "v0.0.2", assets: { [ASSET]: readFileSync(v2) } });
   });
