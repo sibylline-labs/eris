@@ -92,8 +92,8 @@ describe("the three carried invariants", () => {
     const refused = await run(["--output", "json", "widgets", "count", "2"], { cli: withWidgets });
     expect({ rc: refused.rc, stdout: refused.stdout }).toEqual({ rc: 1, stdout: "" });
     expect(refused.stderr).toContain("slug: output-json-unsupported");
-    // Under the header, the description at column 43 as core's own lines were.
-    expect(refused.stderr).toContain("fix: the surfaces that accept --output json are:\nfix:   eris widgets ping                        Reply with a pong\n");
+    // After core's own lines, the plugin's, the description at column 43 as core's shapes are.
+    expect(refused.stderr).toContain("fix:   eris update                              {current, latest, update_available, updated}\nfix:   eris widgets ping                        Reply with a pong\n");
     expect(refused.stderr).not.toContain("eris widgets count ");
     expect(withWidgets.jsonSurfaces.widgets).toEqual(["ping"]);
     // Core's own refusal text is unchanged by an empty plugin set.
@@ -106,7 +106,7 @@ describe("the three carried invariants", () => {
     const cli = composeCli(REGISTRY, HANDLERS, [{ ...widgets, jsonFix }]);
     const refused = await run(["--output", "json", "widgets", "count", "2"], { cli });
     // In the plugin slot after the header, and the last line of the fix (no empty `fix: ` after it).
-    expect(refused.stderr).toContain("fix: the surfaces that accept --output json are:\nfix:   eris widgets ping                        {pong}\ndocs: ");
+    expect(refused.stderr).toContain("fix:   eris update                              {current, latest, update_available, updated}\nfix:   eris widgets ping                        {pong}\ndocs: ");
     expect(refused.stderr).not.toContain("Reply with a pong");
   });
 

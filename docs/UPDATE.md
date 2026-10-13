@@ -1,0 +1,120 @@
+# `eris --version` and `eris update`
+
+`eris --version` says which build this is. `eris update` replaces a compiled eris
+binary with the newest release of the repository it was built from, in place,
+after checking it.
+
+## `eris --version`
+
+```
+$ eris --version
+eris v0.2.0 (sibylline-labs/eris)
+```
+
+The first line is `eris <version> (<release repository>)`. A build that adds a line
+of its own (a distribution reporting the core it was built on) prints it next.
+
+`eris --output json --version` prints one record:
+
+```json
+{"version":"v0.2.0","release_repo":"sibylline-labs/eris","build_id":"v0.2.0-3f9c1d0a7b2e4c58","extra":null}
+```
+
+| Field | Meaning |
+|---|---|
+| `version` | The tag the build was given (`scripts/build.ts --tag`, `build({ tag })`). `dev` for an untagged build and for a source checkout. |
+| `release_repo` | The repository `eris update` reads releases from. |
+| `build_id` | The compiled binary's build id, prefixed by the tag; `null` in a checkout. |
+| `extra` | The line a distribution added (`build({ versionExtra })`); `null` when it added none. |
+
+Every field is baked into the binary at build time. `--version` reads no file, so it
+answers even when the binary's asset cache cannot be written.
+
+## `eris update`
+
+```
+eris update [--check] [--to <tag>]
+```
+
+| Flag | Meaning |
+|---|---|
+| none | Install the latest release if it is newer than this build. |
+| `--check` | Say whether an update is available and change nothing. |
+| `--to <tag>` | Install that release instead: a pre-release, or an older one (a downgrade). |
+
+### Exit codes and output
+
+| Run | Exit | stdout | stderr |
+|---|---|---|---|
+| update installed | `0` | nothing (`--output json`: the record) | `INFO` progress lines, then `INFO ✓ updated eris v0.2.0 -> v0.2.1 (<path>)` |
+| already current | `0` | nothing (`--output json`: the record) | `INFO ✓ eris v0.2.1 is up to date` |
+| `--check`, current | `0` | `up to date: v0.2.1` | nothing |
+| `--check`, newer exists | `10` | `update available: v0.2.0 -> v0.2.1` | nothing |
+| refused, or `--check` could not tell | `1` | nothing | a failure block ([ERRORS.md](ERRORS.md)) |
+
+Exit `10` is not a failure: it is how a script asks "is there something newer?"
+(`eris update --check; [ $? -eq 10 ] && eris update`).
+
+`--output json` prints one record on every run that does not fail, `--check` included:
+
+```json
+{"current":"v0.2.0","latest":"v0.2.1","update_available":true,"updated":true}
+```
+
+`current` is this build's version, `latest` the release the run resolved (the newest,
+or the one `--to` named), `update_available` whether that release is newer than this
+build, and `updated` whether the binary was replaced. `--to` an older release gives
+`update_available: false, updated: true`. Versions are ordered as semver orders them
+(`v0.0.10` is after `v0.0.9`, a pre-release before its release); a build whose version
+is not one (`dev`) is offered every release.
+
+### What it does
+
+1. **Refuses before any request** what it cannot update in place: a source checkout
+   ([`update-not-compiled`](ERRORS.md#update-not-compiled)), a platform with no release
+   binary ([`update-unsupported-platform`](ERRORS.md#update-unsupported-platform)), a
+   copy Homebrew installed ([`update-brew-managed`](ERRORS.md#update-brew-managed)), an
+   unusable `ERIS_UPDATE_API` ([`update-api-invalid`](ERRORS.md#update-api-invalid)),
+   and, unless `--check`, a directory it cannot write
+   ([`update-target-unwritable`](ERRORS.md#update-target-unwritable)).
+2. **Asks the releases API** of `release_repo` for the latest release, or the tag `--to`
+   named. The latest never means a pre-release or a draft.
+3. **Reads the release's `SHA256SUMS`**, then downloads this platform's
+   `eris-<os>-<arch>` (`darwin-arm64` or `linux-x64`) into a temporary file beside the
+   binary, hashing it as it arrives. A mismatch removes the file and changes nothing
+   ([`update-checksum-mismatch`](ERRORS.md#update-checksum-mismatch)); a release with no
+   checksum for the binary is refused too
+   ([`update-asset-missing`](ERRORS.md#update-asset-missing)).
+4. **Replaces** the binary with an atomic rename (resolving a symlink to the file it
+   names), keeping the old one as `<path>.old`.
+5. **Runs the new binary** (`eris --output json --version`) and requires it to report the
+   release's tag. If it does not, the old binary is put back from `<path>.old`
+   ([`update-smoke-failed`](ERRORS.md#update-smoke-failed)). Otherwise `<path>.old` is removed.
+
+An interrupt (Ctrl-C, `TERM`, a hangup) is safe at every step: during the download it
+removes the partial file, and between the rename and the check it puts the old binary
+back, then ends by that signal as it would have.
+
+Assets are fetched through the API's asset url with `Accept: application/octet-stream`,
+never through a release's `browser_download_url`: for a private repository only the
+former answers to a token.
+
+### Tokens and the API host
+
+| Variable | Meaning |
+|---|---|
+| `GH_TOKEN`, `GITHUB_TOKEN` | A GitHub token, `GH_TOKEN` first; surrounding whitespace is ignored, and a value with a space or line break inside is refused ([`update-token-invalid`](ERRORS.md#update-token-invalid)). Needed to update from a private repository. Anonymous requests share a limit of 60 an hour per address ([`update-rate-limited`](ERRORS.md#update-rate-limited)); a token raises it. |
+| `ERIS_UPDATE_API` | Another API base: a GitHub Enterprise host (`https://ghe.example.com/api/v3`) or a test server. `https`, or `http` for `127.0.0.1`, `localhost` and `[::1]` only; no credentials, query or fragment. Default `https://api.github.com`. |
+
+The token is sent to the API host and nowhere else. The asset download redirects to
+GitHub's storage host, and the redirect is followed by hand so that hop carries no
+`Authorization` header; an asset url on any other host never receives it. The new
+binary is run without the token in its environment.
+
+### Which repository
+
+A binary updates from the repository it was built to be released from, so one build
+never replaces itself with another's: `RELEASE_REPO` is fixed by `build({ releaseRepo })`
+(default `sibylline-labs/eris`; a checkout reports the default). A distribution that
+publishes its own releases must publish them in the same shape
+([dev/RELEASING.md](dev/RELEASING.md)).

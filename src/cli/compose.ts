@@ -35,7 +35,7 @@ import type { VerbHandler } from "../main";
 import { helpText } from "./args";
 import { renderFailureBlock } from "../../ts/lib/eris-fail";
 import { domainFunction, scanHelper, slotWordRefusal } from "./commands/completion/domain";
-import { unsupportedFix } from "./output";
+import { jsonFixLine, unsupportedFix } from "./output";
 import type { ErisPlugin } from "./plugin";
 import { ARGV_SHAPES, deriveJsonSurfaces, deriveTable, type Impl, type Row } from "./registry";
 
@@ -76,9 +76,6 @@ export interface Session {
 export const NO_ENTITLEMENTS: ReadonlySet<string> = new Set();
 
 const COMMAND_NAME = /^[a-z][a-z0-9-]*$/;
-
-/** The column a json surface's description starts at in the fix text. */
-const FIX_COLUMN = 43;
 
 export interface ComposeOptions {
   /** The bare program's handler (`eris` with no arguments); core's usage when absent. */
@@ -165,8 +162,7 @@ export function composeCli(coreRows: Rows, coreHandlers: Handlers, plugins: read
       checkSlots(path, row, `plugin '${p.name}'`, ledger, refuse);
       if (row.json === true) {
         if (paths.some((k) => k.startsWith(`${path} `))) refuse(`row '${path}' has subs, so json goes on each sub that renders it`);
-        const head = `  eris ${path}`;
-        generated.push(`${head}${" ".repeat(Math.max(1, FIX_COLUMN - head.length))}${row.summary}\n`);
+        generated.push(jsonFixLine(path, row.summary));
       }
     }
     for (const h of Object.keys(p.handlers)) if (!own.includes(h)) refuse(`handler '${h}' has no group row`);

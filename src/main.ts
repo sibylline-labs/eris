@@ -28,7 +28,7 @@ import { PLUGINS } from "../plugins";
 import { asksForHelp, locateVerb } from "./cli/args";
 import { type Cli, composeCli, NO_ENTITLEMENTS, type Session } from "./cli/compose";
 import { sanitizeDisplay } from "./cli/output";
-import { REGISTRY } from "./cli/registry";
+import { ARGV_SHAPES_NO_ASSETS, REGISTRY } from "./cli/registry";
 import { route, type Impl } from "./cli/router";
 import { adoptUnwrittenHome, HomeUnwritableError, isCompiled, resolveInstallRoot } from "./runtime/home";
 import { warn } from "./runtime/logging";
@@ -61,7 +61,9 @@ export const HANDLERS: Readonly<Record<string, () => Promise<VerbHandler>>> = {
   "": async () => (await import("./cli/commands/usage")).runUsage,
   "-h": async () => (await import("./cli/commands/usage")).runUsage,
   "--help": async () => (await import("./cli/commands/usage")).runUsage,
+  "--version": async () => (await import("./cli/commands/version")).runVersion,
   completion: async () => (await import("./cli/commands/completion")).runCompletion,
+  update: async () => (await import("./cli/commands/update")).runUpdate,
 };
 
 /** Core composed with the build's plugin list. */
@@ -90,7 +92,7 @@ export interface MainOptions {
 
 /**
  * A command line that reads nothing from the install root: usage, a `--help`
- * ahead of any `--`, and `completion`. A binary whose asset home cannot be
+ * ahead of any `--`, `--version`, and `completion`. A binary whose asset home cannot be
  * written still runs these, because they are what an operator reaches for to
  * find out how to fix it (and `completion` runs on every shell start). Every
  * other command line is refused with `eris-cache-unwritable`. Only consulted
@@ -99,7 +101,8 @@ export interface MainOptions {
  * own missing file instead of the block.
  */
 export function readsNoAssets(argv: readonly string[]): boolean {
-  return locateVerb(argv)[0] === "completion" || asksForHelp(argv);
+  const verb = locateVerb(argv)[0];
+  return verb === "completion" || (verb !== undefined && ARGV_SHAPES_NO_ASSETS.includes(verb)) || asksForHelp(argv);
 }
 
 /**

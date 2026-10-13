@@ -41,9 +41,10 @@ so nothing is lost.
 | `0` | success |
 | `1` | hard failure (an unslugged `ERROR` line, or the §4 failure block) |
 | `2` | **idempotent no-op** — nothing was written and this is not an error, where a command documents one. The payload is emitted either way |
+| `10` | **an update is available**, from `eris update --check` only. Not a failure: the answer a script asked for |
 
-`2` never means failure. A consumer that treats "non-zero" as "broken" will
-report a successful no-op as an incident.
+`2` and `10` never mean failure. A consumer that treats "non-zero" as "broken" will
+report a successful no-op, or an available update, as an incident.
 
 ### ANSI
 
@@ -108,6 +109,8 @@ surface. A plugin's surfaces are documented with that plugin, not here.
 | Surface | stdout | `--output json` | Stability |
 |---|---|---|---|
 | `eris completion bash\|zsh` | a valid shell script | refused | stable |
+| `eris --version` | text: `eris <version> (<owner/repo>)`, then a line of the build's own if it adds one. JSON: one bare record `{version, release_repo, build_id, extra}` (`build_id` and `extra` are `null` when absent) | accepted | stable ([UPDATE.md](UPDATE.md)) |
+| `eris update` | text: with `--check`, `update available: <current> -> <latest>` or `up to date: <current>`; otherwise nothing (progress and the result are `INFO` lines on stderr). JSON: one bare record `{current, latest, update_available, updated}`. Exit `0` / `10` / `1` for `--check` | accepted | stable ([UPDATE.md](UPDATE.md)) |
 | `eris yak issue\|suggest\|fatal` | text: `recorded: <id>` on a fresh delivery, `already recorded: <id>` on a dedup replay, or nothing at all on a warn-class outcome (unresolved token/URL, unreachable Actor, timeout, non-2xx — see [YAK.md](YAK.md#exit-codes)); every one of those still exits `0`. JSON: one bare record — `{verb, delivered, id?, idempotency_key?, replay?, contract_version?, key_mismatch?, redactions: {count, classes, skipped}, error?}` — where **`delivered` is the field to branch on, never `id == null`**. **`--output json` on this surface additionally writes NOTHING to stderr** — a scoped exception to §1's general "stderr carries every diagnostic": `redactions.skipped` and `key_mismatch` exist specifically so the `--no-redact`/`yak-key-mismatch` WARNs that text mode prints on stderr are still recoverable from the record ([YAK.md §--output json](YAK.md#--output-json)) | accepted for all three verbs; refused for a bare `eris yak` (no verb) | stable ([YAK.md](YAK.md)) |
 
 Everything not listed is a **human surface**. Its stdout may change shape in any

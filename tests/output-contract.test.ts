@@ -70,6 +70,20 @@ describe("§1 the stream split", () => {
     expect({ verb: doc.verb, delivered: doc.delivered }).toEqual({ verb: "issue", delivered: false });
   });
 
+  test("--version is a machine surface: one JSON record on stdout, nothing on stderr", async () => {
+    /** When a build's identity leaks a diagnostic onto stderr or stdout stops being one record, a script pinning on `version` or `release_repo` cannot read it. */
+    const r = await sb.run(["--output", "json", "--version"]);
+    expectStatus(r, 0);
+    expectStderrEmpty(r);
+    const doc = expectStdoutJson(r) as Record<string, unknown>;
+    expect(Object.keys(doc).sort()).toEqual(["build_id", "extra", "release_repo", "version"]);
+    expect(doc.release_repo).toBe("sibylline-labs/eris");
+    // PAIRED: the human rendering names the same version and repository.
+    const text = await sb.run(["--version"]);
+    expectStatus(text, 0);
+    expect(text.stdout).toStartWith(`eris ${doc.version as string} (sibylline-labs/eris)\n`);
+  });
+
   test("no ANSI on stdout when stdout is not a TTY (human rendering too)", async () => {
     /** When a renderer hardcodes an escape, every piped consumer reads control bytes. */
     const r = await sb.run(["--help"]);

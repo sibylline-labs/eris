@@ -25,7 +25,9 @@ src/                    # The TS program the shim runs
 ├── cli/commands/       #   completion.ts + completion/ (emit.ts generates the bash/zsh script from the
 │                       #   composed registry; it imports the registry only, because every shell start
 │                       #   runs it; domain.ts checks a row's completion domains), usage.ts (the
-│                       #   top-level usage: bare eris, -h, --help)
+│                       #   top-level usage: bare eris, -h, --help), version.ts (--version),
+│                       #   update.ts + update/ (eris update: github.ts the releases API and the
+│                       #   download, replace.ts the staged rename and its restore, semver.ts)
 └── runtime/            #   logging, process (the one spawn adapter), settings (~/.eris/settings.json),
                         #   env (readEnv), home (the install root: the checkout, or a compiled binary's
                         #   per-build asset home)
@@ -43,12 +45,16 @@ examples/distribution/  # the worked distribution: an entry importing eris/sdk a
                         #   completion domain, a menu, and build.ts; tests/distribution.test.ts builds and runs it
 scripts/build.ts        # `bun scripts/build.ts` → dist/eris-<os>-<arch> (gitignored): this repo's binary,
                         #   through src/build.ts
+scripts/render-formula.ts  # the Homebrew formula for a release, from packaging/homebrew/eris.rb.tmpl
+.github/workflows/      # ci.yml (the PR gates) · release.yml (tag → build, oracle, publish, tap)
 sgconfig.yml            # the code-quality rules over eris's OWN source (ruleDirs: rules; cases in rule-tests/):
 rules/                  #   adhoc-argv-parse (one argv parser), env-read-own-property(-plugin) (env names
 rule-tests/             #   are read through readEnv), plugin-manifest-lazy-handlers + plugin-imports-sdk-only
                         #   (the plugin contract), distribution-imports-sdk-only (eris/sdk alone)
 tests/                  # `bun test ./tests` — the whole suite. helpers/blackbox.ts drives the real
                         #   `./eris` in a physical per-test sandbox (PATH fakes, hideReal); helpers/plugins/
-                        #   holds a tripwire plugin
+                        #   holds a tripwire plugin; helpers/release-fixture.ts is GitHub's releases API
+                        #   on loopback, for eris update
+packaging/homebrew/     # eris.rb.tmpl, the formula the release workflow renders into the tap
 docs/                   # ARCHITECTURE.md, OUTPUT-CONTRACT.md, ERRORS.md, the verb docs, dev/
 ```

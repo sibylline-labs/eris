@@ -47,7 +47,8 @@ function globals(cli: Cli): string {
   ];
   return `
 Global flags:
-${fill(words)}
+${fill(words)}  --version            Print this build's version and release repository.
+
 Run 'eris <command> --help' for command-specific usage.
 `;
 }

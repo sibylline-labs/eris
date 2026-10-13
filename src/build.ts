@@ -24,7 +24,13 @@
  *     when given, so a rebuild with any change gets a new home;
  *   - `__ERIS_RELEASE_REPO__`: where the build's own releases are published
  *     (`RELEASE_REPO`, src/runtime/home.ts), so one distribution's binary never
- *     takes another's release for its own.
+ *     takes another's release for its own;
+ *   - `__ERIS_VERSION__`: the `tag`, or `dev` for an untagged build (`VERSION`), which
+ *     `eris --version` prints and `eris update` compares with the release it finds;
+ *   - `__ERIS_VERSION_EXTRA__`: the one line a distribution adds to `eris --version`
+ *     (`versionExtra`: the core it was built on, say), or null;
+ *   - `__ERIS_DOCS_BASE__`: the URL a failure block's second `docs:` line appends the
+ *     doc path to (`docsBase`, `DOCS_BASE`), so a distribution links its own docs.
  *
  * The plugin list is composed here first (src/cli/compose.ts), so a refused plugin
  * fails the build, not the binary's first command.
@@ -45,7 +51,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { composeCli } from "./cli/compose";
 import type { ErisPlugin } from "./cli/plugin";
 import { REGISTRY } from "./cli/registry";
-import { checkoutRoot, DEFAULT_RELEASE_REPO } from "./runtime/home";
+import { checkoutRoot, DEFAULT_DOCS_BASE, DEFAULT_RELEASE_REPO } from "./runtime/home";
 
 /** This package's root: core's source, and the docs core names. */
 const CORE = checkoutRoot();
@@ -59,6 +65,10 @@ const DOC_REF = /docs\/[A-Za-z0-9_./-]+\.md/g;
 
 const TAG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const RELEASE_REPO = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/;
+/** One line of printable ASCII, visible at both ends. */
+const VERSION_LINE = /^[\x21-\x7e](?:[\x20-\x7e]{0,118}[\x21-\x7e])?$/;
+/** An https URL with no query, fragment or space, whose trailing slashes are dropped. */
+const DOCS_BASE_URL = /^https:\/\/[A-Za-z0-9.-]+(?::\d+)?(?:\/[A-Za-z0-9._~%/-]*)?$/;
 
 export interface BuildStub {
   /** The specifiers, as the source writes them, that bundle as the stub. */
@@ -86,11 +96,18 @@ export interface BuildOptions {
   readonly stubs?: readonly BuildStub[];
   /** `owner/name`; this repository's when absent. */
   readonly releaseRepo?: string;
+  /** One printable line `eris --version` prints after the version, for a build
+   *  that reports more than its tag: the core a distribution was built on. */
+  readonly versionExtra?: string;
+  /** An https URL (no query or fragment) the doc paths in a failure block's
+   *  second `docs:` line are appended to; this repository's public docs when absent. */
+  readonly docsBase?: string;
   /** Default: `<root>/dist/eris-<os>-<arch>`, for the target. */
   readonly outfile?: string;
   /** A bun compile target (`bun-linux-x64`); the host's when absent. */
   readonly target?: Bun.Build.CompileTarget;
-  /** A release tag, prefixed to the build id. */
+  /** A release tag: prefixed to the build id and reported by `eris --version`
+   *  (an untagged build reports `dev`). */
   readonly tag?: string;
 }
 
@@ -185,6 +202,12 @@ export async function build(opts: BuildOptions): Promise<BuildResult> {
   if (opts.tag !== undefined && !TAG.test(opts.tag)) throw new Error(`--tag must match ${TAG}: ${JSON.stringify(opts.tag)}`);
   const releaseRepo = opts.releaseRepo ?? DEFAULT_RELEASE_REPO;
   if (!RELEASE_REPO.test(releaseRepo)) throw new Error(`releaseRepo must be owner/name: ${JSON.stringify(releaseRepo)}`);
+  const versionExtra = opts.versionExtra ?? null;
+  if (versionExtra !== null && !VERSION_LINE.test(versionExtra)) {
+    throw new Error(`versionExtra must be one printable line of at most 120 characters: ${JSON.stringify(versionExtra)}`);
+  }
+  const docsBase = (opts.docsBase ?? DEFAULT_DOCS_BASE).replace(/\/+$/, "");
+  if (!DOCS_BASE_URL.test(docsBase)) throw new Error(`docsBase must be an https URL with no query, fragment or space: ${JSON.stringify(opts.docsBase)}`);
   const entry = resolve(opts.entry);
   if (!existsSync(entry) || !statSync(entry).isFile()) throw new Error(`entry ${entry} is not a file`);
   const root = resolve(opts.root ?? nearestPackageRoot(dirname(entry)));
@@ -203,6 +226,8 @@ export async function build(opts: BuildOptions): Promise<BuildResult> {
     h.update(bytes);
   };
   add("release", Buffer.from(releaseRepo, "utf8"));
+  add("version-extra", Buffer.from(versionExtra ?? "", "utf8"));
+  add("docs-base", Buffer.from(docsBase, "utf8"));
   for (const [rel, text] of Object.entries(sorted)) add(`asset:${rel}`, Buffer.from(text, "utf8"));
   for (const s of sources) add(s.key, readFileSync(s.abs));
   const hash = h.digest("hex").slice(0, 16);
@@ -220,7 +245,13 @@ export async function build(opts: BuildOptions): Promise<BuildResult> {
       autoloadTsconfig: false,
       autoloadPackageJson: false,
     },
-    define: { __ERIS_BUILD_ID__: JSON.stringify(buildId), __ERIS_RELEASE_REPO__: JSON.stringify(releaseRepo) },
+    define: {
+      __ERIS_BUILD_ID__: JSON.stringify(buildId),
+      __ERIS_RELEASE_REPO__: JSON.stringify(releaseRepo),
+      __ERIS_VERSION__: JSON.stringify(opts.tag ?? "dev"),
+      __ERIS_VERSION_EXTRA__: JSON.stringify(versionExtra),
+      __ERIS_DOCS_BASE__: JSON.stringify(docsBase),
+    },
     plugins: [compilePlugin(sorted, opts.stubs ?? [])],
   });
   if (!result.success) {

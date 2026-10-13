@@ -212,9 +212,16 @@ describe("tab presses: the tree from the registry", () => {
   it("completes the groups at the first word, and a prefix narrows them", () => {
     /** When the generated group list drops a verb, `eris <TAB>` stops offering it. */
     const all = press(["eris", ""]);
-    expect(all).toEqual(expect.arrayContaining(["completion", "yak", "--help"]));
+    expect(all).toEqual(expect.arrayContaining(["completion", "update", "yak", "--help", "--version"]));
     expect(press(["eris", "co"])).toEqual(["completion"]);
     expect(press(["eris", "y"])).toEqual(["yak"]);
+    expect(press(["eris", "--v"])).toEqual(["--version"]);
+  });
+
+  it("update offers its own flags, and completes nothing for --to's value", () => {
+    /** When a core verb's row is not read by the generated tree, `eris update --<TAB>` offers nothing, or a tag is completed as a file. */
+    expect(sorted(press(["eris", "update", "--"]))).toEqual(["--check", "--help", "--to"]);
+    expect(press(["eris", "update", "--to", ""])).toEqual([]);
   });
 
   it("yak issue --<TAB> offers exactly the flags its row declares", () => {

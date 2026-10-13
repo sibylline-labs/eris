@@ -76,6 +76,8 @@ Read the file for the area you are touching before you change it:
 | The suite, fixtures, the binary oracle | `docs/dev/TESTING.md` |
 | Adding a command | `docs/dev/ADDING-A-COMMAND.md` |
 | Writing a plugin | `docs/dev/PLUGINS.md` |
+| Cutting a release, the tap | `docs/dev/RELEASING.md` |
 | Output contract | `docs/OUTPUT-CONTRACT.md` |
 | Error slugs | `docs/ERRORS.md` |
 | `eris yak` | `docs/YAK.md` |
+| `eris --version`, `eris update` | `docs/UPDATE.md` |

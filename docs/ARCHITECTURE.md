@@ -24,7 +24,7 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
   standalone.
 
 `install.sh` (POSIX `sh`) has two modes. By default it downloads the release binary for this
-OS/arch with `gh`, checks it against the release's `SHA256SUMS` and installs it to
+OS/arch with `curl`, checks it against the release's `SHA256SUMS` and installs it to
 `~/.local/bin/eris`. `install.sh --checkout` checks bun, runs `bun install --frozen-lockfile` and
 writes a `~/.local/bin/eris` wrapper around the checkout. There is no build step for the checkout:
 `bash <checkout>/eris`, `sh <checkout>/eris` and the wrapper all run it as it stands.
@@ -34,6 +34,15 @@ writes a `~/.local/bin/eris` wrapper around the checkout. There is no build step
 with its own entry. It carries the docs the source names and writes them once per
 build to `${ERIS_CACHE_DIR:-${XDG_CACHE_HOME:-~/.cache}/eris}/<build id>/`, its install root
 (`src/runtime/home.ts`), so a failure block's `docs:` line names a file that exists.
+
+A binary also knows which build it is, from the same call: `build({ tag })` bakes the version,
+the release repository, an optional version line and the docs base of a failure block
+(`VERSION`, `RELEASE_REPO`, `VERSION_EXTRA`, `DOCS_BASE`, `src/runtime/home.ts`). `eris --version`
+prints them. `eris update` (`src/cli/commands/update.ts`) replaces the binary with the newest
+release of its own repository, after checking it ([`UPDATE.md`](UPDATE.md)). The release is cut by
+`.github/workflows/release.yml`, which builds and tests both binaries, publishes them with a
+`SHA256SUMS`, and renders the Homebrew formula into the tap
+([`dev/RELEASING.md`](dev/RELEASING.md)).
 
 ---
 
@@ -46,7 +55,7 @@ build to `${ERIS_CACHE_DIR:-${XDG_CACHE_HOME:-~/.cache}/eris}/<build id>/`, its 
        ├─ src/cli/            registry.ts (core's verbs) · compose.ts (core + plugins) · plugin.ts
        │                      (the SDK) · router.ts · args.ts (argv + the global --output pre-pass)
        │                      · output.ts (the json allow-list) · ts-verb.ts
-       ├─ src/cli/commands/   completion/ · usage.ts
+       ├─ src/cli/commands/   completion/ · usage.ts · version.ts · update.ts + update/
        ├─ src/runtime/        logging · process · settings · env · home
        ├─ ts/lib/eris-fail.ts the failure block
        └─ plugins/            index.ts (the build's list) · yak/
@@ -98,7 +107,8 @@ command. Adding or flipping a verb is a registry edit; `tests/cli-registry.test.
 block cannot be reached.
 
 The top-level usage (`src/cli/commands/usage.ts`) is a `HANDLERS` row too: bare `eris`, `-h` and
-`--help` all print it.
+`--help` all print it. `--version` is the fourth argv shape (`ARGV_SHAPES`, `src/cli/registry.ts`):
+it is not a verb, but it renders JSON under `--output` and reads no file from the install root.
 
 ---
 

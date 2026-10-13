@@ -267,8 +267,15 @@ and runs. Copy its shape.
    | `docRoots` | Where a `docs/*.md` the source names is looked for, in order. Default: the root, then this package. |
    | `sourceRoots` | What is hashed into the build id and scanned for docs. Default: `src`, `ts` and `plugins` where present, the entry, `package.json` and the lockfile. This package's source is always added. |
    | `stubs` | `{ match, reason }`: specifiers bundled as a module that throws `<specifier> is not bundled into the compiled eris binary (<reason>)` if evaluated, for a module the binary must not carry. |
-   | `releaseRepo` | `owner/name` the binary's own releases are published to, reported as `RELEASE_REPO`. Default: `sibylline-labs/eris`. |
-   | `outfile`, `target`, `tag` | The output path (default `dist/eris-<os>-<arch>`), a bun compile target (default: the host), and a release tag prefixed to the build id. |
+   | `releaseRepo` | `owner/name` the binary's own releases are published to, reported as `RELEASE_REPO` and read by `eris update`. Default: `sibylline-labs/eris`. |
+   | `versionExtra` | One printable line `eris --version` prints after the version line, and `extra` in its JSON record: the core a distribution was built on. Default: none. |
+   | `docsBase` | An https URL (no query, fragment or space) the doc paths in a failure block's second `docs:` line are appended to, so a distribution links its own docs. Default: this repository's public docs. |
+   | `outfile`, `target`, `tag` | The output path (default `dist/eris-<os>-<arch>`), a bun compile target (default: the host), and a release tag: prefixed to the build id, printed by `eris --version` and compared by `eris update` (an untagged build reports `dev`). |
+
+   `eris --version` and `eris update` are core's: a distribution gets both, and its binary
+   updates from its own `releaseRepo`, never from this repository's releases. To be updatable
+   it publishes each release in the shape [RELEASING.md](RELEASING.md#a-distributions-releases)
+   describes.
 
 5. **Test** by driving `main(argv, env, { cli })` with the distribution's
    composition, and by running the binary `build()` writes.

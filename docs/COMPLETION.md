@@ -52,7 +52,7 @@ declared by a plugin, completes with no other edit.
 - **Flags are per command path.** `eris yak issue --<TAB>` offers exactly the
   flags `yak issue` accepts. Before a verb is typed (`eris yak --<TAB>`), or
   after a verb the registry does not know, the group's whole set is offered.
-  `--help` is always offered.
+  `--help` is always offered, and `eris <TAB>` offers `--help` and `--version` beside the groups.
 - **Value-taking flags come from the registry too** (`takesValue`): the word
   after one is never completed as a positional and never counted as one.
   A value flag whose row says `file: true` completes file names: yak's

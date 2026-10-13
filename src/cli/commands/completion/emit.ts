@@ -165,7 +165,7 @@ const ENGINE = `_eris_completions() {
   fi
 
   if [ "$COMP_CWORD" -eq 1 ]; then
-    COMPREPLY=( $(compgen -W "$(__eris_comp_groups) --help" -- "$cur") )
+    COMPREPLY=( $(compgen -W "$(__eris_comp_groups) --help --version" -- "$cur") )
     return 0
   fi
 

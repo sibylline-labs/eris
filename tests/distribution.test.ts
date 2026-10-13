@@ -112,7 +112,7 @@ describe("this build's composition", () => {
     const help = spawnSync(ERIS, ["--help"], { env: { ...process.env, ...oracleEnv() }, encoding: "utf8" });
     expect(help.status).toBe(0);
     const commands = help.stdout.split("\nCommands:\n")[1]!.split("\n\n")[0]!.split("\n").map((l) => l.trim().split(/\s+/)[0]);
-    expect(commands).toEqual(["completion", "yak"]);
+    expect(commands).toEqual(["completion", "update", "yak"]);
   });
 });
 
@@ -199,6 +199,6 @@ describe.skipIf(checkoutOnly("builds its own binary from this checkout's source"
     expect(press(script, ["eris", "demo", "hello", ""])).toEqual(["loud", "quiet"]);
     expect(press(script, ["eris", "demo", "hello", "loud", ""])).toEqual(["ADA", "GRACE"]);
     expect(press(script, ["eris", "demo", "hello", "quiet", ""])).toEqual(["ada", "grace"]);
-    expect(press(script, ["eris", ""])).toEqual(["--help", "completion", "demo", "yak"]);
+    expect(press(script, ["eris", ""])).toEqual(["--help", "--version", "completion", "demo", "update", "yak"]);
   });
 });

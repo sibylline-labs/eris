@@ -36,6 +36,9 @@ import { dirname, join, resolve } from "node:path";
 
 declare const __ERIS_BUILD_ID__: string | undefined;
 declare const __ERIS_RELEASE_REPO__: string | undefined;
+declare const __ERIS_VERSION__: string | undefined;
+declare const __ERIS_VERSION_EXTRA__: string | null | undefined;
+declare const __ERIS_DOCS_BASE__: string | undefined;
 
 type Env = Record<string, string | undefined>;
 
@@ -48,6 +51,19 @@ export const DEFAULT_RELEASE_REPO = "sibylline-labs/eris";
 /** Where this build's own releases are published: the `releaseRepo` its build
  *  was given (src/build.ts), else `DEFAULT_RELEASE_REPO`, a checkout included. */
 export const RELEASE_REPO: string = typeof __ERIS_RELEASE_REPO__ === "undefined" ? DEFAULT_RELEASE_REPO : __ERIS_RELEASE_REPO__;
+
+/** The release tag a build was given (`build({ tag })`); `dev` for an untagged build and for a checkout. */
+export const VERSION: string = typeof __ERIS_VERSION__ === "string" ? __ERIS_VERSION__ : "dev";
+
+/** The one line a distribution adds to `eris --version` (`build({ versionExtra })`); null when it adds none. */
+export const VERSION_EXTRA: string | null = typeof __ERIS_VERSION_EXTRA__ === "string" ? __ERIS_VERSION_EXTRA__ : null;
+
+/** Where a failure block's second `docs:` line points: this repository's public docs. */
+export const DEFAULT_DOCS_BASE = "https://github.com/sibylline-labs/eris/blob/main";
+
+/** The URL a repo-relative doc path is appended to in a failure block's second
+ *  `docs:` line: the `docsBase` its build was given, else `DEFAULT_DOCS_BASE`. */
+export const DOCS_BASE: string = typeof __ERIS_DOCS_BASE__ === "string" ? __ERIS_DOCS_BASE__ : DEFAULT_DOCS_BASE;
 
 /** True inside a binary built by `build()` (src/build.ts). */
 export const isCompiled = BUILD_ID !== null;

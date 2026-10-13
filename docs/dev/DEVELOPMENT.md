@@ -5,7 +5,8 @@ it, and the conventions every change follows.
 
 Companion guides: [TESTING.md](TESTING.md) (the `bun test` suite),
 [ADDING-A-COMMAND.md](ADDING-A-COMMAND.md) (a new subcommand or group, end to end)
-and [PLUGINS.md](PLUGINS.md) (a verb group as a build-time plugin).
+[PLUGINS.md](PLUGINS.md) (a verb group as a build-time plugin) and
+[RELEASING.md](RELEASING.md) (cutting a release: the tag, the workflow, the Homebrew tap).
 
 ## Setup
 

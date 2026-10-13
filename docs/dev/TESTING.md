@@ -51,6 +51,10 @@ throws; it never falls back to a live tool.
 - **Network is a loopback fixture**, never a PATH `curl` fake: the TS verbs use
   `fetch()`, which a PATH shim cannot intercept. The sandbox strips the caller's
   Yaks credentials, so a sandboxed `eris yak` never files a real report.
+  `tests/helpers/release-fixture.ts` is GitHub's releases API on two real listeners
+  (the API, and a second origin standing in for asset storage that the API redirects
+  to), recording every request's `Authorization`; `eris update`'s tests drive it, with
+  `ERIS_UPDATE_API` pointing at it.
 - **External binaries are PATH executables** (`gh`, `uname`, `sysctl` and `brew`
   for `tests/install-sh.test.ts`), never in-process fakes: the system under test
   is a separate process. To test "not installed", hide the real binary

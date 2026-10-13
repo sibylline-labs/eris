@@ -30,21 +30,44 @@ writes `dist/eris-<os>-<arch>`, which runs without Bun.
 
 ### Release binaries
 
-Releases will be published on
+Each tagged release is published on
 [GitHub Releases](https://github.com/sibylline-labs/eris/releases), with
-prebuilt binaries for `darwin-arm64` and `linux-x64` and a `SHA256SUMS` file.
-Until the first release, build from source as above.
+prebuilt binaries for `darwin-arm64` and `linux-x64` and a `SHA256SUMS` file
+([docs/dev/RELEASING.md](docs/dev/RELEASING.md)). Until the first release, build
+from source as above.
 
-Once a release exists, `install.sh` run from a clone downloads the binary for
-your platform, checks it against the release's `SHA256SUMS`, and installs it to
-`~/.local/bin/eris`:
+`install.sh` run from a clone downloads the binary for your platform, checks it
+against the release's `SHA256SUMS`, and installs it to `~/.local/bin/eris`:
 
 ```bash
 ./install.sh                        # the latest release
 ERIS_VERSION=<tag> ./install.sh     # a specific release
 ```
 
-It needs `curl`, plus `shasum` on macOS or `sha256sum` on Linux.
+It needs `curl`, plus `shasum` on macOS or `sha256sum` on Linux. On a platform with
+no release binary it says so and stops.
+
+With Homebrew:
+
+```bash
+brew install sibylline-labs/tap/eris
+```
+
+### Version and updates
+
+```bash
+eris --version                      # eris v0.2.0 (sibylline-labs/eris)
+eris update --check                 # exit 0 up to date, 10 an update is available
+eris update                         # replace this binary with the latest release
+eris update --to v0.2.1             # a specific release, a pre-release or an older one
+```
+
+`eris update` checks the download against the release's `SHA256SUMS`, runs the new
+binary once before dropping the old one, and puts the old one back if it does not
+answer. It refuses a source checkout (`git pull` instead) and a copy Homebrew
+installed (`brew upgrade eris`). For a private repository, or to avoid GitHub's
+anonymous rate limit, set `GH_TOKEN`. [docs/UPDATE.md](docs/UPDATE.md) has the
+exit codes, the JSON record and the refusals.
 
 ## Quickstart
 
