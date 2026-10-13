@@ -54,7 +54,7 @@ jobs:
   # shell only through `env:`, never by interpolation into the script.
   plan:
     name: plan (tag, pre-release flag)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
       prerelease: ${{ steps.plan.outputs.prerelease }}
@@ -113,9 +113,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: blacksmith-4vcpu-ubuntu-2404
             target: linux-x64
-          - os: macos-latest
+          - os: blacksmith-6vcpu-macos-latest
             target: darwin-arm64
     env:
       TAG: ${{ needs.plan.outputs.tag }}
@@ -183,7 +183,7 @@ jobs:
   publish:
     name: publish (GitHub release)
     needs: [plan, build]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: write
     env:
@@ -232,7 +232,7 @@ jobs:
     name: tap (Homebrew formula)
     needs: [plan, publish]
     if: needs.plan.outputs.prerelease == 'false'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
     concurrency:
