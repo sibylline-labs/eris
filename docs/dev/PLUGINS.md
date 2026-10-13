@@ -164,20 +164,29 @@ const NAME: CompletionDomain = {
 The helper is shell text that `eris completion` writes into the script every
 shell sources at start, once per distinct text however many rows use it:
 
-- It defines `__eris_dom_<name>` for `@<name>` and may define other functions,
-  all named `__eris_dom_…`. Outside a function there are only definitions,
-  comments and blank lines, so sourcing the script runs nothing.
+- It is exactly one function definition, `__eris_dom_<name>() {` for
+  `@<name>`, starting at the text's first character and closing at its final
+  `}`, then a newline. Nothing sits before or after it, so sourcing the script
+  defines it and runs nothing. Functions it calls go in `library`, a list of
+  texts held to the same rule, each defining one `__eris_dom_…` function.
+  Domains that share a library hand over the same texts, emitted once.
 - The function is called with the words typed in the earlier positional slots
   (`$1` is slot 0's) and prints its words. `compgen -W` expands what it prints,
   so print shell-safe words only. Like the rest of the script it never runs
   eris and never reaches the network, and it stays silent when it has nothing.
 - It is bash-3.2 clean (macOS `/bin/bash`); zsh loads the same body through
-  `bashcompinit`.
-- No heredoc and no backtick substitution; every quote, `$( )`, `${ }` and
-  brace group closes.
-- One domain has one text across a build. Two plugins may hand over the same
-  domain with the same text, which is emitted once. A helper function defined
-  by two different texts is refused.
+  `bashcompinit`. The check does not model shell quoting: it accepts a subset
+  whose framing both shells agree on and refuses the rest, even when it is
+  valid shell. Printable ASCII only; no comment (keep it in the TypeScript
+  beside the text), backtick, heredoc or here-string, `$'…'`, `$"…"`, `$[…]`
+  or nested function; a backslash only inside quotes and before a letter or
+  digit, so no line continuation; `${ }` holds a name and its operators only;
+  `{` as a word only in command position and `}` only after `;` or a newline,
+  closing a group; no `case` and no unbalanced parenthesis in a quote inside
+  `$( )`.
+- One domain has one helper and library across a build. Two plugins may hand
+  over the same domain with the same texts, which are emitted once. A function
+  defined by two different texts is refused.
 
 Composition checks all of this (`src/cli/commands/completion/domain.ts`) and
 refuses with the line at fault. The helper is trusted like a plugin's handler
@@ -196,7 +205,7 @@ merges the rows and throws `PluginCompositionError` on:
 - a group with no handler, or a handler with no group;
 - `json: true` on a group with subs;
 - a completion slot word that is not shell-safe, or a completion domain whose
-  name or helper fails the rules above;
+  name, helper or library fails the rules above;
 - the same plugin name composed twice.
 
 `menu`, when given, is the handler for the bare program (`eris` with no

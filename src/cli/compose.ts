@@ -19,7 +19,7 @@
  *     sub, including one added later with no machine rendering. Each sub that
  *     renders JSON says so on its own row, so the allow-list fails closed;
  *   - a completion slot the emitted script cannot hold (`complete` on a row, core's
- *     or a plugin's): a word that is not shell-safe, a domain helper that fails
+ *     or a plugin's): a word that is not shell-safe, a domain helper or library text that fails
  *     src/cli/commands/completion/domain.ts, or one domain (or one helper
  *     function) given two different texts across the build.
  *
@@ -34,7 +34,7 @@
 import type { VerbHandler } from "../main";
 import { helpText } from "./args";
 import { renderFailureBlock } from "../../ts/lib/eris-fail";
-import { domainFunction, scanHelper, slotWordRefusal } from "./commands/completion/domain";
+import { domainFunction, helperTexts, scanHelper, slotWordRefusal } from "./commands/completion/domain";
 import { jsonFixLine, unsupportedFix } from "./output";
 import type { ErisPlugin } from "./plugin";
 import { ARGV_SHAPES, deriveJsonSurfaces, deriveTable, type Impl, type Row } from "./registry";
@@ -84,8 +84,8 @@ export interface ComposeOptions {
 
 /** The completion domains a build has seen, so one name or function keeps one text. */
 interface DomainLedger {
-  readonly domains: Map<string, { readonly helper: string; readonly by: string }>;
-  readonly functions: Map<string, { readonly helper: string; readonly by: string }>;
+  readonly domains: Map<string, { readonly texts: readonly string[]; readonly by: string }>;
+  readonly functions: Map<string, { readonly text: string; readonly by: string }>;
 }
 
 /** Refuses a row whose `complete` slots the emitted script cannot hold. `by` names the row's owner in a later refusal. */
@@ -96,20 +96,25 @@ function checkSlots(path: string, row: Row, by: string, ledger: DomainLedger, re
       if (why !== null) refuse(`row '${path}' slot ${n}: ${why}`);
       if (typeof word === "string") continue;
       const d = `domain '${word.domain}'`;
+      const texts = helperTexts(word);
       const prior = ledger.domains.get(word.domain);
       if (prior !== undefined) {
-        if (prior.helper !== word.helper) refuse(`${d}: it carries a different helper from ${prior.by}`);
+        if (prior.texts.join("\0") !== texts.join("\0")) refuse(`${d}: it carries a different helper or library from ${prior.by}`);
         continue;
       }
-      const scan = scanHelper(word.helper);
-      if (!scan.ok) return refuse(`${d}: its helper ${scan.why}`);
-      if (!scan.functions.includes(domainFunction(word.domain))) refuse(`${d}: its helper does not define ${domainFunction(word.domain)}`);
-      for (const f of scan.functions) {
-        const other = ledger.functions.get(f);
-        if (other !== undefined && other.helper !== word.helper) refuse(`${d}: its helper defines '${f}', which ${other.by} defines with other text`);
-      }
-      for (const f of scan.functions) ledger.functions.set(f, { helper: word.helper, by });
-      ledger.domains.set(word.domain, { helper: word.helper, by });
+      const defined: string[] = [];
+      texts.forEach((text, k) => {
+        const what = k === texts.length - 1 ? "its helper" : `its library text ${k}`;
+        const scan = scanHelper(text);
+        if (!scan.ok) return refuse(`${d}: ${what} ${scan.why}`);
+        if (k === texts.length - 1 && scan.function !== domainFunction(word.domain)) refuse(`${d}: its helper defines ${scan.function}, not ${domainFunction(word.domain)}`);
+        if (k < texts.length - 1 && scan.function === domainFunction(word.domain)) refuse(`${d}: its library defines ${scan.function}, which is its helper's`);
+        const other = ledger.functions.get(scan.function);
+        if (other !== undefined && other.text !== text) refuse(`${d}: ${what} defines '${scan.function}', which ${other.by} defines with other text`);
+        defined.push(scan.function);
+      });
+      texts.forEach((text, k) => ledger.functions.set(defined[k]!, { text, by }));
+      ledger.domains.set(word.domain, { texts, by });
     }
   });
 }

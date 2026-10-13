@@ -66,14 +66,15 @@ export interface Row {
 /**
  * A slot whose words only a shell function can list at tab-press time: names
  * the distribution keeps in a file, say. `helper` is shell text, bash-3.2
- * clean (the zsh route loads the same body), holding function definitions
- * only: `__eris_dom_<name>` for `@<name>`, plus any other `__eris_dom_`
- * functions it shares. That function is called with the words typed in the
- * earlier positional slots and prints its words; `compgen -W` expands them,
- * so it must print shell-safe words only.
+ * clean (the zsh route loads the same body), holding exactly one function
+ * definition, `__eris_dom_<name>` for `@<name>`. That function is called with
+ * the words typed in the earlier positional slots and prints its words;
+ * `compgen -W` expands them, so it must print shell-safe words only. Functions
+ * it calls go in `library`, one definition per text, each `__eris_dom_…`;
+ * domains that share a library hand over the same texts, emitted once.
  *
- * The text bypasses the emitter's word checks, so composition checks it
- * instead (src/cli/commands/completion/domain.ts). It is trusted like a
+ * The texts bypass the emitter's word checks, so composition checks them
+ * instead (src/cli/commands/completion/domain.ts). They are trusted like a
  * plugin's handler code: the check keeps a mistake from breaking or running
  * code in every shell that sources `eris completion`, not a hostile author out.
  */
@@ -81,6 +82,7 @@ export interface CompletionDomain {
   /** `@` then lower-case letters, digits, `_`; `@file` is built in. */
   readonly domain: `@${string}`;
   readonly helper: string;
+  readonly library?: readonly string[];
 }
 
 export type SlotWord = string | CompletionDomain;

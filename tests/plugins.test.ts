@@ -150,19 +150,10 @@ describe("composition refuses a plugin that would break a plane", () => {
     ["an '@' word that is not '@file'", ["@env"], "row 'gp' slot 0: '@env' is not a completion word (letters, digits, '_', '?', '-'), '@file' or a domain"],
     ["a domain name outside the grammar", [{ domain: "@Env", helper: fn("__eris_dom_Env") }], "row 'gp' slot 0: domain '@Env' is not a domain name ('@', then lower-case letters, digits, '_')"],
     ["the built-in file domain as an object", [{ domain: "@file", helper: fn("__eris_dom_file") }], "row 'gp' slot 0: '@file' is built in: write it as the word '@file'"],
-    ["a helper that does not define its function", [{ domain: "@x", helper: fn("__eris_dom_y") }], "domain '@x': its helper does not define __eris_dom_x"],
-    ["a helper with no final newline", [{ domain: "@x", helper: "__eris_dom_x() {\n  echo x\n}" }], "domain '@x': its helper does not end with a newline"],
-    ["a helper carrying a control character", [{ domain: "@x", helper: fn("__eris_dom_x", "  echo \x1b[31m") }], "domain '@x': its helper carries a control character (line 2)"],
-    ["a helper carrying a bidi override", [{ domain: "@x", helper: fn("__eris_dom_x", "  echo ‮") }], "domain '@x': its helper carries a control character (line 2)"],
-    ["a helper that runs a command when sourced", [{ domain: "@x", helper: `${fn("__eris_dom_x")}touch pwned\n` }], "domain '@x': its helper runs a command when sourced (line 4): outside a function only definitions, comments and blank lines may sit"],
-    ["a helper defining a core function", [{ domain: "@x", helper: `${fn("__eris_dom_x")}${fn("_eris_completions")}` }], "domain '@x': its helper defines '_eris_completions' (line 4), outside the __eris_dom_ namespace"],
-    ["a helper with a function inside a function", [{ domain: "@x", helper: fn("__eris_dom_x", "  __eris_comp_groups() { :; }") }], "domain '@x': its helper defines a function inside a function (line 2)"],
-    ["a helper with a heredoc", [{ domain: "@x", helper: fn("__eris_dom_x", "  cat <<EOF\n}\nEOF") }], "domain '@x': its helper uses a heredoc (line 2): its body is text the script's framing cannot see"],
-    ["a helper with a backtick substitution", [{ domain: "@x", helper: fn("__eris_dom_x", "  echo `ls`") }], "domain '@x': its helper uses a backtick substitution (line 2): use $( ) instead"],
-    ["a helper ending inside a quote", [{ domain: "@x", helper: fn("__eris_dom_x", '  echo "open') }], "domain '@x': its helper ends inside a quote, expansion or substitution"],
-    ["a helper ending inside a substitution", [{ domain: "@x", helper: fn("__eris_dom_x", "  echo $(ls") }], "domain '@x': its helper ends inside a quote, expansion or substitution"],
-    ["a helper ending inside a function body", [{ domain: "@x", helper: "__eris_dom_x() {\n  { echo x\n}\n" }], "domain '@x': its helper ends inside a function body"],
-    ["text after a closing brace", [{ domain: "@x", helper: "__eris_dom_x() { echo x; } ; touch pwned\n" }], "domain '@x': its helper puts text after a function's closing brace (line 1)"],
+    ["a helper that defines another function", [{ domain: "@x", helper: fn("__eris_dom_y") }], "domain '@x': its helper defines __eris_dom_y, not __eris_dom_x"],
+    // Each refusal of the helper check itself is in tests/completion-helper.test.ts; this row holds that composition runs it.
+    ["a helper the check refuses", [{ domain: "@x", helper: `${fn("__eris_dom_x")}touch pwned\n` }], "domain '@x': its helper puts text after the function's closing brace (line 3): one function per helper text"],
+    ["a library that is not a list of texts", [{ domain: "@x", helper: fn("__eris_dom_x"), library: "oops" }], "row 'gp' slot 0: domain '@x': library must be a list of helper texts"],
   ];
   it.each(domainCases)("%s", (_name, tokens, message) => {
     /** When composition accepts a completion slot the emitted script cannot hold — a word that breaks out of its quotes, a helper that runs a command when sourced, leaves a quote or body open (swallowing the rest of the script), or redefines core's functions — every shell that sources `eris completion` breaks or runs code at start: observed at composeCli. */
@@ -173,15 +164,9 @@ describe("composition refuses a plugin that would break a plane", () => {
     /** When two plugins hand the same domain (or the same helper function) different text, whichever the script defines last silently wins, and the other plugin's slot completes the wrong words: observed at composeCli. */
     const x = (body: string) => ({ domain: "@x", helper: fn("__eris_dom_x", body) });
     expect(() => composeCli(REGISTRY, HANDLERS, [slotted("a", x("  echo a")), slotted("b", x("  echo b"))])).toThrow(
-      new PluginCompositionError("plugin 'b': domain '@x': it carries a different helper from plugin 'a'"),
+      new PluginCompositionError("plugin 'b': domain '@x': it carries a different helper or library from plugin 'a'"),
     );
-    const lib = (body: string) => fn("__eris_dom_lib", body);
-    expect(() =>
-      composeCli(REGISTRY, HANDLERS, [
-        slotted("a", { domain: "@x", helper: `${lib("  echo a")}${fn("__eris_dom_x")}` }),
-        slotted("b", { domain: "@y", helper: `${lib("  echo b")}${fn("__eris_dom_y")}` }),
-      ]),
-    ).toThrow(new PluginCompositionError("plugin 'b': domain '@y': its helper defines '__eris_dom_lib', which plugin 'a' defines with other text"));
+    // A helper function given two texts across domains is refused in tests/completion-helper.test.ts ("a domain's library").
     // PAIRED: the same text in both plugins is one helper, shared.
     const shared = { domain: "@x", helper: fn("__eris_dom_x") };
     expect(composeCli(REGISTRY, HANDLERS, [slotted("a", shared), slotted("b", { ...shared })]).groups.map((g) => g.group)).toEqual(["ga", "gb"]);

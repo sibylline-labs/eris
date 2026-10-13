@@ -59,8 +59,8 @@ declared by a plugin, completes with no other edit.
   `--body-file` and `--evidence-file`. A plugin declares its own the same way.
 - **Positional slots are on the row** (`complete`, one entry per slot): literal
   words, `@file` for file names, or a completion domain, whose words only a
-  shell function can list at tab-press time. A domain's helper text is emitted
-  once and its function is called with the words typed in the earlier slots
+  shell function can list at tab-press time. A domain's helper and library texts are
+  emitted once and its function is called with the words typed in the earlier slots
   ([PLUGINS.md](dev/PLUGINS.md#completion-domains)). A row with no `complete`
   completes no positionals.
 
@@ -71,8 +71,10 @@ cannot break a login shell. Emission itself needs no `yq`.
 **A tab press never invokes eris and never touches the network.** It reads
 only the tree embedded in the script, and offers nothing rather than erroring:
 a tab press must never print to stderr or hang. A domain's helper is held to
-the same: composition refuses one that would run anything when the script is
-sourced or leave a quote or body open (`src/cli/commands/completion/domain.ts`).
+the same: each helper and library text must be exactly one function definition
+in a subset of shell that bash and zsh frame alike, so sourcing the script
+defines it and runs nothing; composition refuses anything else
+(`src/cli/commands/completion/domain.ts`).
 
 ## zsh route
 

@@ -22,7 +22,7 @@
  */
 
 import { REGISTRY, type Row } from "../../registry";
-import { domainFunction, WORD } from "./domain";
+import { domainFunction, helperTexts, WORD } from "./domain";
 
 export type Shell = "bash" | "zsh";
 type Registry = Readonly<Record<string, Row>>;
@@ -88,8 +88,8 @@ function generated(reg: Registry): { tree: string; helpers: string; argv: string
 
   const slotArms: [string, string][] = [];
   const fileSlots: string[] = [];
-  // Each distinct helper text once, in the order its first slot is emitted.
-  const helperTexts = new Set<string>();
+  // Each distinct helper and library text once, in the order its first slot is emitted.
+  const texts = new Set<string>();
   for (const path of [...paths].sort(byCodePoint)) {
     reg[path]!.complete?.forEach((slot, n) => {
       const label = `"${keyOf(path)} ${n}"`;
@@ -99,13 +99,13 @@ function generated(reg: Registry): { tree: string; helpers: string; argv: string
       }
       const words = slot.map((t) => {
         if (typeof t === "string") return safe(t, WORD, "slot word");
-        helperTexts.add(t.helper);
+        for (const text of helperTexts(t)) texts.add(text);
         return `$(${domainFunction(t.domain)} "$@")`;
       });
       slotArms.push([label, `echo "${words.join(" ")}"`]);
     });
   }
-  const helpers = helperTexts.size === 0 ? "" : `# Completion domains: the helpers the rows carry.\n${[...helperTexts].join("\n")}\n`;
+  const helpers = texts.size === 0 ? "" : `# Completion domains: the helpers the rows carry.\n${[...texts].join("\n")}\n`;
 
   const tree =
     `__eris_comp_groups() {\n  echo "${groups.join(" ")}"\n}\n\n` +

@@ -298,11 +298,10 @@ describe("the emitter: one registry edit is the whole change", () => {
     expect(press(["eris", "plain", "alpha", "on", "x", ""], { script })).toEqual([]);
   });
 
-  /** A domain whose words depend on the word typed in slot 0, shared by two rows. */
+  /** A domain whose words depend on the word typed in slot 0 (the tone picks the colours), shared by two rows. */
   const COLOR: CompletionDomain = {
     domain: "@color",
-    helper: `# The tone typed in slot 0 picks the colours.
-__eris_dom_color() {
+    helper: `__eris_dom_color() {
   case "\${1:-}" in
     warm) echo "red orange" ;;
     *) echo "blue green" ;;

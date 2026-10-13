@@ -1,27 +1,30 @@
 /**
  * domain.ts — the completion domains a row's slots carry (`CompletionDomain`,
  * src/cli/registry.ts): the function a domain names, and the check composition
- * (src/cli/compose.ts) runs on a slot's words and on a domain's helper text
- * before the emitter (./emit.ts) writes them into the script.
+ * (src/cli/compose.ts) runs on a slot's words and on every helper text before
+ * the emitter (./emit.ts) writes them into the script.
  *
- * The script is sourced by every shell that loads eris completion, and a helper
- * sits between core's own definitions in it. The check holds what that framing
- * needs:
+ * The script is sourced by every shell that loads eris completion (bash, and
+ * zsh through bashcompinit), and a helper sits between core's own definitions
+ * in it. Sourcing must define the helper's one function and run nothing, so the
+ * check must find where that function ends exactly as both shells do. It does
+ * not model shell quoting: it accepts a subset whose framing bash and zsh agree
+ * on and refuses everything else, naming the line:
  *
- *   - outside a function, only definitions, comments and blank lines, so
- *     sourcing the script runs nothing;
- *   - every function it defines is named `__eris_dom_…`, never one of core's
- *     (`_eris_completions`, `__eris_comp_…`), and none is defined inside another;
- *   - every quote, `$( )`, `${ }` and brace group it opens is closed, and nothing
- *     follows a body's closing brace on its line, so no core text is swallowed;
- *   - no heredoc and no backtick substitution, whose extent this scan does not
- *     follow;
- *   - no control character but tab and newline, no bidirectional override, and
- *     a final newline.
+ *   - the text is exactly one definition, `__eris_dom_<name>() {`, whose body
+ *     closes at its final `}`, then a newline: nothing before it, nothing after;
+ *   - printable ASCII, tab and newline only; no comment, no backtick, no heredoc
+ *     or here-string, no `$'…'`, `$"…"` or `$[…]`, no function defined inside;
+ *   - a backslash only inside quotes, and only before a letter or digit;
+ *   - `${ }` holds a name and its operators only (no quote, nesting or `( )`);
+ *   - `{` and `}` as words only where both shells read them as a group's braces:
+ *     `{` in command position, `}` after `;` or a newline, closing one the scan
+ *     opened (zsh reads a lone `}` as a closing brace anywhere on a line);
+ *   - inside `$( )`, no `case` and no unbalanced parenthesis inside a quote,
+ *     which older bash can read as the substitution's end.
  *
- * It is a scanner over quotes, expansions, substitutions and brace groups, not
- * a shell parser: it may refuse unusual valid shell, and composition then names
- * the line. Pure and import-free, because composition runs on every command line.
+ * A helper that is valid shell may still be refused; rewrite it into the
+ * subset. Pure and import-free, because composition runs on every command line.
  */
 
 import type { CompletionDomain, SlotWord } from "../../registry";
@@ -31,21 +34,28 @@ export const WORD = /^[A-Za-z0-9_][A-Za-z0-9_?-]*$/;
 
 const DOMAIN_NAME = /^@[a-z][a-z0-9_]*$/;
 const PREFIX = "__eris_dom_";
-const HELPER_FN = /^__eris_dom_[A-Za-z0-9_]+$/;
-const CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f‪-‮⁦-⁩]/;
-/** `name() {`, then a blank: the only thing a helper may start outside a function. */
-const HEADER = /([A-Za-z_][A-Za-z0-9_]*)[ \t]*\(\)[ \t]*\{(?=[ \t\n])/y;
-/** What may follow a body's closing brace on its line. */
-const AFTER_BODY = /[ \t]*(#[^\n]*)?\n/y;
-/** A function definition starting at a word: `name()` or the `function` keyword. */
-const NESTED_DEF = /(?:[A-Za-z_][A-Za-z0-9_]*[ \t]*\(\)|function[ \t])/y;
+/** The one header a helper starts with: `name() {`, then a blank or newline. */
+const HEADER = /^(__eris_dom_[A-Za-z0-9_]+)\(\)[ \t]*\{(?=[ \t\n])/;
+/** Anything but printable ASCII, tab and newline. */
+const OUTSIDE_ASCII = /[^\t\n\x20-\x7e]/;
+/** Characters that end a shell word. */
+const META = new Set([" ", "\t", "\n", ";", "&", "|", "(", ")", "<", ">"]);
+/** What `${` … `}` may hold: a name, `$name`, and the operators on it. */
+const PARAM_CHAR = /[A-Za-z0-9_:=+?#%/*@!.,~^\-[\] \t]/;
+/** What may follow `$` inside `${ }`: a name or a special parameter. */
+const PARAM_DOLLAR = /[A-Za-z0-9_@*#?!$-]/;
 
 /** The function the emitted slot calls for `domain`. */
 export function domainFunction(domain: string): string {
   return `${PREFIX}${domain.slice(1)}`;
 }
 
-/** Why `word` cannot stand in a slot, else null. Its helper is `scanHelper`'s. */
+/** Every helper text a domain carries: its library, then its own function. */
+export function helperTexts(d: CompletionDomain): readonly string[] {
+  return [...(d.library ?? []), d.helper];
+}
+
+/** Why `word` cannot stand in a slot, else null. Its helper texts are `scanHelper`'s. */
 export function slotWordRefusal(word: SlotWord): string | null {
   if (typeof word === "string") {
     return word === "@file" || WORD.test(word) ? null : `'${word}' is not a completion word (letters, digits, '_', '?', '-'), '@file' or a domain`;
@@ -54,139 +64,140 @@ export function slotWordRefusal(word: SlotWord): string | null {
   if (typeof d !== "object" || d === null || typeof d.domain !== "string" || typeof d.helper !== "string") {
     return `${JSON.stringify(word)} is neither a completion word nor a domain ({ domain, helper })`;
   }
+  if (d.library !== undefined && (!Array.isArray(d.library) || !d.library.every((t) => typeof t === "string"))) {
+    return `domain '${d.domain}': library must be a list of helper texts`;
+  }
   if (d.domain === "@file") return "'@file' is built in: write it as the word '@file'";
   if (!DOMAIN_NAME.test(d.domain)) return `domain '${d.domain}' is not a domain name ('@', then lower-case letters, digits, '_')`;
   return null;
 }
 
-export type HelperScan = { readonly ok: true; readonly functions: readonly string[] } | { readonly ok: false; readonly why: string };
+/** The one function a helper text defines, or why it cannot be emitted. */
+export type HelperScan = { readonly ok: true; readonly function: string } | { readonly ok: false; readonly why: string };
 
 const lineAt = (text: string, at: number): number => text.slice(0, at).split("\n").length;
 
-/** A word boundary before a reserved word, a comment or a definition. */
-const BOUNDARY = new Set([undefined, " ", "\t", "\n", ";", "&", "|", "(", ")"]);
-/** What may precede a closing `}` (ignoring blanks) for it to be the reserved word. */
-const CLOSES = new Set([";", "\n", "&"]);
+/** Where the scan is: code (the body, or inside `$( )`), `${ }`, or a double or single quote. */
+type Frame =
+  | { kind: "code"; readonly sub: boolean; readonly start: number; braces: number; parens: number }
+  | { kind: "param" }
+  | { kind: "dq" | "sq"; readonly inSub: boolean; parens: number };
 
-/** Where the scan is: code (a body, or inside `$( )`), `${ }`, a double, single or `$'…'` quote. */
-type Frame = { kind: "code"; readonly sub: boolean; braces: number; parens: number } | { kind: "param" } | { kind: "dq" } | { kind: "sq" } | { kind: "ansi" };
+class Refusal extends Error {}
 
-/**
- * One function body, from just after its opening `{`: the index just past its
- * closing `}`, or why it cannot be framed.
- */
-function scanBody(text: string, start: number): number | string {
-  const stack: Frame[] = [{ kind: "code", sub: false, braces: 1, parens: 0 }];
-  /** The last character before `j` that is not a blank: a newline at the body's start. */
-  const prevBlank = (j: number): string => {
+/** The body from just after its opening `{`: the index just past its closing `}`. Throws a Refusal. */
+function scanBody(text: string, start: number): number {
+  const stack: Frame[] = [{ kind: "code", sub: false, start, braces: 1, parens: 0 }];
+  const inSub = () => stack.some((f) => f.kind === "code" && f.sub);
+  const refuse = (j: number, why: string): never => {
+    throw new Refusal(`${why} (line ${lineAt(text, j)})`);
+  };
+  /** The last non-blank character before `j` in a code frame starting at `from`; "" at the frame's start. */
+  const prevWord = (j: number, from: number): string => {
     let k = j - 1;
-    while (k >= start && (text[k] === " " || text[k] === "\t")) k--;
-    return k >= start ? text[k]! : "\n";
+    while (k >= from && (text[k] === " " || text[k] === "\t")) k--;
+    return k >= from ? text[k]! : "";
+  };
+  const backslash = (j: number) => {
+    if (!/[A-Za-z0-9]/.test(text[j + 1] ?? "")) refuse(j, "has a backslash before something other than a letter or digit");
   };
   for (let j = start; j < text.length; j++) {
     const c = text[j]!;
+    const next = text[j + 1];
     const top = stack[stack.length - 1]!;
-    const at = () => lineAt(text, j);
+    if (c === "`") refuse(j, "uses a backtick: use $( ) instead");
     if (top.kind === "sq") {
-      if (c === "'") stack.pop();
+      if (c === "'") {
+        if (top.parens !== 0) refuse(j, "has an unbalanced parenthesis in a quote inside $( )");
+        stack.pop();
+      } else if (c === "\\") backslash(j);
+      else if (top.inSub && (c === "(" || c === ")")) top.parens += c === "(" ? 1 : -1;
       continue;
     }
-    if (c === "\\") {
+    if (top.kind === "param") {
+      if (c === "}") stack.pop();
+      else if (c === "$" && PARAM_DOLLAR.test(next ?? "")) j++;
+      else if (!PARAM_CHAR.test(c)) refuse(j, "has a ${ } holding more than a name and its operators");
+      continue;
+    }
+    if (c === "$" && next === "$") {
       j++;
       continue;
     }
-    if (top.kind === "ansi") {
-      if (c === "'") stack.pop();
-      continue;
-    }
-    if (c === "`") return `uses a backtick substitution (line ${at()}): use $( ) instead`;
-    if (c === "$" && text[j + 1] === "(") {
-      stack.push({ kind: "code", sub: true, braces: 0, parens: 0 });
+    if (c === "$" && (next === "'"|| next === '"' || next === "[")) refuse(j, `uses $${next}, which the shells read differently`);
+    if (c === "$" && next === "(") {
+      stack.push({ kind: "code", sub: true, start: j + 2, braces: 0, parens: 0 });
       j++;
       continue;
     }
-    if (c === "$" && text[j + 1] === "{") {
+    if (c === "$" && next === "{") {
       stack.push({ kind: "param" });
       j++;
       continue;
     }
     if (top.kind === "dq") {
-      if (c === '"') stack.pop();
+      if (c === '"') {
+        if (top.parens !== 0) refuse(j, "has an unbalanced parenthesis in a quote inside $( )");
+        stack.pop();
+      } else if (c === "\\") backslash(j);
+      else if (top.inSub && (c === "(" || c === ")")) top.parens += c === "(" ? 1 : -1;
       continue;
     }
-    if (c === "'" && top.kind === "code" && text[j - 1] === "$") {
-      stack.push({ kind: "ansi" });
+    // Code: the body, or the inside of a `$( )`.
+    const code = top as Extract<Frame, { kind: "code" }>;
+    if (c === "\\") refuse(j, "has a backslash outside quotes");
+    if (c === "'" || c === '"') {
+      stack.push({ kind: c === "'" ? "sq" : "dq", inSub: inSub(), parens: 0 });
       continue;
     }
-    if (c === "'") {
-      stack.push({ kind: "sq" });
-      continue;
-    }
-    if (c === '"') {
-      stack.push({ kind: "dq" });
-      continue;
-    }
-    if (top.kind === "param") {
-      if (c === "}") stack.pop();
-      continue;
-    }
-    // Code: a body, or the inside of a `$( )`.
-    const wordStart = BOUNDARY.has(text[j - 1]) || j === start;
-    if (c === "#" && wordStart) {
-      j = text.indexOf("\n", j) - 1;
-      continue;
-    }
-    if (c === "<" && text[j + 1] === "<") {
-      if (text[j + 2] !== "<") return `uses a heredoc (line ${at()}): its body is text the script's framing cannot see`;
-      j += 2;
-      continue;
-    }
-    if (wordStart) {
-      NESTED_DEF.lastIndex = j;
-      if (NESTED_DEF.test(text)) return `defines a function inside a function (line ${at()})`;
-    }
-    if (c === "(") top.parens++;
-    else if (c === ")") {
-      if (top.parens > 0) top.parens--;
-      else if (top.sub) stack.pop();
-    } else if (c === "{" && wordStart && /[ \t\n]/.test(text[j + 1] ?? "")) top.braces++;
-    else if (c === "}" && top.braces > 0 && CLOSES.has(prevBlank(j))) {
-      top.braces--;
-      if (!top.sub && top.braces === 0) return j + 1;
+    if (c === "#" && text[j - 1] !== "$") refuse(j, "has a comment or a bare '#': keep comments in the TypeScript beside it");
+    if (c === "<" && next === "<") refuse(j, "uses a heredoc or here-string");
+    const wordStart = j === code.start || META.has(text[j - 1]!);
+    const wordEnd = (k: number) => k >= text.length || META.has(text[k]!);
+    if (wordStart && /^function[ \t]/.test(text.slice(j, j + 9))) refuse(j, "defines a function inside a function");
+    if (wordStart && code.sub && /^case\b/.test(text.slice(j, j + 5))) refuse(j, "uses case inside $( )");
+    if (c === "(") {
+      if (/^\([ \t]*\)/.test(text.slice(j))) refuse(j, "defines a function inside a function");
+      code.parens++;
+    } else if (c === ")") {
+      if (code.parens > 0) code.parens--;
+      else if (code.sub) stack.pop();
+    } else if (c === "{" && wordStart && wordEnd(j + 1)) {
+      const before = prevWord(j, code.start);
+      const twoBefore = text.slice(0, j).trimEnd();
+      if (!/[ \t\n]/.test(next ?? "") || !["", "\n", ";", "&", "|", "("].includes(before) || twoBefore.endsWith(";;")) {
+        refuse(j, "has a '{' word outside command position");
+      }
+      code.braces++;
+    } else if (c === "}" && wordStart && wordEnd(j + 1)) {
+      const before = prevWord(j, code.start);
+      const twoBefore = text.slice(0, j).trimEnd();
+      if (!["\n", ";"].includes(before) || twoBefore.endsWith(";;") || !/[ \t\n;]/.test(next ?? "") || code.braces === 0) {
+        refuse(j, "has a '}' word that does not close a group after ';' or a newline");
+      }
+      code.braces--;
+      if (!code.sub && code.braces === 0) return j + 1;
     }
   }
-  return stack.length > 1 ? "ends inside a quote, expansion or substitution" : "ends inside a function body";
+  return refuse(text.length - 1, stack.length > 1 ? "ends inside a quote, expansion or substitution" : "ends inside the function body");
 }
 
-/** The functions `text` defines, or why it cannot be emitted as a domain helper. */
+/** The one function `text` defines, or why it cannot be emitted as a helper. */
 export function scanHelper(text: string): HelperScan {
   const fail = (why: string): HelperScan => ({ ok: false, why });
   if (!text.endsWith("\n")) return fail("does not end with a newline");
-  const control = CONTROL.exec(text);
-  if (control !== null) return fail(`carries a control character (line ${lineAt(text, control.index)})`);
-  const functions: string[] = [];
-  let i = 0;
-  while (i < text.length) {
-    const c = text[i];
-    if (c === " " || c === "\t" || c === "\n") {
-      i++;
-      continue;
-    }
-    if (c === "#") {
-      i = text.indexOf("\n", i) + 1;
-      continue;
-    }
-    HEADER.lastIndex = i;
-    const head = HEADER.exec(text);
-    if (head === null) return fail(`runs a command when sourced (line ${lineAt(text, i)}): outside a function only definitions, comments and blank lines may sit`);
-    const name = head[1]!;
-    if (!HELPER_FN.test(name)) return fail(`defines '${name}' (line ${lineAt(text, i)}), outside the ${PREFIX} namespace`);
-    const end = scanBody(text, HEADER.lastIndex);
-    if (typeof end === "string") return fail(end);
-    AFTER_BODY.lastIndex = end;
-    if (!AFTER_BODY.test(text)) return fail(`puts text after a function's closing brace (line ${lineAt(text, end)})`);
-    functions.push(name);
-    i = AFTER_BODY.lastIndex;
+  const odd = OUTSIDE_ASCII.exec(text);
+  if (odd !== null) return fail(`carries a character outside printable ASCII (line ${lineAt(text, odd.index)})`);
+  const head = HEADER.exec(text);
+  if (head === null) {
+    return fail(`must be exactly one definition, starting at its first character with '${PREFIX}<name>() {'`);
   }
-  return { ok: true, functions };
+  try {
+    const end = scanBody(text, head[0].length);
+    if (end !== text.length - 1) return fail(`puts text after the function's closing brace (line ${lineAt(text, end)}): one function per helper text`);
+  } catch (e) {
+    if (e instanceof Refusal) return fail(e.message);
+    throw e;
+  }
+  return { ok: true, function: head[1]! };
 }
