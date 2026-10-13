@@ -136,21 +136,35 @@ describe.skipIf(checkoutOnly("builds its own binaries from this checkout's sourc
   });
 
   it("an interrupt while the new binary is being checked puts the old one back", async () => {
-    /** When Ctrl-C lands between the rename and the check, the new binary is left in place unrun and .old beside it — observed as the file at the path, which must be the old binary byte for byte. */
+    /** When Ctrl-C lands between the rename and the check, the new binary is left in place unrun and .old beside it, or the binary under check runs on as an orphan — observed as the file at the path, which must be the old binary byte for byte, and as the check's pid, alive before the interrupt and gone after. */
     const marker = join(sb.dir, "smoke-started");
-    // A release whose binary, when asked for its version, says it started and then waits.
-    fx.publish({ tag: "v0.0.5", assets: { [ASSET]: `#!/bin/sh\necho started > '${marker}'\nsleep 30\n` } });
+    // A release whose binary, when asked for its version, writes its pid and then waits as that pid.
+    fx.publish({ tag: "v0.0.5", assets: { [ASSET]: `#!/bin/sh\necho $$ > '${marker}.tmp'\nmv '${marker}.tmp' '${marker}'\nexec sleep 30\n` } });
     const { child, ended } = startUpdate();
     const deadline = Date.now() + 20_000;
     while (!existsSync(marker) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
     expect(existsSync(marker)).toBe(true);
     // The replacement is in place now: this is the script, not the old binary.
     expect(readFileSync(installed, "utf8")).toStartWith("#!/bin/sh");
+    const smokePid = Number(readFileSync(marker, "utf8").trim());
+    const alive = () => {
+      try {
+        process.kill(smokePid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    expect({ smokePid, alive: alive() }).toEqual({ smokePid, alive: true });
     child.kill("SIGINT");
     const end = await ended;
     expect(end.signal).toBe("SIGINT");
     expect(readFileSync(installed).equals(readFileSync(v1))).toBe(true);
     expect(readdirSync(bin)).toEqual(["eris"]);
+    // The binary under check dies with the update (the runner forwards the signal to the tree it tracks) rather than running on as an orphan.
+    const gone = Date.now() + 5_000;
+    while (alive() && Date.now() < gone) await new Promise((r) => setTimeout(r, 50));
+    expect({ smokePid, alive: alive() }).toEqual({ smokePid, alive: false });
   });
 
   it("a source checkout refuses, with the same fixture and no request made", async () => {

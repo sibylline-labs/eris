@@ -27,6 +27,11 @@ one that does not.
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
+A tag is `vMAJOR.MINOR.PATCH[-prerelease]`: numbers of at most nine digits, and
+dot-separated prerelease identifiers that are not empty (`RELEASE_TAG` in
+`src/cli/commands/update/semver.ts`, the grammar `eris update` orders releases by).
+The release job refuses any other tag before it builds.
+
 A tag with a hyphen (`v0.3.0-rc.1`) is a pre-release. GitHub's "latest release"
 skips pre-releases, so `install.sh`, `eris update` and the tap ignore it until a
 person names it (`ERIS_VERSION=v0.3.0-rc.1 ./install.sh`, `eris update --to

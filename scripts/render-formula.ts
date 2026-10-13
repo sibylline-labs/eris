@@ -15,8 +15,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { RELEASE_TAG as TAG } from "../src/cli/commands/update/semver";
 
-const TAG = /^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const REPO = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/;
 const DEFAULT_REPO = "sibylline-labs/eris";
 const DEFAULT_TEMPLATE = join(import.meta.dir, "..", "packaging", "homebrew", "eris.rb.tmpl");

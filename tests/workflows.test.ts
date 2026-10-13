@@ -89,3 +89,20 @@ describe.skipIf(checkoutOnly("reads the checkout's workflow files"))("the workfl
     expect(steps.slice(tapCheckout + 1).some((s) => /\bbun\b/.test(s.run ?? ""))).toBe(false);
   });
 });
+
+describe.skipIf(checkoutOnly("reads the checkout's workflow files"))("the release tag grammar", () => {
+  const TAGS = [
+    "v0.2.0", "v10.20.30", "v0.3.0-rc.1", "v1.0.0-alpha-1", "v1.0.0-0.3.7", "v999999999.0.0",
+    "0.2.0", "v0.2", "v0.2.0.1", "v0.2.0-", "v0.2.0-rc.", "v0.2.0-rc..1", "v0.2.0-.rc", "v1000000000.0.0", "v0.2.0+build", "v0.2.0-rc_1", "dev",
+  ];
+  it("is one grammar: the release job's check, the formula renderer and eris update's parser agree on every tag", async () => {
+    /** When the release job accepts a tag eris update cannot order (an empty prerelease identifier, a ten-digit number), that release publishes and every binary reads its version as not-a-version and offers it as an update forever — observed by running the job's regex, the renderer's and the parser on one table. */
+    const { compareVersions, RELEASE_TAG } = await import("../src/cli/commands/update/semver");
+    const step = parsed("release.yml").jobs.plan!.steps.find((s) => s.run?.includes("=~"))!;
+    const workflow = new RegExp(/=~ (\^.*\$) \]\]/.exec(step.run!)![1]!);
+    for (const tag of TAGS) {
+      const parsedByUpdate = tag.startsWith("v") && compareVersions(tag, tag) !== null;
+      expect({ tag, workflow: workflow.test(tag), renderer: RELEASE_TAG.test(tag) }).toEqual({ tag, workflow: parsedByUpdate, renderer: parsedByUpdate });
+    }
+  });
+});

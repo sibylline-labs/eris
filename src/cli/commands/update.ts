@@ -292,27 +292,35 @@ async function update(host: UpdateHost, ctx: VerbContext, check: boolean, to: st
   const expected = checksumOf(await gh.downloadText(sumsAsset), name);
   if (expected === undefined) throw missing(`SHA256SUMS in ${repo}'s release ${release.tag} lists no checksum for ${name}`);
   const hash = createHash("sha256");
-  const staged = await stage(target.path, (write) =>
-    gh.download(binary, MAX_BINARY_BYTES, (chunk) => {
-      hash.update(chunk);
-      write(chunk);
-    }),
-  );
-  const got = hash.digest("hex");
-  if (got !== expected) {
-    discard(staged);
-    throw new Refusal({
-      slug: "update-checksum-mismatch",
-      what: `${name} does not match its checksum in SHA256SUMS (expected ${expected}, got ${got})`,
-      fix: "nothing was changed\nretry; if it repeats, the release is corrupt or has been tampered with, so do not install it",
-    });
-  }
-
-  // Until the new binary has answered, an interrupt puts the old one back.
-  const stand = onInterrupt(() => void restore(target.path));
+  // One guard from the first byte staged until the new binary has answered, so
+  // no signal lands between two guards with no listener and kills by default:
+  // before the rename an interrupt removes the staged file, after it puts the
+  // old binary back. (stage() also removes a partial file on its own.)
+  let staged: string | undefined;
+  let replaced = false;
+  const stand = onInterrupt(() => {
+    if (replaced) void restore(target.path);
+    else if (staged !== undefined) discard(staged);
+  });
   let why: string | null;
   try {
+    staged = await stage(target.path, (write) =>
+      gh.download(binary, MAX_BINARY_BYTES, (chunk) => {
+        hash.update(chunk);
+        write(chunk);
+      }),
+    );
+    const got = hash.digest("hex");
+    if (got !== expected) {
+      discard(staged);
+      throw new Refusal({
+        slug: "update-checksum-mismatch",
+        what: `${name} does not match its checksum in SHA256SUMS (expected ${expected}, got ${got})`,
+        fix: "nothing was changed\nretry; if it repeats, the release is corrupt or has been tampered with, so do not install it",
+      });
+    }
     replace(target.path, staged);
+    replaced = true;
     why = await smoke(host, target.path, release.tag, ctx.env);
   } finally {
     stand();

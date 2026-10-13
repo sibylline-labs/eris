@@ -7,6 +7,14 @@
 
 const SEMVER = /^v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
+/**
+ * A release tag: `vMAJOR.MINOR.PATCH[-prerelease]`, exactly the tags
+ * `compareVersions` orders, with the `v`. The release workflow's tag check
+ * (.github/workflows/release.yml) and scripts/render-formula.ts hold the same
+ * grammar; tests/workflows.test.ts runs all three on one table.
+ */
+export const RELEASE_TAG = /^v[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/;
+
 const sign = (n: number): -1 | 0 | 1 => (n < 0 ? -1 : n > 0 ? 1 : 0);
 
 /** -1, 0 or 1 for `a` before, equal to or after `b`; null when either is not a version (`dev`, a typo). */
