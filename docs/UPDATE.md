@@ -27,7 +27,10 @@ of its own (a distribution reporting the core it was built on) prints it next.
 | `build_id` | The compiled binary's build id, prefixed by the tag; `null` in a checkout. |
 | `extra` | The line a distribution added (`build({ versionExtra })`); `null` when it added none. |
 
-Every field is baked into the binary at build time. `--version` reads no file, so it
+Every field is baked into the binary at build time. A run from source reports `dev`, a
+null `build_id`, and the release repository and line its entry handed
+`runProgram({ identity })` (core's defaults when it handed none); a binary ignores that
+option. `--version` reads no file, so it
 answers even when the binary's asset cache cannot be written.
 
 ## `eris update`
@@ -116,7 +119,8 @@ binary is run without the token in its environment.
 ### Which repository
 
 A binary updates from the repository it was built to be released from, so one build
-never replaces itself with another's: `RELEASE_REPO` is fixed by `build({ releaseRepo })`
-(default `sibylline-labs/eris`; a checkout reports the default). A distribution that
+never replaces itself with another's: the repository is fixed by `build({ releaseRepo })`
+(default `sibylline-labs/eris`). A checkout reports the one its entry handed
+`runProgram({ identity })`, else the default, and refuses to update in place anyway. A distribution that
 publishes its own releases must publish them in the same shape
 ([dev/RELEASING.md](dev/RELEASING.md)).

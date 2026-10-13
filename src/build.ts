@@ -23,14 +23,19 @@
  *     and the source (the distribution's and this package's), prefixed by `tag`
  *     when given, so a rebuild with any change gets a new home;
  *   - `__ERIS_RELEASE_REPO__`: where the build's own releases are published
- *     (`RELEASE_REPO`, src/runtime/home.ts), so one distribution's binary never
+ *     (`releaseRepo()`, src/runtime/home.ts), so one distribution's binary never
  *     takes another's release for its own;
  *   - `__ERIS_VERSION__`: the `tag`, or `dev` for an untagged build (`VERSION`), which
  *     `eris --version` prints and `eris update` compares with the release it finds;
  *   - `__ERIS_VERSION_EXTRA__`: the one line a distribution adds to `eris --version`
  *     (`versionExtra`: the core it was built on, say), or null;
  *   - `__ERIS_DOCS_BASE__`: the URL a failure block's second `docs:` line appends the
- *     doc path to (`docsBase`, `DOCS_BASE`), so a distribution links its own docs.
+ *     doc path to (`docsBase`), so a distribution links its own docs.
+ *
+ * The last three are the distribution's identity (`DistributionIdentity`), checked
+ * by the rule `runProgram({ identity })` applies to a run from source
+ * (`resolveIdentity`, src/runtime/home.ts). In the binary the baked values win
+ * over whatever its entry hands `runProgram`.
  *
  * The plugin list is composed here first (src/cli/compose.ts), so a refused plugin
  * fails the build, not the binary's first command.
@@ -51,7 +56,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { composeCli } from "./cli/compose";
 import type { ErisPlugin } from "./cli/plugin";
 import { REGISTRY } from "./cli/registry";
-import { checkoutRoot, DEFAULT_DOCS_BASE, DEFAULT_RELEASE_REPO, firstDocRoot } from "./runtime/home";
+import { checkoutRoot, type DistributionIdentity, firstDocRoot, resolveIdentity } from "./runtime/home";
 
 /** This package's root: core's source, and the docs core names. */
 const CORE = checkoutRoot();
@@ -64,11 +69,6 @@ const SOURCE_FILES = ["package.json", "bun.lock", "bun.lockb"];
 const DOC_REF = /docs\/[A-Za-z0-9_./-]+\.md/g;
 
 const TAG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const RELEASE_REPO = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/;
-/** One line of printable ASCII, visible at both ends. */
-const VERSION_LINE = /^[\x21-\x7e](?:[\x20-\x7e]{0,118}[\x21-\x7e])?$/;
-/** An https URL with no query, fragment or space, whose trailing slashes are dropped. */
-const DOCS_BASE_URL = /^https:\/\/[A-Za-z0-9.-]+(?::\d+)?(?:\/[A-Za-z0-9._~%/-]*)?$/;
 
 export interface BuildStub {
   /** The specifiers, as the source writes them, that bundle as the stub. */
@@ -77,7 +77,9 @@ export interface BuildStub {
   readonly reason: string;
 }
 
-export interface BuildOptions {
+/** The identity fields (`releaseRepo`, `versionExtra`, `docsBase`) are the
+ *  distribution's, each this repository's when absent (`DistributionIdentity`). */
+export interface BuildOptions extends DistributionIdentity {
   /** The module that composes the distribution's CLI and calls `runProgram`. */
   readonly entry: string;
   /** The distribution's root; the paths below are relative to it. Default: the
@@ -94,14 +96,6 @@ export interface BuildOptions {
    *  package.json and the lockfile. This package's own source is always added. */
   readonly sourceRoots?: readonly string[];
   readonly stubs?: readonly BuildStub[];
-  /** `owner/name`; this repository's when absent. */
-  readonly releaseRepo?: string;
-  /** One printable line `eris --version` prints after the version, for a build
-   *  that reports more than its tag: the core a distribution was built on. */
-  readonly versionExtra?: string;
-  /** An https URL (no query or fragment) the doc paths in a failure block's
-   *  second `docs:` line are appended to; this repository's public docs when absent. */
-  readonly docsBase?: string;
   /** Default: `<root>/dist/eris-<os>-<arch>`, for the target. */
   readonly outfile?: string;
   /** A bun compile target (`bun-linux-x64`); the host's when absent. */
@@ -200,14 +194,7 @@ function compilePlugin(assets: Readonly<Record<string, string>>, stubs: readonly
 
 export async function build(opts: BuildOptions): Promise<BuildResult> {
   if (opts.tag !== undefined && !TAG.test(opts.tag)) throw new Error(`--tag must match ${TAG}: ${JSON.stringify(opts.tag)}`);
-  const releaseRepo = opts.releaseRepo ?? DEFAULT_RELEASE_REPO;
-  if (!RELEASE_REPO.test(releaseRepo)) throw new Error(`releaseRepo must be owner/name: ${JSON.stringify(releaseRepo)}`);
-  const versionExtra = opts.versionExtra ?? null;
-  if (versionExtra !== null && !VERSION_LINE.test(versionExtra)) {
-    throw new Error(`versionExtra must be one printable line of at most 120 characters: ${JSON.stringify(versionExtra)}`);
-  }
-  const docsBase = (opts.docsBase ?? DEFAULT_DOCS_BASE).replace(/\/+$/, "");
-  if (!DOCS_BASE_URL.test(docsBase)) throw new Error(`docsBase must be an https URL with no query, fragment or space: ${JSON.stringify(opts.docsBase)}`);
+  const { releaseRepo, versionExtra, docsBase } = resolveIdentity(opts);
   const entry = resolve(opts.entry);
   if (!existsSync(entry) || !statSync(entry).isFile()) throw new Error(`entry ${entry} is not a file`);
   const root = resolve(opts.root ?? nearestPackageRoot(dirname(entry)));

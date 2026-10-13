@@ -31,7 +31,7 @@ import { type Cli, composeCli, NO_ENTITLEMENTS, type Session } from "./cli/compo
 import { sanitizeDisplay } from "./cli/output";
 import { ARGV_SHAPES_NO_ASSETS, REGISTRY } from "./cli/registry";
 import { route, type Impl } from "./cli/router";
-import { adoptSourceRoot, adoptUnwrittenHome, HomeUnwritableError, isCompiled, resolveInstallRoot } from "./runtime/home";
+import { adoptSourceIdentity, adoptSourceRoot, adoptUnwrittenHome, type DistributionIdentity, HomeUnwritableError, isCompiled, resolveInstallRoot } from "./runtime/home";
 import { warn } from "./runtime/logging";
 import { applySettings } from "./runtime/settings";
 
@@ -183,12 +183,23 @@ export interface ProgramOptions extends Pick<MainOptions, "cli" | "entitlements"
    * root), and the shim's `_ERIS_SHIM_DIR` wins over it.
    */
   installRoot?: string;
+  /**
+   * Who the distribution is (`releaseRepo`, `versionExtra`, `docsBase`), for a
+   * run from source: what `eris --version` prints, the repository `eris update`
+   * and `releaseRepo()` name, and the base of a failure block's second `docs:`
+   * line, in place of this repository's. Pass the values `build()` is given, so a
+   * run from source and the binary say the same. Checked as `build()` checks
+   * them. A compiled binary keeps the identity its build baked, whatever is
+   * passed here; no environment variable moves either.
+   */
+  identity?: DistributionIdentity;
 }
 
 /** The process entry: this file's own when run, and a distribution's. */
 export function runProgram(opts: ProgramOptions = {}): void {
-  const { installRoot: root, ...mainOpts } = opts;
+  const { installRoot: root, identity, ...mainOpts } = opts;
   if (root !== undefined) adoptSourceRoot(root);
+  if (identity !== undefined) adoptSourceIdentity(identity);
   // A compiled binary has no shim to unset BUN_CONFIG_VERBOSE_FETCH before bun
   // starts, and `delete` does not reach bun's reader — but an assignment does:
   // "0" turns verbose fetch off for this process (measured, bun 1.3.13).

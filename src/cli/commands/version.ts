@@ -9,19 +9,21 @@
  * given (`dev` for an untagged build and for a checkout), `release_repo` the
  * repository `eris update` reads releases from, `build_id` the compiled
  * binary's id (null in a checkout) and `extra` the distribution's line (null
- * when it adds none). All four are baked at build time (src/build.ts); nothing
- * here reads a file, the network or the environment, so it answers in a binary
- * whose asset home cannot be written.
+ * when it adds none). All four are baked at build time (src/build.ts); a run
+ * from source reports the identity its entry handed `runProgram` (`identity()`,
+ * src/runtime/home.ts). Nothing here reads a file, the network or the
+ * environment, so it answers in a binary whose asset home cannot be written.
  */
 
 import type { VerbHandler } from "../../main";
-import { BUILD_ID, RELEASE_REPO, VERSION, VERSION_EXTRA } from "../../runtime/home";
+import { BUILD_ID, identity, VERSION } from "../../runtime/home";
 
 export const runVersion: VerbHandler = async (_args, ctx) => {
+  const { releaseRepo, versionExtra } = identity();
   if (ctx.format === "json") {
-    ctx.stdout.write(`${JSON.stringify({ version: VERSION, release_repo: RELEASE_REPO, build_id: BUILD_ID, extra: VERSION_EXTRA })}\n`);
+    ctx.stdout.write(`${JSON.stringify({ version: VERSION, release_repo: releaseRepo, build_id: BUILD_ID, extra: versionExtra })}\n`);
   } else {
-    ctx.stdout.write(`eris ${VERSION} (${RELEASE_REPO})\n${VERSION_EXTRA !== null ? `${VERSION_EXTRA}\n` : ""}`);
+    ctx.stdout.write(`eris ${VERSION} (${releaseRepo})\n${versionExtra !== null ? `${versionExtra}\n` : ""}`);
   }
   return 0;
 };

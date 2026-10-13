@@ -20,8 +20,9 @@
  *   docs: <github url>     — <docs base>/<relpath>
  *
  * The docs base is https://github.com/sibylline-labs/eris/blob/main unless a
- * build overrode it (`build({ docsBase })`, src/build.ts; DOCS_BASE in
- * src/runtime/home.ts), as a distribution does for its own docs.
+ * distribution named its own: baked by `build({ docsBase })` (src/build.ts), or
+ * handed to `runProgram({ identity })` for a run from source (`identity()` in
+ * src/runtime/home.ts).
  *
  * All on stderr; stdout is never touched by anything in this file. Field
  * order is fixed, every prefix carries its single trailing space, and the
@@ -46,7 +47,7 @@
  * including a trailing-newline fix and an empty fix, against the real bash.
  */
 
-import { DOCS_BASE, docsRoot, installRoot, installRootIsUnwritten } from "../../src/runtime/home";
+import { docsRoot, identity, installRoot, installRootIsUnwritten } from "../../src/runtime/home";
 
 export interface ErisFailureInput {
   /** Stable machine key, `^[a-z0-9]+(-[a-z0-9]+)+$` — a `docs/ERRORS.md`
@@ -115,7 +116,7 @@ export function failureLines(input: ErisFailureInput, home: string | null): stri
   const docsRel = input.docs && input.docs.length > 0 ? input.docs : `docs/ERRORS.md#${input.slug}`;
   const local = home === null || (installRootIsUnwritten() && home === installRoot()) ? null : home;
   lines.push(`docs: ${local === null ? docsRel : `${docsRoot(local, docsRel)}/${docsRel}`}`);
-  lines.push(`docs: ${DOCS_BASE}/${docsRel}`);
+  lines.push(`docs: ${identity().docsBase}/${docsRel}`);
   return lines;
 }
 

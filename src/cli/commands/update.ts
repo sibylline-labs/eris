@@ -1,6 +1,6 @@
 /**
  * update.ts — `eris update [--check] [--to <tag>]`: replace this binary with a
- * release of the repository it was built from (`RELEASE_REPO`, baked in by
+ * release of the repository it was built from (`releaseRepo()`, baked in by
  * `build()`), so a distribution's binary never takes the public one for its own.
  *
  *   1. Refuse, before any request, what cannot be updated in place: a source
@@ -28,7 +28,7 @@ import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { renderFailureBlock } from "../../../ts/lib/eris-fail";
 import type { VerbContext, VerbHandler } from "../../main";
-import { isCompiled, RELEASE_REPO, VERSION } from "../../runtime/home";
+import { isCompiled, releaseRepo, VERSION } from "../../runtime/home";
 import { readEnv } from "../../runtime/env";
 import { info, ok } from "../../runtime/logging";
 import { nodeRunner, type Runner } from "../../runtime/process";
@@ -112,7 +112,7 @@ export function defaultHost(): UpdateHost {
     platform: process.platform,
     arch: process.arch,
     version: VERSION,
-    releaseRepo: RELEASE_REPO,
+    releaseRepo: releaseRepo(),
     cellars: BREW_CELLARS,
     runner: nodeRunner,
     apiTimeoutMs: 30_000,

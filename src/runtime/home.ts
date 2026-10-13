@@ -18,6 +18,11 @@
  *     the root. The build id is a content hash of the assets and the source, so a
  *     build never reuses another build's files.
  *
+ * The build's identity (release repository, `--version` line, docs base) follows
+ * the same split: a binary's is baked by `build()` and always wins; a run from
+ * source reports the one its entry adopted (`runProgram({ identity })`,
+ * `adoptSourceIdentity`), else this repository's.
+ *
  * Only the build defines `__ERIS_BUILD_ID__`, so `typeof` tells the two apart; a
  * plain `bun` run never reaches the `eris:assets` import, which only the build's
  * plugin can resolve.
@@ -55,28 +60,92 @@ type Env = Record<string, string | undefined>;
 /** The compiled binary's build id; null when running from a checkout. */
 export const BUILD_ID: string | null = typeof __ERIS_BUILD_ID__ === "undefined" ? null : __ERIS_BUILD_ID__;
 
-/** The GitHub repository (`owner/name`) this repository's releases are published to. */
+/** The GitHub repository (`owner/name`) this repository's releases are published to: a build's or a run's, unless its distribution names its own. */
 export const DEFAULT_RELEASE_REPO = "sibylline-labs/eris";
-
-/** Where this build's own releases are published: the `releaseRepo` its build
- *  was given (src/build.ts), else `DEFAULT_RELEASE_REPO`, a checkout included. */
-export const RELEASE_REPO: string = typeof __ERIS_RELEASE_REPO__ === "undefined" ? DEFAULT_RELEASE_REPO : __ERIS_RELEASE_REPO__;
 
 /** The release tag a build was given (`build({ tag })`); `dev` for an untagged build and for a checkout. */
 export const VERSION: string = typeof __ERIS_VERSION__ === "string" ? __ERIS_VERSION__ : "dev";
 
-/** The one line a distribution adds to `eris --version` (`build({ versionExtra })`); null when it adds none. */
-export const VERSION_EXTRA: string | null = typeof __ERIS_VERSION_EXTRA__ === "string" ? __ERIS_VERSION_EXTRA__ : null;
-
 /** Where a failure block's second `docs:` line points: this repository's public docs. */
 export const DEFAULT_DOCS_BASE = "https://github.com/sibylline-labs/eris/blob/main";
 
-/** The URL a repo-relative doc path is appended to in a failure block's second
- *  `docs:` line: the `docsBase` its build was given, else `DEFAULT_DOCS_BASE`. */
-export const DOCS_BASE: string = typeof __ERIS_DOCS_BASE__ === "string" ? __ERIS_DOCS_BASE__ : DEFAULT_DOCS_BASE;
-
 /** True inside a binary built by `build()` (src/build.ts). */
 export const isCompiled = BUILD_ID !== null;
+
+/**
+ * Who a distribution is: what `build()` bakes into its binary (src/build.ts) and
+ * what its entry hands `runProgram({ identity })` for a run from source. Each
+ * field left out is this repository's.
+ */
+export interface DistributionIdentity {
+  /** `owner/name` the distribution's own releases are published to: `eris --version` names it and `eris update` reads it. */
+  readonly releaseRepo?: string;
+  /** One printable line `eris --version` prints after the version line: the core a distribution was built on, say. */
+  readonly versionExtra?: string;
+  /** An https URL (no query, fragment or space) a failure block's second `docs:` line appends the doc path to. */
+  readonly docsBase?: string;
+}
+
+/** A `DistributionIdentity` checked and filled in. */
+export interface Identity {
+  readonly releaseRepo: string;
+  readonly versionExtra: string | null;
+  readonly docsBase: string;
+}
+
+const RELEASE_REPO_SHAPE = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/;
+/** One line of printable ASCII, visible at both ends. */
+const VERSION_LINE = /^[\x21-\x7e](?:[\x20-\x7e]{0,118}[\x21-\x7e])?$/;
+/** An https URL with no query, fragment or space, whose trailing slashes are dropped. */
+const DOCS_BASE_URL = /^https:\/\/[A-Za-z0-9.-]+(?::\d+)?(?:\/[A-Za-z0-9._~%/-]*)?$/;
+
+/** `id` checked and filled in with this repository's defaults; the one rule `build()` and `runProgram` both apply. */
+export function resolveIdentity(id: DistributionIdentity = {}): Identity {
+  const releaseRepo = id.releaseRepo ?? DEFAULT_RELEASE_REPO;
+  if (!RELEASE_REPO_SHAPE.test(releaseRepo)) throw new Error(`releaseRepo must be owner/name: ${JSON.stringify(releaseRepo)}`);
+  const versionExtra = id.versionExtra ?? null;
+  if (versionExtra !== null && !VERSION_LINE.test(versionExtra)) {
+    throw new Error(`versionExtra must be one printable line of at most 120 characters: ${JSON.stringify(versionExtra)}`);
+  }
+  const docsBase = (id.docsBase ?? DEFAULT_DOCS_BASE).replace(/\/+$/, "");
+  if (!DOCS_BASE_URL.test(docsBase)) throw new Error(`docsBase must be an https URL with no query, fragment or space: ${JSON.stringify(id.docsBase)}`);
+  return { releaseRepo, versionExtra, docsBase };
+}
+
+/**
+ * The binary's identity, as its build baked it; null outside a binary. Baked
+ * values always win: a binary reports what it was built and released as, and
+ * nothing its entry, its caller or the environment says at run time moves it.
+ */
+const BAKED: Identity | null = isCompiled
+  ? {
+      releaseRepo: typeof __ERIS_RELEASE_REPO__ === "string" ? __ERIS_RELEASE_REPO__ : DEFAULT_RELEASE_REPO,
+      versionExtra: typeof __ERIS_VERSION_EXTRA__ === "string" ? __ERIS_VERSION_EXTRA__ : null,
+      docsBase: typeof __ERIS_DOCS_BASE__ === "string" ? __ERIS_DOCS_BASE__ : DEFAULT_DOCS_BASE,
+    }
+  : null;
+
+let sourceIdentity: Identity = resolveIdentity();
+
+/**
+ * A distribution's identity, for a run from source (`runProgram({ identity })`,
+ * src/main.ts): what `identity()` answers with in place of this repository's.
+ * Checked as `build()` checks it, so a source run never reports what its binary
+ * could not; a compiled binary checks it too, then keeps its baked identity.
+ */
+export function adoptSourceIdentity(id: DistributionIdentity): void {
+  sourceIdentity = resolveIdentity(id);
+}
+
+/** This process's identity: a binary's baked one, else the one its entry adopted, else this repository's. */
+export function identity(): Identity {
+  return BAKED ?? sourceIdentity;
+}
+
+/** Where this build's own releases are published (`identity().releaseRepo`): what `eris update` reads. */
+export function releaseRepo(): string {
+  return identity().releaseRepo;
+}
 
 /** The file whose presence marks a home as completely written. */
 export const HOME_MARKER = ".eris-home-complete";

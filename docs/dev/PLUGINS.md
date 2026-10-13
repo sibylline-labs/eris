@@ -254,7 +254,7 @@ and runs. Copy its shape.
    `main`, the argv and output helpers (`parseGlobal` and `GlobalFlagError`
    included, for an entry that runs outside the router), the runtime
    (subprocesses, the bounded pool `runPool`, logging, the install root,
-   `BUILD_ID`, `RELEASE_REPO`) and `build`. The package's
+   `BUILD_ID`, `releaseRepo()`, the `DistributionIdentity` type) and `build`. The package's
    `exports` map refuses any deeper path (`eris/src/...`), so a core refactor
    never breaks a distribution that compiles today. A distribution's plugin
    manifests import `eris/sdk` too, and load handler code lazily as above.
@@ -270,15 +270,21 @@ and runs. Copy its shape.
 
    ```ts
    import { join } from "node:path";
-   import { composeCli, HANDLERS, PLUGINS, REGISTRY, runProgram } from "eris/sdk";
+   import { composeCli, type DistributionIdentity, HANDLERS, PLUGINS, REGISTRY, runProgram } from "eris/sdk";
    import mine from "./plugins/mine";
+
+   export const IDENTITY: DistributionIdentity = {
+     releaseRepo: "my-org/my-eris",
+     versionExtra: "core <pinned sha>",
+     docsBase: "https://github.com/my-org/my-eris/blob/main",
+   };
 
    export const CLI = composeCli(REGISTRY, HANDLERS, [...PLUGINS, mine], {
      menu: async () => (await import("./menu")).runMenu,
      completionNote: "Also completes mine's names.",
    });
 
-   if (import.meta.main) runProgram({ cli: CLI, installRoot: join(import.meta.dir, "..") });
+   if (import.meta.main) runProgram({ cli: CLI, installRoot: join(import.meta.dir, ".."), identity: IDENTITY });
    ```
 
    `installRoot` is the distribution's root, an absolute path: the directory
@@ -292,6 +298,18 @@ and runs. Copy its shape.
    distribution. A compiled binary ignores it (its root is its per-build asset
    home), and the `_ERIS_SHIM_DIR` a distribution's own shim sets wins over it.
 
+   `identity` is who the distribution is: `releaseRepo`, `versionExtra` and
+   `docsBase`, the same three fields `build()` takes (step 4). Run from source,
+   `eris --version`, `eris update`, `releaseRepo()` and a failure block's second
+   `docs:` line report them in place of this repository's; left out, a run from
+   source says it is public eris and links public docs, which hold none of the
+   distribution's slugs. Keep the values in one module that both the entry and
+   the build import (the example's `IDENTITY`), so the two cannot drift.
+   `runProgram` checks them as `build()` does. **Precedence:** a compiled binary
+   reports the identity its build baked and ignores `identity`, so what a binary
+   says it is, and where it updates from, is fixed when it is built; no
+   environment variable moves either, in a binary or from source.
+
 4. **Build** with `build()` from `eris/sdk` (`src/build.ts` documents what the
    binary carries):
 
@@ -304,7 +322,7 @@ and runs. Copy its shape.
    | `docRoots` | Where a `docs/*.md` the source names is looked for, in order. Default: the root, then this package. |
    | `sourceRoots` | What is hashed into the build id and scanned for docs. Default: `src`, `ts` and `plugins` where present, the entry, `package.json` and the lockfile. This package's source is always added. |
    | `stubs` | `{ match, reason }`: specifiers bundled as a module that throws `<specifier> is not bundled into the compiled eris binary (<reason>)` if evaluated, for a module the binary must not carry. |
-   | `releaseRepo` | `owner/name` the binary's own releases are published to, reported as `RELEASE_REPO` and read by `eris update`. Default: `sibylline-labs/eris`. |
+   | `releaseRepo` | `owner/name` the binary's own releases are published to, reported by `releaseRepo()` and `eris --version` and read by `eris update`. Default: `sibylline-labs/eris`. |
    | `versionExtra` | One printable line `eris --version` prints after the version line, and `extra` in its JSON record: the core a distribution was built on. Default: none. |
    | `docsBase` | An https URL (no query, fragment or space) the doc paths in a failure block's second `docs:` line are appended to, so a distribution links its own docs. Default: this repository's public docs. |
    | `outfile`, `target`, `tag` | The output path (default `dist/eris-<os>-<arch>`), a bun compile target (default: the host), and a release tag: prefixed to the build id, printed by `eris --version` and compared by `eris update` (an untagged build reports `dev`). |

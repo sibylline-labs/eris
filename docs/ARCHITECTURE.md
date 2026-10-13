@@ -37,7 +37,8 @@ build to `${ERIS_CACHE_DIR:-${XDG_CACHE_HOME:-~/.cache}/eris}/<build id>/`, its 
 
 A binary also knows which build it is, from the same call: `build({ tag })` bakes the version,
 the release repository, an optional version line and the docs base of a failure block
-(`VERSION`, `RELEASE_REPO`, `VERSION_EXTRA`, `DOCS_BASE`, `src/runtime/home.ts`). `eris --version`
+(`VERSION` and `identity()`, `src/runtime/home.ts`); a distribution run from source hands the
+same identity to `runProgram({ identity })`, and a binary keeps what its build baked. `eris --version`
 prints them. `eris update` (`src/cli/commands/update.ts`) replaces the binary with the newest
 release of its own repository, after checking it ([`UPDATE.md`](UPDATE.md)). The release is cut by
 `.github/workflows/release.yml`, which builds and tests both binaries, publishes them with a

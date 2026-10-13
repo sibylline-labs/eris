@@ -6,16 +6,18 @@
  * Writes `dist/eris-distribution-<os>-<arch>` (in this repository's dist/) with
  * `build()` from `eris/sdk`: the entry ./main.ts, its plugin list (composed
  * again here, so a refused plugin fails the build), its assets, a stubbed
- * module and a release repository of its own. The distribution's root is this
- * directory, which ./main.ts hands `runProgram` as `installRoot` too, so a run
- * from source and the binary read the same relative paths. A distribution in
+ * module and an identity of its own (release repository, version line, docs
+ * base). The distribution's root is this directory, which ./main.ts hands
+ * `runProgram` as `installRoot` too, and the identity is ./main.ts's `IDENTITY`,
+ * which it hands `runProgram` as `identity`, so a run from source and the binary
+ * read the same relative paths and report the same identity. A distribution in
  * another repository writes the same call with its own paths; left out, its root
  * is the nearest directory at or above the entry with a package.json.
  */
 
 import { join, relative } from "node:path";
 import { build, type BuildOptions } from "eris/sdk";
-import { DISTRIBUTION_PLUGINS } from "./main";
+import { DISTRIBUTION_PLUGINS, IDENTITY } from "./main";
 
 export const BUILD: BuildOptions = {
   entry: join(import.meta.dir, "main.ts"),
@@ -24,7 +26,7 @@ export const BUILD: BuildOptions = {
   sourceRoots: ["."],
   assetRoots: ["assets"],
   stubs: [{ match: /^\.\/heavy$/, reason: "demo-heavy-needs-checkout" }],
-  releaseRepo: "example-org/eris-distribution",
+  ...IDENTITY,
 };
 
 if (import.meta.main) {

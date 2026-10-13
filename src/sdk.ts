@@ -18,7 +18,8 @@
  *     `--output` pre-pass (`parseGlobal`, `GlobalFlagError`) included;
  *   - the runtime: subprocesses (the only way eris spawns), the bounded pool
  *     (`runPool`, and the `ERIS_BATCH_*` readers), the diagnostics, the
- *     install root, and the build's identity (`BUILD_ID`, `RELEASE_REPO`);
+ *     install root, and the build's identity (`BUILD_ID`, `releaseRepo()`, the
+ *     `DistributionIdentity` that `build()` and `runProgram` take);
  *   - `build()`, which compiles a distribution (src/build.ts), loaded on its
  *     first call so a plugin manifest importing this module stays light on the
  *     completion path.
@@ -44,7 +45,8 @@ export type { RunJob, RunOptions, RunResult, Runner } from "./runtime/process";
 export { childEnv, nodeRunner, runMany, signalTree } from "./runtime/process";
 export { resolveConcurrency, resolveDeadlineMs, runPool } from "../ts/lib/pool";
 export { info, ok, warn } from "./runtime/logging";
-export { BUILD_ID, installRoot, installRootIsUnwritten, isCompiled, RELEASE_REPO } from "./runtime/home";
+export type { DistributionIdentity } from "./runtime/home";
+export { BUILD_ID, installRoot, installRootIsUnwritten, isCompiled, releaseRepo } from "./runtime/home";
 export type { ErisFailureInput } from "../ts/lib/eris-fail";
 export type { BuildOptions, BuildResult, BuildStub } from "./build";
 

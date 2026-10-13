@@ -4,7 +4,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { groupArgs, readArgs, RELEASE_REPO, type VerbHandler } from "eris/sdk";
+import { groupArgs, readArgs, releaseRepo, type VerbHandler } from "eris/sdk";
 import plugin from "./index";
 
 const { rows } = plugin;
@@ -50,7 +50,7 @@ export const runDemo: VerbHandler = async (args, ctx) => {
       return 0;
     case "release":
       if (readArgs(rows, "demo release", g.rest, ctx) === null) return 0;
-      ctx.stdout.write(`${RELEASE_REPO}\n`);
+      ctx.stdout.write(`${releaseRepo()}\n`);
       return 0;
   }
   // The last sub: `heavy`.

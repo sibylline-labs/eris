@@ -16,13 +16,14 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { buildInChild } from "eris/sdk/testing";
 import { BUILD } from "../examples/distribution/build";
-import { DISTRIBUTION, DISTRIBUTION_PLUGINS } from "../examples/distribution/main";
+import { DISTRIBUTION, DISTRIBUTION_PLUGINS, IDENTITY } from "../examples/distribution/main";
 import yak from "../plugins/yak";
 import { build } from "../src/build";
 import { composeCli, PluginCompositionError } from "../src/cli/compose";
 import type { ErisPlugin } from "../src/cli/plugin";
 import { REGISTRY } from "../src/cli/registry";
 import { CLI, HANDLERS, main } from "../src/main";
+import { DEFAULT_DOCS_BASE, DEFAULT_RELEASE_REPO } from "../src/runtime/home";
 import { checkoutOnly, ERIS, oracleEnv, REPO, type Sandbox, sandbox } from "./helpers/blackbox";
 
 setDefaultTimeout(120_000);
@@ -43,6 +44,9 @@ async function run(argv: string[]): Promise<{ rc: number; stdout: string; stderr
 
 /** The file the first `docs:` line of a failure block names, its `#anchor` dropped. */
 const localDoc = (stderr: string): string => stderr.split("\n").find((l) => l.startsWith("docs: "))!.slice("docs: ".length).split("#")[0]!;
+
+/** A failure block's second `docs:` line, the URL one. */
+const remoteDoc = (stderr: string): string => stderr.split("\n").filter((l) => l.startsWith("docs: "))[1]!.slice("docs: ".length);
 
 /** One tab press under macOS's /bin/bash 3.2: COMPREPLY, one word per entry. */
 function press(script: string, words: string[]): string[] {
@@ -68,7 +72,6 @@ describe("the package's exports", () => {
       "PLUGINS",
       "PluginCompositionError",
       "REGISTRY",
-      "RELEASE_REPO",
       "argErrorWhat",
       "build",
       "childEnv",
@@ -90,6 +93,7 @@ describe("the package's exports", () => {
       "readEnv",
       "readVerbArgs",
       "refuseArg",
+      "releaseRepo",
       "renderFailureBlock",
       "renderWarnLines",
       "resolveConcurrency",
@@ -231,6 +235,29 @@ describe.skipIf(checkoutOnly("runs the example distribution and core from this c
     expect(core.stderr).not.toContain(DIST_ROOT);
   });
 
+  it("reports the identity its entry hands runProgram: --version, a plugin's release repository, a failure block's docs base", async () => {
+    /** When `runProgram` drops `identity`, a distribution run from source (its checkout, its own shim) says it is public eris in `--version` and links public eris's docs, which hold none of its slugs, in every failure block's second `docs:` line: observed at the source run's stdout and stderr, with no shim. */
+    const entry = join(DIST_ROOT, "main.ts");
+    const text = await bunRun(sb, entry, ["--version"]);
+    expect({ status: text.status, stdout: text.stdout, stderr: text.stderr }).toEqual({
+      status: 0,
+      stdout: `eris dev (${IDENTITY.releaseRepo})\n${IDENTITY.versionExtra}\n`,
+      stderr: "",
+    });
+    const json = await bunRun(sb, entry, ["--output", "json", "--version"]);
+    expect(JSON.parse(json.stdout)).toEqual({ version: "dev", release_repo: IDENTITY.releaseRepo, build_id: null, extra: IDENTITY.versionExtra });
+    expect((await bunRun(sb, entry, ["demo", "release"])).stdout).toBe(`${IDENTITY.releaseRepo}\n`);
+    const refused = await bunRun(sb, entry, ["--output", "xml", "demo", "asset"]);
+    expect(refused.status).toBe(1);
+    const rel = localDoc(refused.stderr).slice(`${REPO}/`.length);
+    expect(remoteDoc(refused.stderr).split("#")[0]).toBe(`${IDENTITY.docsBase}/${rel}`);
+    // PAIRED: core's own program, handed no identity, reports core's defaults from the same checkout.
+    const core = await bunRun(sb, join(REPO, "src", "main.ts"), ["--version"]);
+    expect({ status: core.status, stdout: core.stdout }).toEqual({ status: 0, stdout: `eris dev (${DEFAULT_RELEASE_REPO})\n` });
+    const coreRefused = await bunRun(sb, join(REPO, "src", "main.ts"), ["--output", "xml", "yak"]);
+    expect(remoteDoc(coreRefused.stderr).split("#")[0]).toBe(`${DEFAULT_DOCS_BASE}/${rel}`);
+  });
+
   it("typechecks under a tsconfig that lists only the distribution's sources: core's ambient declarations come with the SDK", () => {
     /** When core's source reaches an ambient module nothing references (`eris:assets`, which `build()` supplies at bundle time), a dependent repository's own `tsc` fails inside the dependency (TS2307 in node_modules/eris) until it adds a `files` entry for a path in node_modules: observed by running tsc over the example distribution with a minimal tsconfig. */
     mkdirSync(join(REPO, ".scratch"), { recursive: true });
@@ -255,25 +282,31 @@ describe.skipIf(checkoutOnly("runs the example distribution and core from this c
     }
   });
 
-  it("refuses an install root that is not an absolute path", () => {
-    /** When `runProgram` accepts a relative `installRoot`, a distribution's docs lines and file reads follow the caller's working directory, differently on every run: observed at the entry's exit status and message. */
-    const r = spawnSync(process.execPath, ["--no-env-file", "--config=/dev/null", "-e", 'import { runProgram } from "eris/sdk"; runProgram({ installRoot: "examples/distribution" });'], {
+  const refusedOptions: [string, string, string][] = [
+    ["an install root that is not an absolute path", '{ installRoot: "examples/distribution" }', 'installRoot must be an absolute path: "examples/distribution"'],
+    ["a docs base build() refuses", '{ identity: { docsBase: "http://example.org/docs" } }', 'docsBase must be an https URL with no query, fragment or space: "http://example.org/docs"'],
+  ];
+  it.each(refusedOptions)("refuses %s", (_name, opts, message) => {
+    /** When `runProgram` accepts a relative `installRoot`, a distribution's docs lines and file reads follow the caller's working directory, differently on every run; when it accepts an identity `build()` refuses, a run from source reports what its binary never could: observed at the entry's exit status and message. */
+    const r = spawnSync(process.execPath, ["--no-env-file", "--config=/dev/null", "-e", `import { runProgram } from "eris/sdk"; runProgram(${opts});`], {
       cwd: REPO,
       encoding: "utf8",
       env: { PATH: process.env.PATH, HOME: process.env.HOME },
     });
     expect(r.status).not.toBe(0);
-    expect(r.stderr).toContain('installRoot must be an absolute path: "examples/distribution"');
+    expect(r.stderr).toContain(message);
   });
 });
 
 describe.skipIf(checkoutOnly("builds its own binary from this checkout's source"))("the example distribution, compiled by build()", () => {
   const outfile = join(REPO, "dist", "fixture", "eris-distribution");
+  /** A version line the build bakes and the entry does not hand `runProgram`, so the binary shows whose identity wins. */
+  const BAKED_EXTRA = "example distribution, as built";
   let sb: Sandbox;
   let script: string;
   beforeAll(async () => {
     rmSync(join(REPO, "dist", "fixture"), { recursive: true, force: true });
-    const r = buildInChild({ module: join(REPO, "examples", "distribution", "build.ts"), outfile });
+    const r = buildInChild({ module: join(REPO, "examples", "distribution", "build.ts"), outfile, versionExtra: BAKED_EXTRA });
     expect(r).toMatchObject({ outfile, releaseRepo: "example-org/eris-distribution" });
     sb = sandbox("eris-dist-");
     const c = await sb.run(["completion", "bash"], { program: outfile });
@@ -306,6 +339,16 @@ describe.skipIf(checkoutOnly("builds its own binary from this checkout's source"
     // PAIRED: from the checkout, the same verbs report this repository and load the module (the asset read from source is the source run's, above).
     expect(await run(["demo", "release"])).toEqual({ rc: 0, stdout: "sibylline-labs/eris\n", stderr: "" });
     expect(await run(["demo", "heavy"])).toEqual({ rc: 0, stdout: "heavy module loaded\n", stderr: "" });
+  });
+
+  it("reports the identity it was built with, not the one its entry hands runProgram", async () => {
+    /** When the entry's `runProgram({ identity })` overrides what `build()` baked, a binary reports (and `eris update` fetches from) whatever its entry says rather than what it was built and released as: observed at the compiled fixture's `--version` and a failure block's docs base. */
+    const v = await sb.run(["--version"], { program: outfile });
+    expect({ status: v.status, stdout: v.stdout }).toEqual({ status: 0, stdout: `eris dev (${IDENTITY.releaseRepo})\n${BAKED_EXTRA}\n` });
+    // PAIRED: the entry's own line is not printed, and the docs base the build was given (the entry's too) is.
+    expect(v.stdout).not.toContain(IDENTITY.versionExtra!);
+    const refused = await sb.run(["--output", "xml", "demo", "asset"], { program: outfile });
+    expect(remoteDoc(refused.stderr)).toStartWith(`${IDENTITY.docsBase}/docs/`);
   });
 
   it("names core's doc in a file its asset home holds, as the source run does", async () => {
