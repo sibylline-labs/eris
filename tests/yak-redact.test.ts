@@ -52,6 +52,10 @@ const SIB_ULID = "01HZXK3M5N7P9Q2R4S6T8V0WXY";
 const SIB_SECRET = "ExampleSecret_notReal-0123456789abcdefghijklmnopqrstuvwxyz".slice(0, 43);
 const sibToken = (secret: string = SIB_SECRET) => "sib" + "_" + SIB_ULID + "_" + secret;
 const SIB_TOKEN = sibToken();
+/** An sk- key 36 chars past `SK_KEY_RE`'s 120-char body cap, so that pass leaves a tail. */
+const OVERLONG_SK = "sk-" + "proj-" + "Z".repeat(156);
+/** Plaintext that must never survive after a marker. */
+const TAIL = "PLAINTAILsecret";
 /** An HS256 header, the payload {"sub":"example-user","name":"Example User"}, and an
  *  invented signature segment. */
 const JWT =
@@ -311,6 +315,57 @@ describe("redact() — positive corpus, one class each", () => {
     }
   });
 
+  it("when an Authorization credential runs on past an earlier class's marker, the whole header is redacted and no tail survives", () => {
+    // Pre-fix: AUTH_HEADER_RE's `(?!«redacted:)` guard declined any credential
+    // that STARTED with a marker. A token that ran past its class's length cap,
+    // or was followed by `.`, `:`, `%` or another character outside its
+    // alphabet, left the rest of the credential after the marker, and the guard
+    // shipped it: `Authorization: Bearer «redacted:sk-key»<36 plaintext chars>`.
+    // It also shipped a raw key in the scheme position whenever a marker
+    // followed it.
+    const cases: Array<[string, string, RedactionClass[]]> = [
+      ["sk- key past its 120-char cap", `Authorization: Bearer ${OVERLONG_SK}`, ["sk-key", "auth-header"]],
+      ["GitHub token in a token:x-oauth pair", `Authorization: token ${GH_TOKEN}:x-oauth-${TAIL}`, ["github-token", "auth-header"]],
+      ...[".", "-", "_", "=", ":", "%"].map((d): [string, string, RedactionClass[]] => [
+        `GitHub token followed by '${d}'`,
+        `Authorization: Bearer ${GH_TOKEN}${d}${TAIL}`,
+        ["github-token", "auth-header"],
+      ]),
+      ["bare marker run into plaintext", `Authorization: Bearer «redacted:github-token»${TAIL}`, ["auth-header"]],
+      // A raw key sent with no scheme word sits where the scheme would.
+      ["raw key in the scheme position, then a marker", `Authorization: ${LIVE_SK} ${JWT}`, ["jwt", "auth-header"]],
+    ];
+    for (const [label, input, classes] of cases) {
+      const result = redact(input);
+      expect(result.text, label).toBe("«redacted:auth-header»");
+      for (const c of classes) expect(result.counts[c], label).toBe(1);
+      assertZeroExcept(result, ...classes);
+    }
+    const proxy = redact(`Proxy-Authorization: Basic «redacted:sib-token»${TAIL}`);
+    expect(proxy.text).toBe("Proxy-«redacted:auth-header»");
+    expect(proxy.total).toBe(1);
+  });
+
+  it("when a connection-string password runs on past an earlier class's marker, the whole span is redacted and no tail survives", () => {
+    // Pre-fix: CONN_STRING_RE's `(?!«redacted:)` guard declined any password
+    // that STARTED with a marker, so whatever followed the token inside the
+    // password shipped: `postgres://user:«redacted:github-token»%21<plaintext>@db…`,
+    // as did a password that carried an unescaped `@` after the token.
+    const cases: Array<[string, string, RedactionClass[]]> = [
+      ["GitHub token then a percent-escape", `postgres://user:${GH_TOKEN}%21${TAIL}@db.example.com/app`, ["github-token", "conn-string"]],
+      ["sib_ token then a dotted tail", `postgres://user:${sibToken(SIB_SECRET + "." + TAIL)}@db.example.com/app`, ["sib-token", "conn-string"]],
+      ["bare marker run into plaintext", `postgres://user:«redacted:sib-token»${TAIL}@db.example.com/app`, ["conn-string"]],
+      // A URL parser splits userinfo at the LAST `@`, so `@<rest>` is password.
+      ["GitHub token then an unescaped '@'", `postgres://user:${GH_TOKEN}@${TAIL}@db.example.com/app`, ["github-token", "conn-string"]],
+    ];
+    for (const [label, input, classes] of cases) {
+      const result = redact(input);
+      expect(result.text, label).toBe("«redacted:conn-string»/app");
+      for (const c of classes) expect(result.counts[c], label).toBe(1);
+      assertZeroExcept(result, ...classes);
+    }
+  });
+
   it("when a key-name assignment (NAME=value) is present, it goes red — observed at redact().text", () => {
     const result = redact("SECRET_KEY=s3cr3t-material-do-not-share");
     expect(result.text).not.toContain("s3cr3t-material-do-not-share");
@@ -528,6 +583,24 @@ describe("redact() — positive corpus, one class each", () => {
     expect(result.counts.assignment).toBe(1);
     assertZeroExcept(result, "assignment");
   });
+
+  it("when an assignment value runs on past an earlier class's marker, the whole value is redacted and no tail survives", () => {
+    // Pre-fix: ASSIGNMENT_RE's `(?!['"]?«redacted:)` guard declined any value
+    // that STARTED with a marker, so a token cut short by its class's length
+    // cap left its tail as plaintext: `SECRET_KEY=«redacted:sk-key»<36 chars>`.
+    const cases: Array<[string, string, string, RedactionClass[]]> = [
+      ["unquoted, token past its cap", `SECRET_KEY=${OVERLONG_SK}`, "SECRET_KEY=«redacted:assignment»", ["sk-key", "assignment"]],
+      ["unquoted, bare marker run into plaintext", `SECRET_KEY=«redacted:sk-key»${TAIL}`, "SECRET_KEY=«redacted:assignment»", ["assignment"]],
+      ["quoted, token past its cap", `{"api_key": "${OVERLONG_SK}"}`, '{"api_key": «redacted:assignment»}', ["sk-key", "assignment"]],
+      ["quoted, marker then plaintext", `{"api_key": '«redacted:sk-key»${TAIL}'}`, '{"api_key": «redacted:assignment»}', ["assignment"]],
+    ];
+    for (const [label, input, expected, classes] of cases) {
+      const result = redact(input);
+      expect(result.text, label).toBe(expected);
+      for (const c of classes) expect(result.counts[c], label).toBe(1);
+      assertZeroExcept(result, ...classes);
+    }
+  });
 });
 
 // --- 2. negative: ordinary prose must survive byte-identical -------------------
@@ -685,11 +758,27 @@ describe("redact() — idempotence", () => {
     }
   });
 
-  it("the marker itself is never re-matched", () => {
-    const marker = "«redacted:assignment»";
-    const result = redact(`context: ${marker} appeared in a prior redaction pass`);
-    expect(result.text).toBe(`context: ${marker} appeared in a prior redaction pass`);
-    expect(result.total).toBe(0);
+  it("the marker itself is never re-matched: every class's exact marker, as a value, a quoted value, a credential or a password", () => {
+    // Goes red when a guard's marker grammar no longer covers a class name
+    // (a class renamed outside `[a-z-]{1,40}`), or a guard stops declining an
+    // exact marker: the marker is then reclassified and counted a second time.
+    for (const cls of ALL_CLASSES) {
+      const m = `«redacted:${cls}»`;
+      const texts = [
+        `context: ${m} appeared in a prior redaction pass`,
+        `SECRET_KEY=${m}, next`,
+        `{"api_key": "${m}"}`,
+        `token: '${m}'`,
+        `Authorization: Bearer ${m}`,
+        `Proxy-Authorization: Basic ${m} trailing`,
+        `postgres://user:${m}@db.example.com/app`,
+      ];
+      for (const text of texts) {
+        const result = redact(text);
+        expect(result.text, text).toBe(text);
+        expect(result.total, text).toBe(0);
+      }
+    }
   });
 
   it("a QUOTED, already-redacted value under a governed key is not re-redacted and reclassified as 'assignment' (JSON-name fix regression)", () => {

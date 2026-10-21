@@ -42,16 +42,22 @@
  * position — `assignment` (after the operator), `auth-header` (the credential
  * after the scheme) and `conn-string` (the password in the userinfo) — and a
  * marker an earlier pass left at that position is exactly such a run. Each of
- * the three therefore opens its value with a `(?!«redacted:)` lookahead
- * (`ASSIGNMENT_RE` also allows an opening quote), so a value that a more
- * specific pass already redacted stays classified, and counted, once by that
- * pass. `auth-header` declining `Authorization: Bearer «redacted:…»` this way
- * must also be honoured by `assignment`, which would otherwise take
- * `Authorization` as a governed name and `Bearer` as its value
- * (`AUTH_OWNED`). With the guards, this ordering prevents double counting
- * without any bespoke "already redacted" bookkeeping. A guard looks at the
- * START of the value only: a value that merely contains a marker later on
- * (`abc«redacted:…»`) is one over-redacted match, counted in both classes.
+ * the three therefore declines a value that is EXACTLY one marker (`MARKER`)
+ * and nothing more: a bare marker ending where the value would end, a marker
+ * alone in matching quotes (`assignment`), a marker after a known scheme word
+ * ending at whitespace (`auth-header`), or a marker directly followed by the
+ * userinfo's last `@` (`conn-string`). A value that a more specific pass
+ * already redacted therefore stays classified, and counted, once by that pass.
+ * `auth-header` declining `Authorization: Bearer «redacted:…»` this way must
+ * also be honoured by `assignment`, which would otherwise take `Authorization`
+ * as a governed name and `Bearer` as its value (`AUTH_DECLINED_RE`). A value
+ * that runs on past a marker (`«redacted:sk-key»` followed by the tail of a key
+ * longer than that class's cap, or by `.`, `%21`, `:x-oauth-…`) is NOT
+ * declined: the whole run is redacted and both classes are counted. That
+ * over-counts, but a guard that declined on the marker alone would ship the
+ * tail in plaintext. With the guards, this ordering prevents double counting
+ * of an exactly-redacted value without any bespoke "already redacted"
+ * bookkeeping.
  *
  * NO CATASTROPHIC BACKTRACKING. This runs on agent-authored text of
  * arbitrary shape mid-task, so every pattern here is either a fixed-literal
@@ -64,7 +70,10 @@
  * quantifiers either side of a fixed-literal alternation, not a lookahead —
  * so a worst-case backtrack is O(60) per candidate `\b` position, never
  * exponential in input length. See the "pathological input" tests for the
- * exercised worst cases.
+ * exercised worst cases. No pattern carries a lookbehind either: the bun this
+ * repo pins cannot compile one to native code, so the whole pattern would run
+ * in the regex interpreter, about ten times slower on every input
+ * (`rules/regex-no-lookbehind.yml`).
  *
  * NAME MATCHING (`ASSIGNMENT_RE`): the governed word must appear ANYWHERE inside the identifier token —
  * prefix, suffix, or infix, `_`-delimited or not — not just as the token's
@@ -219,6 +228,12 @@ function marker(cls: RedactionClass): string {
   return `«redacted:${cls}»`;
 }
 
+// Regex source for exactly one `marker()` output: every RedactionClass name is
+// lowercase words joined by `-`, at most 40 chars. The three guards in the file
+// header's "MARKER GUARD" decline a value only when it is this and nothing
+// more. tests/yak-redact.test.ts holds every class's marker to it.
+const MARKER = "«redacted:[a-z-]{1,40}»";
+
 // --- pass definitions ------------------------------------------------------
 //
 // Each pass is a (RedactionClass, RegExp) pair. `re` must carry the `g` flag.
@@ -282,16 +297,22 @@ const SK_KEY_RE = /\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,120}/g;
 // and Token, so `Authorization: Basic …` no longer falls through to the
 // generic pass and ships its base64 credential unredacted.
 //
-// The `(?!«redacted:)` guard before the credential stops this pass from
-// treating an EARLIER class's marker as the credential (file header, "MARKER
-// GUARD"): `Authorization: Bearer «redacted:github-token»` stays as it is,
-// scheme visible, instead of collapsing to `«redacted:auth-header»` with both
-// classes counted. A fixed literal lookahead, so it adds no backtracking.
-// `ASSIGNMENT_RE` must leave that same shape alone too (`AUTH_OWNED`), so the
-// scheme pattern is shared (`AUTH_SCHEME`) and the two cannot drift.
+// The guard declines a header whose scheme is a known scheme word and whose
+// credential is exactly one EARLIER class's marker, ending at whitespace or the
+// end of input (file header, "MARKER GUARD"): `Authorization: Bearer
+// «redacted:github-token»` stays as it is, scheme visible, instead of
+// collapsing to `«redacted:auth-header»` with both classes counted. Anything
+// after the marker in the same run (`«redacted:sk-key»<tail of an over-long
+// key>`) is not declined: the whole header is redacted. Nor is an unknown
+// scheme word, because `AUTH_SCHEME` also matches a raw key sent with no
+// scheme (`Authorization: sk_live_… «redacted:jwt»`), and declining would ship
+// it. The lookahead is fixed literals plus bounded classes, so it adds no
+// backtracking. `assignment` must leave that same declined shape alone too
+// (`AUTH_DECLINED_RE`), so both build it from `AUTH_DECLINED` and cannot drift.
 const AUTH_SCHEME = "[A-Za-z][A-Za-z0-9._-]{0,40}";
+const AUTH_DECLINED = `(?:Bearer|Basic|Token|Digest|Negotiate|NTLM|OAuth|DPoP)\\s+${MARKER}(?!\\S)`;
 const AUTH_HEADER_RE = new RegExp(
-  `Authorization:\\s*${AUTH_SCHEME}\\s+(?!«redacted:)[^\\s\\r\\n]{1,2048}`,
+  `Authorization:\\s*(?!${AUTH_DECLINED})${AUTH_SCHEME}\\s+[^\\s\\r\\n]{1,2048}`,
   "gi",
 );
 
@@ -304,14 +325,21 @@ const GCP_PRIVATE_KEY_RE = /("private_key"\s*:\s*")((?:[^"\\]|\\.)*)(")/g;
 // character class excludes the next delimiter, so there is no ambiguity for
 // the engine to backtrack through.
 //
-// The `(?!«redacted:)` guard before the password stops this pass from treating
-// an EARLIER class's marker as the password (file header, "MARKER GUARD"):
-// `postgres://user:«redacted:sib-token»@host` keeps its scheme, user and host
-// for triage instead of collapsing to `«redacted:conn-string»` with both
-// classes counted. The user group excludes `:`, so the guard sits at the one
-// position the password can start; it cannot slide to another split.
-const CONN_STRING_RE =
-  /[a-zA-Z][a-zA-Z0-9+.-]{0,30}:\/\/[^\s:@/]{1,255}:(?!«redacted:)[^\s@/]{1,255}@[^\s/]{1,255}/g;
+// The guard before the password declines a password that is exactly one
+// EARLIER class's marker, directly followed by the authority's LAST `@` (file
+// header, "MARKER GUARD"): `postgres://user:«redacted:sib-token»@host` keeps
+// its scheme, user and host for triage instead of collapsing to
+// `«redacted:conn-string»` with both classes counted. A password that runs on
+// past the marker (`«redacted:github-token»%21<rest>@host`) is redacted whole,
+// and so is one with a later `@`: a URL parser splits userinfo at the last
+// `@`, so in `user:«redacted:…»@rest@host` the `@rest` is password too. The
+// user group excludes `:`, so the guard sits at the one position the password
+// can start; it cannot slide to another split. Its host run is bounded like
+// the host group's, so it adds at most 255 steps per candidate.
+const CONN_STRING_RE = new RegExp(
+  `[a-zA-Z][a-zA-Z0-9+.-]{0,30}://[^\\s:@/]{1,255}:(?!${MARKER}@[^\\s/@]{1,255}(?![^\\s/]))[^\\s@/]{1,255}@[^\\s/]{1,255}`,
+  "g",
+);
 
 // Key-name assignments: NAME=value / NAME: value, case-insensitive, where
 // NAME contains one of the governed words ANYWHERE in the identifier — see
@@ -338,26 +366,32 @@ const CONN_STRING_RE =
 // BOUND") and the unquoted alternative requires >= 4 chars (file header,
 // "MINIMUM UNQUOTED VALUE LENGTH").
 //
-// The `(?!«redacted:)` guard directly after the operator stops this pass
-// from treating an EARLIER pass's marker as its "value": without it,
-// "credentials: «redacted:aws-key»" (the aws-key pass having already run)
-// would match here too — CREDENTIAL is a governed name, the marker has no
-// internal whitespace so it satisfies the unquoted-value alternative, and
-// the text would be reclassified/reprocessed as `assignment`, breaking both
-// idempotence and the count for the class that actually caught it.
+// The guard directly after the operator stops this pass from treating an
+// EARLIER pass's marker as its "value": without it, "credentials:
+// «redacted:aws-key»" (the aws-key pass having already run) would match here
+// too — CREDENTIAL is a governed name, the marker has no internal whitespace
+// so it satisfies the unquoted-value alternative, and the text would be
+// reclassified/reprocessed as `assignment`, breaking both idempotence and the
+// count for the class that actually caught it. It declines only a value that
+// is EXACTLY one marker (file header, "MARKER GUARD"): unquoted and ending
+// where the unquoted value would end, or alone inside a matching pair of
+// quotes. A value that runs on past the marker (`«redacted:sk-key»<tail>`) is
+// redacted whole.
 //
-// `AUTH_OWNED` is the same guard for the one header `auth-header` owns. When
-// `auth-header` declines `Authorization: Bearer «redacted:github-token»`
-// (credential already a marker), this pass would otherwise read the `AUTH`
+// `AUTH_DECLINED_RE` is the same guard for the one header `auth-header` owns.
+// When `auth-header` declines `Authorization: Bearer «redacted:github-token»`
+// (credential exactly a marker), this pass would otherwise read the `AUTH`
 // infix in `Authorization` as a governed name and `Bearer` as its value,
 // leaving `Authorization: «redacted:assignment» «redacted:github-token»`. It
-// sits right after the unquoted NAME, applies only when that name ends in
-// `Authorization` (so `Proxy-Authorization` is covered, and an ordinary
-// `password: hunter2 «redacted:…»` is not), and mirrors `AUTH_HEADER_RE`'s
-// shape exactly: colon directly after the name, then scheme, whitespace and a
-// marker. The lookbehind is a fixed literal, so a non-matching name costs one
-// comparison.
-const AUTH_OWNED = `(?!(?<=authorization):\\s*${AUTH_SCHEME}\\s+«redacted:)`;
+// applies only to an unquoted name ending in `Authorization` (so
+// `Proxy-Authorization` is covered, and an ordinary `password: hunter2
+// «redacted:…»` is not), and it is `AUTH_HEADER_RE`'s declined shape exactly:
+// colon directly after the name, then `AUTH_DECLINED`.
+// The replace callback checks it, sticky, at the matched name: a lookbehind
+// in `ASSIGNMENT_RE` would keep the pinned bun from compiling the pattern to
+// native code, about ten times slower on every input (`regex-no-lookbehind`).
+const AUTH_DECLINED_RE = new RegExp(`authorization:\\s*${AUTH_DECLINED}`, "iy");
+const AUTHORIZATION = "authorization";
 const GOVERNED_NAME =
   "[A-Za-z0-9_-]{0,60}(?:SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]KEY|API[_-]KEY|CREDENTIAL|ACCESS[_-]KEY|CLIENT[_-]SECRET|MNEMONIC|SEED|SESSION|COOKIE|AUTH)[A-Za-z0-9_-]{0,60}";
 
@@ -369,21 +403,21 @@ const GOVERNED_NAME =
 // at all, because the quote character is itself an unambiguous delimiter
 // no ordinary prose produces around a bare identifier.
 const ASSIGNMENT_RE = new RegExp(
-  `(?:(?<q>["'])(?<qname>${GOVERNED_NAME})\\k<q>|\\b(?<uname>${GOVERNED_NAME})\\b${AUTH_OWNED})` +
-    // `['"]?` before the marker prefix (not just a bare `«redacted:`) is
-    // what makes this guard work with the new quoted-value alternative
+  `(?:(?<q>["'])(?<qname>${GOVERNED_NAME})\\k<q>|\\b(?<uname>${GOVERNED_NAME})\\b)` +
+    // The quoted exact-marker alternatives (not just a bare marker) are
+    // what make this guard work with the quoted-value alternative
     // below: an EARLIER pass (sk-key, jwt, gcp-private-key, …) that fires
     // on a value embedded in `"api_key": "sk-ant-…"` leaves that marker
     // wrapped in its ORIGINAL quotes — `"api_key": "«redacted:sk-key»"` —
     // untouched by that pass (it only ever replaces the material INSIDE
-    // the quotes, never the quotes themselves). Without the optional quote
-    // here, the guard only sees a `"` immediately after the operator (not
-    // the marker glyph itself), lets the quoted-value alternative consume
+    // the quotes, never the quotes themselves). Without the quoted
+    // alternatives, the guard only sees a `"` immediately after the operator
+    // (not the marker glyph itself), lets the quoted-value alternative consume
     // the whole `"«redacted:sk-key»"` span, and reclassifies it as the
     // generic `assignment` — corrupting a MORE specific classification
     // into a less specific one, silently, for any class that can appear
     // as a governed key's JSON value.
-    `(?<sep>\\s*[:=]\\s*)(?!['"]?«redacted:)` +
+    `(?<sep>\\s*[:=]\\s*)(?!${MARKER}(?![^\\s,}\\]])|"${MARKER}"|'${MARKER}')` +
     `(?<value>"(?:[^"\\\\\\r\\n]|\\\\.){0,20000}"|'(?:[^'\\\\\\r\\n]|\\\\.){0,20000}'|[^\\s,}\\]]{4,20000})`,
   "gi",
 );
@@ -451,6 +485,14 @@ function runPipeline(input: string): { text: string; counts: Record<RedactionCla
       uname?: string;
       sep: string;
     };
+    const whole = args[0] as string;
+    const source = args[args.length - 2] as string;
+    const offset = args[args.length - 3] as number;
+    // A header auth-header declined is left whole and uncounted (AUTH_DECLINED_RE).
+    if (groups.uname !== undefined && groups.uname.toLowerCase().endsWith(AUTHORIZATION)) {
+      AUTH_DECLINED_RE.lastIndex = offset + groups.uname.length - AUTHORIZATION.length;
+      if (AUTH_DECLINED_RE.test(source)) return whole;
+    }
     counts.assignment++;
     const name = groups.qname !== undefined ? `${groups.q}${groups.qname}${groups.q}` : groups.uname!;
     return `${name}${groups.sep}${marker("assignment")}`;
