@@ -57,12 +57,16 @@ type Rule = { id: string; re: RegExp; allow?: (match: RegExpExecArray, path: str
 const RULES: Rule[] = [
   {
     // The public org (`sibylline-labs`) is fine anywhere; the contact domain only
-    // in the contact files; the copyright holder only in the licence files.
+    // in the contact files; the copyright holder only in the licence files. A commit
+    // message (`path` empty) may also run the org into the next word: GitHub's
+    // default merge message names the head branch, whose slug drops the `/` of an
+    // `org/repo` it quotes (`sibylline-labsyak`).
     id: "private-org",
     re: /sibylline/gi,
     allow: (m, path, line) => {
       const rest = line.slice(m.index + m[0].length);
       if (/^-labs\b/i.test(rest)) return true;
+      if (/^-labs\w/i.test(rest)) return path === "";
       if (/^\.group\b/i.test(rest)) return CONTACT_FILES.has(path);
       if (/^ labs\b/i.test(rest)) return LICENCE_FILES.has(path);
       return false;
@@ -151,7 +155,7 @@ export interface ScanOptions {
   extraOnly?: boolean;
 }
 
-/** Every hit in one file's text. `path` is repo-relative (it decides the allowlists). */
+/** Every hit in one file's text. `path` is repo-relative, or empty for a commit message (it decides the allowlists). */
 export function scan(path: string, text: string, opts: ScanOptions = {}): Hit[] {
   const { where = path, known = new Set<string>(), extra = [], extraOnly = false } = opts;
   const rules = extraOnly ? extra : [...RULES, ...extra];

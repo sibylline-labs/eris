@@ -24,6 +24,9 @@ const KNOWN_SHA = ("9e8f" + "7a6b").repeat(5);
 describe("scan", () => {
   it.each([
     ["the private org", "docs/a.md", `github.com/${ORG}-advisory/eris`, "private-org"],
+    ["the private org in a commit message", "", `Merge pull request #9 from ${ORG}-advisory/eris`, "private-org"],
+    ["the bare org name outside the contact and licence files", "docs/a.md", `built by ${ORG}`, "private-org"],
+    ["the public org run into a slug outside a commit message", "docs/a.md", `branch x-${ORG}-labsyak-contract`, "private-org"],
     ["the contact domain outside the contact files", "docs/a.md", `mail security@${ORG}.group`, "private-org"],
     ["a personal email", "README.md", `ask ${"dan" + "@"}corp.io`, "email"],
     ["a tracker label", "src/a.ts", `// fixed in ${"QR" + "X"}-1100`, "tracker-label"],
@@ -50,6 +53,7 @@ describe("scan", () => {
   it.each([
     ["the public org", "docs/a.md", `https://github.com/${ORG}-labs/eris/blob/main/docs/ERRORS.md`],
     ["the public package scope", "package.json", `"@${ORG}-labs/yak-contract"`],
+    ["a merge message whose branch slug runs the public org into a word", "", `Merge pull request #4 from ${ORG}-labs/dan/x-export-${ORG}-labsyak-contract`],
     ["the security address in SECURITY.md", "SECURITY.md", `Email security@${ORG}.group.`],
     ["the support address in CONTRIBUTING.md", "CONTRIBUTING.md", `Write to support@${ORG}.group.`],
     ["the copyright holder in NOTICE", "NOTICE", `Copyright 2026 ${"Sibyl" + "line"} Labs`],
