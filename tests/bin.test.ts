@@ -96,4 +96,13 @@ describe.skipIf(checkoutOnly("the npm bin; a compiled binary has none"))("bin/er
       });
     }
   });
+
+  it("ignores a stray _ERIS_SHIM_DIR: its install root is the package", async () => {
+    /** When the bin lets the shim's private variable through, a stray value in the caller's environment moves the install root, so a failure block's local docs: line names a file that does not exist — observed at that line. */
+    const stray = join(sb.dir, "nonexistent");
+    const r = await sb.run(["--output", "json", "completion", "bash"], { program: BIN, env: { _ERIS_SHIM_DIR: stray } });
+    expectFailBlock(r, "output-json-unsupported");
+    expect(r.stderr).toContain(`docs: ${REPO}/docs/OUTPUT-CONTRACT.md#3-machine-surfaces\n`);
+    expect(r.stderr).not.toContain(stray);
+  });
 });

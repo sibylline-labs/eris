@@ -16,7 +16,8 @@
  *     (`eris-verbose-fetch-set`) rather than print a bearer token.
  *   - The install root is the package: src/runtime/home.ts resolves it from its
  *     own location, so the symlink an install links this file under changes
- *     nothing.
+ *     nothing. Only the shim sets `_ERIS_SHIM_DIR`, so a stray value in the
+ *     caller's environment is removed before the program reads it.
  *
  * `src/main.ts` runs itself only when it is the entry, so this calls
  * `runProgram`. The refusal comes first and `src/main` is imported after it:
@@ -35,6 +36,7 @@ if (process.env.BUN_CONFIG_VERBOSE_FETCH !== undefined) {
     fix: "unset BUN_CONFIG_VERBOSE_FETCH, or run: env -u BUN_CONFIG_VERBOSE_FETCH eris <command>",
   });
 } else {
+  delete process.env._ERIS_SHIM_DIR;
   const { runProgram } = await import("../src/main");
   runProgram();
 }

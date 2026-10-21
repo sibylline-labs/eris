@@ -338,6 +338,11 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [[ "$PRERELEASE" == true ]]; then dist=next; else dist=latest; fi
+          # A re-run after a publish succeeded: npm refuses a version twice, and the tag is already out.
+          if [[ "$(npm view "@sibylline-labs/eris@${TAG#v}" version 2>/dev/null)" == "${TAG#v}" ]]; then
+            echo "@sibylline-labs/eris@${TAG#v} is already published"
+            exit 0
+          fi
           umask 077
           printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" >"$RUNNER_TEMP/npmrc"
           npm publish --userconfig "$RUNNER_TEMP/npmrc" --access public --ignore-scripts --tag "$dist"
