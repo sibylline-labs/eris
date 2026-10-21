@@ -158,3 +158,83 @@ jobs:
           bun-version-file: .bun-version
 
       - run: bun scripts/scrub-check.ts --history
+
+  npm-pack:
+    name: npm package (pack, dry-run publish, install, run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      # The tarball npm would publish, and npm's own check that it can: a dry run
+      # uploads nothing and needs no token. --ignore-scripts, so no repo script runs.
+      - name: Pack and dry-run publish
+        id: pack
+        run: |
+          tarball=$(npm pack --ignore-scripts --silent --pack-destination "$RUNNER_TEMP")
+          echo "tarball=$RUNNER_TEMP/$tarball" >>"$GITHUB_OUTPUT"
+          npm publish --dry-run --ignore-scripts
+
+      # An install from the tarball alone, run from a directory with no checkout
+      # in it. The command's shebang is `env -S bun ...`, which needs GNU env 8.30
+      # or newer (printed below) and macOS's env; this job is the Linux half.
+      - name: npm install -g, then eris --help
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: |
+          env --version | sed -n 1p
+          mkdir -p "$RUNNER_TEMP/clean" && cd "$RUNNER_TEMP/clean"
+          npm install --global --ignore-scripts --prefix "$RUNNER_TEMP/npm-prefix" "$TARBALL"
+          out=$("$RUNNER_TEMP/npm-prefix/bin/eris" --help)
+          [[ "$out" == "Usage: eris "* ]] || { echo "::error title=npm install -g::eris --help printed: $out"; exit 1; }
+
+      - name: bun add -g, then eris --help
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: |
+          export BUN_INSTALL="$RUNNER_TEMP/bun"
+          cd "$RUNNER_TEMP/clean"
+          bun add --global "$TARBALL"
+          out=$("$BUN_INSTALL/bin/eris" --help)
+          [[ "$out" == "Usage: eris "* ]] || { echo "::error title=bun add -g::eris --help printed: $out"; exit 1; }
+
+      # Run from a directory whose bunfig.toml preloads a script, each installed
+      # command must not run it. A bare `bun` in the same directory does, which is
+      # what makes the silence mean something.
+      - name: The installed commands read nothing from their cwd
+        run: |
+          svc="$RUNNER_TEMP/svc"
+          mkdir -p "$svc" && cd "$svc"
+          echo 'require("node:fs").appendFileSync("preload-ran", "x");' >pwn.ts
+          echo 'preload = ["./pwn.ts"]' >bunfig.toml
+          bun --eval 0
+          [[ -f preload-ran ]] || { echo "::error title=Control failed::a bare bun did not run the preload, so this step proves nothing"; exit 1; }
+          rm preload-ran
+          for bin in "$RUNNER_TEMP/npm-prefix/bin/eris" "$RUNNER_TEMP/bun/bin/eris"; do
+            "$bin" --version
+            [[ ! -e preload-ran ]] || { echo "::error title=cwd read::$bin ran the cwd's bunfig preload"; exit 1; }
+          done
+
+      # A repository that declares the dependency under the key `eris` imports the
+      # package's subpaths by that name, whatever the package is published as.
+      - name: A consumer under the key eris resolves eris/sdk and eris/yak-contract
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: |
+          app="$RUNNER_TEMP/consumer"
+          mkdir -p "$app" && cd "$app"
+          printf '{"name":"consumer","private":true,"type":"module","dependencies":{"eris":"file:%s"}}\n' "$TARBALL" >package.json
+          bun install
+          cat >check.ts <<'TS'
+          import { runProgram } from "eris/sdk";
+          import { YAKS_CONTRACT_VERSION } from "eris/yak-contract";
+          if (typeof runProgram !== "function" || YAKS_CONTRACT_VERSION !== "2.0.0") throw new Error("eris/sdk or eris/yak-contract did not resolve");
+          console.log("resolved eris/sdk and eris/yak-contract", YAKS_CONTRACT_VERSION);
+          TS
+          bun check.ts

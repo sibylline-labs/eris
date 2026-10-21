@@ -19,6 +19,7 @@ interface Step {
   with?: Record<string, string>;
 }
 interface Job {
+  needs?: string | string[];
   permissions?: Record<string, string>;
   if?: string;
   env?: Record<string, string>;
@@ -38,7 +39,7 @@ describe.skipIf(checkoutOnly("reads the checkout's workflow files"))("the workfl
   it("find the workflows they police", () => {
     /** When the directory or parser stops yielding workflows, every check below passes having read nothing. */
     expect(files).toEqual(expect.arrayContaining(["ci.yml", "release.yml"]));
-    expect(Object.keys(parsed("release.yml").jobs)).toEqual(["plan", "build", "publish", "tap"]);
+    expect(Object.keys(parsed("release.yml").jobs)).toEqual(["plan", "build", "publish", "tap", "npm"]);
   });
 
   it.each(files)("%s pins every action to a full commit SHA", (f) => {
@@ -61,12 +62,13 @@ describe.skipIf(checkoutOnly("reads the checkout's workflow files"))("the workfl
     expect(writers.filter(([name]) => name !== "publish").every(([, p]) => Object.values(p).every((v) => v === "read"))).toBe(true);
   });
 
-  it("no workflow reads a secret but the tap job, and it reads only the tap token", () => {
-    /** When a secret is read outside the tap job, repo code that runs in other jobs (the suite, a build) can reach it; ci.yml reads none. */
+  it("no workflow reads a secret but the tap and npm jobs, each only its own token", () => {
+    /** When a secret is read outside the job meant to hold it, repo code that runs in other jobs (the suite, a build) can reach it; when one job reads the other's token, a compromised publish step can push to the tap, or a tap step can publish the package. ci.yml reads none. */
     const reads = (f: string, job: string) => [...JSON.stringify(parsed(f).jobs[job]).matchAll(/secrets\.(\w+)/g)].map((m) => m[1]);
     expect(Object.keys(parsed("ci.yml").jobs).flatMap((j) => reads("ci.yml", j))).toEqual([]);
     for (const job of ["plan", "build", "publish"]) expect({ job, secrets: reads("release.yml", job) }).toEqual({ job, secrets: [] });
     expect(new Set(reads("release.yml", "tap"))).toEqual(new Set(["TAP_PUSH_TOKEN"]));
+    expect(new Set(reads("release.yml", "npm"))).toEqual(new Set(["NPM_TOKEN"]));
   });
 
   it("the tap job is gated on the token through env, never through an if on secrets", () => {
@@ -87,6 +89,43 @@ describe.skipIf(checkoutOnly("reads the checkout's workflow files"))("the workfl
     expect(render).toBeGreaterThan(-1);
     expect(render).toBeLessThan(tapCheckout);
     expect(steps.slice(tapCheckout + 1).some((s) => /\bbun\b/.test(s.run ?? ""))).toBe(false);
+  });
+
+  describe("the npm job", () => {
+    const npm = () => parsed("release.yml").jobs.npm!;
+
+    it("waits for the build and its oracle, and holds only read access", () => {
+      /** When the npm job stops waiting for the build job, a red oracle leg still publishes the package; when it gains write access, the code it runs can alter the repository. */
+      expect([npm().needs].flat().sort()).toEqual(["build", "plan"]);
+      expect(npm().permissions).toEqual({ contents: "read" });
+    });
+
+    it("is gated on the token through env, and the token is on disk only for the last step, which runs no repo code", () => {
+      /** When the token is exported job-wide, the checkout and the dry run hold it; when a step follows the one that holds it, repo-controlled code runs with the token on disk; when the publish runs lifecycle scripts, a prepublish script at the release commit runs with it — observed in the parsed job. */
+      const { env, steps } = npm();
+      expect(env?.HAVE_NPM).toBe("${{ secrets.NPM_TOKEN != '' }}");
+      // The job's own env reaches every step, so the secret may appear there only inside the presence test.
+      expect(Object.entries(env ?? {}).filter(([, v]) => v.includes("secrets.NPM_TOKEN")).map(([k]) => k)).toEqual(["HAVE_NPM"]);
+      const holders = steps.flatMap((s, i) => (JSON.stringify(s).includes("secrets.NPM_TOKEN") ? [i] : []));
+      expect(holders).toEqual([steps.length - 1]);
+      const last = steps.at(-1)!;
+      expect(last.if).toBe("env.HAVE_NPM == 'true'");
+      expect(last.run).toContain("npm publish");
+      expect(last.run).toContain("--ignore-scripts");
+      expect(/\b(bun|node|npx)\b/.test(last.run ?? "")).toBe(false);
+    });
+
+    it("fails red without the token, after checking the tarball, rather than passing having published nothing", () => {
+      /** When a release is cut without NPM_TOKEN and the job ends green, the version never reaches the registry and nothing says so (a tag is not re-run on its own); when the dry run is missing, the missing-token run proves nothing about the package. */
+      const { steps } = npm();
+      const dry = steps.findIndex((s) => /npm publish\b.*--dry-run/.test(s.run ?? ""));
+      const refuse = steps.findIndex((s) => s.if === "env.HAVE_NPM != 'true'");
+      expect(dry).toBeGreaterThan(-1);
+      expect(steps[dry]!.if).toBeUndefined();
+      expect(refuse).toBeGreaterThan(dry);
+      expect(steps[refuse]!.run).toContain("::error");
+      expect(steps[refuse]!.run).toContain("exit 1");
+    });
   });
 });
 

@@ -22,6 +22,7 @@ note: |
   otherwise. The same defect was fixed three times. A key that is a string
   literal needs no reader.
 files:
+  - bin/**/*.ts
   - src/**/*.ts
   - ts/**/*.ts
   - scripts/**/*.ts

@@ -11,7 +11,7 @@ bun test tests/completion.test.ts    # one file
 ```
 
 - **Do not run as root.** Several tests assert a permission-based refusal.
-- **`tests/required-tools.txt` is the tool surface** (`bun`, `zsh`, `git`,
+- **`tests/required-tools.txt` is the tool surface** (`bun`, `npm`, `zsh`, `git`,
   `script`). `describe.skipIf(!HAVE_X)` reports green when X is absent, so
   `tests/repo-hygiene.test.ts` fails a run missing a listed tool and fails a skip
   guard on an unlisted one. Add a tool there in the commit that adds its guard.
