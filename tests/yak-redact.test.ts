@@ -240,6 +240,30 @@ describe("redact() — positive corpus, one class each", () => {
     assertZeroExcept(result, "auth-header");
   });
 
+  it("when an Authorization: Bearer credential is a token another class already redacted, the scheme survives and the token is counted once — observed at redact().text and counts", () => {
+    // Pre-fix: the token class (github-token, sib-token, jwt) ran first and left
+    // `Authorization: Bearer «redacted:<class>»`; AUTH_HEADER_RE's credential
+    // group then matched that marker as the credential, so the whole header
+    // collapsed to `«redacted:auth-header»` (scheme lost) and BOTH classes were
+    // counted.
+    const cases: Array<[RedactionClass, string]> = [
+      ["github-token", GH_TOKEN],
+      ["sib-token", SIB_TOKEN],
+      ["jwt", JWT],
+    ];
+    for (const [cls, token] of cases) {
+      const result = redact(`Authorization: Bearer ${token}`);
+      expect(result.text, cls).toBe(`Authorization: Bearer «redacted:${cls}»`);
+      expect(result.counts[cls], cls).toBe(1);
+      expect(result.total, cls).toBe(1);
+      assertZeroExcept(result, cls);
+      // the marker left behind is not re-matched by a second pass.
+      const again = redact(result.text);
+      expect(again.text, cls).toBe(result.text);
+      expect(again.total, cls).toBe(0);
+    }
+  });
+
   it("when a GCP service-account private_key JSON value is present, it goes red — observed at redact().text", () => {
     const json =
       '{"type":"service_account","project_id":"demo",' +
@@ -262,6 +286,29 @@ describe("redact() — positive corpus, one class each", () => {
     expect(result.text).toContain("«redacted:conn-string»");
     expect(result.counts["conn-string"]).toBe(1);
     assertZeroExcept(result, "conn-string");
+  });
+
+  it("when a connection string's password is a token another class already redacted, scheme, user and host survive and the token is counted once — observed at redact().text and counts", () => {
+    // Pre-fix: the token class (sib-token, github-token) ran first and left
+    // `postgres://user:«redacted:<class>»@host`; CONN_STRING_RE's password group
+    // then matched that marker as the password, so the whole span collapsed to
+    // `«redacted:conn-string»` (scheme, user and host lost to triage) and BOTH
+    // classes were counted.
+    const cases: Array<[RedactionClass, string]> = [
+      ["sib-token", SIB_TOKEN],
+      ["github-token", GH_TOKEN],
+    ];
+    for (const [cls, token] of cases) {
+      const result = redact(`postgres://user:${token}@db.example.com:5432/app`);
+      expect(result.text, cls).toBe(`postgres://user:«redacted:${cls}»@db.example.com:5432/app`);
+      expect(result.counts[cls], cls).toBe(1);
+      expect(result.total, cls).toBe(1);
+      assertZeroExcept(result, cls);
+      // the marker left behind is not re-matched by a second pass.
+      const again = redact(result.text);
+      expect(again.text, cls).toBe(result.text);
+      expect(again.total, cls).toBe(0);
+    }
   });
 
   it("when a key-name assignment (NAME=value) is present, it goes red — observed at redact().text", () => {
