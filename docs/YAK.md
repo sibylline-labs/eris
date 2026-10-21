@@ -140,10 +140,11 @@ to **stderr**, never stdout; under `--output json` the same information is
 `redactions.{count,classes}` on the record instead — stderr carries nothing
 either way (see [Exit codes](#--output-json) above).
 
-Classes covered: PEM private-key blocks, JWTs, AWS access-key ids and
-`aws_secret_access_key` assignments, GitHub/Slack/Google/`sk-`-style API keys,
-`Authorization: Bearer|token …` headers, GCP service-account `"private_key"`
-values, connection strings with an inline password, and **key-name
+Classes covered: PEM private-key blocks, JWTs, `sib_` service tokens,
+AWS access-key ids and `aws_secret_access_key` assignments,
+GitHub/Slack/Google/`sk-`-style API keys, `Authorization: Bearer|token …`
+headers, GCP service-account `"private_key"` values, connection strings with an
+inline password, and **key-name
 assignments** — `NAME=value` or `NAME: value` where `NAME` matches
 `(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|API_KEY|CREDENTIAL|ACCESS_KEY|CLIENT_SECRET|MNEMONIC|SEED|SESSION|COOKIE|AUTH)`.
 

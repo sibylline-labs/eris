@@ -12,8 +12,8 @@
  * client's — deriving from unredacted text would guarantee a mismatch on
  * every report.
  *
- * ELEVEN CLASSES, applied in a fixed pipeline order, most-specific first.
- * Order is load-bearing for two reasons:
+ * TWELVE CLASSES, applied in a fixed pipeline order, most-specific first.
+ * Order is load-bearing for three reasons:
  *
  *   1. A JSON-embedded GCP private key ("private_key":"-----BEGIN...") is
  *      also a syntactic match for the generic PEM-block pattern (`[\s\S]*?`
@@ -27,6 +27,12 @@
  *      Running auth-header first means the marker is in place before
  *      `assignment`'s pass ever sees that text, so it is classified once, as
  *      the more specific class.
+ *   3. `sib-token` runs right after `jwt`, before `aws-key`, `github-token`
+ *      and `sk-key`. A token's base64url secret can itself contain `-sk-`
+ *      (where `\bsk-` holds after the `-`) or `ghp_…`, so any of those classes
+ *      running first would replace only the embedded run and leave
+ *      `sib_<orgId>_<head>` in plaintext. It also runs before `assignment`, so
+ *      `ERIS_TOKEN=sib_…` is classified once, as the more specific class.
  *
  * Because each pass runs sequentially over the STRING RESULT of the previous
  * pass, and the `«redacted:<class>»` marker itself matches none of the
@@ -156,6 +162,7 @@
 export type RedactionClass =
   | "pem"
   | "jwt"
+  | "sib-token"
   | "aws-key"
   | "github-token"
   | "slack-token"
@@ -177,6 +184,7 @@ export interface RedactionResult {
 const REDACTION_CLASSES: RedactionClass[] = [
   "pem",
   "jwt",
+  "sib-token",
   "aws-key",
   "github-token",
   "slack-token",
@@ -221,6 +229,19 @@ const PEM_RE = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVAT
 // JWTs: three dot-separated base64url segments, header always starts "eyJ"
 // (base64 of `{"`). Bounded segment lengths — no unbounded nested repetition.
 const JWT_RE = /eyJ[A-Za-z0-9_-]{10,500}\.[A-Za-z0-9_-]{10,500}\.[A-Za-z0-9_-]{10,500}/g;
+
+// `sib_` service tokens: sib_<26-char Crockford ULID>_<43 base64url>.
+// Contract-shaped on purpose, not a generic `sib_` + run: the issuer pins this
+// shape, and a generic run would eat prose identifiers such as
+// `sib_service_token_rotation_policy`. The ULID part accepts either case so a
+// lower-cased paste still redacts (this pass is tuned toward over-redaction).
+// The secret is `{43,256}`, not `{43}`, so an over-long run is consumed whole
+// instead of leaving a plaintext tail — the same bounded run as
+// `GITHUB_TOKEN_RE`'s `{36,255}`. No leading `\b`, as in `GITHUB_TOKEN_RE`:
+// `x_sib_…` still redacts, and the fixed 26+1+43 structure is what blocks
+// false positives. Ordered ahead of the classes whose shapes its secret can
+// contain (file header, reason 3).
+const SIB_TOKEN_RE = /sib_[0-9A-Za-z]{26}_[A-Za-z0-9_-]{43,256}/g;
 
 // AWS: access-key ids (AKIA/ASIA + 16 alnum) and the aws_secret_access_key
 // assignment, as two independent matches under one class.
@@ -350,6 +371,9 @@ function runPipeline(input: string): { text: string; counts: Record<RedactionCla
 
   text = runWholeMatchPass(text, "pem", PEM_RE, counts);
   text = runWholeMatchPass(text, "jwt", JWT_RE, counts);
+
+  // sib-token BEFORE aws-key / github-token / sk-key (reason 3, file header).
+  text = runWholeMatchPass(text, "sib-token", SIB_TOKEN_RE, counts);
 
   // aws-key: two independent regexes feeding one class.
   text = runWholeMatchPass(text, "aws-key", AWS_KEY_ID_RE, counts);

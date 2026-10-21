@@ -45,6 +45,13 @@ const GOOGLE_KEY = "AI" + "za" + "Example-Key_" + "Q".repeat(23);
 const ANTHROPIC_KEY = "sk-" + "ant-api03-abcdefghijklmnopqrstuvwxyz0123456789";
 const AWS_SECRET = "wJalrXUtnFEMI/K7MDENG/" + "bPxRfiCYEXAMPLEKEY";
 const AWS_SESSION = "IQoJb3JpZ2luX2Vj" + "EXAMPLEtoken";
+/** A `sib_` service token is `sib_<26-char ULID>_<43-char base64url secret>`.
+ *  Both parts are invented to that shape; the secret is sliced so its length is
+ *  43 by construction. */
+const SIB_ULID = "01HZXK3M5N7P9Q2R4S6T8V0WXY";
+const SIB_SECRET = "ExampleSecret_notReal-0123456789abcdefghijklmnopqrstuvwxyz".slice(0, 43);
+const sibToken = (secret: string = SIB_SECRET) => "sib" + "_" + SIB_ULID + "_" + secret;
+const SIB_TOKEN = sibToken();
 /** An HS256 header, the payload {"sub":"example-user","name":"Example User"}, and an
  *  invented signature segment. */
 const JWT =
@@ -57,6 +64,7 @@ const JWT =
 const ALL_CLASSES: RedactionClass[] = [
   "pem",
   "jwt",
+  "sib-token",
   "aws-key",
   "github-token",
   "slack-token",
@@ -101,6 +109,59 @@ describe("redact() — positive corpus, one class each", () => {
     expect(result.text).toContain("«redacted:jwt»");
     expect(result.counts.jwt).toBe(1);
     assertZeroExcept(result, "jwt");
+  });
+
+  it("when a sib_ service token is present, it goes red — observed at redact().text", () => {
+    const result = redact(`rotated ${SIB_TOKEN} twice today`);
+    expect(result.text).toBe("rotated «redacted:sib-token» twice today");
+    expect(result.counts["sib-token"]).toBe(1);
+    expect(result.total).toBe(1);
+    assertZeroExcept(result, "sib-token");
+  });
+
+  it("when a sib_ token is the value of a governed name, it is classified once as sib-token, not as assignment", () => {
+    // The generic `assignment` pass would otherwise claim `ERIS_TOKEN=<value>`
+    // and leave the more specific class uncounted.
+    const result = redact(`ERIS_TOKEN=${SIB_TOKEN}`);
+    expect(result.text).toBe("ERIS_TOKEN=«redacted:sib-token»");
+    expect(result.counts["sib-token"]).toBe(1);
+    assertZeroExcept(result, "sib-token");
+  });
+
+  it("when a sib_ token's secret embeds another class's shape, the whole token is redacted as sib-token", () => {
+    // Pre-fix: the `sk-key` pass (`\bsk-` holds after the `-`) and the
+    // `github-token` pass (no leading boundary) ran first, replaced only the
+    // embedded run, and shipped `sib_<orgId>_<head>` in plaintext:
+    // `sib_01HZ…_aaaaaaaa-«redacted:sk-key»`.
+    const secrets: Array<[string, string]> = [
+      ["an -sk- run followed by 20+ chars", "aaaaaaaa" + "-sk" + "-" + "B".repeat(31)],
+      ["a ghp_ run", "abc" + GH_TOKEN],
+    ];
+    for (const [label, secret] of secrets) {
+      expect(secret.length, label).toBe(43);
+      const result = redact(`rotated ${sibToken(secret)} today`);
+      expect(result.text, label).toBe("rotated «redacted:sib-token» today");
+      expect(result.text, label).not.toContain(SIB_ULID);
+      expect(result.text, label).not.toContain(secret.slice(0, 8));
+      expect(result.counts["sib-token"], label).toBe(1);
+      assertZeroExcept(result, "sib-token");
+    }
+  });
+
+  it("when a sib_ token is lower-cased or carries an over-long secret, the whole token is still redacted", () => {
+    // Both are deliberate widenings of the issuer's shape (see SIB_TOKEN_RE). A
+    // narrower pattern would leave the org id, or a plaintext tail of the
+    // secret directly after the marker, in the report.
+    const cases: Array<[string, string]> = [
+      ["lower-cased ULID", "sib" + "_" + SIB_ULID.toLowerCase() + "_" + SIB_SECRET],
+      ["over-long secret", sibToken(SIB_SECRET + "TAILtail0123456789")],
+    ];
+    for (const [label, token] of cases) {
+      const result = redact(`rotated ${token} today`);
+      expect(result.text, label).toBe("rotated «redacted:sib-token» today");
+      expect(result.counts["sib-token"], label).toBe(1);
+      assertZeroExcept(result, "sib-token");
+    }
   });
 
   it("when an AWS access key id is present, it goes red — observed at redact().text", () => {
@@ -487,6 +548,20 @@ describe("redact() — negative corpus, prose must survive untouched", () => {
       "a file reference using the word.ext: description shape this file's own comments use",
       "yak-redact.ts: the redaction pass",
     ],
+    // --- sib-token is contract-shaped (ULID + 43-char secret), not a generic
+    // `sib_` + run: each of these shares the prefix and none is a token.
+    [
+      "the bare sib_ prefix named as a word",
+      "the sib_ prefix marks a service credential format",
+    ],
+    [
+      "a sib_-prefixed snake_case identifier in prose",
+      "see the sib_service_token_rotation_policy doc for the cadence",
+    ],
+    [
+      "a sib_ org id with no secret segment",
+      `the failing request carried org ${"sib" + "_" + SIB_ULID} only`,
+    ],
   ];
 
   for (const [label, text] of proseCases) {
@@ -726,6 +801,22 @@ describe("redactDeep() — nested value redaction for provenance", () => {
     expect(result.total).toBeGreaterThanOrEqual(2);
     expect((result.value as typeof provenance).git.branch).toBe("main");
     expect((result.value as typeof provenance).git.dirty).toBe(false);
+  });
+
+  it("redacts a sib_ token nested in a provenance-shaped object and counts it once", () => {
+    const provenance = {
+      git: {
+        origin_url: `https://example.com/org/repo.git?x=${SIB_TOKEN}`,
+        branch: "main",
+      },
+    };
+    const result = redactDeep(provenance);
+    expect((result.value as typeof provenance).git.origin_url).toBe(
+      "https://example.com/org/repo.git?x=«redacted:sib-token»",
+    );
+    expect((result.value as typeof provenance).git.branch).toBe("main");
+    expect(result.counts["sib-token"]).toBe(1);
+    expect(result.total).toBe(1);
   });
 
   it("leaves non-string primitives (numbers, booleans, null) untouched", () => {
