@@ -1,12 +1,41 @@
 {
-  "name": "eris",
-  "private": true,
+  "name": "@sibylline-labs/eris",
+  "version": "0.0.0",
+  "description": "A plugin-composed command-line tool in TypeScript on Bun, shipping eris yak",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sibylline-labs/eris.git"
+  },
   "type": "module",
+  "engines": {
+    "bun": ">=1.3.13"
+  },
+  "bin": {
+    "eris": "bin/eris.ts"
+  },
   "exports": {
     ".": "./src/main.ts",
     "./sdk": "./src/sdk.ts",
     "./sdk/testing": "./testing/index.ts",
     "./yak-contract": "./packages/yak-contract/src/index.ts"
+  },
+  "files": [
+    "bin",
+    "src",
+    "plugins",
+    "packages/yak-contract/src",
+    "packages/yak-contract/schema",
+    "packages/yak-contract/package.json",
+    "testing",
+    "ts",
+    "docs",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "packageManager": "bun@1.3.13",
   "workspaces": [

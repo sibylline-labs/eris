@@ -37,6 +37,10 @@ suite against it ([TESTING.md](TESTING.md#the-binary-oracle)).
 - **`eris`** is a POSIX `sh` shim. It finds bun, removes
   `BUN_CONFIG_VERBOSE_FETCH`, and execs `bun --no-env-file --config=/dev/null
   src/main.ts`. Its header lists its invariants.
+- **`bin/eris.ts`** is the same entry for an installed package (`bin` in `package.json`): a
+  `#!/usr/bin/env -S bun --no-env-file --config=/dev/null` shebang that refuses to run under
+  `BUN_CONFIG_VERBOSE_FETCH` and then calls `runProgram`. Run it as `bun bin/eris.ts` or directly
+  (`./bin/eris.ts`) to see what an `npx`/`bunx` user sees.
 - **`src/cli/registry.ts`** names core's verbs: one `REGISTRY` row per group, sub
   and nested sub, carrying `impl` (`ts`), long flags with value arity, `json`
   (has a machine rendering) and a summary.
@@ -52,6 +56,7 @@ suite against it ([TESTING.md](TESTING.md#the-binary-oracle)).
 
 | Path | Holds |
 |---|---|
+| `bin/` | `eris.ts`, the package's `eris` command ([ARCHITECTURE.md](../ARCHITECTURE.md#the-packages-bin)) |
 | `src/cli/` | The registry, composition, the plugin SDK, the router, argv parsing, the output allow-list, the TS route |
 | `src/cli/commands/` | Core's verbs: `completion` and the top-level usage |
 | `src/runtime/` | Logging, the subprocess runner, settings, env reads, the install root |

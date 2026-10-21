@@ -16,6 +16,7 @@ note: |
   undeclared flag, a value flag with no value, and a word past the declared
   positionals, uniformly. Help and completion read the same row.
 files:
+  - bin/**/*.ts
   - src/cli/**/*.ts
   - src/main.ts
   - plugins/**/*.ts

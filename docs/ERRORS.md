@@ -127,6 +127,24 @@ it for you: an inline install is unbounded and reaches the network mid-command.
 Only a missing PACKAGE is reported this way. A missing relative module is a defect
 in the checkout's own source and still crashes with bun's message.
 
+### eris-verbose-fetch-set
+
+> Raised by the package's `eris` command (`bin/eris.ts`), before any command runs.
+
+`BUN_CONFIG_VERBOSE_FETCH` is set in the environment of an `eris` started from an
+installed package (`npm i -g @sibylline-labs/eris`, `bun add -g`, `npx`, `bunx`).
+Under that variable bun prints every fetch to stderr, the `Authorization` bearer
+and the request body included, and for a secret write the body is the value. bun
+reads it from its own environment when it fetches, and `delete process.env.X`
+does not reach that read. The checkout's `eris` shim removes the variable before
+bun starts; an installed command is started by its shebang and has no shim, so it
+refuses to run rather than depend on an override from inside the process or print
+a bearer token. No command runs, `--help` and `--version` included.
+
+Fix: unset the variable, for the shell (`unset BUN_CONFIG_VERBOSE_FETCH`) or for
+one command (`env -u BUN_CONFIG_VERBOSE_FETCH eris <command>`). The checkout's
+shim and a compiled binary remove it themselves and never raise this.
+
 ### update-not-compiled
 
 > Raised by `eris update` before any request.

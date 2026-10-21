@@ -17,7 +17,7 @@ import { checkoutOnly } from "./helpers/blackbox";
  * runtime and stays plain text on disk. This test is the thing that makes the
  * second occurrence the last one.
  */
-const ROOTS = ["ts", "src", "plugins", "packages", "examples", "tests", "scripts"];
+const ROOTS = ["bin", "ts", "src", "plugins", "packages", "examples", "tests", "scripts"];
 const EXTS = [".ts", ".sh", ".json", ".yml", ".yaml"];
 
 /** The repo root is scanned SHALLOWLY, by name — a recursive walk from `.`

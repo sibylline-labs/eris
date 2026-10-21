@@ -4,7 +4,8 @@ A release is a tag. Pushing `vMAJOR.MINOR.PATCH` (or `vMAJOR.MINOR.PATCH-prerele
 runs `.github/workflows/release.yml`, which builds a binary for each platform,
 tests it, and publishes it. Everything that installs or updates eris reads the
 result: `install.sh`, `eris update` ([UPDATE.md](../UPDATE.md)) and the Homebrew
-formula.
+formula. The same run publishes the npm package, `@sibylline-labs/eris`
+([below](#the-npm-package)).
 
 ## The release's shape
 
@@ -60,9 +61,13 @@ under a tag that names another.
    never names a release without them). Re-running updates the assets in place.
 4. **tap** renders the Homebrew formula and pushes it to the tap repository, for a
    stable release and only when the tap token is set (below).
+5. **npm** waits for **build** and **publish** (so a red oracle leg or a failed GitHub
+   release publishes no package), stamps the
+   tag's version into `package.json`, checks the tarball with `npm publish --dry-run`,
+   and publishes it when the npm token is set (below).
 
-No job reads a secret except the last, and every action is pinned to a commit SHA;
-`tests/workflows.test.ts` holds both, and the permissions.
+No job reads a secret except **tap** (its token) and **npm** (its own), and every action is
+pinned to a commit SHA; `tests/workflows.test.ts` holds both, and the permissions.
 
 ## The Homebrew tap
 
@@ -90,6 +95,37 @@ To look at a formula without releasing:
 ```bash
 bun scripts/render-formula.ts --tag v0.2.0 --sums SHA256SUMS
 ```
+
+## The npm package
+
+`@sibylline-labs/eris` is this repository's source, run by bun, not a build: its `bin` is
+`bin/eris.ts` and its `exports` name `.ts` files ([ARCHITECTURE.md](../ARCHITECTURE.md#the-packages-bin)).
+`files` in `package.json` is the allow-list of what the tarball holds; `tests/package.test.ts`
+reads `npm pack --dry-run --json` and fails when an `exports` or `bin` target is missing, when the
+suite, CI workflows or scratch data are in, or when `docs/` or the license files are out (a failure
+block's `docs:` line names a file under the package root). The version in `package.json` is
+`0.0.0` in the repository; the release job stamps the tag's (`v0.3.0` is `0.3.0`) into the
+checkout it publishes from, and commits nothing. A pre-release publishes under the `next`
+dist-tag, so `npm install @sibylline-labs/eris` never picks it up.
+
+Every pull request runs the `npm-pack` job of `ci.yml`: `npm pack`, `npm publish --dry-run`, then
+the tarball installed with `npm install -g` and with `bun add -g` and run from a directory that
+holds no checkout (`eris --help`; a cwd `bunfig.toml` preload must not run), and a consumer that
+declares the dependency under the key `eris` and imports `eris/sdk` and `eris/yak-contract`. It
+reads no secret and publishes nothing.
+
+Setup, once: create a token that can publish `@sibylline-labs/eris` and store it as the
+secret `NPM_TOKEN` of the repository. The **npm** job reads it into `env` only to test it (the
+`secrets` context is not available to an `if`) and gives it to the last step alone, which writes
+it to a file under `$RUNNER_TEMP` and runs `npm publish --ignore-scripts`; no repository code
+runs after the token is on disk. Without the secret the job still checks the tarball, then
+fails red with a notice: a tag is not re-run on its own, so a release that skipped npm must not
+look green. Set the secret and re-run the job.
+
+What an npm install does not have: the `eris-bun-missing` block (bun not on `PATH` is `env`'s
+own message, since the shim is not what starts it), a working `eris update` (it runs from source, so
+it refuses with `update-not-compiled`, whose `fix:` line names a git checkout), and a tagged
+`eris --version` (it prints `dev`, as a checkout does).
 
 ## A distribution's releases
 
