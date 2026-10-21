@@ -53,6 +53,18 @@ describe("parseArgv", () => {
     expect(outcome.slug).toBe("yak-unknown-flag");
   });
 
+  it("a bare word after the verb is a misuse with slug yak-positional-arg that names --summary and --body", () => {
+    // When a positional falls back to yak-unknown-flag, an agent guessing `eris yak issue "text"` gets no
+    // hint at the two flags its text must ride on and gives up without filing — observed at parseArgv().
+    const outcome = parseArgv(["issue", "the hook blocked a legal edit"]);
+    expect(outcome.kind).toBe("misuse");
+    if (outcome.kind !== "misuse") throw new Error("unreachable");
+    expect(outcome.slug).toBe("yak-positional-arg");
+    expect(outcome.reason).toContain("--summary");
+    expect(outcome.reason).toContain("--body");
+    expect(outcome.fix).toBe('eris yak issue --summary "<one line>" --body "<what happened>"');
+  });
+
   it("a flag with no following value is a misuse with slug yak-flag-missing-value", () => {
     const outcome = parseArgv(["issue", "--summary"]);
     expect(outcome.kind).toBe("misuse");
@@ -265,6 +277,38 @@ describe("runYak — --output json emits a bare record on misuse too (exit 1 unc
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe("");
     expect(result.stderr).toBe("");
+  });
+
+  it("a positional argument in text mode: the failure block carries a fix: line naming --summary and --body, exit 1", async () => {
+    // When the fix line drops off the block, the operator sees only "unexpected argument" and has to
+    // go read docs to learn which flags carry the text — observed on runYak()'s stderr.
+    const home = await freshHome();
+    try {
+      const result = await runYak(baseOpts({ argv: ["suggest", "a positional body"], home }));
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("slug: yak-positional-arg\n");
+      expect(result.stderr).toContain('fix: eris yak suggest --summary "<one line>" --body "<what happened>"\n');
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("a positional argument under --output json: one record whose reason names --summary and --body, empty stderr", async () => {
+    // When json mode loses the hint (it has no fix: line), a machine caller learns only the slug — observed
+    // in the stdout record's error.reason.
+    const home = await freshHome();
+    try {
+      const result = await runYak(baseOpts({ argv: ["issue", "text"], home, env: { ERIS_OUTPUT: "json" } }));
+      expect(result.exitCode).toBe(1);
+      const record = JSON.parse(result.stdout);
+      expect(record.delivered).toBe(false);
+      expect(record.error.slug).toBe("yak-positional-arg");
+      expect(record.error.reason).toMatch(/--summary.*--body/);
+      expect(result.stderr).toBe("");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 
   it("an unknown flag (argv-level misuse, verb already known): a bare JSON record on stdout, delivered:false, exit 1 unchanged, and NOTHING on stderr (output-contract fix)", async () => {

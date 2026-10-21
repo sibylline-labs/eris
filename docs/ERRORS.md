@@ -313,6 +313,13 @@ Fix: the release may be broken. Retry later, or install another with `eris updat
 `--summary`, `--body`/`--body-file`, `--evidence`/`--evidence-file`,
 `--repro`, `--no-redact`, `--help`. Fix: `eris yak <verb> --help`.
 
+### yak-positional-arg
+
+`eris yak <verb>` was given a bare word, usually the report text itself
+(`eris yak issue "the hook blocked a legal edit"`). The text rides on flags,
+not positionals. Fix: `eris yak <verb> --summary "<one line>" --body "<what
+happened>"`, or `--body-file <path|->` for a longer body.
+
 ### yak-flag-missing-value
 
 A value-taking flag (`--summary`, `--body`, `--body-file`, `--evidence`,

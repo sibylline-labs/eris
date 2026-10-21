@@ -81,6 +81,7 @@ const DISCARD = { erisDir: "", stdout: { write: () => true }, stderr: { write: (
 export type ArgvMisuseSlug =
   | "yak-unknown-verb"
   | "yak-unknown-flag"
+  | "yak-positional-arg"
   | "yak-flag-missing-value";
 
 export interface ParsedFlags {
@@ -120,7 +121,7 @@ export type ArgvOutcome =
   // the dispatcher (`plugins/yak/handlers.ts`) never actually forwards to
   // this file in production (it answers an unknown verb itself),
   // so there is no real verb to report there.
-  | { kind: "misuse"; reason: string; slug: ArgvMisuseSlug; verb?: YakVerb }
+  | { kind: "misuse"; reason: string; slug: ArgvMisuseSlug; verb?: YakVerb; fix?: string }
   | { kind: "ok"; verb: YakVerb; flags: ParsedFlags };
 
 /**
@@ -152,6 +153,17 @@ export function parseArgv(argv: string[]): ArgvOutcome {
   try {
     p = readArgs(plugin.rows, `yak ${verbArg}`, g.rest, DISCARD, {
       refuse: (e, what) => {
+        // A bare word is the most common first guess (`eris yak issue "text"`), so it names
+        // the two flags the text has to ride on rather than reading as an unknown flag.
+        if (e.kind === "unexpected-arg") {
+          throw new Refused({
+            kind: "misuse",
+            reason: `${what}; eris yak takes its text through flags: --summary and --body (or --body-file)`,
+            slug: "yak-positional-arg",
+            verb: verbArg,
+            fix: `eris yak ${verbArg} --summary "<one line>" --body "<what happened>"`,
+          });
+        }
         const slug = e.kind === "missing-value" ? "yak-flag-missing-value" : "yak-unknown-flag";
         throw new Refused({ kind: "misuse", reason: what, slug, verb: verbArg });
       },
@@ -299,6 +311,7 @@ function misuseResult(
   verb?: YakVerb,
   redaction?: RedactionSummary,
   skipped = false,
+  fix?: string,
 ): RunYakResult {
   const redactions = redaction ?? { count: 0, classes: [], skipped };
   const redactionLine = !jsonOutput && redactions.count > 0 ? formatRedactionSummary(redactions) : "";
@@ -306,7 +319,7 @@ function misuseResult(
     jsonOutput && verb !== undefined
       ? `${JSON.stringify({ verb, delivered: false, redactions, error: { slug, reason } } satisfies YakOutputRecord)}\n`
       : "";
-  const stderr = jsonOutput ? "" : prefix + redactionLine + renderFailureBlock({ slug, what: reason }, erisHomeDir);
+  const stderr = jsonOutput ? "" : prefix + redactionLine + renderFailureBlock({ slug, what: reason, ...(fix ? { fix } : {}) }, erisHomeDir);
   return { stdout, stderr, exitCode: 1 };
 }
 
@@ -328,7 +341,7 @@ export async function runYak(opts: RunYakOptions): Promise<RunYakResult> {
     return { stdout: USAGE, stderr: "", exitCode: 0 };
   }
   if (parsed.kind === "misuse") {
-    return misuseResult(parsed.slug, parsed.reason, erisHomeDir, "", jsonOutput, parsed.verb);
+    return misuseResult(parsed.slug, parsed.reason, erisHomeDir, "", jsonOutput, parsed.verb, undefined, false, parsed.fix);
   }
 
   const { verb, flags } = parsed;
