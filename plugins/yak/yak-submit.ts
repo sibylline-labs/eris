@@ -372,7 +372,7 @@ const REFUSAL_BY_STATUS: ReadonlyMap<number, { slug: SubmitWarnSlug; remedy: str
     413,
     {
       slug: "yak-payload-too-large",
-      remedy: "the submission exceeded the endpoint's whole-body size cap; trim --evidence",
+      remedy: "the submission exceeded the endpoint's whole-body size cap; trim --evidence, --repro or the --repo hints",
     },
   ],
 ]);
@@ -515,7 +515,7 @@ export interface SubmitParams {
    *  that spans repos carries more than one).
    *  This CLI never validates any of it beyond the local length/count
    *  bounds; a dispatch/triage flow reads it off the rendered issue, which
-   *  the Actor owns (docs/YAK.md's own "everything after the 200...
+   *  the Actor owns (docs/YAK.md's own "everything after the receipt...
    *  belongs to the Actor, not this CLI"). */
   repoHints?: string[];
   /** `--no-redact` skips the scrub entirely, with a loud

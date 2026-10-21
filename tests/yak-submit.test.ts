@@ -1274,7 +1274,7 @@ describe("submitYak — response-shape outcomes over a real Bun.serve listener",
     });
   }
 
-  it("the rung reasons carry their local remedy and never name --vendor (that flag does not exist yet)", async () => {
+  it("the rung reasons carry their local remedy and never name --vendor (a flag this CLI does not have)", async () => {
     // When a rung's reason loses its remedy, the WARN tells the operator that something failed
     // but not what to change; when it names a flag the CLI does not have, it sends them to a
     // dead end — observed in `SubmitResult.reason`.
@@ -1403,8 +1403,10 @@ describe("submitYak — response-shape outcomes over a real Bun.serve listener",
       expect(parsed.success).toBe(true);
       expect(sent).toMatchObject({ schema_version: "2.0.0", route: "workspace", verb: "issue" });
       expect("reporter" in sent!).toBe(false);
-      // `route` is not an input to the derivation: the package's function takes no route and
-      // names the key a workspace report and a vendor report share.
+      // `route` is not an input to the derivation: the same submission on the vendor route
+      // derives the same key the workspace body carried.
+      const asVendor = YakSubmission.parse({ ...sent, route: "vendor" });
+      expect(sent!.idempotency_key).toBe(await deriveIdempotencyKey(asVendor));
       expect(sent!.idempotency_key).toBe(
         await deriveIdempotencyKey({
           device_id: BASE_PARAMS.deviceId,

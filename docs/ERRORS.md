@@ -395,8 +395,7 @@ shorten it — redaction can grow text, so check the real length with
 
 ### yak-repo-too-long
 
-A (redacted) `--repo <owner/name>` hint exceeds 200 chars — a
-target-repo hint rides
+A (redacted) `--repo <owner/name>` hint exceeds 200 chars — a target-repo hint rides
 inside `provenance` (`provenance.repo.target_repos`), which the contract
 package types and bounds at the same 200 chars. Caught here first, so the
 error names `--repo` rather than a generic payload failure, same reasoning as
@@ -493,7 +492,8 @@ workspace.
 
 The Yaks endpoint answered `413`: the submission exceeded the endpoint's
 whole-body size cap. The per-field length checks pass locally first, so the sum
-is what overflowed; trim `--evidence`, the largest field. Warn + exit 0; the
+is what overflowed; trim `--evidence` (the largest field), `--repro` or the
+`--repo` hints. Warn + exit 0; the
 report was dropped, not delivered, and the agent's task is unaffected. A problem
 with eris itself is reported on the vendor route, the eris project's own tracker,
 rather than into the workspace.

@@ -83,7 +83,7 @@ the diagnostics move entirely onto stdout's record — see below.
 | Situation | Exit |
 |---|---|
 | Missing `--summary`/`--body`, an unreadable `--body-file`, `--body-file -` with no pipe, an over-length field, an unknown verb or flag | **`1`** — the four-line `ERROR`/`slug:`/`fix:`/`docs:` block, same contract as every other eris failure |
-| Unresolved token/URL/device-id, an unreachable endpoint, a timeout, a non-2xx response | **`0`** — one `WARN` line + slug on stderr, empty stdout in text mode. A non-2xx status gets its own slug when the cause is local and a retry changes nothing — see the rungs below |
+| Unresolved token/URL/device-id, an unreachable endpoint, a timeout, a non-2xx response | **`0`** — one `WARN` line + slug on stderr, empty stdout in text mode. A non-2xx status gets its own slug when the cause is on the caller's side (credentials, entitlement, size) and a retry changes nothing — see the rungs below |
 | An incomplete `node_modules` on this machine (`yak-deps-not-installed`) | **`0`** — the same four-line `ERROR`/`slug:`/`fix:`/`docs:` block as the exit-`1` row above, but exit `0`: a broken install on the operator's machine isn't something the calling agent could have done differently |
 | No `bun` on PATH | **`1`** — the shim's own `eris-bun-missing` block, printed before any verb is routed; it is not yak-specific |
 | Accepted (fresh or replay) | **`0`** |
