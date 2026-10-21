@@ -297,13 +297,14 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # The npm package, @sibylline-labs/eris: this commit's source with the tag's version,
-  # published once every build leg's oracle is green. The `secrets` context is not
+  # published once every build leg's oracle is green and the GitHub release is out, so
+  # npm never carries a tag the release lacks. The `secrets` context is not
   # available to an `if`, so the job reads the token into `env` first and each step
   # tests that. No repository code runs here: npm with --ignore-scripts, and the token
   # is on disk for the last step alone.
   npm:
     name: npm (@sibylline-labs/eris)
-    needs: [plan, build]
+    needs: [plan, build, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -339,7 +340,7 @@ jobs:
         run: |
           if [[ "$PRERELEASE" == true ]]; then dist=next; else dist=latest; fi
           # A re-run after a publish succeeded: npm refuses a version twice, and the tag is already out.
-          if [[ "$(npm view "@sibylline-labs/eris@${TAG#v}" version 2>/dev/null)" == "${TAG#v}" ]]; then
+          if [[ "$(npm view --ignore-scripts "@sibylline-labs/eris@${TAG#v}" version 2>/dev/null)" == "${TAG#v}" ]]; then
             echo "@sibylline-labs/eris@${TAG#v} is already published"
             exit 0
           fi

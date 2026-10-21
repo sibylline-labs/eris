@@ -61,7 +61,8 @@ under a tag that names another.
    never names a release without them). Re-running updates the assets in place.
 4. **tap** renders the Homebrew formula and pushes it to the tap repository, for a
    stable release and only when the tap token is set (below).
-5. **npm** waits for **build** (so a red oracle leg publishes no package), stamps the
+5. **npm** waits for **build** and **publish** (so a red oracle leg or a failed GitHub
+   release publishes no package), stamps the
    tag's version into `package.json`, checks the tarball with `npm publish --dry-run`,
    and publishes it when the npm token is set (below).
 

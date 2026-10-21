@@ -94,9 +94,9 @@ describe.skipIf(checkoutOnly("reads the checkout's workflow files"))("the workfl
   describe("the npm job", () => {
     const npm = () => parsed("release.yml").jobs.npm!;
 
-    it("waits for the build and its oracle, and holds only read access", () => {
-      /** When the npm job stops waiting for the build job, a red oracle leg still publishes the package; when it gains write access, the code it runs can alter the repository. */
-      expect([npm().needs].flat().sort()).toEqual(["build", "plan"]);
+    it("waits for the build, its oracle and the GitHub release, and holds only read access", () => {
+      /** When the npm job stops waiting for the build job, a red oracle leg still publishes the package; when it stops waiting for the publish job, npm carries a tag whose GitHub release failed; when it gains write access, the code it runs can alter the repository. */
+      expect([npm().needs].flat().sort()).toEqual(["build", "plan", "publish"]);
       expect(npm().permissions).toEqual({ contents: "read" });
     });
 
