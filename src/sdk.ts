@@ -1,10 +1,11 @@
 /**
- * sdk.ts — `eris/sdk`, the one module another repository imports from this
- * package: a distribution's entry, its plugins and the libraries they share
+ * sdk.ts — `eris/sdk`, the one module through which another repository reaches
+ * core: a distribution's entry, its plugins and the libraries they share
  * (docs/dev/PLUGINS.md#distributions). The package's `exports` map names it,
  * `eris/sdk/testing` (the test helpers, testing/, which this module does not
- * export, so no binary carries them) and nothing deeper, so a core file can
- * move without breaking a distribution.
+ * export, so no binary carries them), `eris/yak-contract` (the Yaks wire
+ * contract, a workspace package of its own rather than core) and nothing
+ * deeper, so a core file can move without breaking a distribution.
  *
  * What it carries:
  *

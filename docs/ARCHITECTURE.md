@@ -16,12 +16,13 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
 - **`eris`** finds bun and execs `src/main.ts`. Nothing else.
 - **`src/main.ts`** routes every command line.
 - **`plugins/index.ts`** lists the plugins this build compiles in.
-- **`src/sdk.ts`** is `eris/sdk`, the one module another repository imports from this package
-  (the `exports` map names nothing deeper). A **distribution** depends on this package, composes
-  core with this build's plugins and its own, and compiles its own binary with `build()`
-  ([`dev/PLUGINS.md`](dev/PLUGINS.md#distributions)).
+- **`src/sdk.ts`** is `eris/sdk`, the one module through which another repository reaches core
+  (the `exports` map names `eris/sdk/testing` and `eris/yak-contract` beside it, nothing deeper).
+  A **distribution** depends on this package, composes core with this build's plugins and its own,
+  and compiles its own binary with `build()` ([`dev/PLUGINS.md`](dev/PLUGINS.md#distributions)).
 - **`packages/yak-contract`** is the Yaks wire contract v2, a bun workspace package that builds
-  standalone.
+  standalone. The `exports` map also names it, as `eris/yak-contract`, so a repository pinned to
+  this one imports the contract without core.
 
 `install.sh` (POSIX `sh`) has two modes. By default it downloads the release binary for this
 OS/arch with `curl`, checks it against the release's `SHA256SUMS` and installs it to
@@ -120,7 +121,8 @@ it is not a verb, but it renders JSON under `--output` and reads no file from th
 - **A distribution imports `eris/sdk` and nothing else of core.** The `exports` map refuses a
   deeper path; `distribution-imports-sdk-only` holds the example distribution to it. Its suites
   may also import `eris/sdk/testing` (`testing/`), which no source the binary bundles imports
-  (`runtime-imports-no-testing`).
+  (`runtime-imports-no-testing`). `eris/yak-contract` is not core: it is the workspace package
+  `packages/yak-contract`, which imports nothing of core (`tests/yak-contract-v2.test.ts`).
 - **Completion imports the registry and nothing else.** `source <(eris completion bash)` runs on
   every shell start, so a broken source file elsewhere must not break a login shell.
   `tests/completion.test.ts` corrupts every other verb and every plugin's handler code in a copied

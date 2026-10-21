@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { buildInChild } from "eris/sdk/testing";
 import { BUILD } from "../examples/distribution/build";
 import { DISTRIBUTION, DISTRIBUTION_PLUGINS, IDENTITY } from "../examples/distribution/main";
+import { deriveIdempotencyKey, YakSubmission } from "../packages/yak-contract/src/index";
 import yak from "../plugins/yak";
 import { build } from "../src/build";
 import { composeCli, PluginCompositionError } from "../src/cli/compose";
@@ -137,6 +138,13 @@ describe("the package's exports", () => {
     /** When a test helper moves into `eris/sdk` it ships in every distribution's SDK surface, and when one leaves the subpath a distribution's suites copy it again: observed through the package specifier, as a dependent repository's tests import it. */
     const testing = await import("eris/sdk/testing");
     expect(Object.keys(testing).sort()).toEqual(["buildInChild", "createFakeRunner"]);
+  });
+
+  it("eris/yak-contract resolves through the package's own exports map to the workspace contract package's module", async () => {
+    /** When the exports map loses `./yak-contract`, or maps it to a copy of the contract rather than packages/yak-contract, a repository pinned to this one that imports the contract stops building at its next pin bump (or validates against a second, drifting schema): observed through the package specifier, as a dependent repository imports it. */
+    const contract = await import("eris/yak-contract");
+    expect(contract.deriveIdempotencyKey).toBe(deriveIdempotencyKey);
+    expect(contract.YakSubmission).toBe(YakSubmission);
   });
 });
 
