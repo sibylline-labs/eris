@@ -4,7 +4,7 @@ Three verbs an agent (or a human) can invoke inline when the harness fights back
 a broken tool, a confusing error, a config gap — or could serve them better, and never for the task's own
 outcome. `eris yak` redacts, resolves identity, derives a dedup key, makes one
 bounded HTTP call to a Yaks endpoint, and gets out
-of the way. Everything after the `200` — clustering, issue-tracker writes,
+of the way. Everything after the receipt — clustering, issue-tracker writes,
 incident routing — belongs to the endpoint, not to this CLI.
 
 ```
@@ -157,6 +157,24 @@ that needs to be read verbatim; it does not exist to work around a
 false-positive scrub eating a legitimate report — if that happens, file it as
 its own `eris yak issue` against the redaction pass.
 
+## The wire contract
+
+`eris yak` speaks the Yaks submission contract v2, the workspace package
+`@sibylline-labs/yak-contract` ([`packages/yak-contract`](../packages/yak-contract)),
+imported by name rather than vendored as a copy. One call per report:
+
+- `POST <url>/v1/yaks` with `Authorization: Bearer <token>`. The ingress
+  answers `202` with a receipt `{id, idempotency_key, replay, contract_version}`;
+  any `2xx` whose body is a receipt counts as delivered, whatever the
+  `contract_version` string says.
+- `route` is always `"workspace"`: the report files into the caller's own
+  tenant. It is not an input to the idempotency key.
+- There is no `reporter`. The ingress derives the tracker user from the bearer
+  token, so the CLI sends no identity of its own.
+- `schema_version` is the package's `YAKS_CONTRACT_VERSION`. The body is
+  validated against the package's `YakSubmission` before the request, so a field
+  the contract would refuse never leaves the machine.
+
 ## Idempotency and replay
 
 Every submission derives a dedup key from `{device_id, execution_id, verb,
@@ -172,8 +190,8 @@ The contract exposes no server-side mismatch signal on the receipt itself
 (only a server console warning, invisible to the client). The one drift check
 `eris yak` can make is comparing its own locally-derived key against the
 receipt's `idempotency_key` — a mismatch prints a `yak-key-mismatch` warning
-alongside a still-successful delivery. It is a symptom of the vendored
-contract (`plugins/yak/yaks-schema.v1.ts`) drifting from the endpoint's own copy, not
+alongside a still-successful delivery. It is a symptom of this CLI's contract
+package (`packages/yak-contract`) drifting from the endpoint's derivation, not
 something a caller needs to act on.
 
 ## Repro
@@ -182,9 +200,9 @@ something a caller needs to act on.
 reported — a failing test invocation, a `curl`/`eris` one-liner, a short
 repro script's entry point. It rides on the wire inside `provenance` (as
 `provenance.repro.command`) rather than as a new top-level field on
-`YakSubmission`: that contract is vendored
-(`plugins/yak/yaks-schema.v1.ts`), owned by the server, and not something
-this CLI can extend on its own — `YakProvenance`'s `.catchall()` exists
+`YakSubmission`: that contract is the workspace package
+`@sibylline-labs/yak-contract` ([The wire contract](#the-wire-contract)), and
+not something this CLI can extend on its own — `YakProvenance`'s `.catchall()` exists
 precisely so a CLI-side addition like this one doesn't have to wait on a
 contract bump. It is redacted the same as `evidence` (a repro command can
 itself embed a credential — `curl -H "Authorization: Bearer …"` is a
@@ -220,7 +238,7 @@ command — structurally cannot happen here: there is no production
 credential in `eris yak`'s own process to leak.
 
 That is the client-side half of the requirement. **Actually rerunning the
-repro is the Yaks endpoint's job, not this CLI's** — "everything after the 200 —
+repro is the Yaks endpoint's job, not this CLI's** — "everything after the receipt —
 clustering, issue-tracker writes, incident routing — belongs to the endpoint"
 (see the top of this doc), and the same split applies to a rerun: only the
 endpoint (or whatever runner it dispatches to) has cluster state and knows when
@@ -269,11 +287,13 @@ moves on.
 
 **On the wire.** Like `repro`, this rides inside `provenance` rather than as
 a new top-level field on `YakSubmission` — the same non-breaking,
-forward-compatible reason (`YakSubmission`'s contract is vendored, and this
-CLI doesn't own it). Unlike `repro`, it lands in the
+forward-compatible reason (`YakSubmission` is the contract package's, and this
+CLI doesn't extend it). Unlike `repro`, it lands in the
 `provenance.repo` category the CLI already had (`provenance.repo.service`,
 the nearest `eris.yaml`'s declared service — see `plugins/yak/yak-context.ts`), as
-`provenance.repo.target_repos`, always an array even for a single hint. It
+`provenance.repo.target_repos`, always an array even for a single hint. The
+contract types that one key and bounds it (at most 20 hints of at most 200
+chars each), the same limits this CLI checks locally first. It
 does not participate in the idempotency-key derivation, for the same reason
 `repro` doesn't: attaching or changing a target-repo hint should never fork a
 fresh cluster off a report that's otherwise identical, and the same
@@ -283,11 +303,11 @@ replay](#idempotency-and-replay) applies here too — resubmitting the same
 and the new hint is never stored or seen server-side.
 
 **Surfacing it on the rendered issue is the endpoint's work, not this CLI's.**
-Exactly the same split as everything after the `200` (see the top of this
+Exactly the same split as everything after the receipt (see the top of this
 doc): this CLI captures and transmits `provenance.repo.target_repos`;
 rendering it into the issue belongs to the endpoint's issue-tracker write path.
 
-## What a `200` does not promise
+## What a receipt does not promise
 
 **A receipt is not a promise that an issue was created.** The endpoint accepts,
 stores, and deduplicates every well-formed submission — but it may also

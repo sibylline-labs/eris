@@ -2,8 +2,9 @@
  * Yaks wire contract v2: the shapes an `eris` client posts
  * to the Yaks ingest API, and the shapes the service stores and reports back.
  *
- * Derived from the v1 contract (`plugins/yak/yaks-schema.v1.ts`, contract
- * version 1.0.0). Whatever is not listed here is v1 unchanged. The deltas:
+ * Derived from the v1 contract (contract version 1.0.0, which `eris yak`
+ * spoke before it imported this package). Whatever is not listed here is v1
+ * unchanged. The deltas:
  *  - `reporter` is gone. The server derives the tracker user from the caller's
  *    token. A client's git identity may still ride in `provenance.git` as a hint
  *    and is never an identity claim. Unknown keys are stripped, as in v1, so a

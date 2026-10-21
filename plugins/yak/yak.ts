@@ -39,7 +39,6 @@ import {
   resolveUrl,
   resolveDeviceId,
   resolveExecutionId,
-  resolveReporter,
 } from "./yak-identity";
 import { erisHome, groupArgs, readArgs, renderFailureBlock, renderWarnLines } from "../../src/cli/plugin";
 import plugin from "./index";
@@ -55,7 +54,7 @@ import {
   type YakOutputRecord,
 } from "./yak-submit";
 import { formatRedactionSummary } from "./yak-redact";
-import type { YakVerb } from "./yaks-schema.v1";
+import type { YakVerb } from "@sibylline-labs/yak-contract";
 
 // ---------------------------------------------------------------------------
 // Argv parsing
@@ -397,7 +396,6 @@ export async function runYak(opts: RunYakOptions): Promise<RunYakResult> {
   }
 
   const executionId = resolveExecutionId(env, opts.ppid ?? process.ppid).value;
-  const reporter = await resolveReporter(opts.cwd ?? process.cwd());
   const provenance = await gatherProvenance({ env, cwd: opts.cwd, ppid: opts.ppid });
 
   // --- submit ---------------------------------------------------------------
@@ -411,7 +409,6 @@ export async function runYak(opts: RunYakOptions): Promise<RunYakResult> {
     noRedact: flags.noRedact,
     deviceId: deviceIdOutcome.value,
     executionId,
-    reporter,
     provenance,
     url: urlOutcome.value,
     token: tokenOutcome.value,

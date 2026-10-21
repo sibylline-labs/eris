@@ -17,6 +17,7 @@ import { describe, it, expect } from "bun:test";
 import { mkdtemp, rm, writeFile, chmod, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { YakSubmission, YAKS_CONTRACT_VERSION } from "@sibylline-labs/yak-contract";
 import { parseArgv, runYak, type RunYakOptions } from "../plugins/yak/yak";
 
 // ============================================================================
@@ -550,7 +551,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-fresh",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -581,7 +582,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-replay",
           idempotency_key: body.idempotency_key,
           replay: true,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -612,7 +613,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-repro",
           idempotency_key: sentBody.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -627,7 +628,7 @@ describe("runYak — delivered (exit 0)", () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe("recorded: obs-repro\n");
       expect(sentBody.provenance.repro).toEqual({ command: "eris config check dev" });
-      // `repro` is not part of the vendored `YakSubmission` top-level shape —
+      // `repro` is not part of the contract's `YakSubmission` top-level shape —
       // it must never leak in as a sibling of summary/body/evidence.
       expect(sentBody.repro).toBeUndefined();
     } finally {
@@ -647,7 +648,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-norepro",
           idempotency_key: sentBody.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -678,7 +679,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-json",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -698,7 +699,7 @@ describe("runYak — delivered (exit 0)", () => {
         id: "obs-json",
         idempotency_key: expect.any(String),
         replay: false,
-        contract_version: "1.0.0",
+        contract_version: YAKS_CONTRACT_VERSION,
         key_mismatch: false,
         redactions: { count: 0, classes: [], skipped: false },
       });
@@ -724,7 +725,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-mismatch-json",
           idempotency_key: "not-what-we-derived",
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         }),
     });
     try {
@@ -756,7 +757,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-mismatch",
           idempotency_key: "not-what-we-derived",
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         }),
     });
     try {
@@ -786,7 +787,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-noredact",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -823,7 +824,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-noredact-json",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -842,6 +843,85 @@ describe("runYak — delivered (exit 0)", () => {
       // paired absence: no "WARN --no-redact" text anywhere — not truncated,
       // not folded into another field, gone from the stream entirely.
       expect(result.stderr).toBe("");
+    } finally {
+      server.stop(true);
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+});
+
+// The ingress answers a new report with 202 and a v2 receipt. Both renderings
+// are driven through `runYak` against a loopback listener that records what it
+// was sent, so the request is observed on the wire rather than inferred from
+// the code that builds it.
+describe("runYak — the ingress contract v2 (202 + v2 receipt, route workspace)", () => {
+  /** A loopback ingress answering 202 + a v2 receipt, recording each request's path and body. */
+  function acceptingIngress() {
+    const requests: Array<{ path: string; body: unknown }> = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const body = (await req.json()) as { idempotency_key: string };
+        requests.push({ path: new URL(req.url).pathname, body });
+        return Response.json(
+          { id: "obs-v2", idempotency_key: body.idempotency_key, replay: false, contract_version: "2.0.0" },
+          { status: 202 },
+        );
+      },
+    });
+    return { server, requests };
+  }
+
+  it("text mode: a 202 prints the receipt id on stdout, and the one POST strict-parses as a workspace submission", async () => {
+    // When the client posts a body the v2 contract refuses, or treats the ingress's 202 as a
+    // failure, an agent's report is dropped or reported as undelivered — observed at the CLI
+    // seam as the receipt id missing from stdout, or the captured body failing `YakSubmission.strict()`.
+    const home = await freshHome();
+    const { server, requests } = acceptingIngress();
+    try {
+      const result = await runYak(
+        baseOpts({
+          argv: ["issue", "--summary", "s", "--body", "b"],
+          env: { ERIS_YAKS_URL: server.url.toString(), ERIS_YAKS_TOKEN: "t" },
+          home,
+          cwd: home,
+        }),
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toBe("recorded: obs-v2\n");
+      // positive: exactly one request reached the ingress, at the v2 path
+      expect(requests.map((r) => r.path)).toEqual(["/v1/yaks"]);
+      expect(YakSubmission.strict().safeParse(requests[0]!.body).success).toBe(true);
+      expect(requests[0]!.body).toMatchObject({ schema_version: "2.0.0", route: "workspace" });
+      expect("reporter" in (requests[0]!.body as object)).toBe(false);
+    } finally {
+      server.stop(true);
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("json mode: a 202 yields delivered:true and contract_version 2.0.0 in the one record", async () => {
+    // When the client reports a 202 as undelivered, or a receipt's contract_version is lost in
+    // the record, a machine caller branches on a false failure — observed as `delivered` and
+    // `contract_version` in the record `--output json` prints.
+    const home = await freshHome();
+    const { server, requests } = acceptingIngress();
+    try {
+      const result = await runYak(
+        baseOpts({
+          argv: ["issue", "--summary", "s", "--body", "b"],
+          env: { ERIS_YAKS_URL: server.url.toString(), ERIS_YAKS_TOKEN: "t", ERIS_OUTPUT: "json" },
+          home,
+          cwd: home,
+        }),
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe("");
+      const record = JSON.parse(result.stdout);
+      expect(record).toMatchObject({ verb: "issue", delivered: true, id: "obs-v2", contract_version: "2.0.0", replay: false });
+      expect(requests).toHaveLength(1);
+      expect(YakSubmission.strict().safeParse(requests[0]!.body).success).toBe(true);
     } finally {
       server.stop(true);
       await rm(home, { recursive: true, force: true });
@@ -871,7 +951,7 @@ describe("runYak — redaction summary wiring (text mode stderr)", () => {
           id: "obs-f4-delivered",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -923,7 +1003,7 @@ describe("runYak — redaction summary wiring (text mode stderr)", () => {
           id: "obs-f4-json",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -958,7 +1038,7 @@ describe("runYak — redaction summary wiring (text mode stderr)", () => {
           id: "obs-f4-clean",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -1042,7 +1122,7 @@ describe("runYak — --repo target-repo hints", () => {
       port: 0,
       fetch: async (req) => {
         sentBody = await req.json();
-        return Response.json({ id: "obs-repo-1", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: "1.0.0" });
+        return Response.json({ id: "obs-repo-1", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
     });
     try {
@@ -1057,7 +1137,7 @@ describe("runYak — --repo target-repo hints", () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe("recorded: obs-repo-1\n");
       expect(sentBody.provenance.repo.target_repos).toEqual(["acme/widgets"]);
-      // paired absence: never a sibling top-level field on the vendored submission
+      // paired absence: never a sibling top-level field on the submission
       expect(sentBody.repo).toBeUndefined();
     } finally {
       server.stop(true);
@@ -1072,7 +1152,7 @@ describe("runYak — --repo target-repo hints", () => {
       port: 0,
       fetch: async (req) => {
         sentBody = await req.json();
-        return Response.json({ id: "obs-repo-2", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: "1.0.0" });
+        return Response.json({ id: "obs-repo-2", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
     });
     try {
@@ -1098,7 +1178,7 @@ describe("runYak — --repo target-repo hints", () => {
       port: 0,
       fetch: async (req) => {
         sentBody = await req.json();
-        return Response.json({ id: "obs-repo-3", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: "1.0.0" });
+        return Response.json({ id: "obs-repo-3", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
     });
     try {
@@ -1127,7 +1207,7 @@ describe("runYak — --repo target-repo hints", () => {
       port: 0,
       fetch: async (req) => {
         sentBody = await req.json();
-        return Response.json({ id: "obs-repo-4", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: "1.0.0" });
+        return Response.json({ id: "obs-repo-4", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
     });
     try {
@@ -1156,7 +1236,7 @@ describe("runYak — --repo target-repo hints", () => {
       port: 0,
       fetch: async (req) => {
         sentBody = await req.json();
-        return Response.json({ id: "obs-repo-5", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: "1.0.0" });
+        return Response.json({ id: "obs-repo-5", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
     });
     try {
@@ -1184,7 +1264,7 @@ describe("runYak — --repo target-repo hints", () => {
       port: 0,
       fetch: async (req) => {
         sentBody = await req.json();
-        return Response.json({ id: "obs-repo-6", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: "1.0.0" });
+        return Response.json({ id: "obs-repo-6", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
     });
     try {

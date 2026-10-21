@@ -32,11 +32,12 @@ import { redact } from "../plugins/yak/yak-redact";
 import {
   deriveIdempotencyKey,
   YakReceipt,
+  YakSubmission,
   YAKS_CONTRACT_VERSION,
   YAK_BODY_MAX_LENGTH,
   YAK_ID_MAX_LENGTH,
   YAK_SUMMARY_MAX_LENGTH,
-} from "../plugins/yak/yaks-schema.v1";
+} from "@sibylline-labs/yak-contract";
 
 // ============================================================================
 // resolveTextInputs
@@ -1307,11 +1308,11 @@ describe("submitYak — response-shape outcomes over a real Bun.serve listener",
     }
   });
 
-  it("a receipt with a contract_version this CLI hasn't re-vendored (e.g. 1.1.0) is still DELIVERED, not a false failure", async () => {
-    // `YakReceipt.contract_version` in the vendored schema is
+  it("a receipt with a contract_version newer than this CLI's package (e.g. 2.1.0) is still DELIVERED, not a false failure", async () => {
+    // `YakReceipt.contract_version` in the contract package is
     // `z.literal(YAKS_CONTRACT_VERSION)` — a bare literal. An Actor that
-    // ships a version bump before this CLI re-vendors must not turn every
-    // one of its now-durably-stored deliveries into a reported
+    // ships a version bump before this CLI's package catches up must not
+    // turn every one of its now-durably-stored deliveries into a reported
     // delivered:false; only `id`/`idempotency_key`/`replay` are load-bearing
     // to the CLI's own logic (step 7's key comparison).
     const server = Bun.serve({
@@ -1322,7 +1323,7 @@ describe("submitYak — response-shape outcomes over a real Bun.serve listener",
           id: "obs-future-version",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.1.0",
+          contract_version: "2.1.0",
         });
       },
     });
@@ -1331,14 +1332,16 @@ describe("submitYak — response-shape outcomes over a real Bun.serve listener",
       expect(result.status).toBe("delivered");
       if (result.status !== "delivered") throw new Error("unreachable");
       expect(result.receipt.id).toBe("obs-future-version");
-      expect(result.receipt.contract_version).toBe("1.1.0");
+      expect(result.receipt.contract_version).toBe("2.1.0");
       expect(result.keyMismatch).toBe(false);
     } finally {
       server.stop(true);
     }
   });
 
-  it("POSTs to <url>/v0/yaks with a Bearer token and JSON content-type, and never retries", async () => {
+  it("POSTs to <url>/v1/yaks with a Bearer token and JSON content-type, and never retries", async () => {
+    // When the ingress path drifts from the endpoint's, every report 404s and is dropped as a
+    // transport warn, so this goes red — observed as the path the loopback listener receives.
     const seen = { calls: 0, path: "", auth: null as string | null };
     const server = Bun.serve({
       port: 0,
@@ -1353,8 +1356,75 @@ describe("submitYak — response-shape outcomes over a real Bun.serve listener",
     try {
       await submitYak({ ...BASE_PARAMS, url: `${server.url.toString()}`.replace(/\/$/, ""), token: "s3cr3t" });
       expect(seen.calls).toBe(1);
-      expect(seen.path).toBe("/v0/yaks");
+      expect(seen.path).toBe("/v1/yaks");
       expect(seen.auth).toBe("Bearer s3cr3t");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  it("the POSTed body is a v2 submission: strict-parses with route 'workspace', no reporter, and the package's own idempotency key", async () => {
+    // When the client posts a body the v2 contract refuses (the v1 schema_version, no route, a
+    // leftover reporter) or a key the server's derivation disagrees with, ingest answers 400 or
+    // files the report twice and the yak is lost — observed as the body the loopback listener
+    // receives failing `YakSubmission.strict()` or its key differing from `deriveIdempotencyKey`.
+    let sent: Record<string, unknown> | undefined;
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        sent = (await req.json()) as Record<string, unknown>;
+        return Response.json(freshReceipt({ idempotency_key: sent.idempotency_key }));
+      },
+    });
+    try {
+      const result = await submitYak({
+        ...BASE_PARAMS,
+        evidence: "stack trace line",
+        repoHints: ["acme/widgets"],
+        url: server.url.toString(),
+        token: "t",
+      });
+      expect(result.status).toBe("delivered");
+      // positive: the listener really received a body, so the checks below never pass on nothing
+      expect(sent).toBeDefined();
+      const parsed = YakSubmission.strict().safeParse(sent);
+      expect(parsed.success).toBe(true);
+      expect(sent).toMatchObject({ schema_version: "2.0.0", route: "workspace", verb: "issue" });
+      expect("reporter" in sent!).toBe(false);
+      // `route` is not an input to the derivation: the package's function takes no route and
+      // names the key a workspace report and a vendor report share.
+      expect(sent!.idempotency_key).toBe(
+        await deriveIdempotencyKey({
+          device_id: BASE_PARAMS.deviceId,
+          execution_id: BASE_PARAMS.executionId,
+          verb: BASE_PARAMS.verb,
+          summary: BASE_PARAMS.summary,
+          body: BASE_PARAMS.body,
+          evidence: "stack trace line",
+        }),
+      );
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  it("a 202 with a valid receipt is a delivery, not a transport warn", async () => {
+    // When a 202 (the status the ingress answers with) were treated as anything but
+    // a delivery, every accepted report would surface as a transport warn — observed as
+    // `submitYak` returning "delivered" with the receipt the 202 carried.
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const body = await req.json();
+        return Response.json(freshReceipt({ id: "obs-202", idempotency_key: body.idempotency_key }), { status: 202 });
+      },
+    });
+    try {
+      const result = await submitYak({ ...BASE_PARAMS, url: server.url.toString(), token: "t" });
+      expect(result.status).toBe("delivered");
+      if (result.status !== "delivered") throw new Error("unreachable");
+      expect(result.receipt.id).toBe("obs-202");
+      expect(result.keyMismatch).toBe(false);
     } finally {
       server.stop(true);
     }

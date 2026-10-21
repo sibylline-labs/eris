@@ -386,7 +386,7 @@ The `evidence` field exceeds 20000 chars. Same cause and fix as
 
 The (redacted) `--repro <command>` exceeds 2000 chars — a local
 courtesy bound, not a wire-contract one: `repro` rides inside `provenance`
-(`provenance.repro.command`), which the vendored contract never
+(`provenance.repro.command`), which the contract package never
 length-validates. Caught locally anyway, same reasoning as
 [`yak-summary-too-long`](#yak-summary-too-long) — a repro is a command, not a
 narrative, so 2000 chars is generous headroom over any real invocation. Fix:
@@ -396,9 +396,10 @@ shorten it — redaction can grow text, so check the real length with
 ### yak-repo-too-long
 
 A (redacted) `--repo <owner/name>` hint exceeds 200 chars — a
-local courtesy bound, not a wire-contract one: a target-repo hint rides
-inside `provenance` (`provenance.repo.target_repos`), which the vendored
-contract never length-validates. Caught locally anyway, same reasoning as
+target-repo hint rides
+inside `provenance` (`provenance.repo.target_repos`), which the contract
+package types and bounds at the same 200 chars. Caught here first, so the
+error names `--repo` rather than a generic payload failure, same reasoning as
 [`yak-repro-too-long`](#yak-repro-too-long) — a hint is a short `owner/name`
 identifier, so 200 chars is generous headroom over any real one. Fix:
 shorten it — redaction can grow text, so check the real length with
@@ -414,8 +415,8 @@ concerns.
 
 ### yak-payload-invalid
 
-Local validation against the vendored Yaks contract
-(`plugins/yak/yaks-schema.v1.ts`) failed for a reason other than a length bound
+Local validation against the Yaks contract package
+(`@sibylline-labs/yak-contract`) failed for a reason other than a length bound
 (e.g. an empty required field after redaction). The `ERROR` line names the
 field and the schema's message.
 
@@ -473,8 +474,8 @@ default). No retry — matches the registry transport's own posture. Warn + exit
 ### yak-transport-error
 
 The Yaks endpoint responded, but not usably: a non-2xx status, an unparseable
-200 body, or a 200 that does not match the receipt contract
-(`YakReceipt` in `plugins/yak/yaks-schema.v1.ts`). Warn + exit 0; the `WARN` line
+2xx body, or a 2xx that does not match the receipt contract
+(`YakReceipt` in `@sibylline-labs/yak-contract`). Warn + exit 0; the `WARN` line
 names the HTTP status or the parse failure.
 
 ### yak-config-permissive

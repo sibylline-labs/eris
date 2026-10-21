@@ -17,7 +17,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "zod": "^3.23.0"
+    "zod": "^3.23.0",
+    "@sibylline-labs/yak-contract": "workspace:*"
   },
   "devDependencies": {
     "ajv": "8.20.0",
