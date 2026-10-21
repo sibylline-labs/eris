@@ -83,7 +83,7 @@ the diagnostics move entirely onto stdout's record — see below.
 | Situation | Exit |
 |---|---|
 | Missing `--summary`/`--body`, an unreadable `--body-file`, `--body-file -` with no pipe, an over-length field, an unknown verb or flag | **`1`** — the four-line `ERROR`/`slug:`/`fix:`/`docs:` block, same contract as every other eris failure |
-| Unresolved token/URL/device-id, an unreachable endpoint, a timeout, a non-2xx response | **`0`** — one `WARN` line + slug on stderr, empty stdout in text mode |
+| Unresolved token/URL/device-id, an unreachable endpoint, a timeout, a non-2xx response | **`0`** — one `WARN` line + slug on stderr, empty stdout in text mode. A non-2xx status gets its own slug when the cause is local and a retry changes nothing — see the rungs below |
 | An incomplete `node_modules` on this machine (`yak-deps-not-installed`) | **`0`** — the same four-line `ERROR`/`slug:`/`fix:`/`docs:` block as the exit-`1` row above, but exit `0`: a broken install on the operator's machine isn't something the calling agent could have done differently |
 | No `bun` on PATH | **`1`** — the shim's own `eris-bun-missing` block, printed before any verb is routed; it is not yak-specific |
 | Accepted (fresh or replay) | **`0`** |
@@ -95,6 +95,23 @@ network right now is not — failing the task over the operator's local
 environment would be worse than the problem this feature exists to report. So
 **environment, config, and transport problems never fail the task** — they warn
 on stderr and let the calling command continue.
+
+### Rungs for a non-2xx response
+
+Every non-2xx response is `WARN` + exit `0`. The endpoint's refusals that a
+retry does not fix get their own slug, so the `WARN` line (and `error.slug`
+under `--output json`) names the remedy instead of a generic transport failure:
+
+| Status | Slug | Meaning and fix |
+|---|---|---|
+| `401` | [`yak-unauthorized`](ERRORS.md#yak-unauthorized) | The endpoint rejected the bearer token. Check `~/.eris/yaks.json` / `ERIS_YAKS_TOKEN`, and that the token is registered. |
+| `402` | [`yak-not-entitled`](ERRORS.md#yak-not-entitled) | The workspace is not entitled to Yaks (plan or seat). |
+| `413` | [`yak-payload-too-large`](ERRORS.md#yak-payload-too-large) | The submission exceeded the endpoint's whole-body size cap. Trim `--evidence`. |
+| any other non-2xx | [`yak-transport-error`](ERRORS.md#yak-transport-error) | An outage, a missing route, a proxy page: no local remedy is known. |
+
+Each rung's `ERRORS.md` entry notes that a problem with eris itself is reported
+on the vendor route, the eris project's own tracker, rather than into the
+workspace.
 
 ### `--output json`
 

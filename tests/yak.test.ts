@@ -929,6 +929,123 @@ describe("runYak — the ingress contract v2 (202 + v2 receipt, route workspace)
   });
 });
 
+describe("runYak — the ingress refuses the report (401, 402, 413 each warn on their own slug; exit 0)", () => {
+  /** A loopback ingress answering `status` to every request, recording what reached it. */
+  function refusingIngress(status: number) {
+    const requests: Array<{ method: string; path: string; body: unknown }> = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        requests.push({ method: req.method, path: new URL(req.url).pathname, body: await req.json() });
+        return new Response("refused", { status });
+      },
+    });
+    return { server, requests };
+  }
+
+  /** The one request reached the ingress as a v2 workspace submission — so a refusal is never
+   *  asserted by the absence of a receipt alone. */
+  function expectOneWorkspaceSubmission(requests: Array<{ method: string; path: string; body: unknown }>) {
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.method).toBe("POST");
+    expect(requests[0]!.path).toBe("/v1/yaks");
+    const parsed = YakSubmission.strict().safeParse(requests[0]!.body);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) throw new Error("unreachable");
+    expect(parsed.data.route).toBe("workspace");
+  }
+
+  const RUNGS = [
+    [401, "yak-unauthorized"],
+    [402, "yak-not-entitled"],
+    [413, "yak-payload-too-large"],
+  ] as const;
+
+  for (const [status, slug] of RUNGS) {
+    it(`${status}: text mode — stdout empty, WARN naming the status, slug ${slug}, exit 0`, async () => {
+      // When the client folds a refusal into `yak-transport-error` (or drops the status from the
+      // reason), an agent cannot tell a rejected token or a missing entitlement from an outage —
+      // observed at the CLI seam as the `slug:` line and the status on stderr.
+      const home = await freshHome();
+      const { server, requests } = refusingIngress(status);
+      try {
+        const result = await runYak(
+          baseOpts({
+            argv: ["issue", "--summary", "s", "--body", "b"],
+            env: { ERIS_YAKS_URL: server.url.toString(), ERIS_YAKS_TOKEN: "t" },
+            home,
+            cwd: home,
+          }),
+        );
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toBe("");
+        expect(result.stderr).toMatch(new RegExp(`^WARN .*${status}`, "m"));
+        expect(result.stderr).toContain(`slug: ${slug}`);
+        expect(result.stderr).not.toContain("ERROR ");
+        expectOneWorkspaceSubmission(requests);
+      } finally {
+        server.stop(true);
+        await rm(home, { recursive: true, force: true });
+      }
+    });
+
+    it(`${status}: json mode — one record with delivered:false and error.slug ${slug}, stderr empty, exit 0`, async () => {
+      // When the rung's slug is lost on the machine surface, a caller branching on `error.slug`
+      // cannot tell a fixable refusal from a transient outage — observed as `error.slug` in the
+      // one record `--output json` prints.
+      const home = await freshHome();
+      const { server, requests } = refusingIngress(status);
+      try {
+        const result = await runYak(
+          baseOpts({
+            argv: ["issue", "--summary", "s", "--body", "b"],
+            env: { ERIS_YAKS_URL: server.url.toString(), ERIS_YAKS_TOKEN: "t", ERIS_OUTPUT: "json" },
+            home,
+            cwd: home,
+          }),
+        );
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout.trimEnd().split("\n")).toHaveLength(1);
+        const record = JSON.parse(result.stdout);
+        expect(record.delivered).toBe(false);
+        expect(record.error.slug).toBe(slug);
+        expect(record.error.reason).toContain(String(status));
+        expect(result.stderr).toBe("");
+        expectOneWorkspaceSubmission(requests);
+      } finally {
+        server.stop(true);
+        await rm(home, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it("503: stays yak-transport-error — WARN, exit 0 (an outage is not one of the refusals)", async () => {
+    // When the status table swallows every non-2xx (or an unlisted status picks a rung), a
+    // transient outage gets a remedy that sends the operator to fix a token that is fine —
+    // observed at the CLI seam as the `slug:` line.
+    const home = await freshHome();
+    const { server, requests } = refusingIngress(503);
+    try {
+      const result = await runYak(
+        baseOpts({
+          argv: ["issue", "--summary", "s", "--body", "b"],
+          env: { ERIS_YAKS_URL: server.url.toString(), ERIS_YAKS_TOKEN: "t" },
+          home,
+          cwd: home,
+        }),
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toMatch(/^WARN .*503/m);
+      expect(result.stderr).toContain("slug: yak-transport-error");
+      expectOneWorkspaceSubmission(requests);
+    } finally {
+      server.stop(true);
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+});
+
 // `yak.ts::runYak` has two wiring
 // blocks calling `formatRedactionSummary` (the warn path and the delivered
 // path), both gated on `!jsonOutput && redaction.count > 0`. Neither block

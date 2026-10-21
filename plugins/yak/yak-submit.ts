@@ -335,9 +335,47 @@ export type SubmitWarnSlug =
   | "yak-url-unresolved"
   | "yak-unreachable"
   | "yak-timeout"
+  | "yak-unauthorized"
+  | "yak-not-entitled"
+  | "yak-payload-too-large"
   | "yak-transport-error"
   | "yak-identity-id-too-long"
   | "yak-redaction-overflow";
+
+/**
+ * The endpoint's refusals that no retry fixes and the operator can act on:
+ * its HTTP status -> the warn slug plus the local remedy the reason ends with.
+ * Every other non-2xx stays `yak-transport-error` (an outage, a missing route,
+ * a proxy page), because no local remedy is known for it. All are WARN + exit
+ * 0 like the rest of this union.
+ *
+ * The remedies are local ones only. The reasons do not point at the vendor
+ * route; `docs/ERRORS.md` carries that pointer.
+ */
+const REFUSAL_BY_STATUS: ReadonlyMap<number, { slug: SubmitWarnSlug; remedy: string }> = new Map([
+  [
+    401,
+    {
+      slug: "yak-unauthorized",
+      remedy:
+        "the endpoint rejected the bearer token; check the token in ~/.eris/yaks.json or ERIS_YAKS_TOKEN, and that it is registered with the endpoint",
+    },
+  ],
+  [
+    402,
+    {
+      slug: "yak-not-entitled",
+      remedy: "this workspace is not entitled to Yaks (its plan or seat does not include it)",
+    },
+  ],
+  [
+    413,
+    {
+      slug: "yak-payload-too-large",
+      remedy: "the submission exceeded the endpoint's whole-body size cap; trim --evidence",
+    },
+  ],
+]);
 
 export type SubmitMisuseSlug =
   | "yak-summary-too-long"
@@ -1009,10 +1047,11 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
     }
 
     if (!response.ok) {
+      const refusal = REFUSAL_BY_STATUS.get(response.status);
       return {
         status: "warn",
-        slug: "yak-transport-error",
-        reason: `yaks endpoint responded ${response.status}${response.statusText ? ` ${response.statusText}` : ""} for ${url}`,
+        slug: refusal?.slug ?? "yak-transport-error",
+        reason: `yaks endpoint responded ${response.status}${response.statusText ? ` ${response.statusText}` : ""} for ${url}${refusal ? ` — ${refusal.remedy}` : ""}`,
         redaction,
         idempotencyKey,
       };

@@ -471,12 +471,42 @@ delivered; the agent's task is unaffected.
 The Yaks endpoint did not respond within the bounded request window (30s
 default). No retry — matches the registry transport's own posture. Warn + exit 0.
 
+### yak-unauthorized
+
+The Yaks endpoint answered `401`: it rejected the bearer token. Check the
+`"token"` in `~/.eris/yaks.json` or `ERIS_YAKS_TOKEN`, and that the token is
+registered with the endpoint. Retrying the same call changes nothing. Warn +
+exit 0; the report was dropped, not delivered, and the agent's task is
+unaffected. A problem with eris itself is reported on the vendor route, the eris
+project's own tracker, rather than into the workspace.
+
+### yak-not-entitled
+
+The Yaks endpoint answered `402`: the workspace is not entitled to Yaks (its
+plan or seat does not include it). Ask whoever administers the workspace;
+nothing on this machine fixes it. Warn + exit 0; the report was dropped, not
+delivered, and the agent's task is unaffected. A problem with eris itself is
+reported on the vendor route, the eris project's own tracker, rather than into the
+workspace.
+
+### yak-payload-too-large
+
+The Yaks endpoint answered `413`: the submission exceeded the endpoint's
+whole-body size cap. The per-field length checks pass locally first, so the sum
+is what overflowed; trim `--evidence`, the largest field. Warn + exit 0; the
+report was dropped, not delivered, and the agent's task is unaffected. A problem
+with eris itself is reported on the vendor route, the eris project's own tracker,
+rather than into the workspace.
+
 ### yak-transport-error
 
-The Yaks endpoint responded, but not usably: a non-2xx status, an unparseable
-2xx body, or a 2xx that does not match the receipt contract
-(`YakReceipt` in `@sibylline-labs/yak-contract`). Warn + exit 0; the `WARN` line
-names the HTTP status or the parse failure.
+The Yaks endpoint responded, but not usably: a non-2xx status other than the
+`401`, `402` and `413` that have their own slugs
+([`yak-unauthorized`](#yak-unauthorized), [`yak-not-entitled`](#yak-not-entitled),
+[`yak-payload-too-large`](#yak-payload-too-large)), an unparseable 2xx body, or a
+2xx that does not match the receipt contract (`YakReceipt` in
+`@sibylline-labs/yak-contract`). Warn + exit 0; the `WARN` line names the HTTP
+status or the parse failure.
 
 ### yak-config-permissive
 

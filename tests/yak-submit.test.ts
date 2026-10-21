@@ -27,6 +27,7 @@ import {
   YAK_REPO_HINTS_MAX_COUNT,
   type RawTextInputs,
   type SubmitParams,
+  type SubmitWarnSlug,
 } from "../plugins/yak/yak-submit";
 import { redact } from "../plugins/yak/yak-redact";
 import {
@@ -1241,46 +1242,57 @@ describe("submitYak — response-shape outcomes over a real Bun.serve listener",
     }
   });
 
-  it("400: warn, yak-transport-error, names the status", async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch: async () => new Response(JSON.stringify({ error: "bad request" }), { status: 400 }),
+  // The status -> slug table. 401/402/413 are the endpoint refusing the report (a token, an
+  // entitlement, a size cap: each fixable locally); every other non-2xx stays the generic
+  // `yak-transport-error`, including 404 (an endpoint without the route).
+  const STATUS_SLUGS: ReadonlyArray<readonly [number, SubmitWarnSlug]> = [
+    [401, "yak-unauthorized"],
+    [402, "yak-not-entitled"],
+    [413, "yak-payload-too-large"],
+    [400, "yak-transport-error"],
+    [404, "yak-transport-error"],
+    [500, "yak-transport-error"],
+  ];
+
+  for (const [status, slug] of STATUS_SLUGS) {
+    it(`${status}: warn ${slug}, names the status and the url, carries the derived key`, async () => {
+      // When a status maps to the wrong slug (a row dropped, two slugs swapped, a fallback
+      // status picking a rung), the operator is told to fix the wrong thing — observed in the
+      // `SubmitResult` the caller maps to WARN + exit 0.
+      const server = Bun.serve({ port: 0, fetch: async () => new Response("refused", { status }) });
+      try {
+        const result = await submitYak({ ...BASE_PARAMS, url: server.url.toString(), token: "t" });
+        expect(result.status).toBe("warn");
+        if (result.status !== "warn") throw new Error("unreachable");
+        expect(result.slug).toBe(slug);
+        expect(result.reason).toContain(String(status));
+        expect(result.reason).toContain(`${server.url.toString().replace(/\/+$/, "")}/v1/yaks`);
+        expect(result.idempotencyKey).toBeDefined();
+      } finally {
+        server.stop(true);
+      }
     });
-    try {
-      const result = await submitYak({ ...BASE_PARAMS, url: server.url.toString(), token: "t" });
-      expect(result.status).toBe("warn");
-      if (result.status !== "warn") throw new Error("unreachable");
-      expect(result.slug).toBe("yak-transport-error");
-      expect(result.reason).toContain("400");
-      expect(result.idempotencyKey).toBeDefined();
-    } finally {
-      server.stop(true);
-    }
-  });
+  }
 
-  it("401: warn, yak-transport-error, names the status", async () => {
-    const server = Bun.serve({ port: 0, fetch: async () => new Response("unauthorized", { status: 401 }) });
-    try {
-      const result = await submitYak({ ...BASE_PARAMS, url: server.url.toString(), token: "bad-token" });
-      expect(result.status).toBe("warn");
-      if (result.status !== "warn") throw new Error("unreachable");
-      expect(result.slug).toBe("yak-transport-error");
-      expect(result.reason).toContain("401");
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  it("404 (an endpoint without the route): warn, yak-transport-error, exit-mapped to 0 by the caller", async () => {
-    const server = Bun.serve({ port: 0, fetch: async () => new Response("not found", { status: 404 }) });
-    try {
-      const result = await submitYak({ ...BASE_PARAMS, url: server.url.toString(), token: "t" });
-      expect(result.status).toBe("warn");
-      if (result.status !== "warn") throw new Error("unreachable");
-      expect(result.slug).toBe("yak-transport-error");
-      expect(result.reason).toContain("404");
-    } finally {
-      server.stop(true);
+  it("the rung reasons carry their local remedy and never name --vendor (that flag does not exist yet)", async () => {
+    // When a rung's reason loses its remedy, the WARN tells the operator that something failed
+    // but not what to change; when it names a flag the CLI does not have, it sends them to a
+    // dead end — observed in `SubmitResult.reason`.
+    const expected: ReadonlyArray<readonly [number, RegExp]> = [
+      [401, /yaks\.json.*ERIS_YAKS_TOKEN|ERIS_YAKS_TOKEN.*yaks\.json/],
+      [402, /entitled/],
+      [413, /--evidence/],
+    ];
+    for (const [status, remedy] of expected) {
+      const server = Bun.serve({ port: 0, fetch: async () => new Response("refused", { status }) });
+      try {
+        const result = await submitYak({ ...BASE_PARAMS, url: server.url.toString(), token: "t" });
+        if (result.status !== "warn") throw new Error("unreachable");
+        expect(result.reason).toMatch(remedy);
+        expect(result.reason).not.toContain("--vendor");
+      } finally {
+        server.stop(true);
+      }
     }
   });
 
