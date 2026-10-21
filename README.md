@@ -125,7 +125,9 @@ worked example is [`examples/distribution/`](examples/distribution)).
 [`packages/yak-contract`](packages/yak-contract) is `@sibylline-labs/yak-contract`:
 the Yaks submission contract v2 as Zod schemas, their inferred TypeScript
 types, and the JSON Schema they emit (`schema/yak-v2.schema.json`) for
-consumers in other languages. The `eris yak` client in this build still speaks
+consumers in other languages. A repository that depends on this one (a git
+dependency pinned to a merge commit on `main`) imports the TypeScript contract
+as `eris/yak-contract`. The `eris yak` client in this build still speaks
 contract v1 (`plugins/yak/yaks-schema.v1.ts`).
 
 ## Documentation

@@ -9,7 +9,7 @@ eris                    # POSIX sh shim: unsets BUN_CONFIG_VERBOSE_FETCH, execs 
 install.sh              # POSIX sh: downloads + verifies the release binary into ~/.local/bin/eris; --checkout: bun install --frozen-lockfile + a wrapper around the checkout
 src/                    # The TS program the shim runs
 ├── main.ts             #   the entry: composes core with the build's plugins (CLI), HANDLERS, main, runProgram
-├── sdk.ts              #   `eris/sdk`, the one module another repository imports (package.json exports):
+├── sdk.ts              #   `eris/sdk`, the one module through which another repository reaches core (package.json exports):
 │                       #   the plugin SDK, composition, runProgram, the runtime, build()
 ├── build.ts            #   build(): compiles a distribution's entry into one binary (eris:assets, stubs,
 │                       #   the build id and release repository); scripts/build.ts calls it for this repo
@@ -38,7 +38,8 @@ plugins/index.ts        # the plugins this build compiles in, composed by src/ma
 plugins/yak/            # `eris yak` as a plugin: index.ts (the manifest: rows + handler thunk), handlers.ts
                         #   (the dispatcher), yak.ts (the core), yak-{identity,context,redact,submit}.ts,
                         #   yaks-schema.v1.ts (vendored contract), yak-setup.ts (mints the bearer; docs/YAK.md)
-packages/yak-contract/  # the Yaks wire contract v2, a bun workspace package that builds standalone.
+packages/yak-contract/  # the Yaks wire contract v2, a bun workspace package that builds standalone;
+                        #   `eris/yak-contract` (package.json exports) is its src/index.ts.
                         #   src/v2.ts (Zod + inferred types), scripts/emit-json-schema.ts →
                         #   schema/yak-v2.schema.json (committed; `bun run emit-schema` in the package re-emits)
 examples/plugins/widgets/  # the worked plugin example tests/plugins.test.ts composes

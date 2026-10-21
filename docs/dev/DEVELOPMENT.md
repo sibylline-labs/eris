@@ -57,7 +57,7 @@ suite against it ([TESTING.md](TESTING.md#the-binary-oracle)).
 | `src/runtime/` | Logging, the subprocess runner, settings, env reads, the install root |
 | `ts/lib/eris-fail.ts` | The failure block and the WARN lines |
 | `plugins/` | The plugins this build composes (`plugins/index.ts`): `plugins/yak/` is `eris yak` |
-| `packages/` | Bun workspace packages (root `package.json` `workspaces`): `packages/yak-contract/` is the Yaks wire contract v2. A package imports only itself and what its own manifest declares, and `tests/yak-contract-v2.test.ts` holds that |
+| `packages/` | Bun workspace packages (root `package.json` `workspaces`): `packages/yak-contract/` is the Yaks wire contract v2, which the root `exports` map also names as `eris/yak-contract`. A package imports only itself and what its own manifest declares, and `tests/yak-contract-v2.test.ts` holds that |
 
 ## Conventions
 
