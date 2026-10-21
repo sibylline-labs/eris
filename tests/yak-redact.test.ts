@@ -152,19 +152,32 @@ describe("redact() — positive corpus, one class each", () => {
     }
   });
 
-  it("when a sib_ token is lower-cased or carries an over-long secret, the whole token is still redacted", () => {
-    // Both are deliberate widenings of the issuer's shape (see SIB_TOKEN_RE). A
-    // narrower pattern would leave the org id, or a plaintext tail of the
-    // secret directly after the marker, in the report.
-    const cases: Array<[string, string]> = [
-      ["lower-cased ULID", "sib" + "_" + SIB_ULID.toLowerCase() + "_" + SIB_SECRET],
-      ["over-long secret", sibToken(SIB_SECRET + "TAILtail0123456789")],
+  it("when a sib_ token is lower-cased, the whole token is still redacted", () => {
+    // A deliberate widening of the issuer's shape (see SIB_TOKEN_RE): an
+    // upper-case-only ULID would leave a lower-cased paste, org id and all, in
+    // the report.
+    const token = "sib" + "_" + SIB_ULID.toLowerCase() + "_" + SIB_SECRET;
+    const result = redact(`rotated ${token} today`);
+    expect(result.text).toBe("rotated «redacted:sib-token» today");
+    expect(result.counts["sib-token"]).toBe(1);
+    assertZeroExcept(result, "sib-token");
+  });
+
+  it("when text is glued straight onto a sib_ token, the token is redacted and the glued-on text is left to the later passes", () => {
+    // Pre-fix: the secret ran `{43,256}`, so it swallowed the letters glued
+    // after a token, the anchor a later pass needs, and that pass's secret
+    // shipped: `<token>Authorization: Basic <cred>` gave
+    // `«redacted:sib-token»: Basic <cred>`. The issuer only makes 43-char secrets.
+    const cases: Array<[string, string, string, RedactionClass]> = [
+      ["Authorization header", `${SIB_TOKEN}Authorization: Basic dXNlcjpleGFtcGxlLXBhc3M=`, "«redacted:sib-token»«redacted:auth-header»", "auth-header"],
+      ["governed name", `${SIB_TOKEN}PASSWORD=hunter2-super-secret`, "«redacted:sib-token»PASSWORD=«redacted:assignment»", "assignment"],
     ];
-    for (const [label, token] of cases) {
-      const result = redact(`rotated ${token} today`);
-      expect(result.text, label).toBe("rotated «redacted:sib-token» today");
+    for (const [label, input, expected, cls] of cases) {
+      const result = redact(input);
+      expect(result.text, label).toBe(expected);
       expect(result.counts["sib-token"], label).toBe(1);
-      assertZeroExcept(result, "sib-token");
+      expect(result.counts[cls], label).toBe(1);
+      assertZeroExcept(result, "sib-token", cls);
     }
   });
 
@@ -292,29 +305,6 @@ describe("redact() — positive corpus, one class each", () => {
     assertZeroExcept(result, "conn-string");
   });
 
-  it("when a connection string's password is a token another class already redacted, scheme, user and host survive and the token is counted once — observed at redact().text and counts", () => {
-    // Pre-fix: the token class (sib-token, github-token) ran first and left
-    // `postgres://user:«redacted:<class>»@host`; CONN_STRING_RE's password group
-    // then matched that marker as the password, so the whole span collapsed to
-    // `«redacted:conn-string»` (scheme, user and host lost to triage) and BOTH
-    // classes were counted.
-    const cases: Array<[RedactionClass, string]> = [
-      ["sib-token", SIB_TOKEN],
-      ["github-token", GH_TOKEN],
-    ];
-    for (const [cls, token] of cases) {
-      const result = redact(`postgres://user:${token}@db.example.com:5432/app`);
-      expect(result.text, cls).toBe(`postgres://user:«redacted:${cls}»@db.example.com:5432/app`);
-      expect(result.counts[cls], cls).toBe(1);
-      expect(result.total, cls).toBe(1);
-      assertZeroExcept(result, cls);
-      // the marker left behind is not re-matched by a second pass.
-      const again = redact(result.text);
-      expect(again.text, cls).toBe(result.text);
-      expect(again.total, cls).toBe(0);
-    }
-  });
-
   it("when an Authorization credential runs on past an earlier class's marker, the whole header is redacted and no tail survives", () => {
     // Pre-fix: AUTH_HEADER_RE's `(?!«redacted:)` guard declined any credential
     // that STARTED with a marker. A token that ran past its class's length cap,
@@ -346,12 +336,17 @@ describe("redact() — positive corpus, one class each", () => {
     expect(proxy.total).toBe(1);
   });
 
-  it("when a connection-string password runs on past an earlier class's marker, the whole span is redacted and no tail survives", () => {
+  it("when a connection-string password is an earlier class's marker, alone or with a tail, the whole span is redacted and nothing around it survives", () => {
     // Pre-fix: CONN_STRING_RE's `(?!«redacted:)` guard declined any password
     // that STARTED with a marker, so whatever followed the token inside the
     // password shipped: `postgres://user:«redacted:github-token»%21<plaintext>@db…`,
-    // as did a password that carried an unescaped `@` after the token.
+    // as did a password that carried an unescaped `@` after the token. Even an
+    // exact-marker password cannot be declined: the scheme and host runs take
+    // whatever is pasted against them, so declining shipped that too.
     const cases: Array<[string, string, RedactionClass[]]> = [
+      ["exact marker", `postgres://user:${SIB_TOKEN}@db.example.com:5432/app`, ["sib-token", "conn-string"]],
+      ["exact marker, key pasted against the host", `postgres://user:${GH_TOKEN}@db${TAIL}/app`, ["github-token", "conn-string"]],
+      ["exact marker, key pasted against the scheme", `${TAIL}postgres://user:${GH_TOKEN}@db/app`, ["github-token", "conn-string"]],
       ["GitHub token then a percent-escape", `postgres://user:${GH_TOKEN}%21${TAIL}@db.example.com/app`, ["github-token", "conn-string"]],
       ["sib_ token then a dotted tail", `postgres://user:${sibToken(SIB_SECRET + "." + TAIL)}@db.example.com/app`, ["sib-token", "conn-string"]],
       ["bare marker run into plaintext", `postgres://user:«redacted:sib-token»${TAIL}@db.example.com/app`, ["conn-string"]],
@@ -601,6 +596,44 @@ describe("redact() — positive corpus, one class each", () => {
       assertZeroExcept(result, ...classes);
     }
   });
+
+  it("when an assignment value that starts with an earlier class's marker runs straight into another assignment, that one is still redacted", () => {
+    // Pre-fix: the marker-plus-tail value ran on to the next whitespace, through
+    // an adjacent `"name": ` or `name: ` and into its value, so that assignment
+    // never got its own match and its value shipped:
+    // `auth: «redacted:assignment» "Basic <secret> <secret>"`. Declining the
+    // whole marker-led value had hidden this. The pass now redacts both
+    // readings of the run: as one value, and as the assignments inside it.
+    const sk130 = "sk-" + "Q".repeat(130);
+    const cases: Array<[string, string, string, RedactionClass]> = [
+      [
+        "a quoted JSON name",
+        `auth: ${sk130}"authorization": "Basic ${TAIL} ${TAIL}"`,
+        "auth: «redacted:assignment» «redacted:assignment»",
+        "sk-key",
+      ],
+      [
+        "an unquoted name",
+        `API_KEY: ${sk130}\`auth: "Basic ${TAIL} ${TAIL}"`,
+        "API_KEY: «redacted:assignment» «redacted:assignment»",
+        "sk-key",
+      ],
+      // The swallowed assignment's own value runs on past a marker too.
+      [
+        "a name whose value runs on past a marker",
+        `auth: ${GH_TOKEN}.'token: «redacted:sib-token»${TAIL}`,
+        "auth: «redacted:assignment» «redacted:assignment»",
+        "github-token",
+      ],
+    ];
+    for (const [label, input, expected, token] of cases) {
+      const result = redact(input);
+      expect(result.text, label).toBe(expected);
+      expect(result.counts[token], label).toBe(1);
+      expect(result.counts.assignment, label).toBe(2);
+      assertZeroExcept(result, token, "assignment");
+    }
+  });
 });
 
 // --- 2. negative: ordinary prose must survive byte-identical -------------------
@@ -758,7 +791,7 @@ describe("redact() — idempotence", () => {
     }
   });
 
-  it("the marker itself is never re-matched: every class's exact marker, as a value, a quoted value, a credential or a password", () => {
+  it("the marker itself is never re-matched: every class's exact marker, as a value, a quoted value or a credential", () => {
     // Goes red when a guard's marker grammar no longer covers a class name
     // (a class renamed outside `[a-z-]{1,40}`), or a guard stops declining an
     // exact marker: the marker is then reclassified and counted a second time.
@@ -771,7 +804,6 @@ describe("redact() — idempotence", () => {
         `token: '${m}'`,
         `Authorization: Bearer ${m}`,
         `Proxy-Authorization: Basic ${m} trailing`,
-        `postgres://user:${m}@db.example.com/app`,
       ];
       for (const text of texts) {
         const result = redact(text);

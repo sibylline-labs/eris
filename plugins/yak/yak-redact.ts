@@ -41,23 +41,28 @@
  * exception: each takes an arbitrary non-whitespace run as the value at a
  * position — `assignment` (after the operator), `auth-header` (the credential
  * after the scheme) and `conn-string` (the password in the userinfo) — and a
- * marker an earlier pass left at that position is exactly such a run. Each of
- * the three therefore declines a value that is EXACTLY one marker (`MARKER`)
- * and nothing more: a bare marker ending where the value would end, a marker
- * alone in matching quotes (`assignment`), a marker after a known scheme word
- * ending at whitespace (`auth-header`), or a marker directly followed by the
- * userinfo's last `@` (`conn-string`). A value that a more specific pass
- * already redacted therefore stays classified, and counted, once by that pass.
- * `auth-header` declining `Authorization: Bearer «redacted:…»` this way must
- * also be honoured by `assignment`, which would otherwise take `Authorization`
- * as a governed name and `Bearer` as its value (`AUTH_DECLINED_RE`). A value
- * that runs on past a marker (`«redacted:sk-key»` followed by the tail of a key
- * longer than that class's cap, or by `.`, `%21`, `:x-oauth-…`) is NOT
- * declined: the whole run is redacted and both classes are counted. That
- * over-counts, but a guard that declined on the marker alone would ship the
- * tail in plaintext. With the guards, this ordering prevents double counting
- * of an exactly-redacted value without any bespoke "already redacted"
- * bookkeeping.
+ * marker an earlier pass left at that position is exactly such a run. A pass
+ * may decline such a value, so that the more specific class stays the only
+ * one classified and counted, only where declining leaves in place nothing
+ * but the marker and text that cannot be secret:
+ *
+ *   - `assignment` declines a value that is EXACTLY one marker (`MARKER`):
+ *     bare and ending where the value would end, or alone in matching quotes.
+ *     The name stays, as it does for any redacted value.
+ *   - `auth-header` declines a credential that is exactly one marker, ending
+ *     at whitespace, after a known scheme word (`AUTH_DECLINED`). `assignment`
+ *     must honour that too, or it would take `Authorization` as a governed
+ *     name and `Bearer` as its value (`AUTH_DECLINED_RE`).
+ *   - `conn-string` never declines: its scheme and host runs have no fixed
+ *     edge, so with no separator around the span they can carry secret text.
+ *
+ * A value that runs on past a marker (`«redacted:sk-key»` followed by the tail
+ * of a key longer than that class's cap, or by `.`, `%21`, `:x-oauth-…`) is
+ * NOT declined: the run is redacted and both classes are counted. That
+ * over-counts, but declining on the marker alone would ship the tail.
+ * `assignment` also redacts every assignment that begins inside such a value
+ * (`runAssignmentPass`), so a tail cannot swallow an adjacent `"name": value`.
+ * No bespoke "already redacted" bookkeeping is needed.
  *
  * NO CATASTROPHIC BACKTRACKING. This runs on agent-authored text of
  * arbitrary shape mid-task, so every pattern here is either a fixed-literal
@@ -263,13 +268,15 @@ const JWT_RE = /eyJ[A-Za-z0-9_-]{10,500}\.[A-Za-z0-9_-]{10,500}\.[A-Za-z0-9_-]{1
 // shape, and a generic run would eat prose identifiers such as
 // `sib_service_token_rotation_policy`. The ULID part accepts either case so a
 // lower-cased paste still redacts (this pass is tuned toward over-redaction).
-// The secret is `{43,256}`, not `{43}`, so an over-long run is consumed whole
-// instead of leaving a plaintext tail — the same bounded run as
-// `GITHUB_TOKEN_RE`'s `{36,255}`. No leading `\b`, as in `GITHUB_TOKEN_RE`:
-// `x_sib_…` still redacts, and the fixed 26+1+43 structure is what blocks
-// false positives. Ordered ahead of the classes whose shapes its secret can
-// contain (file header, reason 3).
-const SIB_TOKEN_RE = /sib_[0-9A-Za-z]{26}_[A-Za-z0-9_-]{43,256}/g;
+// The secret is exactly `{43}`: the issuer formats and parses only 32 random
+// bytes as 43 base64url characters, so a longer run is a whole token with other
+// text glued straight onto it (`<token>Authorization: …`, `<token>PASSWORD=…`).
+// That text belongs to the later passes, which need its leading letters as
+// their anchor; a wider run would swallow them and ship what follows. No
+// leading `\b`: `x_sib_…` still redacts, and the fixed 26+1+43 structure is
+// what blocks false positives. Ordered ahead of the classes whose shapes its
+// secret can contain (file header, reason 3).
+const SIB_TOKEN_RE = /sib_[0-9A-Za-z]{26}_[A-Za-z0-9_-]{43}/g;
 
 // AWS: access-key ids (AKIA/ASIA + 16 alnum) and the aws_secret_access_key
 // assignment, as two independent matches under one class.
@@ -325,21 +332,14 @@ const GCP_PRIVATE_KEY_RE = /("private_key"\s*:\s*")((?:[^"\\]|\\.)*)(")/g;
 // character class excludes the next delimiter, so there is no ambiguity for
 // the engine to backtrack through.
 //
-// The guard before the password declines a password that is exactly one
-// EARLIER class's marker, directly followed by the authority's LAST `@` (file
-// header, "MARKER GUARD"): `postgres://user:«redacted:sib-token»@host` keeps
-// its scheme, user and host for triage instead of collapsing to
-// `«redacted:conn-string»` with both classes counted. A password that runs on
-// past the marker (`«redacted:github-token»%21<rest>@host`) is redacted whole,
-// and so is one with a later `@`: a URL parser splits userinfo at the last
-// `@`, so in `user:«redacted:…»@rest@host` the `@rest` is password too. The
-// user group excludes `:`, so the guard sits at the one position the password
-// can start; it cannot slide to another split. Its host run is bounded like
-// the host group's, so it adds at most 255 steps per candidate.
-const CONN_STRING_RE = new RegExp(
-  `[a-zA-Z][a-zA-Z0-9+.-]{0,30}://[^\\s:@/]{1,255}:(?!${MARKER}@[^\\s/@]{1,255}(?![^\\s/]))[^\\s@/]{1,255}@[^\\s/]{1,255}`,
-  "g",
-);
+// No marker guard (file header, "MARKER GUARD"): a password that is an earlier
+// class's marker is redacted again, with the scheme, user and host, and both
+// classes are counted. Declining it would leave the span's own runs as they
+// are, and with no separator around it those runs can carry secret text: the
+// scheme run takes letters before `postgres`, and the host run takes a key
+// pasted straight after `@db`.
+const CONN_STRING_RE =
+  /[a-zA-Z][a-zA-Z0-9+.-]{0,30}:\/\/[^\s:@/]{1,255}:[^\s@/]{1,255}@[^\s/]{1,255}/g;
 
 // Key-name assignments: NAME=value / NAME: value, case-insensitive, where
 // NAME contains one of the governed words ANYWHERE in the identifier — see
@@ -402,7 +402,8 @@ const GOVERNED_NAME =
 // alternative keeps its own `\b` pair — a quoted match doesn't need `\b`
 // at all, because the quote character is itself an unambiguous delimiter
 // no ordinary prose produces around a bare identifier.
-const ASSIGNMENT_RE = new RegExp(
+const QUOTED_VALUE = `"(?:[^"\\\\\\r\\n]|\\\\.){0,20000}"|'(?:[^'\\\\\\r\\n]|\\\\.){0,20000}'`;
+const assignmentRe = (valueGuard: string, ledValue = ""): RegExp => new RegExp(
   `(?:(?<q>["'])(?<qname>${GOVERNED_NAME})\\k<q>|\\b(?<uname>${GOVERNED_NAME})\\b)` +
     // The quoted exact-marker alternatives (not just a bare marker) are
     // what make this guard work with the quoted-value alternative
@@ -417,10 +418,20 @@ const ASSIGNMENT_RE = new RegExp(
     // generic `assignment` — corrupting a MORE specific classification
     // into a less specific one, silently, for any class that can appear
     // as a governed key's JSON value.
-    `(?<sep>\\s*[:=]\\s*)(?!${MARKER}(?![^\\s,}\\]])|"${MARKER}"|'${MARKER}')` +
-    `(?<value>"(?:[^"\\\\\\r\\n]|\\\\.){0,20000}"|'(?:[^'\\\\\\r\\n]|\\\\.){0,20000}'|[^\\s,}\\]]{4,20000})`,
+    `(?<sep>\\s*[:=]\\s*)${valueGuard}` +
+    `(?<value>${ledValue}${QUOTED_VALUE}|[^\\s,}\\]]{4,20000})`,
   "gi",
 );
+
+// Declines only a value that is exactly a marker; redacts one that runs on past it.
+const EXACT_MARKER_GUARD = `(?!${MARKER}(?![^\\s,}\\]])|"${MARKER}"|'${MARKER}')`;
+const ASSIGNMENT_RE = assignmentRe(EXACT_MARKER_GUARD);
+// The same, except a value that starts with a marker matches only its opening
+// quote and `«redacted:` (group `led`), so `runAssignmentPass` can work out its
+// extent in code and keep scanning inside it.
+const ASSIGNMENT_LED_RE = assignmentRe(EXACT_MARKER_GUARD, `(?<led>['"]?«redacted:)|`);
+const QUOTED_VALUE_RE = new RegExp(QUOTED_VALUE, "y");
+const MARKER_LED_RE = /['"]?«redacted:/y;
 
 function runWholeMatchPass(
   text: string,
@@ -433,6 +444,98 @@ function runWholeMatchPass(
     counts[cls]++;
     return marker(cls);
   });
+}
+
+interface AssignmentGroups {
+  q?: string;
+  qname?: string;
+  uname?: string;
+  sep: string;
+  value: string;
+  led?: string;
+}
+
+/** True when the match is `Authorization: <scheme> <marker>`, a header
+ *  auth-header declined: it is left whole and uncounted (AUTH_DECLINED_RE). */
+function isDeclinedAuthHeader(text: string, m: RegExpExecArray, groups: AssignmentGroups): boolean {
+  if (groups.uname === undefined || !groups.uname.toLowerCase().endsWith(AUTHORIZATION)) return false;
+  AUTH_DECLINED_RE.lastIndex = m.index + groups.uname.length - AUTHORIZATION.length;
+  return AUTH_DECLINED_RE.test(text);
+}
+
+/** For each index, the first index at or after it that ends an unquoted value
+ *  (whitespace, `,`, `}`, `]`), or `text.length`. */
+function unquotedValueEnds(text: string): Int32Array {
+  const ends = new Int32Array(text.length + 1);
+  ends[text.length] = text.length;
+  for (let i = text.length - 1; i >= 0; i--) ends[i] = /[\s,}\]]/.test(text[i]) ? i : ends[i + 1];
+  return ends;
+}
+
+/**
+ * The `assignment` pass. Only the VALUE is replaced; the name stays for triage.
+ *
+ * A value that starts with a marker and runs on past it
+ * (`«redacted:sk-key»<tail of an over-long key>`) is ambiguous: its tail may
+ * be the rest of a secret, or, with no whitespace in between, the start of the
+ * next assignment (`"authorization": "Basic …"`, `auth: '…'`). Redacting the
+ * run as one value covers the first reading but swallows the second one's
+ * name, so its value would ship. Declining it covers the second and ships the
+ * tail. So when the plain scan (`ASSIGNMENT_RE`) meets such a value, a second
+ * scan (`ASSIGNMENT_LED_RE`) records each marker-led value's full extent AND
+ * keeps scanning inside it, and the pass redacts the union of both scans'
+ * values: each overlapping or touching run becomes one marker and one count.
+ *
+ * Linear: a text with no marker-led value is scanned once. In the second scan
+ * a marker-led value's regex match stops after `«redacted:`; its unquoted
+ * extent is a table lookup, and its quoted extent ends at the next matching
+ * quote, so the extents cost O(n) in total.
+ */
+function runAssignmentPass(text: string, counts: Record<RedactionClass, number>): string {
+  const ranges: Array<[number, number]> = [];
+  let markerLed = false;
+  ASSIGNMENT_RE.lastIndex = 0;
+  for (let m = ASSIGNMENT_RE.exec(text); m !== null; m = ASSIGNMENT_RE.exec(text)) {
+    const groups = m.groups as unknown as AssignmentGroups;
+    if (isDeclinedAuthHeader(text, m, groups)) continue;
+    const end = m.index + m[0].length;
+    const valueStart = end - groups.value.length;
+    MARKER_LED_RE.lastIndex = valueStart;
+    if (MARKER_LED_RE.test(text)) markerLed = true;
+    ranges.push([valueStart, end]);
+  }
+  if (markerLed) {
+    const unquotedEnds = unquotedValueEnds(text);
+    ASSIGNMENT_LED_RE.lastIndex = 0;
+    for (let m = ASSIGNMENT_LED_RE.exec(text); m !== null; m = ASSIGNMENT_LED_RE.exec(text)) {
+      const groups = m.groups as unknown as AssignmentGroups;
+      if (isDeclinedAuthHeader(text, m, groups)) continue;
+      const end = m.index + m[0].length;
+      const valueStart = end - groups.value.length;
+      if (groups.led === undefined) {
+        ranges.push([valueStart, end]);
+        continue;
+      }
+      // The extent ASSIGNMENT_RE's value alternatives would give it.
+      QUOTED_VALUE_RE.lastIndex = valueStart;
+      const extent = QUOTED_VALUE_RE.test(text)
+        ? QUOTED_VALUE_RE.lastIndex
+        : Math.min(unquotedEnds[valueStart], valueStart + 20000);
+      ranges.push([valueStart, extent]);
+    }
+    ranges.sort((a, b) => a[0] - b[0]);
+  }
+  let out = "";
+  let last = 0;
+  for (let i = 0; i < ranges.length; ) {
+    const start = ranges[i][0];
+    let end = ranges[i][1];
+    for (i++; i < ranges.length && ranges[i][0] <= end; i++) end = Math.max(end, ranges[i][1]);
+    counts.assignment++;
+    out += `${text.slice(last, start)}${marker("assignment")}`;
+    last = end;
+  }
+  return out + text.slice(last);
 }
 
 // --- the pipeline, most-specific class first (see file header) -----------------
@@ -477,26 +580,7 @@ function runPipeline(input: string): { text: string; counts: Record<RedactionCla
   // A quoted match reconstructs `q + qname + q` (the quotes are part of the
   // preserved NAME text, same as the original design preserved an unquoted
   // name verbatim); an unquoted match reconstructs `uname` alone.
-  ASSIGNMENT_RE.lastIndex = 0;
-  text = text.replace(ASSIGNMENT_RE, (...args: unknown[]) => {
-    const groups = args[args.length - 1] as {
-      q?: string;
-      qname?: string;
-      uname?: string;
-      sep: string;
-    };
-    const whole = args[0] as string;
-    const source = args[args.length - 2] as string;
-    const offset = args[args.length - 3] as number;
-    // A header auth-header declined is left whole and uncounted (AUTH_DECLINED_RE).
-    if (groups.uname !== undefined && groups.uname.toLowerCase().endsWith(AUTHORIZATION)) {
-      AUTH_DECLINED_RE.lastIndex = offset + groups.uname.length - AUTHORIZATION.length;
-      if (AUTH_DECLINED_RE.test(source)) return whole;
-    }
-    counts.assignment++;
-    const name = groups.qname !== undefined ? `${groups.q}${groups.qname}${groups.q}` : groups.uname!;
-    return `${name}${groups.sep}${marker("assignment")}`;
-  });
+  text = runAssignmentPass(text, counts);
 
   return { text, counts };
 }
