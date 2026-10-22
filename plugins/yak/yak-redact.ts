@@ -94,7 +94,8 @@
  *
  * VALUE BOUND (fixed): the unquoted/quoted value alternatives are
  * bounded to 20,000 chars — `YAK_EVIDENCE_MAX_LENGTH` in
- * `yaks-schema.v1.ts`, the largest of the three redacted fields — not 4,096.
+ * `@sibylline-labs/yak-contract`, the largest of the three redacted fields — not
+ * 4,096.
  * A value longer than the capture bound is only PARTIALLY replaced: the
  * captured prefix becomes a marker and everything past the bound survives as
  * plaintext directly after it, which is worse than no redaction (it *looks*

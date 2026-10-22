@@ -601,7 +601,7 @@ describe("redact() — idempotence", () => {
 // after. This is a real, structural property of any marker-based redaction
 // scheme, not a bug in the regexes above, and it is NOT fully solved in this
 // module: `redact()` is pure text transformation with no notion of a field's
-// max length (that constant lives in yaks-schema.v1.ts, a module this file
+// max length (that constant lives in @sibylline-labs/yak-contract, a module this file
 // deliberately does not import — file header, "PURE"/"VALUE BOUND"). The test
 // below PINS the phenomenon so it is a known, asserted property rather than a
 // surprise; the actual fix — re-validating (or re-deriving a warning from)

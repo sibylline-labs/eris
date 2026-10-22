@@ -3,9 +3,9 @@
  *
  * Seams: `YakSubmission.parse` on the package's public entry (what the server
  * imports), the committed JSON Schema read from disk and run through ajv (what a
- * non-TypeScript consumer validates against), and v0's own code as the oracle
- * for "unchanged": the vendored v1 contract's `deriveIdempotencyKey` and the
- * v0 client's `resolveExecutionId` ladder.
+ * non-TypeScript consumer validates against), and v0's own behaviour as the oracle
+ * for "unchanged": frozen idempotency-key vectors computed once from the v1
+ * contract's derivation, and the v0 client's `resolveExecutionId` ladder.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -15,7 +15,6 @@ import { dirname, join, relative, resolve } from "node:path";
 import { buildJsonSchema, SCHEMA_FILE } from "../packages/yak-contract/scripts/emit-json-schema";
 import { deriveIdempotencyKey, YakSubmission } from "../packages/yak-contract/src/index";
 import { resolveExecutionId } from "../plugins/yak/yak-identity";
-import { deriveIdempotencyKey as deriveV1 } from "../plugins/yak/yaks-schema.v1";
 
 const PACKAGE_DIR = resolve(import.meta.dir, "../packages/yak-contract");
 
@@ -103,17 +102,20 @@ describe("yak-contract v2: what ingest refuses", () => {
 
 describe("yak-contract v2: idempotency is v1's, byte for byte", () => {
   const BASE = { device_id: "device-1", execution_id: "execution-1", verb: "issue" as const, summary: "s", body: "b" };
-  const VECTORS: [string, Parameters<typeof deriveIdempotencyKey>[0]][] = [
-    ["with evidence", { ...BASE, evidence: "e" }],
-    ["without evidence", BASE],
-    ["every verb", { ...BASE, verb: "fatal" }],
-    ["ids that differ only by where the boundary falls (a)", { ...BASE, device_id: "ab", execution_id: "c" }],
-    ["ids that differ only by where the boundary falls (b)", { ...BASE, device_id: "a", execution_id: "bc" }],
+  /** Frozen: each key was computed once by the v1 contract's `deriveIdempotencyKey` (that file is gone) and
+   *  cross-checked with `shasum -a 256` over `${device_id}\n${execution_id}\n${verb}\n${canonical JSON}`. */
+  const VECTORS: [string, Parameters<typeof deriveIdempotencyKey>[0], string][] = [
+    ["with evidence", { ...BASE, evidence: "e" }, "1b0777bf9e621a0b3a4c972733ed0449cb48713b6273ae27be1c5ba24496f1e4"],
+    ["without evidence", BASE, "d7dabe89049379cbcf5f811d5e14b88141179fc241ddd31ac92a40fe0642cc46"],
+    ["empty evidence, which keys apart from none", { ...BASE, evidence: "" }, "661a60a5dd047e8e3848625008779e309e853e8b1ca856d7bbe1ea486a2dffc9"],
+    ["every verb", { ...BASE, verb: "fatal" }, "7546b285831147218eb211734a249997742c225a6fac39fa5f2185651fb32446"],
+    ["ids that differ only by where the boundary falls (a)", { ...BASE, device_id: "ab", execution_id: "c" }, "e9e6551d9b43cf7a8e53b3b70619e351b0f4e83df3e0af9d3444e2b6c95c1615"],
+    ["ids that differ only by where the boundary falls (b)", { ...BASE, device_id: "a", execution_id: "bc" }, "761da178b311dadd0da4200155959bc8cbb954f59bb107eb9da09fe9d031e493"],
   ];
 
-  it("derives the key a v0 client derives for the same submission", async () => {
-    /** When the derivation drifts from v1's, a replayed or migrated report hashes to a new key and is filed twice instead of deduplicated: observed as the two derivations disagreeing. */
-    for (const [name, vector] of VECTORS) expect({ name, key: await deriveIdempotencyKey(vector) }).toEqual({ name, key: await deriveV1(vector) });
+  it("derives the key a v0 client derived for the same submission", async () => {
+    /** When the derivation drifts from v1's, a replayed or migrated report hashes to a new key and is filed twice instead of deduplicated: observed as a derived key differing from the frozen v1 key. */
+    for (const [name, vector, expected] of VECTORS) expect({ name, key: await deriveIdempotencyKey(vector) }).toEqual({ name, key: expected });
   });
 });
 

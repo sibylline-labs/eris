@@ -37,7 +37,7 @@ ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany us
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
 plugins/yak/            # `eris yak` as a plugin: index.ts (the manifest: rows + handler thunk), handlers.ts
                         #   (the dispatcher), yak.ts (the core), yak-{identity,context,redact,submit}.ts,
-                        #   yaks-schema.v1.ts (vendored contract), yak-setup.ts (mints the bearer; docs/YAK.md)
+                        #   yak-setup.ts (mints the bearer; docs/YAK.md); the wire contract is packages/yak-contract, imported by name
 packages/yak-contract/  # the Yaks wire contract v2, a bun workspace package that builds standalone;
                         #   `eris/yak-contract` (package.json exports) is its src/index.ts.
                         #   src/v2.ts (Zod + inferred types), scripts/emit-json-schema.ts →
