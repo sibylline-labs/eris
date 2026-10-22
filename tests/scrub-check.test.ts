@@ -58,7 +58,7 @@ describe("scan", () => {
     ["the support address in CONTRIBUTING.md", "CONTRIBUTING.md", `Write to support@${ORG}.group.`],
     ["the copyright holder in NOTICE", "NOTICE", `Copyright 2026 ${"Sibyl" + "line"} Labs`],
     ["an example-domain email and a git remote", "tests/a.ts", "ada@example.com git@github.com:acme/widgets.git"],
-    ["a package-manager pin", "package.json", '"packageManager": "bun@1.3.13"'],
+    ["a package-manager pin", "package.json", '"packageManager": "bun@1.4.4"'],
     ["output-contract sections and a cut field", "src/a.ts", "// docs/OUTPUT-CONTRACT.md §4 and §3.1; cut -d' ' -f1"],
     ["a sha256 digest", "tests/a.ts", "a".repeat(32) + "0".repeat(32)],
     ["hyphenated standard names and the placeholder tracker label", "docs/a.md", "UTF-8, SHA-256, RFC-6761 and ABC-123"],
