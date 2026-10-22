@@ -9,8 +9,9 @@ node_modules/
 *.log
 .DS_Store
 dist/
-# .claude/ is local state (worktrees, generated context)
-.claude/
+# .claude/ is local state (worktrees, generated context); only the surface registry is tracked
+.claude/*
+!.claude/surfaces.yml
 data/scratch/
 
 .idea
