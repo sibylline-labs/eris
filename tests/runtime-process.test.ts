@@ -226,7 +226,7 @@ describe("redaction and child env", () => {
 describe("runMany — bounded fan-out over an injected runner", () => {
   for (const [raw, cap] of [
     ["2", 2],
-    ["not-a-number", 8], // clamps (ts/lib/pool.ts), never unbounded
+    ["not-a-number", 8], // clamps (src/hera/cli.ts), never unbounded
   ] as const) {
     it(`ERIS_BATCH_CONCURRENCY=${raw}: at most ${cap} in flight, results in input order`, async () => {
       let inFlight = 0;

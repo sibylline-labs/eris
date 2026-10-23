@@ -38,7 +38,7 @@
  */
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { resolveConcurrency, runPool } from "../../ts/lib/pool";
+import { resolveConcurrency, runPool } from "../hera/cli";
 
 export interface RunOptions {
   /** Hard deadline in ms. Required: an unbounded wait is how CLIs hang. */
@@ -375,7 +375,7 @@ export interface RunJob {
 
 /**
  * Run `jobs` at most N in flight, results in input order. N is
- * `ERIS_BATCH_CONCURRENCY`, CLAMPED to 8 when unset/invalid (ts/lib/pool.ts)
+ * `ERIS_BATCH_CONCURRENCY`, CLAMPED to 8 when unset/invalid (src/hera/cli.ts)
  * — a typo must never turn a batch into an unbounded fan-out.
  */
 export function runMany(

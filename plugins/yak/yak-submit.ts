@@ -51,6 +51,7 @@
  */
 
 import { z, type ZodIssue } from "zod";
+import { HeraSchema, parseRetryAfter, RateLimitedError } from "../../src/cli/plugin";
 import {
   YakSubmission,
   YakReceipt,
@@ -61,6 +62,8 @@ import {
 } from "./yaks-schema.v1";
 import { redact, redactDeep, type RedactionClass } from "./yak-redact";
 import type { IdentityOutcome, YakReporterInfo } from "./yak-identity";
+
+const SubmissionSchemaContract = HeraSchema.define("YakSubmission", YakSubmission);
 
 /**
  * A permissive twin of the VENDORED `YakReceipt` (`plugins/yak/yaks-schema.v1.ts`
@@ -83,6 +86,7 @@ import type { IdentityOutcome, YakReporterInfo } from "./yak-identity";
  * `idempotency_key`, `replay` all stay exactly as strict).
  */
 const LenientYakReceipt = YakReceipt.extend({ contract_version: z.string() });
+const ReceiptSchemaContract = HeraSchema.define("LenientYakReceipt", LenientYakReceipt);
 
 /** The shape `submitYak` actually returns on delivery — `YakReceipt` with
  *  `contract_version` widened to `string` (see `LenientYakReceipt` above).
@@ -939,10 +943,12 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
   };
 
   // --- step 5: validate locally BEFORE the request ------------------------
-  const parsed = YakSubmission.safeParse(submission);
-  if (!parsed.success) {
+  const contractParsed = SubmissionSchemaContract.safeParse(submission);
+  if (!contractParsed.ok) {
+    const parsed = YakSubmission.safeParse(submission);
+    const issues = !parsed.success ? parsed.error.issues : [];
     const failure = classifyValidationFailure(
-      parsed.error.issues,
+      issues,
       { summary: params.summary, body: params.body, evidence: params.evidence, deviceId: params.deviceId, executionId: params.executionId },
       redactedSummary,
       redactedBody,
@@ -982,7 +988,7 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
           "content-type": "application/json",
           authorization: `Bearer ${params.token}`,
         },
-        body: JSON.stringify(parsed.data),
+        body: JSON.stringify(contractParsed.value),
         signal: controller.signal,
       });
     } catch (err) {
@@ -1006,6 +1012,19 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
     }
 
     if (!response.ok) {
+      if (response.status === 429) {
+        const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+        const rateErr = new RateLimitedError(url, retryAfterMs);
+        const retrySuffix =
+          rateErr.retryAfterMs !== null ? ` (retry after ${Math.ceil(rateErr.retryAfterMs / 1000)}s)` : "";
+        return {
+          status: "warn",
+          slug: "yak-transport-error",
+          reason: `yaks endpoint rate-limited the request (429${response.statusText ? ` ${response.statusText}` : ""})${retrySuffix} for ${url}`,
+          redaction,
+          idempotencyKey,
+        };
+      }
       return {
         status: "warn",
         slug: "yak-transport-error",
@@ -1038,12 +1057,12 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
       };
     }
 
-    // LenientYakReceipt, not the vendored YakReceipt directly — a
+    // LenientYakReceipt via HeraSchema, not the vendored YakReceipt directly — a
     // contract_version the vendored literal doesn't know about (a bump the
     // server shipped before this CLI re-vendored) must not turn an accepted,
     // durably-stored delivery into a reported failure.
-    const receiptParsed = LenientYakReceipt.safeParse(receiptJson);
-    if (!receiptParsed.success) {
+    const receiptParsed = ReceiptSchemaContract.safeParse(receiptJson);
+    if (!receiptParsed.ok) {
       return {
         status: "warn",
         slug: "yak-transport-error",
@@ -1054,11 +1073,11 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
     }
 
     // --- step 7: compare our derived key against the receipt's -------------
-    const keyMismatch = receiptParsed.data.idempotency_key !== idempotencyKey;
+    const keyMismatch = receiptParsed.value.idempotency_key !== idempotencyKey;
 
     return {
       status: "delivered",
-      receipt: receiptParsed.data,
+      receipt: receiptParsed.value,
       idempotencyKey,
       keyMismatch,
       redaction,

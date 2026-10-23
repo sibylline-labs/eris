@@ -47,82 +47,31 @@
  * including a trailing-newline fix and an empty fix, against the real bash.
  */
 
-import { docsRoot, identity, installRoot, installRootIsUnwritten } from "../../src/runtime/home";
+import {
+  ErisError,
+  type ErisErrorOptions,
+  type ErisFailureInput,
+  EXIT_CODE_BY_CATEGORY,
+  erisHome,
+  type FailureCategory,
+  failureLines,
+  splitFixLines,
+} from "../../src/hera/cli";
 
-export interface ErisFailureInput {
-  /** Stable machine key, `^[a-z0-9]+(-[a-z0-9]+)+$` — a `docs/ERRORS.md`
-   *  heading anchor. `tests/errors-doc.test.ts` harvests every `slug: "…"`
-   *  literal and fails when its heading is missing. */
-  slug: string;
-  /** The `ERROR <what>` line's message. Never a secret value — name the
-   *  slot/path being resolved, per `docs/OUTPUT-CONTRACT.md` §4. */
-  what: string;
-  /** Zero or more `fix:` lines, `\n`-joined — mirrors `eris::report`'s
-   *  third positional exactly (multi-line fixes are literal, indentation
-   *  included). Omit or pass `""` for no fix lines at all. */
-  fix?: string;
-  /** Repo-relative doc path, optionally with a `#anchor`. Defaults to
-   *  `docs/ERRORS.md#<slug>`, same as bash's `"${4:-docs/ERRORS.md#$1}"`. */
-  docs?: string;
-}
-
-/**
- * `$ERIS_HOME`: `ERIS_DIR` wins when set; otherwise the install root (src/runtime/home.ts): the
- * checkout this file sits in, a distribution's own root, or a compiled binary's
- * asset home. The local `docs:` line names the doc under that root, or under this
- * package's when a distribution run from source does not carry it (`docsRoot`), so it
- * names a file that exists every way eris runs.
- */
-export function erisHome(env: Record<string, string | undefined> = process.env): string {
-  const override = env.ERIS_DIR;
-  if (override && override.length > 0) return override;
-  return installRoot();
-}
-
-/**
- * Split a `fix:` block into its per-line renderings, reproducing
- * `eris::report`'s here-string + `read` loop byte for byte (see file
- * header). Returns `[]` for an absent/empty `fix` — matching bash's
- * `if [[ -n "$fix" ]]` guard, which skips the loop entirely rather than
- * emitting one empty `fix: ` line.
- */
-export function splitFixLines(fix: string | undefined): string[] {
-  if (!fix || fix.length === 0) return [];
-  // Simulate the here-string's appended `\n`, split, then drop the ONE
-  // trailing empty element that append introduces — never a real line.
-  const withTrailingNewline = `${fix}\n`;
-  const parts = withTrailingNewline.split("\n");
-  parts.pop();
-  return parts;
-}
-
-/** The failure block's lines, in order, with NO trailing `\n` on any of
- *  them — `renderFailureBlock` is what adds one per line. Exposed
- *  separately so a test can assert on individual lines without
- *  re-parsing the joined block.
- *
- *  With no local copy of the docs to name (`home` null, or the install root of a
- *  compiled binary whose asset home could not be written, `eris-cache-unwritable`),
- *  the first `docs:` line is the repo-relative
- *  path, so the block keeps its two `docs:` lines and the GitHub one stays the
- *  readable one. */
-export function failureLines(input: ErisFailureInput, home: string | null): string[] {
-  const lines: string[] = [];
-  lines.push(`ERROR ${input.what}`);
-  lines.push(`slug: ${input.slug}`);
-  for (const fixLine of splitFixLines(input.fix)) {
-    lines.push(`fix: ${fixLine}`);
-  }
-  const docsRel = input.docs && input.docs.length > 0 ? input.docs : `docs/ERRORS.md#${input.slug}`;
-  const local = home === null || (installRootIsUnwritten() && home === installRoot()) ? null : home;
-  lines.push(`docs: ${local === null ? docsRel : `${docsRoot(local, docsRel)}/${docsRel}`}`);
-  lines.push(`docs: ${identity().docsBase}/${docsRel}`);
-  return lines;
-}
+export {
+  ErisError,
+  type ErisErrorOptions,
+  type ErisFailureInput,
+  EXIT_CODE_BY_CATEGORY,
+  erisHome,
+  type FailureCategory,
+  failureLines,
+  splitFixLines,
+};
 
 /** The full block, `\n`-terminated on every line — byte-identical to what
  *  `eris::report`/`eris::fail` writes to stderr for the same inputs. */
-export function renderFailureBlock(input: ErisFailureInput, home: string | null = erisHome()): string {
+export function renderFailureBlock(input: ErisFailureInput | ErisError, home: string | null = erisHome()): string {
   return failureLines(input, home)
     .map((line) => `${line}\n`)
     .join("");
@@ -134,32 +83,34 @@ export interface FailureSink {
 }
 
 /**
- * The TS `eris::report`: write the block and RETURN 1
- * instead of exiting, for a caller that owns something which must run after
- * the failure (e.g. a failed WAL result after a failed write). Prefer
+ * The TS `eris::report`: write the block and RETURN 1 (or the `ErisError`'s
+ * exit code) instead of exiting, for a caller that owns something which must
+ * run after the failure (e.g. a failed WAL result after a failed write). Prefer
  * `emitFailureAndExit`; the caller of this adds its own summary.
  * `tests/eris-fail-golden.test.ts` pins it against every documented slug.
  */
+export function reportFailure(input: ErisError, home?: string, sink?: FailureSink): number;
+export function reportFailure(input: ErisFailureInput, home?: string, sink?: FailureSink): 1;
 export function reportFailure(
-  input: ErisFailureInput,
+  input: ErisFailureInput | ErisError,
   home: string = erisHome(),
   sink: FailureSink = process.stderr,
-): 1 {
+): number {
   sink.write(renderFailureBlock(input, home));
-  return 1;
+  return ErisError.isErisError(input) ? input.exitCode : 1;
 }
 
-/** Write the block to stderr and exit 1 — the TS `eris::fail` equivalent.
- *  Stdout is never touched (§1 of the output contract: a failure writes
- *  nothing to stdout). */
+/** Write the block to stderr and exit 1 (or the `ErisError`'s exit code) —
+ *  the TS `eris::fail` equivalent. Stdout is never touched (§1 of the output
+ *  contract: a failure writes nothing to stdout). */
 export function emitFailureAndExit(
-  input: ErisFailureInput,
+  input: ErisFailureInput | ErisError,
   home: string = erisHome(),
   sink: FailureSink = process.stderr,
   exit: (code: number) => never = (code) => process.exit(code),
 ): never {
   sink.write(renderFailureBlock(input, home));
-  return exit(1);
+  return exit(ErisError.isErisError(input) ? input.exitCode : 1);
 }
 
 /**

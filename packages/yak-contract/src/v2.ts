@@ -251,6 +251,17 @@ export const YakReceipt = z.object({
 });
 export type YakReceipt = z.infer<typeof YakReceipt>;
 
+/**
+ * Structured 429 rate-limit response returned by the Yaks ingest API when a
+ * caller exceeds its request budget. Clients fail fast and emit a transport
+ * warning rather than sleeping mid-command.
+ */
+export const YakRateLimitResponse = z.object({
+  error: z.string(),
+  retry_after_seconds: z.number().int().nonnegative().optional(),
+});
+export type YakRateLimitResponse = z.infer<typeof YakRateLimitResponse>;
+
 // ---------------------------------------------------------------------------
 // Stored shapes: the read surface
 // ---------------------------------------------------------------------------

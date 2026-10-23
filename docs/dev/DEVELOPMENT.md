@@ -54,6 +54,7 @@ suite against it ([TESTING.md](TESTING.md#the-binary-oracle)).
 |---|---|
 | `src/cli/` | The registry, composition, the plugin SDK, the router, argv parsing, the output allow-list, the TS route |
 | `src/cli/commands/` | Core's verbs: `completion` and the top-level usage |
+| `src/hera/` | The Hera CLI, HTTP, and schema primitives (`ErisError`, `HeraCli`, `HeraHttp`, `HeraSchema`, `forEachBounded`) |
 | `src/runtime/` | Logging, the subprocess runner, settings, env reads, the install root |
 | `ts/lib/eris-fail.ts` | The failure block and the WARN lines |
 | `plugins/` | The plugins this build composes (`plugins/index.ts`): `plugins/yak/` is `eris yak` |
@@ -78,7 +79,7 @@ plugin), never from argv by hand; the `adhoc-argv-parse` rule holds it.
 **Nothing is backgrounded to render progress, and fan-out is bounded.** A leaked
 descendant holding a capture pipe makes the reader wait forever. Subprocesses go
 through the runner in `src/runtime/process.ts` with a deadline; concurrency is
-capped by `ERIS_BATCH_CONCURRENCY` (`ts/lib/pool.ts`).
+capped by `ERIS_BATCH_CONCURRENCY` (`src/hera/cli.ts`).
 
 **Every bun eris launches carries `--no-env-file --config=/dev/null`**, so a
 directory's `.env` and `bunfig.toml` never load.

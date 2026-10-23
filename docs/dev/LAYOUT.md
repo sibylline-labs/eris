@@ -28,12 +28,12 @@ src/                    # The TS program the shim runs
 │                       #   top-level usage: bare eris, -h, --help), version.ts (--version),
 │                       #   update.ts + update/ (eris update: github.ts the releases API and the
 │                       #   download, replace.ts the staged rename and its restore, semver.ts)
+├── hera/               #   Hera CLI, HTTP, and schema primitives (ErisError, HeraCli, HeraHttp, HeraSchema, forEachBounded)
 └── runtime/            #   logging, process (the one spawn adapter), settings (~/.eris/settings.json),
                         #   env (readEnv), home (the install root: the checkout, a distribution's own root
                         #   when its entry names one, or a compiled binary's
                         #   per-build asset home)
 ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN lines
-ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
 plugins/yak/            # `eris yak` as a plugin: index.ts (the manifest: rows + handler thunk), handlers.ts
                         #   (the dispatcher), yak.ts (the core), yak-{identity,context,redact,submit}.ts,
