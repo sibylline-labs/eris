@@ -3,3 +3,10 @@
 declare module "eris:assets" {
   export const ASSETS: Readonly<Record<string, string>>;
 }
+
+declare namespace NodeJS {
+  interface Process {
+    on(event: string | symbol, listener: (...args: never[]) => void): this;
+    once(event: string | symbol, listener: (...args: never[]) => void): this;
+  }
+}

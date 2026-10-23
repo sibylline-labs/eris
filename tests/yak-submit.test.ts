@@ -1283,6 +1283,31 @@ describe("submitYak — response-shape outcomes over a real Bun.serve listener",
     }
   });
 
+  it("429 with Retry-After: fails fast without retrying and reports retry-after in yak-transport-error warn", async () => {
+    let calls = 0;
+    const server = Bun.serve({
+      port: 0,
+      fetch: async () => {
+        calls += 1;
+        return new Response(
+          JSON.stringify({ error: "rate_limited", retry_after_seconds: 12, contract_version: YAKS_CONTRACT_VERSION }),
+          { status: 429, headers: { "retry-after": "12" } },
+        );
+      },
+    });
+    try {
+      const result = await submitYak({ ...BASE_PARAMS, url: server.url.toString(), token: "t" });
+      expect(calls).toBe(1);
+      expect(result.status).toBe("warn");
+      if (result.status !== "warn") throw new Error("unreachable");
+      expect(result.slug).toBe("yak-transport-error");
+      expect(result.reason).toContain("429");
+      expect(result.reason).toContain("retry after 12s");
+    } finally {
+      server.stop(true);
+    }
+  });
+
   it("a 200 whose body is not valid JSON: warn, yak-transport-error", async () => {
     const server = Bun.serve({ port: 0, fetch: async () => new Response("not json{{{", { status: 200 }) });
     try {

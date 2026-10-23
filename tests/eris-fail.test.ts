@@ -14,6 +14,8 @@ import { describe, it, expect } from "bun:test";
 import { join } from "node:path";
 import { errorsReport } from "./helpers/frozen-oracle";
 import {
+  ErisError,
+  EXIT_CODE_BY_CATEGORY,
   erisHome,
   splitFixLines,
   failureLines,
@@ -169,5 +171,27 @@ describe("renderWarnLines", () => {
     expect(renderWarnLines("actor unreachable", "yak-unreachable")).toBe(
       "WARN actor unreachable\nslug: yak-unreachable\n",
     );
+  });
+});
+
+describe("ErisError", () => {
+  it("renders byte-identically to renderFailureBlock and maps failure categories to canonical exit codes", () => {
+    const input: ErisFailureInput = {
+      slug: "demo-slug",
+      what: "something broke",
+      fix: "line one\nline two",
+      docs: "docs/GRAPH.md#configuration",
+    };
+    const err = new ErisError({ ...input, category: "precondition" });
+    expect(ErisError.isErisError(err)).toBe(true);
+    expect(err.exitCode).toBe(3);
+    expect(err.renderFailureBlock(REPO_HOME)).toBe(renderFailureBlock(input, REPO_HOME));
+    expect(renderFailureBlock(err, REPO_HOME)).toBe(renderFailureBlock(input, REPO_HOME));
+    expect(EXIT_CODE_BY_CATEGORY).toEqual({
+      runtime: 1,
+      misuse: 2,
+      precondition: 3,
+      timeout: 124,
+    });
   });
 });

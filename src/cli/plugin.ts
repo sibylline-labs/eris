@@ -28,7 +28,36 @@ import type { CliContext, VerbContext, VerbHandler } from "../main";
 import { type ArgSinks, type GroupArgs, groupArgsIn, type ReadOptions, readRowArgs, type RowArgs } from "./args";
 import type { CompletionDomain, Flag, FlagName, Row, SlotWord } from "./registry";
 
-export { erisHome, renderFailureBlock, renderWarnLines } from "../../ts/lib/eris-fail";
+export {
+  ErisError,
+  type ErisErrorOptions,
+  type ErisFailureInput,
+  EXIT_CODE_BY_CATEGORY,
+  erisHome,
+  type FailureCategory,
+  renderFailureBlock,
+  renderWarnLines,
+} from "../../ts/lib/eris-fail";
+export {
+  type BoundedPoolItemResult,
+  type BoundedPoolOptions,
+  type BoundedPoolResult,
+  forEachBounded,
+  HeraCli,
+  type HeraCliCtx,
+  HeraHttp,
+  HeraHttpError,
+  type HeraHttpRequestOptions,
+  type HeraHttpResponse,
+  HeraSchema,
+  type HeraSchemaContract,
+  HeraSchemaValidationError,
+  parseRetryAfter,
+  RateLimitedError,
+  resolveConcurrency,
+  resolveDeadlineMs,
+  runPool,
+} from "../hera";
 export { readEnv } from "../runtime/env";
 export { CliExit } from "./args";
 export type { ArgSinks, CliContext, CompletionDomain, Flag, FlagName, GroupArgs, ReadOptions, Row, RowArgs, SlotWord, VerbContext, VerbHandler };

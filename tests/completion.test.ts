@@ -252,14 +252,57 @@ describe("tab presses: the tree from the registry", () => {
     expect(sorted(press(["eris", "completion", ""]))).toEqual(["bash", "zsh"]);
   });
 
-  it("a tab press spawns no network client and no eris", () => {
-    /** When the engine reaches for eris, curl or bun, every tab press can hit the network. */
+  it("a tab press spawns no network client and no eris, and completes in <50ms", async () => {
+    /** When the engine reaches for eris, curl or bun, every tab press can hit the network or stall interactive shells. */
     writeFileSync(record, "");
+    const t0 = performance.now();
     press(["eris", ""]);
+    const tabMs = performance.now() - t0;
+    expect(tabMs).toBeLessThan(50);
     press(["eris", "yak", "issue", "--"]);
     press(["eris", "yak", "issue", "--summary", "x", ""]);
     press(["eris", "completion", ""]);
     expect(readFileSync(record, "utf8")).toBe("");
+
+    // Also verify HeraCli's lazy __complete fast-path completes in <50ms without invoking lazy handlers.
+    const { HeraCli } = await import("../src/hera/cli");
+    let handlerLoaded = false;
+    const app = HeraCli.app({
+      name: "eris",
+      version: "0.1.0",
+      commands: {
+        yak: HeraCli.command({
+          name: "yak",
+          summary: "Yak commands",
+          subcommands: {
+            issue: HeraCli.command({
+              name: "issue",
+              summary: "File an issue",
+              flags: {
+                summary: { type: "string", description: "Issue summary" },
+                body: { type: "string", description: "Issue body" },
+              },
+              handler: async () => {
+                handlerLoaded = true;
+                return 0;
+              },
+            }),
+          },
+        }),
+      },
+    });
+    let out = "";
+    const c0 = performance.now();
+    const res = await HeraCli.dispatch(app, ["__complete", "yak", "issue", "--"], {
+      stdout: (s: string) => {
+        out += s;
+      },
+    });
+    const completeMs = performance.now() - c0;
+    expect(res.exitCode).toBe(0);
+    expect(handlerLoaded).toBe(false);
+    expect(out.trim().split("\n").sort()).toEqual(["--body", "--summary"]);
+    expect(completeMs).toBeLessThan(50);
   });
 });
 

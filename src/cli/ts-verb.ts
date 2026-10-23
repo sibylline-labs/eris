@@ -23,7 +23,7 @@
 
 import { accessSync, constants } from "node:fs";
 import { delimiter, join, relative, sep } from "node:path";
-import { renderFailureBlock } from "../../ts/lib/eris-fail";
+import { ErisError, renderFailureBlock } from "../../ts/lib/eris-fail";
 import type { CliContext, VerbHandler } from "../main";
 import { asksForHelp, CliExit, GlobalFlagError, parseGlobal } from "./args";
 import { lockedOutcome, lockedProduct, type Session } from "./compose";
@@ -118,6 +118,10 @@ export async function runTsVerb(
     return await handler(parsed.argv.slice(1), { ...ctx, format: parsed.format, ...(session !== undefined ? { session } : {}) });
   } catch (e) {
     if (e instanceof CliExit) return e.code;
+    if (ErisError.isErisError(e)) {
+      ctx.stderr.write(e.renderFailureBlock(ctx.erisDir));
+      return e.exitCode;
+    }
     const block = missingDependencyBlock(e, ctx.erisDir);
     if (block === null) throw e;
     ctx.stderr.write(block);

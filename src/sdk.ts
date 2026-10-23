@@ -44,11 +44,9 @@ export { HANDLERS, main, runProgram } from "./main";
 export { PLUGINS } from "../plugins";
 export type { RunJob, RunOptions, RunResult, Runner } from "./runtime/process";
 export { childEnv, nodeRunner, runMany, signalTree } from "./runtime/process";
-export { resolveConcurrency, resolveDeadlineMs, runPool } from "../ts/lib/pool";
 export { info, ok, warn } from "./runtime/logging";
 export type { DistributionIdentity } from "./runtime/home";
 export { BUILD_ID, installRoot, installRootIsUnwritten, isCompiled, releaseRepo } from "./runtime/home";
-export type { ErisFailureInput } from "../ts/lib/eris-fail";
 export type { BuildOptions, BuildResult, BuildStub } from "./build";
 
 /** Compile a distribution into one executable (src/build.ts). */
