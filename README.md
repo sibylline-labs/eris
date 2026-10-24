@@ -108,6 +108,17 @@ unreachable endpoint or a timeout prints a `WARN` line with its slug and still
 exits 0. Only misuse (a missing `--summary`, an over-long field, an unknown
 flag) exits 1. [docs/YAK.md](docs/YAK.md) has the full reference.
 
+### Agent skill
+
+[`skills/eris-yaks`](skills/eris-yaks/SKILL.md) is an agent skill that walks a coding agent
+through setting up Eris Yaks for its user: running eris, the browser steps to connect Linear and
+create a token, a test yak, and the `AGENTS.md` block that teaches later sessions to file. Install
+it with the [skills](https://github.com/vercel-labs/skills) CLI:
+
+```bash
+npx skills add sibylline-labs/eris --skill eris-yaks
+```
+
 ## Writing a plugin
 
 A plugin is registry rows plus lazily loaded handlers, written against the SDK
