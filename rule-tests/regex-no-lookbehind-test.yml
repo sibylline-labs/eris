@@ -1,0 +1,20 @@
+id: regex-no-lookbehind
+valid:
+  # Lookaheads compile natively.
+  - |
+    const RE = /\bsk-(?!x)[A-Za-z0-9]{20,120}/g;
+  - |
+    const RE = new RegExp(`Authorization:\\s*(?!«redacted:)\\S+`, "gi");
+  # A named group is not a lookbehind.
+  - |
+    const RE = /(?<q>["'])x\k<q>/g;
+  - |
+    const RE = new RegExp("(?<name>[a-z]+)=", "g");
+invalid:
+  # The ASSIGNMENT_RE guard that took the pathological-input test past budget.
+  - |
+    const AUTH_OWNED = `(?!(?<=authorization):\\s*${AUTH_SCHEME}\\s+«redacted:)`;
+  - |
+    const RE = /(?<![-0-9A-Za-z])[0-9a-f]{40}/g;
+  - |
+    const RE = new RegExp("(?<=key)=", "g");
