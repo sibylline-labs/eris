@@ -29,7 +29,7 @@
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 import { hostname } from "node:os";
-import type { YakProvenance } from "@sibylline-labs/yak-contract";
+import type { YakProvenance } from "eris/yak-contract";
 import { asText, runBounded, type Runner } from "./yak-identity";
 
 const GIT_PROBE_TIMEOUT_MS = 500;

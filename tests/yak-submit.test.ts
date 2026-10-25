@@ -38,7 +38,7 @@ import {
   YAK_BODY_MAX_LENGTH,
   YAK_ID_MAX_LENGTH,
   YAK_SUMMARY_MAX_LENGTH,
-} from "@sibylline-labs/yak-contract";
+} from "eris/yak-contract";
 
 // ============================================================================
 // resolveTextInputs

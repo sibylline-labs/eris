@@ -54,7 +54,7 @@ import {
   type YakOutputRecord,
 } from "./yak-submit";
 import { formatRedactionSummary } from "./yak-redact";
-import type { YakVerb } from "@sibylline-labs/yak-contract";
+import type { YakVerb } from "eris/yak-contract";
 
 // ---------------------------------------------------------------------------
 // Argv parsing
