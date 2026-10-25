@@ -42,6 +42,8 @@ packages/yak-contract/  # the Yaks wire contract v2, a bun workspace package tha
                         #   `eris/yak-contract` (package.json exports) is its src/index.ts.
                         #   src/v2.ts (Zod + inferred types), scripts/emit-json-schema.ts →
                         #   schema/yak-v2.schema.json (committed; `bun run emit-schema` in the package re-emits)
+skills/eris-yaks/       # SKILL.md: the agent skill that sets up Yaks (`npx skills add sibylline-labs/eris
+                        #   --skill eris-yaks`); the skills CLI discovers skills/<name>/SKILL.md
 examples/plugins/widgets/  # the worked plugin example tests/plugins.test.ts composes
 examples/distribution/  # the worked distribution: an entry importing eris/sdk alone, a demo plugin with a
                         #   completion domain, a menu, and build.ts; tests/distribution.test.ts builds and runs it

@@ -56,6 +56,7 @@ describe("scan", () => {
     ["a merge message whose branch slug runs the public org into a word", "", `Merge pull request #4 from ${ORG}-labs/dan/x-export-${ORG}-labsyak-contract`],
     ["the security address in SECURITY.md", "SECURITY.md", `Email security@${ORG}.group.`],
     ["the support address in CONTRIBUTING.md", "CONTRIBUTING.md", `Write to support@${ORG}.group.`],
+    ["the hosted install steps and support address in the eris-yaks skill", "skills/eris-yaks/SKILL.md", `https://yak.${ORG}.group/install.md · support@${ORG}.group`],
     ["the copyright holder in NOTICE", "NOTICE", `Copyright 2026 ${"Sibyl" + "line"} Labs`],
     ["an example-domain email and a git remote", "tests/a.ts", "ada@example.com git@github.com:acme/widgets.git"],
     ["a package-manager pin", "package.json", '"packageManager": "bun@1.4.4"'],
