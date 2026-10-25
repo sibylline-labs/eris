@@ -127,8 +127,8 @@ the Yaks submission contract v2 as Zod schemas, their inferred TypeScript
 types, and the JSON Schema they emit (`schema/yak-v2.schema.json`) for
 consumers in other languages. A repository that depends on this one (a git
 dependency pinned to a merge commit on `main`) imports the TypeScript contract
-as `eris/yak-contract`. The `eris yak` client in this build still speaks
-contract v1 (`plugins/yak/yaks-schema.v1.ts`).
+as `eris/yak-contract`. The `eris yak` client in this build imports it and
+posts contract v2 submissions.
 
 ## Documentation
 

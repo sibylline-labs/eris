@@ -313,6 +313,13 @@ Fix: the release may be broken. Retry later, or install another with `eris updat
 `--summary`, `--body`/`--body-file`, `--evidence`/`--evidence-file`,
 `--repro`, `--no-redact`, `--help`. Fix: `eris yak <verb> --help`.
 
+### yak-positional-arg
+
+`eris yak <verb>` was given a bare word, usually the report text itself
+(`eris yak issue "the hook blocked a legal edit"`). The text rides on flags,
+not positionals. Fix: `eris yak <verb> --summary "<one line>" --body "<what
+happened>"`, or `--body-file <path|->` for a longer body.
+
 ### yak-flag-missing-value
 
 A value-taking flag (`--summary`, `--body`, `--body-file`, `--evidence`,
@@ -386,7 +393,7 @@ The `evidence` field exceeds 20000 chars. Same cause and fix as
 
 The (redacted) `--repro <command>` exceeds 2000 chars — a local
 courtesy bound, not a wire-contract one: `repro` rides inside `provenance`
-(`provenance.repro.command`), which the vendored contract never
+(`provenance.repro.command`), which the contract package never
 length-validates. Caught locally anyway, same reasoning as
 [`yak-summary-too-long`](#yak-summary-too-long) — a repro is a command, not a
 narrative, so 2000 chars is generous headroom over any real invocation. Fix:
@@ -395,10 +402,10 @@ shorten it — redaction can grow text, so check the real length with
 
 ### yak-repo-too-long
 
-A (redacted) `--repo <owner/name>` hint exceeds 200 chars — a
-local courtesy bound, not a wire-contract one: a target-repo hint rides
-inside `provenance` (`provenance.repo.target_repos`), which the vendored
-contract never length-validates. Caught locally anyway, same reasoning as
+A (redacted) `--repo <owner/name>` hint exceeds 200 chars — a target-repo hint rides
+inside `provenance` (`provenance.repo.target_repos`), which the contract
+package types and bounds at the same 200 chars. Caught here first, so the
+error names `--repo` rather than a generic payload failure, same reasoning as
 [`yak-repro-too-long`](#yak-repro-too-long) — a hint is a short `owner/name`
 identifier, so 200 chars is generous headroom over any real one. Fix:
 shorten it — redaction can grow text, so check the real length with
@@ -414,8 +421,8 @@ concerns.
 
 ### yak-payload-invalid
 
-Local validation against the vendored Yaks contract
-(`plugins/yak/yaks-schema.v1.ts`) failed for a reason other than a length bound
+Local validation against the Yaks contract package
+(`@sibylline-labs/yak-contract`) failed for a reason other than a length bound
 (e.g. an empty required field after redaction). The `ERROR` line names the
 field and the schema's message.
 
@@ -470,12 +477,43 @@ delivered; the agent's task is unaffected.
 The Yaks endpoint did not respond within the bounded request window (30s
 default). No retry — matches the registry transport's own posture. Warn + exit 0.
 
+### yak-unauthorized
+
+The Yaks endpoint answered `401`: it rejected the bearer token. Check the
+`"token"` in `~/.eris/yaks.json` or `ERIS_YAKS_TOKEN`, and that the token is
+registered with the endpoint. Retrying the same call changes nothing. Warn +
+exit 0; the report was dropped, not delivered, and the agent's task is
+unaffected. A problem with eris itself is reported on the vendor route, the eris
+project's own tracker, rather than into the workspace.
+
+### yak-not-entitled
+
+The Yaks endpoint answered `402`: the workspace is not entitled to Yaks (its
+plan or seat does not include it). Ask whoever administers the workspace;
+nothing on this machine fixes it. Warn + exit 0; the report was dropped, not
+delivered, and the agent's task is unaffected. A problem with eris itself is
+reported on the vendor route, the eris project's own tracker, rather than into the
+workspace.
+
+### yak-payload-too-large
+
+The Yaks endpoint answered `413`: the submission exceeded the endpoint's
+whole-body size cap. The per-field length checks pass locally first, so the sum
+is what overflowed; trim `--evidence` (the largest field), `--repro` or the
+`--repo` hints. Warn + exit 0; the
+report was dropped, not delivered, and the agent's task is unaffected. A problem
+with eris itself is reported on the vendor route, the eris project's own tracker,
+rather than into the workspace.
+
 ### yak-transport-error
 
-The Yaks endpoint responded, but not usably: a non-2xx status, an unparseable
-200 body, or a 200 that does not match the receipt contract
-(`YakReceipt` in `plugins/yak/yaks-schema.v1.ts`). Warn + exit 0; the `WARN` line
-names the HTTP status or the parse failure.
+The Yaks endpoint responded, but not usably: a non-2xx status other than the
+`401`, `402` and `413` that have their own slugs
+([`yak-unauthorized`](#yak-unauthorized), [`yak-not-entitled`](#yak-not-entitled),
+[`yak-payload-too-large`](#yak-payload-too-large)), an unparseable 2xx body, or a
+2xx that does not match the receipt contract (`YakReceipt` in
+`@sibylline-labs/yak-contract`). Warn + exit 0; the `WARN` line names the HTTP
+status or the parse failure.
 
 ### yak-config-permissive
 

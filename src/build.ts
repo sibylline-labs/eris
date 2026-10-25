@@ -62,7 +62,7 @@ import { checkoutRoot, type DistributionIdentity, firstDocRoot, resolveIdentity 
 const CORE = checkoutRoot();
 
 /** The source a distribution is built from, when it names none. */
-const SOURCE_ROOTS = ["src", "ts", "plugins"];
+const SOURCE_ROOTS = ["src", "ts", "plugins", "packages"];
 const SOURCE_FILES = ["package.json", "bun.lock", "bun.lockb"];
 
 /** A doc the source names: `docs/ERRORS.md#slug`, `docs/YAK.md`, ... */

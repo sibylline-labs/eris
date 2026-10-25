@@ -1,11 +1,11 @@
 /**
- * yak-identity.ts — token/URL config resolution and reporter identity for
+ * yak-identity.ts — token/URL config resolution and caller identity for
  * `eris yak`.
  *
  * Owns the parts of a yak submission that are ABOUT THE CALLER, not about the
  * report: which Yaks endpoint to talk to, what bearer token authenticates the
- * call, a stable per-machine `device_id`, the task-scoped `execution_id`, and
- * an optional git-derived reporter identity. `plugins/yak/yak-context.ts` (sibling
+ * call, a stable per-machine `device_id`, and the task-scoped `execution_id`.
+ * `plugins/yak/yak-context.ts` (sibling
  * file, same phase) owns the richer best-effort PROVENANCE record and reuses
  * `runBounded` from here for its own bounded git probes.
  *
@@ -296,8 +296,8 @@ export function resolveExecutionId(
  * --porcelain` on a clean tree exits 0 with EMPTY stdout, and collapsing that
  * to "absent" the way an empty free-text field would be would confuse
  * "measured: clean" with "not measured".
- * Callers that want "empty means absent" (a git sha, an origin url, a
- * reporter's name) call `asText` on the result; callers that need to tell
+ * Callers that want "empty means absent" (a git sha, an origin url) call
+ * `asText` on the result; callers that need to tell
  * "clean" from "unmeasured" (a dirty flag) read `.ok` and `.stdout` directly.
  */
 export type BoundedResult = { ok: true; stdout: string } | { ok: false };
@@ -357,38 +357,11 @@ export async function runBounded(cmd: string[], cwd: string, timeoutMs: number):
 }
 
 /** Convenience for the common "trimmed non-empty string, else absent" case —
- *  a git sha/branch/origin/root, a reporter's name or email. See
+ *  a git sha/branch/origin/root. See
  *  `BoundedResult`'s header for why the boolean-fact case (dirty) must NOT
  *  go through this. */
 export function asText(result: BoundedResult): string | undefined {
   if (!result.ok) return undefined;
   const trimmed = result.stdout.trim();
   return trimmed.length > 0 ? trimmed : undefined;
-}
-
-// --- reporter ---------------------------------------------------------------
-
-/** The git author shape, `{name?, email?}`, matching the vendored
- *  `YakReporter` (`plugins/yak/yaks-schema.v1.ts`) — both fields optional,
- *  absent (never `""`) when `git config` has nothing to say.
- *  Never fails: an unset `user.name`/`user.email`, a missing `git` binary, or
- *  a `cwd` outside any repo all resolve to `{}`. */
-export type YakReporterInfo = { name?: string; email?: string };
-
-const GIT_CONFIG_TIMEOUT_MS = 500;
-
-export async function resolveReporter(
-  cwd: string = process.cwd(),
-  run: Runner = runBounded,
-): Promise<YakReporterInfo> {
-  const [name, email] = await Promise.all([
-    run(["git", "config", "user.name"], cwd, GIT_CONFIG_TIMEOUT_MS),
-    run(["git", "config", "user.email"], cwd, GIT_CONFIG_TIMEOUT_MS),
-  ]);
-  const reporter: YakReporterInfo = {};
-  const nameText = asText(name);
-  const emailText = asText(email);
-  if (nameText !== undefined) reporter.name = nameText;
-  if (emailText !== undefined) reporter.email = emailText;
-  return reporter;
 }
