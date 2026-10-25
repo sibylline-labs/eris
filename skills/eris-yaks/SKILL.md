@@ -1,11 +1,11 @@
 ---
 name: eris-yaks
-description: Set up Eris Yaks so this coding agent files the friction it hits in its own tooling (a hook that blocks a legal command, a doc that names a flag that doesn't exist, a tool that fails silently) as deduplicated `[Yak]` issues in the user's Linear Triage. Use when the user asks to set up, install, connect or configure Eris Yaks, `eris yak`, yak reporting or yak filing, or to send their agents' tooling friction to Linear.
+description: Set up Yaks so this coding agent files the friction it hits in its own tooling (a hook that blocks a legal command, a doc that names a flag that doesn't exist, a tool that fails silently) as deduplicated `[Yak]` issues in the user's Linear Triage. Use when the user asks to set up, install, connect or configure Yaks (also called Eris Yaks), `eris yak`, yak reporting or yak filing, or to send their agents' tooling friction to Linear.
 ---
 
-# Set up Eris Yaks
+# Set up Yaks
 
-Your user asked you to set up Eris Yaks. When it's done, any friction you hit in your own
+Your user asked you to set up Yaks. When it's done, any friction you hit in your own
 tooling becomes one `eris yak` command, and then you keep working. The report lands,
 deduplicated, in your user's Linear Triage.
 
@@ -44,7 +44,7 @@ Expect: `eris` followed by a version.
 ## 3. Connect Linear (your user, in a browser)
 
 Stop here. Ask your user to open https://dash.sibylline.group, choose **Sign in with Linear**,
-and install the **Eris Yaks** app into their Linear workspace when prompted. A Linear admin
+and install the **Yaks** app into their Linear workspace when prompted. A Linear admin
 does this once per workspace. Wait until they confirm.
 
 ## 4. Create a CLI token (your user, in a browser)
@@ -70,7 +70,7 @@ fails the task that filed it. The slug on that line names what to fix, usually t
 from step 4.
 
 ```sh
-eris yak suggest --summary "First yak from this repo" --body "Testing the Eris Yaks pipeline end to end."
+eris yak suggest --summary "First yak from this repo" --body "Testing the Yaks pipeline end to end."
 ```
 
 Expect: `recorded: <id>`

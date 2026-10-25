@@ -111,7 +111,7 @@ flag) exits 1. [docs/YAK.md](docs/YAK.md) has the full reference.
 ### Agent skill
 
 [`skills/eris-yaks`](skills/eris-yaks/SKILL.md) is an agent skill that walks a coding agent
-through setting up Eris Yaks for its user: running eris, the browser steps to connect Linear and
+through setting up Yaks for its user: running eris, the browser steps to connect Linear and
 create a token, a test yak, and the `AGENTS.md` block that teaches later sessions to file. Install
 it with the [skills](https://github.com/vercel-labs/skills) CLI:
 
