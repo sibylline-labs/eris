@@ -5,7 +5,6 @@
     "": {
       "name": "eris",
       "dependencies": {
-        "@sibylline-labs/yak-contract": "workspace:*",
         "zod": "^3.23.0",
       },
       "devDependencies": {

@@ -12,7 +12,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { YAKS_CONTRACT_VERSION } from "@sibylline-labs/yak-contract";
+import { YAKS_CONTRACT_VERSION } from "eris/yak-contract";
 import { renderFailureBlock } from "../ts/lib/eris-fail";
 import { runYakVerb, YAK_USAGE } from "../plugins/yak/handlers";
 import { CliExit } from "../src/cli/ts-verb";

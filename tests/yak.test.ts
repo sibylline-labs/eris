@@ -17,7 +17,7 @@ import { describe, it, expect } from "bun:test";
 import { mkdtemp, rm, writeFile, chmod, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { YakSubmission, YAKS_CONTRACT_VERSION } from "@sibylline-labs/yak-contract";
+import { YakSubmission, YAKS_CONTRACT_VERSION } from "eris/yak-contract";
 import { parseArgv, runYak, type RunYakOptions } from "../plugins/yak/yak";
 
 // ============================================================================

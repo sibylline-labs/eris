@@ -62,7 +62,7 @@ import {
   deriveIdempotencyKey,
   type YakVerb,
   type YakProvenance,
-} from "@sibylline-labs/yak-contract";
+} from "eris/yak-contract";
 import { redact, redactDeep, type RedactionClass } from "./yak-redact";
 import type { IdentityOutcome } from "./yak-identity";
 

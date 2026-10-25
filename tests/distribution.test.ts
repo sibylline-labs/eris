@@ -146,6 +146,13 @@ describe("the package's exports", () => {
     expect(contract.deriveIdempotencyKey).toBe(deriveIdempotencyKey);
     expect(contract.YakSubmission).toBe(YakSubmission);
   });
+
+  it("root package.json dependencies carry no workspace: protocol so git-dependency consumers can install eris", () => {
+    /** When root dependencies declare `workspace:*`, bun install in a repository that pins eris as a git dependency searches the consumer's workspaces and fails to resolve it: observed at the root manifest's dependency specs. */
+    const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")) as { dependencies?: Record<string, string> };
+    const workspaceDeps = Object.entries(pkg.dependencies ?? {}).filter(([, spec]) => spec.startsWith("workspace:"));
+    expect(workspaceDeps).toEqual([]);
+  });
 });
 
 describe("this build's composition", () => {
