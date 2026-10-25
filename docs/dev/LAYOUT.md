@@ -56,7 +56,8 @@ sgconfig.yml            # the code-quality rules over eris's OWN source (ruleDir
 rules/                  #   adhoc-argv-parse (one argv parser), env-read-own-property(-plugin) (env names
 rule-tests/             #   are read through readEnv), plugin-manifest-lazy-handlers + plugin-imports-sdk-only
                         #   (the plugin contract), distribution-imports-sdk-only (eris/sdk alone),
-                        #   runtime-imports-no-testing (the program never imports testing/)
+                        #   runtime-imports-no-testing (the program never imports testing/),
+                        #   regex-no-lookbehind (the pinned bun interprets a lookbehind pattern)
 tests/                  # `bun test ./tests` — the whole suite. helpers/blackbox.ts drives the real
                         #   `./eris` in a physical per-test sandbox (PATH fakes, hideReal); helpers/plugins/
                         #   holds a tripwire plugin; helpers/release-fixture.ts is GitHub's releases API
