@@ -63,10 +63,10 @@ under a tag that names another.
 4. **npm** waits for **build** and **publish** (so a red oracle leg or a failed GitHub
    release publishes no package), stamps the
    tag's version into `package.json`, checks the tarball with `npm publish --dry-run`,
-   and publishes it when the npm token is set (below).
+   and publishes it through npm trusted publishing (below).
 
-No job reads a secret except **npm** (its own token), and every action is
-pinned to a commit SHA; `tests/workflows.test.ts` holds both, and the permissions.
+No job reads a secret, no job but **npm** holds `id-token: write`, and every action is
+pinned to a commit SHA; `tests/workflows.test.ts` holds all three, and the permissions.
 
 ## The npm package
 
@@ -87,13 +87,52 @@ declares the dependency under the key `eris` and imports `eris/sdk`, `eris/yak-c
 `eris/yak-redact`. It
 reads no secret and publishes nothing.
 
-Setup, once: create a token that can publish `@sibylline-labs/eris` and store it as the
-secret `NPM_TOKEN` of the repository. The **npm** job reads it into `env` only to test it (the
-`secrets` context is not available to an `if`) and gives it to the last step alone, which writes
-it to a file under `$RUNNER_TEMP` and runs `npm publish --ignore-scripts`; no repository code
-runs after the token is on disk. Without the secret the job still checks the tarball, then
-fails red with a notice: a tag is not re-run on its own, so a release that skipped npm must not
-look green. Set the secret and re-run the job.
+The **npm** job holds no npm token. It publishes through
+[trusted publishing](https://docs.npmjs.com/trusted-publishers): with `id-token: write`, npm
+exchanges the job's GitHub OIDC token for a short-lived publish token, and the registry accepts it
+only from the repository and workflow file the package names as its trusted publisher. A trusted
+publish also attaches a provenance attestation, with no `--provenance` flag. What it needs, each
+held by `tests/workflows.test.ts` or the job itself:
+
+- a GitHub-hosted runner (`ubuntu-latest`): npm refuses the exchange from a self-hosted one;
+- Node 24 from `actions/setup-node` (every Node 22 bundles npm 10) and npm 11.5.1 or later, which
+  a step checks before publishing, since an older npm fails the exchange as `ENEEDAUTH`;
+- no `registry-url` on setup-node and no `.npmrc` token: the publish is `npm publish --access
+  public --ignore-scripts` and nothing else;
+- `repository.url` in `package.json` naming this repository. npm normalizes
+  `https://github.com/sibylline-labs/eris` to `git+https://github.com/sibylline-labs/eris.git`, so
+  the manifest holds that form (`tests/package.test.ts`); a fork must change it to publish.
+
+The OIDC token can be minted by any step of the job, so no step runs repository code: every npm
+command carries `--ignore-scripts`, and no step runs bun or node.
+
+Setup, once:
+
+1. **Bootstrap publish.** A trusted publisher is configured on a package that exists, so the
+   first version goes up by hand, from a clean checkout at a release tag, by a maintainer of the
+   `@sibylline-labs` org with 2FA:
+
+   ```bash
+   git checkout v0.3.0                       # the tag the release job published to GitHub
+   npm version 0.3.0 --no-git-tag-version --ignore-scripts
+   npm publish --access public --ignore-scripts
+   git checkout package.json
+   ```
+
+   That publish is token-authenticated and carries no provenance; every later one comes from the
+   release job.
+2. **Configure the trusted publisher** at npmjs.com → `@sibylline-labs/eris` → Settings → Trusted
+   publishing → GitHub Actions: organization `sibylline-labs`, repository `eris`, workflow
+   filename `release.yml`, no environment. Under allowed actions, allow `npm publish`: a
+   configuration made after Sep-03-2026 allows only `npm stage publish` by default, and the job
+   runs `npm publish`. Every field is case-sensitive and npm checks none of them when you save.
+3. **Publish within two days.** A new configuration expires unless a publish through it succeeds
+   within two days of its creation. Cut the next tag, or re-run the **npm** job of a release whose
+   version is not yet on the registry.
+4. **Lock it down.** Once a trusted publish has succeeded, set Settings → Publishing access to
+   "Require two-factor authentication and disallow tokens", and revoke any automation token.
+
+A re-run of the job for a version already on the registry says so and passes.
 
 What an npm install does not have: the `eris-bun-missing` block (bun not on `PATH` is `env`'s
 own message, since the shim is not what starts it). Its `eris --version` reports the stamped
