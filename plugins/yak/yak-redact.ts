@@ -474,6 +474,8 @@ const CREDENTIAL_NAME_RE =
   /SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]KEY|API[_-]KEY|CREDENTIAL|ACCESS[_-]KEY|MNEMONIC/i;
 const DIGIT_RE = /[0-9]/;
 const MARKER_GLOBAL_RE = new RegExp(MARKER, "g");
+// A marker with text glued after it: the text may be the tail of the secret.
+const MARKER_TAIL_RE = new RegExp(`${MARKER}(?!$)`);
 // A name that reads as an English word: letters only, at least one lower-case.
 const WORD_NAME_RE = /^[A-Za-z]*[a-z][A-Za-z]*$/;
 
@@ -481,7 +483,9 @@ const WORD_NAME_RE = /^[A-Za-z]*[a-z][A-Za-z]*$/;
  *  digit, not counting any marker inside it. An English word, a slash command
  *  or a short ticket id is neither. A marker is excluded so that redaction is
  *  idempotent: the rescan of a declined value only ever swaps text for
- *  markers, which cannot make the value secret-shaped on a second pass. */
+ *  markers, which cannot make the value secret-shaped on a second pass. A
+ *  marker with a tail never reaches here (`isProseAssignment`), so no tail
+ *  of an over-long secret is discounted. */
 function isSecretShaped(value: string): boolean {
   const residue = value.replace(MARKER_GLOBAL_RE, "");
   return residue.length >= 16 || (residue.length >= 8 && DIGIT_RE.test(residue));
@@ -496,6 +500,7 @@ function isProseAssignment(groups: AssignmentGroups): boolean {
   if (!WORD_NAME_RE.test(name) || CREDENTIAL_NAME_RE.test(name)) return false;
   const first = groups.value[0];
   if (first === '"' || first === "'" || groups.value.startsWith("«redacted:")) return false;
+  if (MARKER_TAIL_RE.test(groups.value)) return false;
   return !isSecretShaped(groups.value);
 }
 

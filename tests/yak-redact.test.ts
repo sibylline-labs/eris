@@ -470,6 +470,19 @@ describe("redact() — positive corpus, one class each", () => {
     }
   });
 
+  it("redacts a prose-colliding value whole when an earlier marker inside it has a tail", () => {
+    // Fails if a marker is discounted from a value's secret shape even when
+    // text runs on past it: the tail of an over-long key (SK_KEY_RE stops at
+    // 120 chars) ships under `session:`. Observed at both passes' text.
+    const tail = "hJkLmNoPqR";
+    const input = `session: s.sk-proj-${"a1B2".repeat(30)}${tail} trailing`;
+    const once = redact(input);
+    expect(once.text).toBe("session: «redacted:assignment» trailing");
+    const again = redact(once.text);
+    expect(again.text).toBe(once.text);
+    expect(again.total).toBe(0);
+  });
+
   it("redacts a credential assignment that sits inside a declined prose-colliding value", () => {
     // Fails if a declined `auth:`/`seed:`/`cookie:` match swallows the text
     // after it: the scan must resume inside the declined value, or the
