@@ -57,8 +57,9 @@ Commands:
   fatal     The harness itself is broken
 
 ${USAGE_FLAG_BLOCK}
-Setup: 'eris login --url <url>' writes ~/.eris/yaks.json ({"url", "token"},
-mode 0600); or export ERIS_YAKS_URL / ERIS_YAKS_TOKEN.
+Setup: 'eris login' writes ~/.eris/yaks.json ({"url", "token"}, mode 0600;
+the url defaults to https://api.sibylline.group); or export ERIS_YAKS_URL /
+ERIS_YAKS_TOKEN.
 
 Run 'eris yak <command> --help' for the full flag reference.
 `;

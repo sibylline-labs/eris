@@ -79,22 +79,24 @@ eris yak --help
 
 ### Filing a yak
 
-`eris yak` has no default endpoint. Configure one with environment variables:
+Sign in once with a device code. `eris login` shows a code to approve in the
+browser and writes the token to `~/.eris/yaks.json` (mode `0600`):
+
+```bash
+eris login
+```
+
+That signs in to `https://api.sibylline.group`. For another endpoint, pass
+`--url`, or configure it with environment variables:
 
 ```bash
 export ERIS_YAKS_URL=https://yaks.example.com     # your Yaks endpoint
 export ERIS_YAKS_TOKEN=<bearer token>
 ```
 
-Or sign in with a device code, if your endpoint offers one. `eris login` shows a
-code to approve in the browser and writes the token to `~/.eris/yaks.json`:
-
-```bash
-eris login --url https://yaks.example.com
-```
-
-Or, from a checkout, mint a bearer into `~/.eris/yaks.json` (mode `0600`). The
-script prints the entry your endpoint's operator needs to register:
+Or, for a self-hosted endpoint without device login, mint a bearer into
+`~/.eris/yaks.json` from a checkout. The script prints the entry your endpoint's
+operator needs to register:
 
 ```bash
 bun plugins/yak/yak-setup.ts --url https://yaks.example.com

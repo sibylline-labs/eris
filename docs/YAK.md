@@ -57,16 +57,19 @@ text (see [Idempotency](#idempotency-and-replay)).
 { "url": "https://yaks.example.com", "token": "…" }
 ```
 
-There is no default endpoint: until a URL is configured, every yak warns
-`yak-url-unresolved` and exits 0.
+The url is `ERIS_YAKS_URL`, then the file's `url`, then the default
+`https://api.sibylline.group`. Set either only to use another endpoint.
 
 ### `eris login`: a device code
 
-On an endpoint that offers device login, sign in from any terminal:
+Sign in from any terminal:
 
 ```
-eris login --url https://yaks.example.com
+eris login
 ```
+
+That signs in to `https://api.sibylline.group`. For another endpoint that
+offers device login, pass `--url https://yaks.example.com`.
 
 It prints a link and a short code (and opens the link in a browser when stderr
 is a terminal; `--no-browser` skips that). Approve the code there, and the
@@ -76,7 +79,7 @@ arrives, via a temp file created `0600` and renamed into place: a denied or
 expired code writes nothing (`login-denied`, `login-expired`, exit 1). Neither
 the device code nor the token is printed; the short code is the one value
 shown, and it is useless without the approval. Without `--url` the url is
-`ERIS_YAKS_URL`, then the file's own `url`. The CLI follows RFC 8628: it
+`ERIS_YAKS_URL`, then the file's own `url`, then the default. The CLI follows RFC 8628: it
 polls `/v1/device/token` at the advertised interval and slows down when told to.
 
 `eris logout` removes the token from the file and keeps the url. No route lets
@@ -85,8 +88,10 @@ endpoint's dashboard (Settings > API Tokens).
 
 ### `yak-setup.ts`: a hand-registered bearer
 
-Or mint the file with `bun plugins/yak/yak-setup.ts --url <endpoint>` (or with
-`ERIS_YAKS_URL` set) from an eris checkout. It writes the file and prints the
+For a self-hosted endpoint, mint the file with
+`bun plugins/yak/yak-setup.ts --url <endpoint>` (or with `ERIS_YAKS_URL` set)
+from an eris checkout; it refuses without one, because the default endpoint
+signs machines in with `eris login`. It writes the file and prints the
 follow-up step: the endpoint's operator has to register the bearer against
 this machine's source slug, which the script does not automate. Until both
 halves are done, every yak from this machine warns and exits 0 rather than

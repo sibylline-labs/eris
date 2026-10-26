@@ -9,8 +9,9 @@
  * but only while it stays 0600, so the file is created at 0600 here and the
  * reader REFUSES a group- or world-readable one.
  *
- * There is no default host: the URL comes from --url or ERIS_YAKS_URL, and the
- * script refuses without one.
+ * The URL comes from `resolveUrl` (--url, then ERIS_YAKS_URL). The script
+ * refuses when that falls to the built-in default: that endpoint signs a
+ * machine in with `eris login` and registers no hand-minted bearer.
  *
  * THIS SCRIPT DOES HALF THE JOB. The token it mints is meaningless until the
  * endpoint's operator registers it against the `source` slug stamped on every
@@ -24,6 +25,7 @@ import { existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } fr
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import { readArgs } from "../../src/cli/plugin";
+import { resolveUrl } from "./yak-identity";
 
 const USAGE_LINE = "plugins/yak/yak-setup.ts [--slug <slug>] [--url <url>] [--force]";
 /** Not an eris verb, so not in the manifest: the one parser reads this row directly. */
@@ -81,8 +83,11 @@ export function main(
   });
   if (p === null) return 0;
   const slug = p.flags["--slug"] ?? defaultSlug();
-  const url = p.flags["--url"] ?? env.ERIS_YAKS_URL;
-  if (!url) fail(`no Yaks URL: pass --url <url> or set ERIS_YAKS_URL (usage: ${USAGE_LINE})`);
+  const resolved = resolveUrl({}, env, p.flags["--url"]);
+  if (resolved.source === "default") {
+    fail(`no Yaks URL: pass --url <url> or set ERIS_YAKS_URL (usage: ${USAGE_LINE})\n  for ${resolved.value}, run 'eris login' instead`);
+  }
+  const url = resolved.value;
   const force = p.flags["--force"];
 
   // The registry's own grammar for a source slug.
