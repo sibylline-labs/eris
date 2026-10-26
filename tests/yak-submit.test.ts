@@ -27,16 +27,18 @@ import {
   YAK_REPO_HINTS_MAX_COUNT,
   type RawTextInputs,
   type SubmitParams,
+  type SubmitWarnSlug,
 } from "../plugins/yak/yak-submit";
 import { redact } from "../plugins/yak/yak-redact";
 import {
   deriveIdempotencyKey,
   YakReceipt,
+  YakSubmission,
   YAKS_CONTRACT_VERSION,
   YAK_BODY_MAX_LENGTH,
   YAK_ID_MAX_LENGTH,
   YAK_SUMMARY_MAX_LENGTH,
-} from "../plugins/yak/yaks-schema.v1";
+} from "eris/yak-contract";
 
 // ============================================================================
 // resolveTextInputs
@@ -1240,46 +1242,57 @@ describe("submitYak — response-shape outcomes over a real Bun.serve listener",
     }
   });
 
-  it("400: warn, yak-transport-error, names the status", async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch: async () => new Response(JSON.stringify({ error: "bad request" }), { status: 400 }),
+  // The status -> slug table. 401/402/413 are the endpoint refusing the report (a token, an
+  // entitlement, a size cap: each fixable locally); every other non-2xx stays the generic
+  // `yak-transport-error`, including 404 (an endpoint without the route).
+  const STATUS_SLUGS: ReadonlyArray<readonly [number, SubmitWarnSlug]> = [
+    [401, "yak-unauthorized"],
+    [402, "yak-not-entitled"],
+    [413, "yak-payload-too-large"],
+    [400, "yak-transport-error"],
+    [404, "yak-transport-error"],
+    [500, "yak-transport-error"],
+  ];
+
+  for (const [status, slug] of STATUS_SLUGS) {
+    it(`${status}: warn ${slug}, names the status and the url, carries the derived key`, async () => {
+      // When a status maps to the wrong slug (a row dropped, two slugs swapped, a fallback
+      // status picking a rung), the operator is told to fix the wrong thing — observed in the
+      // `SubmitResult` the caller maps to WARN + exit 0.
+      const server = Bun.serve({ port: 0, fetch: async () => new Response("refused", { status }) });
+      try {
+        const result = await submitYak({ ...BASE_PARAMS, url: server.url.toString(), token: "t" });
+        expect(result.status).toBe("warn");
+        if (result.status !== "warn") throw new Error("unreachable");
+        expect(result.slug).toBe(slug);
+        expect(result.reason).toContain(String(status));
+        expect(result.reason).toContain(`${server.url.toString().replace(/\/+$/, "")}/v1/yaks`);
+        expect(result.idempotencyKey).toBeDefined();
+      } finally {
+        server.stop(true);
+      }
     });
-    try {
-      const result = await submitYak({ ...BASE_PARAMS, url: server.url.toString(), token: "t" });
-      expect(result.status).toBe("warn");
-      if (result.status !== "warn") throw new Error("unreachable");
-      expect(result.slug).toBe("yak-transport-error");
-      expect(result.reason).toContain("400");
-      expect(result.idempotencyKey).toBeDefined();
-    } finally {
-      server.stop(true);
-    }
-  });
+  }
 
-  it("401: warn, yak-transport-error, names the status", async () => {
-    const server = Bun.serve({ port: 0, fetch: async () => new Response("unauthorized", { status: 401 }) });
-    try {
-      const result = await submitYak({ ...BASE_PARAMS, url: server.url.toString(), token: "bad-token" });
-      expect(result.status).toBe("warn");
-      if (result.status !== "warn") throw new Error("unreachable");
-      expect(result.slug).toBe("yak-transport-error");
-      expect(result.reason).toContain("401");
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  it("404 (an endpoint without the route): warn, yak-transport-error, exit-mapped to 0 by the caller", async () => {
-    const server = Bun.serve({ port: 0, fetch: async () => new Response("not found", { status: 404 }) });
-    try {
-      const result = await submitYak({ ...BASE_PARAMS, url: server.url.toString(), token: "t" });
-      expect(result.status).toBe("warn");
-      if (result.status !== "warn") throw new Error("unreachable");
-      expect(result.slug).toBe("yak-transport-error");
-      expect(result.reason).toContain("404");
-    } finally {
-      server.stop(true);
+  it("the rung reasons carry their local remedy and never name --vendor (a flag this CLI does not have)", async () => {
+    // When a rung's reason loses its remedy, the WARN tells the operator that something failed
+    // but not what to change; when it names a flag the CLI does not have, it sends them to a
+    // dead end — observed in `SubmitResult.reason`.
+    const expected: ReadonlyArray<readonly [number, RegExp]> = [
+      [401, /yaks\.json.*ERIS_YAKS_TOKEN|ERIS_YAKS_TOKEN.*yaks\.json/],
+      [402, /entitled/],
+      [413, /--evidence/],
+    ];
+    for (const [status, remedy] of expected) {
+      const server = Bun.serve({ port: 0, fetch: async () => new Response("refused", { status }) });
+      try {
+        const result = await submitYak({ ...BASE_PARAMS, url: server.url.toString(), token: "t" });
+        if (result.status !== "warn") throw new Error("unreachable");
+        expect(result.reason).toMatch(remedy);
+        expect(result.reason).not.toContain("--vendor");
+      } finally {
+        server.stop(true);
+      }
     }
   });
 
@@ -1307,11 +1320,11 @@ describe("submitYak — response-shape outcomes over a real Bun.serve listener",
     }
   });
 
-  it("a receipt with a contract_version this CLI hasn't re-vendored (e.g. 1.1.0) is still DELIVERED, not a false failure", async () => {
-    // `YakReceipt.contract_version` in the vendored schema is
+  it("a receipt with a contract_version newer than this CLI's package (e.g. 2.1.0) is still DELIVERED, not a false failure", async () => {
+    // `YakReceipt.contract_version` in the contract package is
     // `z.literal(YAKS_CONTRACT_VERSION)` — a bare literal. An Actor that
-    // ships a version bump before this CLI re-vendors must not turn every
-    // one of its now-durably-stored deliveries into a reported
+    // ships a version bump before this CLI's package catches up must not
+    // turn every one of its now-durably-stored deliveries into a reported
     // delivered:false; only `id`/`idempotency_key`/`replay` are load-bearing
     // to the CLI's own logic (step 7's key comparison).
     const server = Bun.serve({
@@ -1322,7 +1335,7 @@ describe("submitYak — response-shape outcomes over a real Bun.serve listener",
           id: "obs-future-version",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.1.0",
+          contract_version: "2.1.0",
         });
       },
     });
@@ -1331,14 +1344,16 @@ describe("submitYak — response-shape outcomes over a real Bun.serve listener",
       expect(result.status).toBe("delivered");
       if (result.status !== "delivered") throw new Error("unreachable");
       expect(result.receipt.id).toBe("obs-future-version");
-      expect(result.receipt.contract_version).toBe("1.1.0");
+      expect(result.receipt.contract_version).toBe("2.1.0");
       expect(result.keyMismatch).toBe(false);
     } finally {
       server.stop(true);
     }
   });
 
-  it("POSTs to <url>/v0/yaks with a Bearer token and JSON content-type, and never retries", async () => {
+  it("POSTs to <url>/v1/yaks with a Bearer token and JSON content-type, and never retries", async () => {
+    // When the ingress path drifts from the endpoint's, every report 404s and is dropped as a
+    // transport warn, so this goes red — observed as the path the loopback listener receives.
     const seen = { calls: 0, path: "", auth: null as string | null };
     const server = Bun.serve({
       port: 0,
@@ -1353,8 +1368,77 @@ describe("submitYak — response-shape outcomes over a real Bun.serve listener",
     try {
       await submitYak({ ...BASE_PARAMS, url: `${server.url.toString()}`.replace(/\/$/, ""), token: "s3cr3t" });
       expect(seen.calls).toBe(1);
-      expect(seen.path).toBe("/v0/yaks");
+      expect(seen.path).toBe("/v1/yaks");
       expect(seen.auth).toBe("Bearer s3cr3t");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  it("the POSTed body is a v2 submission: strict-parses with route 'workspace', no reporter, and the package's own idempotency key", async () => {
+    // When the client posts a body the v2 contract refuses (the v1 schema_version, no route, a
+    // leftover reporter) or a key the server's derivation disagrees with, ingest answers 400 or
+    // files the report twice and the yak is lost — observed as the body the loopback listener
+    // receives failing `YakSubmission.strict()` or its key differing from `deriveIdempotencyKey`.
+    let sent: Record<string, unknown> | undefined;
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        sent = (await req.json()) as Record<string, unknown>;
+        return Response.json(freshReceipt({ idempotency_key: sent.idempotency_key }));
+      },
+    });
+    try {
+      const result = await submitYak({
+        ...BASE_PARAMS,
+        evidence: "stack trace line",
+        repoHints: ["acme/widgets"],
+        url: server.url.toString(),
+        token: "t",
+      });
+      expect(result.status).toBe("delivered");
+      // positive: the listener really received a body, so the checks below never pass on nothing
+      expect(sent).toBeDefined();
+      const parsed = YakSubmission.strict().safeParse(sent);
+      expect(parsed.success).toBe(true);
+      expect(sent).toMatchObject({ schema_version: "2.0.0", route: "workspace", verb: "issue" });
+      expect("reporter" in sent!).toBe(false);
+      // `route` is not an input to the derivation: the same submission on the vendor route
+      // derives the same key the workspace body carried.
+      const asVendor = YakSubmission.parse({ ...sent, route: "vendor" });
+      expect(sent!.idempotency_key).toBe(await deriveIdempotencyKey(asVendor));
+      expect(sent!.idempotency_key).toBe(
+        await deriveIdempotencyKey({
+          device_id: BASE_PARAMS.deviceId,
+          execution_id: BASE_PARAMS.executionId,
+          verb: BASE_PARAMS.verb,
+          summary: BASE_PARAMS.summary,
+          body: BASE_PARAMS.body,
+          evidence: "stack trace line",
+        }),
+      );
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  it("a 202 with a valid receipt is a delivery, not a transport warn", async () => {
+    // When a 202 (the status the ingress answers with) were treated as anything but
+    // a delivery, every accepted report would surface as a transport warn — observed as
+    // `submitYak` returning "delivered" with the receipt the 202 carried.
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const body = await req.json();
+        return Response.json(freshReceipt({ id: "obs-202", idempotency_key: body.idempotency_key }), { status: 202 });
+      },
+    });
+    try {
+      const result = await submitYak({ ...BASE_PARAMS, url: server.url.toString(), token: "t" });
+      expect(result.status).toBe("delivered");
+      if (result.status !== "delivered") throw new Error("unreachable");
+      expect(result.receipt.id).toBe("obs-202");
+      expect(result.keyMismatch).toBe(false);
     } finally {
       server.stop(true);
     }

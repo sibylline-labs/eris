@@ -1,0 +1,19 @@
+# .claude/surfaces.yml
+#
+# Tier-1 surfaces for the per-PR surface-conformance check. A change touching
+# one of these paths is graded against the surface's pattern classes.
+
+surfaces:
+  secrets:
+    paths:
+      - plugins/yak/yak-redact.ts
+      - plugins/yak/yak-submit.ts
+      - tests/yak-redact.test.ts
+    class_taxonomy: docs/dev/surfaces/secrets.md
+    description: |
+      Client-side secret redaction for `eris yak`. It is the only scrub that
+      agent-authored text gets before it is persisted server-side and posted
+      publicly, so a miss ships a credential to a place it cannot be recalled
+      from. yak-redact.ts holds the pass pipeline, yak-submit.ts is the call
+      site that redacts summary, body, evidence and provenance before key
+      derivation, and the test file pins each class.

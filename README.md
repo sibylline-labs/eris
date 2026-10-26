@@ -86,6 +86,13 @@ export ERIS_YAKS_URL=https://yaks.example.com     # your Yaks endpoint
 export ERIS_YAKS_TOKEN=<bearer token>
 ```
 
+Or sign in with a device code, if your endpoint offers one. `eris login` shows a
+code to approve in the browser and writes the token to `~/.eris/yaks.json`:
+
+```bash
+eris login --url https://yaks.example.com
+```
+
 Or, from a checkout, mint a bearer into `~/.eris/yaks.json` (mode `0600`). The
 script prints the entry your endpoint's operator needs to register:
 
@@ -108,6 +115,17 @@ unreachable endpoint or a timeout prints a `WARN` line with its slug and still
 exits 0. Only misuse (a missing `--summary`, an over-long field, an unknown
 flag) exits 1. [docs/YAK.md](docs/YAK.md) has the full reference.
 
+### Agent skill
+
+[`skills/eris-yaks`](skills/eris-yaks/SKILL.md) is an agent skill that walks a coding agent
+through setting up Yaks for its user: running eris, the browser steps to connect Linear and
+create a token, a test yak, and the `AGENTS.md` block that teaches later sessions to file. Install
+it with the [skills](https://github.com/vercel-labs/skills) CLI:
+
+```bash
+npx skills add sibylline-labs/eris --skill eris-yaks
+```
+
 ## Writing a plugin
 
 A plugin is registry rows plus lazily loaded handlers, written against the SDK
@@ -127,8 +145,8 @@ the Yaks submission contract v2 as Zod schemas, their inferred TypeScript
 types, and the JSON Schema they emit (`schema/yak-v2.schema.json`) for
 consumers in other languages. A repository that depends on this one (a git
 dependency pinned to a merge commit on `main`) imports the TypeScript contract
-as `eris/yak-contract`. The `eris yak` client in this build still speaks
-contract v1 (`plugins/yak/yaks-schema.v1.ts`).
+as `eris/yak-contract`. The `eris yak` client in this build imports it and
+posts contract v2 submissions.
 
 ## Documentation
 

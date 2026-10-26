@@ -14,7 +14,7 @@ Start with the [repo README](../README.md) for install and quickstart; come here
 
 | Doc | Commands | One-liner |
 |-----|----------|-----------|
-| [YAK.md](YAK.md) | `eris yak …` | Land a durable, deduplicated observation with a Yaks endpoint |
+| [YAK.md](YAK.md) | `eris yak …`, `eris login`, `eris logout` | Land a durable, deduplicated observation with a Yaks endpoint |
 | [COMPLETION.md](COMPLETION.md) | `eris completion bash\|zsh` | Shell tab completion: install and the derived command tree |
 | [UPDATE.md](UPDATE.md) | `eris --version`, `eris update` | Which build this is, and replacing a binary with the newest release after checking it |
 

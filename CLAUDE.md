@@ -3,8 +3,9 @@
 eris is a TypeScript CLI run under bun. A POSIX `sh` shim (`eris`) execs the router
 (`src/main.ts`), which routes every command line. Core supplies the registry, argv parsing, the
 output contract and shell completion; verb groups are plugins composed at build time
-(`plugins/index.ts`). This build ships one plugin, `plugins/yak/` (`eris yak`), and one workspace
-package, `packages/yak-contract/` (the Yaks wire contract v2).
+(`plugins/index.ts`). This build ships one plugin, `plugins/yak/` (`eris yak`, and `eris login` /
+`eris logout` for its token), and one workspace package, `packages/yak-contract/` (the Yaks wire
+contract v2).
 
 ## Commands
 

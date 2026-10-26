@@ -4,7 +4,7 @@ Three verbs an agent (or a human) can invoke inline when the harness fights back
 a broken tool, a confusing error, a config gap — or could serve them better, and never for the task's own
 outcome. `eris yak` redacts, resolves identity, derives a dedup key, makes one
 bounded HTTP call to a Yaks endpoint, and gets out
-of the way. Everything after the `200` — clustering, issue-tracker writes,
+of the way. Everything after the receipt — clustering, issue-tracker writes,
 incident routing — belongs to the endpoint, not to this CLI.
 
 ```
@@ -60,7 +60,32 @@ text (see [Idempotency](#idempotency-and-replay)).
 There is no default endpoint: until a URL is configured, every yak warns
 `yak-url-unresolved` and exits 0.
 
-Mint the file with `bun plugins/yak/yak-setup.ts --url <endpoint>` (or with
+### `eris login`: a device code
+
+On an endpoint that offers device login, sign in from any terminal:
+
+```
+eris login --url https://yaks.example.com
+```
+
+It prints a link and a short code (and opens the link in a browser when stderr
+is a terminal; `--no-browser` skips that). Approve the code there, and the
+token the endpoint mints is written to `~/.eris/yaks.json` with the url beside
+it, so later runs need no `--url`. The file is replaced only after a token
+arrives, via a temp file created `0600` and renamed into place: a denied or
+expired code writes nothing (`login-denied`, `login-expired`, exit 1). Neither
+the device code nor the token is printed; the short code is the one value
+shown, and it is useless without the approval. Without `--url` the url is
+`ERIS_YAKS_URL`, then the file's own `url`. The CLI follows RFC 8628: it
+polls `/v1/device/token` at the advertised interval and slows down when told to.
+
+`eris logout` removes the token from the file and keeps the url. No route lets
+a token revoke itself, so it stays valid until you revoke it from the
+endpoint's dashboard (Settings > API Tokens).
+
+### `yak-setup.ts`: a hand-registered bearer
+
+Or mint the file with `bun plugins/yak/yak-setup.ts --url <endpoint>` (or with
 `ERIS_YAKS_URL` set) from an eris checkout. It writes the file and prints the
 follow-up step: the endpoint's operator has to register the bearer against
 this machine's source slug, which the script does not automate. Until both
@@ -82,8 +107,8 @@ the diagnostics move entirely onto stdout's record — see below.
 
 | Situation | Exit |
 |---|---|
-| Missing `--summary`/`--body`, an unreadable `--body-file`, `--body-file -` with no pipe, an over-length field, an unknown verb or flag | **`1`** — the four-line `ERROR`/`slug:`/`fix:`/`docs:` block, same contract as every other eris failure |
-| Unresolved token/URL/device-id, an unreachable endpoint, a timeout, a non-2xx response | **`0`** — one `WARN` line + slug on stderr, empty stdout in text mode |
+| Missing `--summary`/`--body`, an unreadable `--body-file`, `--body-file -` with no pipe, an over-length field, an unknown verb or flag, a bare positional word (the text belongs on `--summary`/`--body`) | **`1`** — the four-line `ERROR`/`slug:`/`fix:`/`docs:` block, same contract as every other eris failure |
+| Unresolved token/URL/device-id, an unreachable endpoint, a timeout, a non-2xx response | **`0`** — one `WARN` line + slug on stderr, empty stdout in text mode. A non-2xx status gets its own slug when the cause is on the caller's side (credentials, entitlement, size) and a retry changes nothing — see the rungs below |
 | An incomplete `node_modules` on this machine (`yak-deps-not-installed`) | **`0`** — the same four-line `ERROR`/`slug:`/`fix:`/`docs:` block as the exit-`1` row above, but exit `0`: a broken install on the operator's machine isn't something the calling agent could have done differently |
 | No `bun` on PATH | **`1`** — the shim's own `eris-bun-missing` block, printed before any verb is routed; it is not yak-specific |
 | Accepted (fresh or replay) | **`0`** |
@@ -95,6 +120,23 @@ network right now is not — failing the task over the operator's local
 environment would be worse than the problem this feature exists to report. So
 **environment, config, and transport problems never fail the task** — they warn
 on stderr and let the calling command continue.
+
+### Rungs for a non-2xx response
+
+Every non-2xx response is `WARN` + exit `0`. The endpoint's refusals that a
+retry does not fix get their own slug, so the `WARN` line (and `error.slug`
+under `--output json`) names the remedy instead of a generic transport failure:
+
+| Status | Slug | Meaning and fix |
+|---|---|---|
+| `401` | [`yak-unauthorized`](ERRORS.md#yak-unauthorized) | The endpoint rejected the bearer token. Check `~/.eris/yaks.json` / `ERIS_YAKS_TOKEN`, and that the token is registered. |
+| `402` | [`yak-not-entitled`](ERRORS.md#yak-not-entitled) | The workspace is not entitled to Yaks (plan or seat). |
+| `413` | [`yak-payload-too-large`](ERRORS.md#yak-payload-too-large) | The submission exceeded the endpoint's whole-body size cap. Trim `--evidence`. |
+| any other non-2xx | [`yak-transport-error`](ERRORS.md#yak-transport-error) | An outage, a missing route, a proxy page: no local remedy is known. |
+
+Each rung's `ERRORS.md` entry notes that a problem with eris itself is reported
+on the vendor route, the eris project's own tracker, rather than into the
+workspace.
 
 ### `--output json`
 
@@ -140,10 +182,12 @@ to **stderr**, never stdout; under `--output json` the same information is
 `redactions.{count,classes}` on the record instead — stderr carries nothing
 either way (see [Exit codes](#--output-json) above).
 
-Classes covered: PEM private-key blocks, JWTs, AWS access-key ids and
-`aws_secret_access_key` assignments, GitHub/Slack/Google/`sk-`-style API keys,
-`Authorization: Bearer|token …` headers, GCP service-account `"private_key"`
-values, connection strings with an inline password, and **key-name
+Classes covered: PEM private-key blocks, JWTs, `sib_` service tokens,
+`sibdc_` device codes (what `eris login` polls with),
+AWS access-key ids and `aws_secret_access_key` assignments,
+GitHub/Slack/Google/`sk-`-style API keys, `Authorization: Bearer|token …`
+headers, GCP service-account `"private_key"` values, connection strings with an
+inline password, and **key-name
 assignments** — `NAME=value` or `NAME: value` where `NAME` matches
 `(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|API_KEY|CREDENTIAL|ACCESS_KEY|CLIENT_SECRET|MNEMONIC|SEED|SESSION|COOKIE|AUTH)`.
 
@@ -156,6 +200,24 @@ caught — the honest framing is "this makes an accidental leak less likely," no
 that needs to be read verbatim; it does not exist to work around a
 false-positive scrub eating a legitimate report — if that happens, file it as
 its own `eris yak issue` against the redaction pass.
+
+## The wire contract
+
+`eris yak` speaks the Yaks submission contract v2, the workspace package
+`@sibylline-labs/yak-contract` ([`packages/yak-contract`](../packages/yak-contract)),
+imported by name rather than vendored as a copy. One call per report:
+
+- `POST <url>/v1/yaks` with `Authorization: Bearer <token>`. The ingress
+  answers `202` with a receipt `{id, idempotency_key, replay, contract_version}`;
+  any `2xx` whose body is a receipt counts as delivered, whatever the
+  `contract_version` string says.
+- `route` is always `"workspace"`: the report files into the caller's own
+  tenant. It is not an input to the idempotency key.
+- There is no `reporter`. The ingress derives the tracker user from the bearer
+  token, so the CLI sends no identity of its own.
+- `schema_version` is the package's `YAKS_CONTRACT_VERSION`. The body is
+  validated against the package's `YakSubmission` before the request, so a field
+  the contract would refuse never leaves the machine.
 
 ## Idempotency and replay
 
@@ -172,8 +234,8 @@ The contract exposes no server-side mismatch signal on the receipt itself
 (only a server console warning, invisible to the client). The one drift check
 `eris yak` can make is comparing its own locally-derived key against the
 receipt's `idempotency_key` — a mismatch prints a `yak-key-mismatch` warning
-alongside a still-successful delivery. It is a symptom of the vendored
-contract (`plugins/yak/yaks-schema.v1.ts`) drifting from the endpoint's own copy, not
+alongside a still-successful delivery. It is a symptom of this CLI's contract
+package (`packages/yak-contract`) drifting from the endpoint's derivation, not
 something a caller needs to act on.
 
 ## Repro
@@ -182,9 +244,9 @@ something a caller needs to act on.
 reported — a failing test invocation, a `curl`/`eris` one-liner, a short
 repro script's entry point. It rides on the wire inside `provenance` (as
 `provenance.repro.command`) rather than as a new top-level field on
-`YakSubmission`: that contract is vendored
-(`plugins/yak/yaks-schema.v1.ts`), owned by the server, and not something
-this CLI can extend on its own — `YakProvenance`'s `.catchall()` exists
+`YakSubmission`: that contract is the workspace package
+`@sibylline-labs/yak-contract` ([The wire contract](#the-wire-contract)), and
+not something this CLI can extend on its own — `YakProvenance`'s `.catchall()` exists
 precisely so a CLI-side addition like this one doesn't have to wait on a
 contract bump. It is redacted the same as `evidence` (a repro command can
 itself embed a credential — `curl -H "Authorization: Bearer …"` is a
@@ -220,7 +282,7 @@ command — structurally cannot happen here: there is no production
 credential in `eris yak`'s own process to leak.
 
 That is the client-side half of the requirement. **Actually rerunning the
-repro is the Yaks endpoint's job, not this CLI's** — "everything after the 200 —
+repro is the Yaks endpoint's job, not this CLI's** — "everything after the receipt —
 clustering, issue-tracker writes, incident routing — belongs to the endpoint"
 (see the top of this doc), and the same split applies to a rerun: only the
 endpoint (or whatever runner it dispatches to) has cluster state and knows when
@@ -269,11 +331,13 @@ moves on.
 
 **On the wire.** Like `repro`, this rides inside `provenance` rather than as
 a new top-level field on `YakSubmission` — the same non-breaking,
-forward-compatible reason (`YakSubmission`'s contract is vendored, and this
-CLI doesn't own it). Unlike `repro`, it lands in the
+forward-compatible reason (`YakSubmission` is the contract package's, and this
+CLI doesn't extend it). Unlike `repro`, it lands in the
 `provenance.repo` category the CLI already had (`provenance.repo.service`,
 the nearest `eris.yaml`'s declared service — see `plugins/yak/yak-context.ts`), as
-`provenance.repo.target_repos`, always an array even for a single hint. It
+`provenance.repo.target_repos`, always an array even for a single hint. The
+contract types that one key and bounds it (at most 20 hints of at most 200
+chars each), the same limits this CLI checks locally first. It
 does not participate in the idempotency-key derivation, for the same reason
 `repro` doesn't: attaching or changing a target-repo hint should never fork a
 fresh cluster off a report that's otherwise identical, and the same
@@ -283,11 +347,11 @@ replay](#idempotency-and-replay) applies here too — resubmitting the same
 and the new hint is never stored or seen server-side.
 
 **Surfacing it on the rendered issue is the endpoint's work, not this CLI's.**
-Exactly the same split as everything after the `200` (see the top of this
+Exactly the same split as everything after the receipt (see the top of this
 doc): this CLI captures and transmits `provenance.repo.target_repos`;
 rendering it into the issue belongs to the endpoint's issue-tracker write path.
 
-## What a `200` does not promise
+## What a receipt does not promise
 
 **A receipt is not a promise that an issue was created.** The endpoint accepts,
 stores, and deduplicates every well-formed submission — but it may also
@@ -322,4 +386,5 @@ hints](#target-repo-hints) above.
 - [OUTPUT-CONTRACT.md](OUTPUT-CONTRACT.md) — the stdout/stderr split, exit
   codes, and the `--output json` machine surface this command participates in
 - [ERRORS.md](ERRORS.md) — every `yak-*` slug's `ERROR`/`fix`/`docs` heading
+- `eris login --help` — sign this machine in with a device code
 - `plugins/yak/yak-setup.ts --help` — mint this machine's bearer

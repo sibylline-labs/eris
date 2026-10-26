@@ -19,11 +19,8 @@ import {
   resolveUrl,
   resolveDeviceId,
   resolveExecutionId,
-  resolveReporter,
   runBounded,
   asText,
-  type BoundedResult,
-  type Runner,
 } from "../plugins/yak/yak-identity";
 
 let home: string;
@@ -312,54 +309,6 @@ describe("resolveExecutionId", () => {
       ).rung,
     ).toBe("shell-session");
   });
-});
-
-// --- resolveReporter (stubbed git — never touches this machine's config) ----
-
-function stubRunner(answers: Record<string, BoundedResult>): Runner {
-  return async (cmd: string[]) => {
-    const key = cmd.join(" ");
-    return answers[key] ?? { ok: false };
-  };
-}
-
-describe("resolveReporter", () => {
-  it(
-    "when both git config reads succeed, this resolves name AND email " +
-      "— observed at the returned record, stubbed so it never reads this machine's real git config",
-    async () => {
-      const run = stubRunner({
-        "git config user.name": { ok: true, stdout: "Ada Lovelace\n" },
-        "git config user.email": { ok: true, stdout: "ada@example.test\n" },
-      });
-      const reporter = await resolveReporter("/some/cwd", run);
-      expect(reporter).toEqual({ name: "Ada Lovelace", email: "ada@example.test" });
-    },
-  );
-
-  it(
-    "when git config has no user.email set (exit non-zero), this drops ONLY " +
-      "that field — name is still present, email is absent, never an empty string",
-    async () => {
-      const run = stubRunner({
-        "git config user.name": { ok: true, stdout: "Ada Lovelace\n" },
-        "git config user.email": { ok: false },
-      });
-      const reporter = await resolveReporter("/some/cwd", run);
-      expect(reporter).toEqual({ name: "Ada Lovelace" });
-      expect("email" in reporter).toBe(false);
-    },
-  );
-
-  it(
-    "when git itself is unavailable (both probes fail), this resolves to an " +
-      "empty record rather than throwing",
-    async () => {
-      const run = stubRunner({});
-      const reporter = await resolveReporter("/some/cwd", run);
-      expect(reporter).toEqual({});
-    },
-  );
 });
 
 // --- runBounded / asText: the shared bounded-subprocess runner --------------

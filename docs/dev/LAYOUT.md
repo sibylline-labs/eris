@@ -40,13 +40,15 @@ src/                    # The TS program the shim and the bin run
 ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN lines
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
-plugins/yak/            # `eris yak` as a plugin: index.ts (the manifest: rows + handler thunk), handlers.ts
+plugins/yak/            # `eris yak` as a plugin: index.ts (the manifest: rows + handler thunks), handlers.ts
                         #   (the dispatcher), yak.ts (the core), yak-{identity,context,redact,submit}.ts,
-                        #   yaks-schema.v1.ts (vendored contract), yak-setup.ts (mints the bearer; docs/YAK.md)
+                        #   login.ts (`eris login`/`logout`, the device-code client), yak-setup.ts (mints the bearer; docs/YAK.md); the wire contract is packages/yak-contract, imported by name
 packages/yak-contract/  # the Yaks wire contract v2, a bun workspace package that builds standalone;
                         #   `eris/yak-contract` (package.json exports) is its src/index.ts.
                         #   src/v2.ts (Zod + inferred types), scripts/emit-json-schema.ts →
                         #   schema/yak-v2.schema.json (committed; `bun run emit-schema` in the package re-emits)
+skills/eris-yaks/       # SKILL.md: the agent skill that sets up Yaks (`npx skills add sibylline-labs/eris
+                        #   --skill eris-yaks`); the skills CLI discovers skills/<name>/SKILL.md
 examples/plugins/widgets/  # the worked plugin example tests/plugins.test.ts composes
 examples/distribution/  # the worked distribution: an entry importing eris/sdk alone, a demo plugin with a
                         #   completion domain, a menu, and build.ts; tests/distribution.test.ts builds and runs it
@@ -61,7 +63,8 @@ sgconfig.yml            # the code-quality rules over eris's OWN source (ruleDir
 rules/                  #   adhoc-argv-parse (one argv parser), env-read-own-property(-plugin) (env names
 rule-tests/             #   are read through readEnv), plugin-manifest-lazy-handlers + plugin-imports-sdk-only
                         #   (the plugin contract), distribution-imports-sdk-only (eris/sdk alone),
-                        #   runtime-imports-no-testing (the program never imports testing/)
+                        #   runtime-imports-no-testing (the program never imports testing/),
+                        #   regex-no-lookbehind (the pinned bun interprets a lookbehind pattern)
 tests/                  # `bun test ./tests` — the whole suite. helpers/blackbox.ts drives the real
                         #   `./eris` in a physical per-test sandbox (PATH fakes, hideReal); helpers/plugins/
                         #   holds a tripwire plugin; helpers/release-fixture.ts is GitHub's releases API

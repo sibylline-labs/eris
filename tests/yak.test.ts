@@ -17,6 +17,7 @@ import { describe, it, expect } from "bun:test";
 import { mkdtemp, rm, writeFile, chmod, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { YakSubmission, YAKS_CONTRACT_VERSION } from "eris/yak-contract";
 import { parseArgv, runYak, type RunYakOptions } from "../plugins/yak/yak";
 
 // ============================================================================
@@ -50,6 +51,18 @@ describe("parseArgv", () => {
     expect(outcome.kind).toBe("misuse");
     if (outcome.kind !== "misuse") throw new Error("unreachable");
     expect(outcome.slug).toBe("yak-unknown-flag");
+  });
+
+  it("a bare word after the verb is a misuse with slug yak-positional-arg that names --summary and --body", () => {
+    // When a positional falls back to yak-unknown-flag, an agent guessing `eris yak issue "text"` gets no
+    // hint at the two flags its text must ride on and gives up without filing — observed at parseArgv().
+    const outcome = parseArgv(["issue", "the hook blocked a legal edit"]);
+    expect(outcome.kind).toBe("misuse");
+    if (outcome.kind !== "misuse") throw new Error("unreachable");
+    expect(outcome.slug).toBe("yak-positional-arg");
+    expect(outcome.reason).toContain("--summary");
+    expect(outcome.reason).toContain("--body");
+    expect(outcome.fix).toBe('eris yak issue --summary "<one line>" --body "<what happened>"');
   });
 
   it("a flag with no following value is a misuse with slug yak-flag-missing-value", () => {
@@ -264,6 +277,38 @@ describe("runYak — --output json emits a bare record on misuse too (exit 1 unc
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe("");
     expect(result.stderr).toBe("");
+  });
+
+  it("a positional argument in text mode: the failure block carries a fix: line naming --summary and --body, exit 1", async () => {
+    // When the fix line drops off the block, the operator sees only "unexpected argument" and has to
+    // go read docs to learn which flags carry the text — observed on runYak()'s stderr.
+    const home = await freshHome();
+    try {
+      const result = await runYak(baseOpts({ argv: ["suggest", "a positional body"], home }));
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("slug: yak-positional-arg\n");
+      expect(result.stderr).toContain('fix: eris yak suggest --summary "<one line>" --body "<what happened>"\n');
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("a positional argument under --output json: one record whose reason names --summary and --body, empty stderr", async () => {
+    // When json mode loses the hint (it has no fix: line), a machine caller learns only the slug — observed
+    // in the stdout record's error.reason.
+    const home = await freshHome();
+    try {
+      const result = await runYak(baseOpts({ argv: ["issue", "text"], home, env: { ERIS_OUTPUT: "json" } }));
+      expect(result.exitCode).toBe(1);
+      const record = JSON.parse(result.stdout);
+      expect(record.delivered).toBe(false);
+      expect(record.error.slug).toBe("yak-positional-arg");
+      expect(record.error.reason).toMatch(/--summary.*--body/);
+      expect(result.stderr).toBe("");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 
   it("an unknown flag (argv-level misuse, verb already known): a bare JSON record on stdout, delivered:false, exit 1 unchanged, and NOTHING on stderr (output-contract fix)", async () => {
@@ -550,7 +595,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-fresh",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -581,7 +626,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-replay",
           idempotency_key: body.idempotency_key,
           replay: true,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -612,7 +657,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-repro",
           idempotency_key: sentBody.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -627,7 +672,7 @@ describe("runYak — delivered (exit 0)", () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe("recorded: obs-repro\n");
       expect(sentBody.provenance.repro).toEqual({ command: "eris config check dev" });
-      // `repro` is not part of the vendored `YakSubmission` top-level shape —
+      // `repro` is not part of the contract's `YakSubmission` top-level shape —
       // it must never leak in as a sibling of summary/body/evidence.
       expect(sentBody.repro).toBeUndefined();
     } finally {
@@ -647,7 +692,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-norepro",
           idempotency_key: sentBody.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -678,7 +723,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-json",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -698,7 +743,7 @@ describe("runYak — delivered (exit 0)", () => {
         id: "obs-json",
         idempotency_key: expect.any(String),
         replay: false,
-        contract_version: "1.0.0",
+        contract_version: YAKS_CONTRACT_VERSION,
         key_mismatch: false,
         redactions: { count: 0, classes: [], skipped: false },
       });
@@ -724,7 +769,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-mismatch-json",
           idempotency_key: "not-what-we-derived",
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         }),
     });
     try {
@@ -756,7 +801,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-mismatch",
           idempotency_key: "not-what-we-derived",
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         }),
     });
     try {
@@ -786,7 +831,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-noredact",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -823,7 +868,7 @@ describe("runYak — delivered (exit 0)", () => {
           id: "obs-noredact-json",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -842,6 +887,202 @@ describe("runYak — delivered (exit 0)", () => {
       // paired absence: no "WARN --no-redact" text anywhere — not truncated,
       // not folded into another field, gone from the stream entirely.
       expect(result.stderr).toBe("");
+    } finally {
+      server.stop(true);
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+});
+
+// The ingress answers a new report with 202 and a v2 receipt. Both renderings
+// are driven through `runYak` against a loopback listener that records what it
+// was sent, so the request is observed on the wire rather than inferred from
+// the code that builds it.
+describe("runYak — the ingress contract v2 (202 + v2 receipt, route workspace)", () => {
+  /** A loopback ingress answering 202 + a v2 receipt, recording each request's path and body. */
+  function acceptingIngress() {
+    const requests: Array<{ path: string; body: unknown }> = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const body = (await req.json()) as { idempotency_key: string };
+        requests.push({ path: new URL(req.url).pathname, body });
+        return Response.json(
+          { id: "obs-v2", idempotency_key: body.idempotency_key, replay: false, contract_version: "2.0.0" },
+          { status: 202 },
+        );
+      },
+    });
+    return { server, requests };
+  }
+
+  it("text mode: a 202 prints the receipt id on stdout, and the one POST strict-parses as a workspace submission", async () => {
+    // When the client posts a body the v2 contract refuses, or treats the ingress's 202 as a
+    // failure, an agent's report is dropped or reported as undelivered — observed at the CLI
+    // seam as the receipt id missing from stdout, or the captured body failing `YakSubmission.strict()`.
+    const home = await freshHome();
+    const { server, requests } = acceptingIngress();
+    try {
+      const result = await runYak(
+        baseOpts({
+          argv: ["issue", "--summary", "s", "--body", "b"],
+          env: { ERIS_YAKS_URL: server.url.toString(), ERIS_YAKS_TOKEN: "t" },
+          home,
+          cwd: home,
+        }),
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toBe("recorded: obs-v2\n");
+      // positive: exactly one request reached the ingress, at the v2 path
+      expect(requests.map((r) => r.path)).toEqual(["/v1/yaks"]);
+      expect(YakSubmission.strict().safeParse(requests[0]!.body).success).toBe(true);
+      expect(requests[0]!.body).toMatchObject({ schema_version: "2.0.0", route: "workspace" });
+      expect("reporter" in (requests[0]!.body as object)).toBe(false);
+    } finally {
+      server.stop(true);
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("json mode: a 202 yields delivered:true and contract_version 2.0.0 in the one record", async () => {
+    // When the client reports a 202 as undelivered, or a receipt's contract_version is lost in
+    // the record, a machine caller branches on a false failure — observed as `delivered` and
+    // `contract_version` in the record `--output json` prints.
+    const home = await freshHome();
+    const { server, requests } = acceptingIngress();
+    try {
+      const result = await runYak(
+        baseOpts({
+          argv: ["issue", "--summary", "s", "--body", "b"],
+          env: { ERIS_YAKS_URL: server.url.toString(), ERIS_YAKS_TOKEN: "t", ERIS_OUTPUT: "json" },
+          home,
+          cwd: home,
+        }),
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe("");
+      const record = JSON.parse(result.stdout);
+      expect(record).toMatchObject({ verb: "issue", delivered: true, id: "obs-v2", contract_version: "2.0.0", replay: false });
+      expect(requests).toHaveLength(1);
+      expect(YakSubmission.strict().safeParse(requests[0]!.body).success).toBe(true);
+    } finally {
+      server.stop(true);
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("runYak — the ingress refuses the report (401, 402, 413 each warn on their own slug; exit 0)", () => {
+  /** A loopback ingress answering `status` to every request, recording what reached it. */
+  function refusingIngress(status: number) {
+    const requests: Array<{ method: string; path: string; body: unknown }> = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        requests.push({ method: req.method, path: new URL(req.url).pathname, body: await req.json() });
+        return new Response("refused", { status });
+      },
+    });
+    return { server, requests };
+  }
+
+  /** The one request reached the ingress as a v2 workspace submission — so a refusal is never
+   *  asserted by the absence of a receipt alone. */
+  function expectOneWorkspaceSubmission(requests: Array<{ method: string; path: string; body: unknown }>) {
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.method).toBe("POST");
+    expect(requests[0]!.path).toBe("/v1/yaks");
+    const parsed = YakSubmission.strict().safeParse(requests[0]!.body);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) throw new Error("unreachable");
+    expect(parsed.data.route).toBe("workspace");
+  }
+
+  const RUNGS = [
+    [401, "yak-unauthorized"],
+    [402, "yak-not-entitled"],
+    [413, "yak-payload-too-large"],
+  ] as const;
+
+  for (const [status, slug] of RUNGS) {
+    it(`${status}: text mode — stdout empty, WARN naming the status, slug ${slug}, exit 0`, async () => {
+      // When the client folds a refusal into `yak-transport-error` (or drops the status from the
+      // reason), an agent cannot tell a rejected token or a missing entitlement from an outage —
+      // observed at the CLI seam as the `slug:` line and the status on stderr.
+      const home = await freshHome();
+      const { server, requests } = refusingIngress(status);
+      try {
+        const result = await runYak(
+          baseOpts({
+            argv: ["issue", "--summary", "s", "--body", "b"],
+            env: { ERIS_YAKS_URL: server.url.toString(), ERIS_YAKS_TOKEN: "t" },
+            home,
+            cwd: home,
+          }),
+        );
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toBe("");
+        expect(result.stderr).toMatch(new RegExp(`^WARN .*${status}`, "m"));
+        expect(result.stderr).toContain(`slug: ${slug}`);
+        expect(result.stderr).not.toContain("ERROR ");
+        expectOneWorkspaceSubmission(requests);
+      } finally {
+        server.stop(true);
+        await rm(home, { recursive: true, force: true });
+      }
+    });
+
+    it(`${status}: json mode — one record with delivered:false and error.slug ${slug}, stderr empty, exit 0`, async () => {
+      // When the rung's slug is lost on the machine surface, a caller branching on `error.slug`
+      // cannot tell a fixable refusal from a transient outage — observed as `error.slug` in the
+      // one record `--output json` prints.
+      const home = await freshHome();
+      const { server, requests } = refusingIngress(status);
+      try {
+        const result = await runYak(
+          baseOpts({
+            argv: ["issue", "--summary", "s", "--body", "b"],
+            env: { ERIS_YAKS_URL: server.url.toString(), ERIS_YAKS_TOKEN: "t", ERIS_OUTPUT: "json" },
+            home,
+            cwd: home,
+          }),
+        );
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout.trimEnd().split("\n")).toHaveLength(1);
+        const record = JSON.parse(result.stdout);
+        expect(record.delivered).toBe(false);
+        expect(record.error.slug).toBe(slug);
+        expect(record.error.reason).toContain(String(status));
+        expect(result.stderr).toBe("");
+        expectOneWorkspaceSubmission(requests);
+      } finally {
+        server.stop(true);
+        await rm(home, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it("503: stays yak-transport-error — WARN, exit 0 (an outage is not one of the refusals)", async () => {
+    // When the status table swallows every non-2xx (or an unlisted status picks a rung), a
+    // transient outage gets a remedy that sends the operator to fix a token that is fine —
+    // observed at the CLI seam as the `slug:` line.
+    const home = await freshHome();
+    const { server, requests } = refusingIngress(503);
+    try {
+      const result = await runYak(
+        baseOpts({
+          argv: ["issue", "--summary", "s", "--body", "b"],
+          env: { ERIS_YAKS_URL: server.url.toString(), ERIS_YAKS_TOKEN: "t" },
+          home,
+          cwd: home,
+        }),
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toMatch(/^WARN .*503/m);
+      expect(result.stderr).toContain("slug: yak-transport-error");
+      expectOneWorkspaceSubmission(requests);
     } finally {
       server.stop(true);
       await rm(home, { recursive: true, force: true });
@@ -871,7 +1112,7 @@ describe("runYak — redaction summary wiring (text mode stderr)", () => {
           id: "obs-f4-delivered",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -923,7 +1164,7 @@ describe("runYak — redaction summary wiring (text mode stderr)", () => {
           id: "obs-f4-json",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -958,7 +1199,7 @@ describe("runYak — redaction summary wiring (text mode stderr)", () => {
           id: "obs-f4-clean",
           idempotency_key: body.idempotency_key,
           replay: false,
-          contract_version: "1.0.0",
+          contract_version: YAKS_CONTRACT_VERSION,
         });
       },
     });
@@ -1042,7 +1283,7 @@ describe("runYak — --repo target-repo hints", () => {
       port: 0,
       fetch: async (req) => {
         sentBody = await req.json();
-        return Response.json({ id: "obs-repo-1", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: "1.0.0" });
+        return Response.json({ id: "obs-repo-1", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
     });
     try {
@@ -1057,7 +1298,7 @@ describe("runYak — --repo target-repo hints", () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe("recorded: obs-repo-1\n");
       expect(sentBody.provenance.repo.target_repos).toEqual(["acme/widgets"]);
-      // paired absence: never a sibling top-level field on the vendored submission
+      // paired absence: never a sibling top-level field on the submission
       expect(sentBody.repo).toBeUndefined();
     } finally {
       server.stop(true);
@@ -1072,7 +1313,7 @@ describe("runYak — --repo target-repo hints", () => {
       port: 0,
       fetch: async (req) => {
         sentBody = await req.json();
-        return Response.json({ id: "obs-repo-2", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: "1.0.0" });
+        return Response.json({ id: "obs-repo-2", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
     });
     try {
@@ -1098,7 +1339,7 @@ describe("runYak — --repo target-repo hints", () => {
       port: 0,
       fetch: async (req) => {
         sentBody = await req.json();
-        return Response.json({ id: "obs-repo-3", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: "1.0.0" });
+        return Response.json({ id: "obs-repo-3", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
     });
     try {
@@ -1127,7 +1368,7 @@ describe("runYak — --repo target-repo hints", () => {
       port: 0,
       fetch: async (req) => {
         sentBody = await req.json();
-        return Response.json({ id: "obs-repo-4", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: "1.0.0" });
+        return Response.json({ id: "obs-repo-4", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
     });
     try {
@@ -1156,7 +1397,7 @@ describe("runYak — --repo target-repo hints", () => {
       port: 0,
       fetch: async (req) => {
         sentBody = await req.json();
-        return Response.json({ id: "obs-repo-5", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: "1.0.0" });
+        return Response.json({ id: "obs-repo-5", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
     });
     try {
@@ -1184,7 +1425,7 @@ describe("runYak — --repo target-repo hints", () => {
       port: 0,
       fetch: async (req) => {
         sentBody = await req.json();
-        return Response.json({ id: "obs-repo-6", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: "1.0.0" });
+        return Response.json({ id: "obs-repo-6", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
     });
     try {

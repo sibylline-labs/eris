@@ -34,8 +34,9 @@ import { parseArgs } from "node:util";
 
 const SELF = "scripts/scrub-check.ts";
 
-/** Files allowed to name the public contact domain and the copyright holder. */
-const CONTACT_FILES = new Set(["README.md", "CONTRIBUTING.md", "SECURITY.md"]);
+/** Files allowed to name the public contact domain and the copyright holder. The eris-yaks skill
+ *  points an agent at the hosted install steps and the dash, both on that domain. */
+const CONTACT_FILES = new Set(["README.md", "CONTRIBUTING.md", "SECURITY.md", "skills/eris-yaks/SKILL.md"]);
 const LICENCE_FILES = new Set(["LICENSE", "NOTICE"]);
 /** The public mailboxes, allowed only in the contact files. */
 const CONTACT_ADDRESSES = new Set(["security@sibylline.group", "support@sibylline.group"]);

@@ -331,6 +331,13 @@ Fix: the release may be broken. Retry later, or install another with `eris updat
 `--summary`, `--body`/`--body-file`, `--evidence`/`--evidence-file`,
 `--repro`, `--no-redact`, `--help`. Fix: `eris yak <verb> --help`.
 
+### yak-positional-arg
+
+`eris yak <verb>` was given a bare word, usually the report text itself
+(`eris yak issue "the hook blocked a legal edit"`). The text rides on flags,
+not positionals. Fix: `eris yak <verb> --summary "<one line>" --body "<what
+happened>"`, or `--body-file <path|->` for a longer body.
+
 ### yak-flag-missing-value
 
 A value-taking flag (`--summary`, `--body`, `--body-file`, `--evidence`,
@@ -404,7 +411,7 @@ The `evidence` field exceeds 20000 chars. Same cause and fix as
 
 The (redacted) `--repro <command>` exceeds 2000 chars — a local
 courtesy bound, not a wire-contract one: `repro` rides inside `provenance`
-(`provenance.repro.command`), which the vendored contract never
+(`provenance.repro.command`), which the contract package never
 length-validates. Caught locally anyway, same reasoning as
 [`yak-summary-too-long`](#yak-summary-too-long) — a repro is a command, not a
 narrative, so 2000 chars is generous headroom over any real invocation. Fix:
@@ -413,10 +420,10 @@ shorten it — redaction can grow text, so check the real length with
 
 ### yak-repo-too-long
 
-A (redacted) `--repo <owner/name>` hint exceeds 200 chars — a
-local courtesy bound, not a wire-contract one: a target-repo hint rides
-inside `provenance` (`provenance.repo.target_repos`), which the vendored
-contract never length-validates. Caught locally anyway, same reasoning as
+A (redacted) `--repo <owner/name>` hint exceeds 200 chars — a target-repo hint rides
+inside `provenance` (`provenance.repo.target_repos`), which the contract
+package types and bounds at the same 200 chars. Caught here first, so the
+error names `--repo` rather than a generic payload failure, same reasoning as
 [`yak-repro-too-long`](#yak-repro-too-long) — a hint is a short `owner/name`
 identifier, so 200 chars is generous headroom over any real one. Fix:
 shorten it — redaction can grow text, so check the real length with
@@ -432,8 +439,8 @@ concerns.
 
 ### yak-payload-invalid
 
-Local validation against the vendored Yaks contract
-(`plugins/yak/yaks-schema.v1.ts`) failed for a reason other than a length bound
+Local validation against the Yaks contract package
+(`@sibylline-labs/yak-contract`) failed for a reason other than a length bound
 (e.g. an empty required field after redaction). The `ERROR` line names the
 field and the schema's message.
 
@@ -488,12 +495,43 @@ delivered; the agent's task is unaffected.
 The Yaks endpoint did not respond within the bounded request window (30s
 default). No retry — matches the registry transport's own posture. Warn + exit 0.
 
+### yak-unauthorized
+
+The Yaks endpoint answered `401`: it rejected the bearer token. Check the
+`"token"` in `~/.eris/yaks.json` or `ERIS_YAKS_TOKEN`, and that the token is
+registered with the endpoint. Retrying the same call changes nothing. Warn +
+exit 0; the report was dropped, not delivered, and the agent's task is
+unaffected. A problem with eris itself is reported on the vendor route, the eris
+project's own tracker, rather than into the workspace.
+
+### yak-not-entitled
+
+The Yaks endpoint answered `402`: the workspace is not entitled to Yaks (its
+plan or seat does not include it). Ask whoever administers the workspace;
+nothing on this machine fixes it. Warn + exit 0; the report was dropped, not
+delivered, and the agent's task is unaffected. A problem with eris itself is
+reported on the vendor route, the eris project's own tracker, rather than into the
+workspace.
+
+### yak-payload-too-large
+
+The Yaks endpoint answered `413`: the submission exceeded the endpoint's
+whole-body size cap. The per-field length checks pass locally first, so the sum
+is what overflowed; trim `--evidence` (the largest field), `--repro` or the
+`--repo` hints. Warn + exit 0; the
+report was dropped, not delivered, and the agent's task is unaffected. A problem
+with eris itself is reported on the vendor route, the eris project's own tracker,
+rather than into the workspace.
+
 ### yak-transport-error
 
-The Yaks endpoint responded, but not usably: a non-2xx status, an unparseable
-200 body, or a 200 that does not match the receipt contract
-(`YakReceipt` in `plugins/yak/yaks-schema.v1.ts`). Warn + exit 0; the `WARN` line
-names the HTTP status or the parse failure.
+The Yaks endpoint responded, but not usably: a non-2xx status other than the
+`401`, `402` and `413` that have their own slugs
+([`yak-unauthorized`](#yak-unauthorized), [`yak-not-entitled`](#yak-not-entitled),
+[`yak-payload-too-large`](#yak-payload-too-large)), an unparseable 2xx body, or a
+2xx that does not match the receipt contract (`YakReceipt` in
+`@sibylline-labs/yak-contract`). Warn + exit 0; the `WARN` line names the HTTP
+status or the parse failure.
 
 ### yak-config-permissive
 
@@ -506,13 +544,20 @@ leak surface. Fix: `chmod 0600 ~/.eris/yaks.json`.
 `~/.eris/yaks.json` exists but is not valid JSON, or is not a JSON object.
 Fix: recreate it as `{"url": "...", "token": "..."}`.
 
+### yak-config-unwritable
+
+`eris login` or `eris logout` could not write `~/.eris/yaks.json` (the `ERROR`
+line names the path and the errno). The previous file is untouched: the new
+one is written to a temp file beside it and renamed into place. Fix: make
+`~/.eris` writable by you, then run the command again.
+
 ### yak-token-unresolved
 
 No bearer token resolved for the Yaks endpoint — neither `ERIS_YAKS_TOKEN` nor a
 `"token"` field in a readable `~/.eris/yaks.json`. Environment/config, warn +
-exit 0. Minting a token is an operator step (`plugins/yak/yak-setup.ts`, then
-registration with the endpoint's operator), not something an agent can fix
-mid-task.
+exit 0. Getting a token is a human step (`eris login`, or
+`plugins/yak/yak-setup.ts` then registration with the endpoint's operator), not
+something an agent can fix mid-task.
 
 ### yak-device-id-unwritable
 
@@ -541,6 +586,47 @@ every other diagnostic — `redactions.skipped: true` on the record
 carries the same fact instead, which matters because a skipped scrub and a
 scrub that ran and found nothing otherwise look identical (`count: 0,
 classes: []`).
+
+### login-url-unresolved
+
+`eris login` has no endpoint to sign in to: no `--url`, no `ERIS_YAKS_URL`, and
+no `"url"` in `~/.eris/yaks.json`. There is no default host. Fix: pass
+`--url <url>` (it is saved beside the token, so later runs need no flag).
+
+### login-unreachable
+
+The endpoint could not be reached when the device login started, or stopped
+answering (a dropped connection or a 5xx, more than three polls in a row) while
+waiting for approval. Nothing was written. Fix: check the url and your
+connection, then run `eris login` again.
+
+### login-refused
+
+The endpoint answered, but not with a device login: it refused to start one
+(the `ERROR` line carries its error code, from either the RFC `{"error": …}`
+or the `{"error": {"code", "message"}}` shape, e.g. `invalid_device`,
+`device_unconfigured`), sent a malformed response, or refused the device code
+with a code other than the four RFC 8628 ones. Nothing was written. Fix: check
+the url points at an endpoint that offers device login.
+
+### login-denied
+
+The sign-in was denied on the approval page (`access_denied`). Nothing was
+written, and an existing `~/.eris/yaks.json` is left as it was. Fix: run
+`eris login` again if the denial was not intended.
+
+### login-expired
+
+The device code expired before it was approved: the endpoint answered
+`expired_token`, or the code's `expires_in` ran out locally. Nothing was
+written. Fix: run `eris login` again and approve the new code in time.
+
+### login-env-token-overrides
+
+A `WARN`, exit 0: `ERIS_YAKS_TOKEN` is set, and it wins over the token in
+`~/.eris/yaks.json`, so `eris yak` keeps using the environment's token after
+`eris login` (or still has one after `eris logout`). Fix: unset
+`ERIS_YAKS_TOKEN` to use the file's token.
 
 ## Adding a new slug
 

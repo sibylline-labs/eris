@@ -24,11 +24,13 @@
  *     3. derive the idempotency key from the REDACTED payload
  *     4. omit `evidence` entirely when the (redacted) bytes are empty —
  *        `evidence: ""` and `evidence` absent derive DIFFERENT keys
- *        under `JSON.stringify` (pinned by `tests/yaks-contract.test.ts`),
+ *        under `JSON.stringify` (frozen as a key vector in
+ *        `tests/yak-contract-v2.test.ts`, and held at this seam by the
+ *        "evidence '' ... SAME key" test in `tests/yak-submit.test.ts`),
  *        so treating an empty upload the same as no upload at all is what
  *        keeps two submissions of "no evidence" deduping against each
  *        other
- *     5. validate locally against the vendored zod schema BEFORE the
+ *     5. validate locally against the contract package's zod schema BEFORE the
  *        request (an over-bound field is a local, actionable
  *        exit-1 error naming the field/length/max — never a silent
  *        server-side truncation, which would desync the stored payload
@@ -55,30 +57,33 @@ import {
   YakSubmission,
   YakReceipt,
   YAKS_CONTRACT_VERSION,
+  YAK_REPO_HINT_MAX_LENGTH,
+  YAK_REPO_HINTS_MAX_COUNT,
   deriveIdempotencyKey,
   type YakVerb,
   type YakProvenance,
-} from "./yaks-schema.v1";
+} from "eris/yak-contract";
 import { redact, redactDeep, type RedactionClass } from "./yak-redact";
-import type { IdentityOutcome, YakReporterInfo } from "./yak-identity";
+import type { IdentityOutcome } from "./yak-identity";
 
 /**
- * A permissive twin of the VENDORED `YakReceipt` (`plugins/yak/yaks-schema.v1.ts`
- * — do not hand-edit that file; re-vendor instead) that accepts ANY `contract_version` string, not only the exact
- * literal this CLI currently emits.
+ * A permissive twin of the contract package's `YakReceipt`
+ * (`@sibylline-labs/yak-contract`, `packages/yak-contract/src/v2.ts`) that
+ * accepts ANY `contract_version` string, not only the exact literal this CLI
+ * currently emits.
  *
  * `YakReceipt.contract_version` is
  * `z.literal(YAKS_CONTRACT_VERSION)`. The REQUEST side already avoids this
  * trap — `ACCEPTED_YAKS_VERSIONS` is a tuple specifically so a version bump
- * is additive, per that file's own "Contract" comment. The RESPONSE side has
+ * is additive, per that file's own comment. The RESPONSE side has
  * no such tuple, because a receipt "carries the one version that produced
  * it" (same file) — that's a true statement about the SERVER's write, but
  * this CLIENT re-parses that same literal on READ. The moment an Actor ships
- * 1.1.0, every successful, DURABLY-STORED delivery would fail
+ * 2.1.0, every successful, DURABLY-STORED delivery would fail
  * `YakReceipt.safeParse` here and report `delivered: false` — turning a
  * contract_version bump into a false failure for every observation already
- * accepted server-side. Leniency belongs on the reader, not the vendored
- * contract: this widens only the one field a version bump changes, and
+ * accepted server-side. Leniency belongs on the reader, not the contract:
+ * this widens only the one field a version bump changes, and
  * changes nothing else `YakReceipt` already validates (`id`,
  * `idempotency_key`, `replay` all stay exactly as strict).
  */
@@ -86,7 +91,7 @@ const LenientYakReceipt = YakReceipt.extend({ contract_version: z.string() });
 
 /** The shape `submitYak` actually returns on delivery — `YakReceipt` with
  *  `contract_version` widened to `string` (see `LenientYakReceipt` above).
- *  Structurally compatible with the vendored `YakReceipt` everywhere a
+ *  Structurally compatible with the package's `YakReceipt` everywhere a
  *  `string` is expected, which is everywhere this repo reads the field. */
 export type YakReceiptResponse = z.infer<typeof LenientYakReceipt>;
 
@@ -311,7 +316,7 @@ function summarizeRedactionCounts(
  *  `curl --max-time 30` call to the endpoint. */
 export const DEFAULT_SUBMIT_TIMEOUT_MS = 30_000;
 
-const YAKS_INGRESS_PATH = "/v0/yaks";
+const YAKS_INGRESS_PATH = "/v1/yaks";
 
 /** Warn-class slugs (environment/config/transport — never the
  *  agent's fault, so `yak.ts` maps every one of these to `WARN` + exit 0,
@@ -330,9 +335,47 @@ export type SubmitWarnSlug =
   | "yak-url-unresolved"
   | "yak-unreachable"
   | "yak-timeout"
+  | "yak-unauthorized"
+  | "yak-not-entitled"
+  | "yak-payload-too-large"
   | "yak-transport-error"
   | "yak-identity-id-too-long"
   | "yak-redaction-overflow";
+
+/**
+ * The endpoint's refusals that no retry fixes and the operator can act on:
+ * its HTTP status -> the warn slug plus the local remedy the reason ends with.
+ * Every other non-2xx stays `yak-transport-error` (an outage, a missing route,
+ * a proxy page), because no local remedy is known for it. All are WARN + exit
+ * 0 like the rest of this union.
+ *
+ * The remedies are local ones only. The reasons do not point at the vendor
+ * route; `docs/ERRORS.md` carries that pointer.
+ */
+const REFUSAL_BY_STATUS: ReadonlyMap<number, { slug: SubmitWarnSlug; remedy: string }> = new Map([
+  [
+    401,
+    {
+      slug: "yak-unauthorized",
+      remedy:
+        "the endpoint rejected the bearer token; check the token in ~/.eris/yaks.json or ERIS_YAKS_TOKEN, and that it is registered with the endpoint",
+    },
+  ],
+  [
+    402,
+    {
+      slug: "yak-not-entitled",
+      remedy: "this workspace is not entitled to Yaks (its plan or seat does not include it)",
+    },
+  ],
+  [
+    413,
+    {
+      slug: "yak-payload-too-large",
+      remedy: "the submission exceeded the endpoint's whole-body size cap; trim --evidence, --repro or the --repo hints",
+    },
+  ],
+]);
 
 export type SubmitMisuseSlug =
   | "yak-summary-too-long"
@@ -345,10 +388,11 @@ export type SubmitMisuseSlug =
 
 /**
  * Local length ceiling for `--repro <command>`. `repro` rides
- * inside `provenance` (see `SubmitParams.repro`), which the vendored contract
- * validates as an unbounded `z.record(z.string(), z.unknown())` — "never
- * validated as a gate" is `YakProvenance`'s own documented posture, because
- * it's enrichment, not payload. A repro command is agent-authored free text
+ * inside `provenance` (see `SubmitParams.repro`), which the contract
+ * validates only for its two typed keys (`repo.target_repos`,
+ * `execution.rung`) — "never validated as a gate" is `YakProvenance`'s own
+ * documented posture for the rest, because it's enrichment, not payload. A
+ * repro command is agent-authored free text
  * like `summary`/`body`/`evidence`, though, so it gets the same local
  * courtesy bound those three get (`docs/YAK.md`: "over-length fields fail
  * locally... rather than letting the server truncate silently") even though
@@ -362,21 +406,20 @@ export type SubmitMisuseSlug =
 export const YAK_REPRO_MAX_LENGTH = 2_000;
 
 /**
- * Local bounds for `--repo <owner/name>` target-repo hints (repeatable —
- * see `SubmitParams.repoHints`). Same posture as
- * `YAK_REPRO_MAX_LENGTH` immediately above: a hint rides inside
- * `provenance.repo.target_repos`, which the vendored contract's `repo`
- * category validates as an unbounded `z.record(z.string(), z.unknown())` —
- * never a gate. These bounds exist to keep a pasted URL or a stray
- * multi-line paste out of the server storage this repo doesn't control, not
- * because the wire contract enforces anything. A hint is a short
- * `owner/name` identifier (this CLI never validates it against a live repo
- * list — see that field's own docstring), so 200 chars is generous headroom
- * over any real one, and 20 hints is generous headroom over any single
- * report that genuinely spans that many repos.
+ * Bounds for `--repo <owner/name>` target-repo hints (repeatable —
+ * see `SubmitParams.repoHints`). A hint rides inside
+ * `provenance.repo.target_repos`, which the contract package types and
+ * bounds (`YakRepoProvenance`): the same constants are re-exported here so
+ * this file's local check and the contract's wire check are one number, not
+ * two that can drift. The local check still runs first so an over-bound hint
+ * fails with an actionable `--repo` message rather than a generic
+ * `yak-payload-invalid`. A hint is a short `owner/name` identifier (this CLI
+ * never validates it against a live repo list — see that field's own
+ * docstring), so 200 chars is generous headroom over any real one, and 20
+ * hints is generous headroom over any single report that genuinely spans
+ * that many repos.
  */
-export const YAK_REPO_HINT_MAX_LENGTH = 200;
-export const YAK_REPO_HINTS_MAX_COUNT = 20;
+export { YAK_REPO_HINT_MAX_LENGTH, YAK_REPO_HINTS_MAX_COUNT };
 
 export type SubmitResult =
   | {
@@ -435,9 +478,9 @@ export interface SubmitParams {
    *  `curl -H "Authorization: Bearer …"`), bounded the same way (see
    *  `YAK_REPRO_MAX_LENGTH` below) and normalized empty-after-redaction to
    *  absent (the same rule `evidence` already follows). It is NOT part of
-   *  the vendored `YakSubmission` shape — the wire contract is vendored and
-   *  this repo doesn't own it (`plugins/yak/yaks-schema.v1.ts`'s own header: "do
-   *  not hand-edit, re-vendor instead") — so it rides inside `provenance`
+   *  the `YakSubmission` shape — the wire contract is the workspace package
+   *  `@sibylline-labs/yak-contract`, which this CLI consumes and does not
+   *  extend on its own — so it rides inside `provenance`
    *  instead, which `YakProvenance.catchall(z.unknown())` was built to carry
    *  exactly this kind of forward-compatible, not-yet-contracted field (see
    *  that type's own docstring: "a CLI that learns an unforeseen provenance
@@ -463,17 +506,16 @@ export interface SubmitParams {
    *  submission — so an agent filing from inside a repo checkout gets a
    *  hint without passing anything. Explicit `--repo` always wins over that
    *  derivation; the two are never merged together. It is NOT part of the
-   *  vendored `YakSubmission` shape — like `repro`, it rides inside
+   *  `YakSubmission` top-level shape — like `repro`, it rides inside
    *  `provenance`, but unlike `repro` it lands in the ALREADY-typed `repo`
-   *  category (`YakProvenance.repo`, the same `z.record(z.string(),
-   *  z.unknown())` `yak-context.ts::gatherRepo` already populates with
-   *  `service`) rather than a new catchall key — a target-repo hint is
-   *  repo-scoped provenance, not a new kind of fact. Lands on the wire as
+   *  category (`YakProvenance.repo`, which `yak-context.ts::gatherRepo`
+   *  already populates with `service`) rather than a new catchall key — a
+   *  target-repo hint is repo-scoped provenance, not a new kind of fact. Lands on the wire as
    *  `provenance.repo.target_repos` (an array, even for one hint: a report
    *  that spans repos carries more than one).
    *  This CLI never validates any of it beyond the local length/count
    *  bounds; a dispatch/triage flow reads it off the rendered issue, which
-   *  the Actor owns (docs/YAK.md's own "everything after the 200...
+   *  the Actor owns (docs/YAK.md's own "everything after the receipt...
    *  belongs to the Actor, not this CLI"). */
   repoHints?: string[];
   /** `--no-redact` skips the scrub entirely, with a loud
@@ -482,7 +524,6 @@ export interface SubmitParams {
   noRedact: boolean;
   deviceId: string;
   executionId: string;
-  reporter?: YakReporterInfo;
   provenance?: YakProvenance;
   /** The resolved Yaks endpoint base URL (no trailing slash required — this
    *  module strips one if present) and bearer token. Both are ALREADY
@@ -841,7 +882,7 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
   // payload — the Actor re-derives from what it actually received, so
   // this must be the same text we're about to send, not the original.
   // `repro` never participates: it isn't part of `canonicalPayload`
-  // (`plugins/yak/yaks-schema.v1.ts`) — it rides inside `provenance`, which the
+  // (`@sibylline-labs/yak-contract`) — it rides inside `provenance`, which the
   // key derivation deliberately excludes (only summary/body/evidence do,
   // per that file's own docstring) — so attaching or changing a repro
   // command never changes an observation's dedup identity.
@@ -895,11 +936,7 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
   }
   const finalRepoHints = resolveTargetRepoHints(params.repoHints, repoHintsCheck, redactedProvenance?.git?.origin_url);
 
-  const reporter =
-    params.reporter && (params.reporter.name !== undefined || params.reporter.email !== undefined)
-      ? params.reporter
-      : undefined;
-  // `repro` is not a field the vendored `YakSubmission` (or
+  // `repro` is not a field the contract's `YakSubmission` (or
   // `YakProvenance`'s own typed categories) knows about — it rides in as an
   // extra top-level provenance key, preserved on the wire by
   // `YakProvenance.catchall(z.unknown())` (see `SubmitParams.repro`'s
@@ -925,16 +962,20 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
   const provenance =
     provenanceWithRepoHints && Object.keys(provenanceWithRepoHints).length > 0 ? provenanceWithRepoHints : undefined;
 
+  // The reporter is never sent: the ingress derives the tracker user from the
+  // bearer token, so the contract has no field for one. `route: "workspace"`
+  // files the report into the caller's own tenant; it is not an input to the
+  // idempotency key.
   const submission: YakSubmission = {
     schema_version: YAKS_CONTRACT_VERSION,
     verb: params.verb,
+    route: "workspace",
     summary: redactedSummary,
     body: redactedBody,
     ...(finalEvidence !== undefined ? { evidence: finalEvidence } : {}),
     device_id: params.deviceId,
     execution_id: params.executionId,
     idempotency_key: idempotencyKey,
-    ...(reporter ? { reporter } : {}),
     ...(provenance ? { provenance } : {}),
   };
 
@@ -1006,10 +1047,11 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
     }
 
     if (!response.ok) {
+      const refusal = REFUSAL_BY_STATUS.get(response.status);
       return {
         status: "warn",
-        slug: "yak-transport-error",
-        reason: `yaks endpoint responded ${response.status}${response.statusText ? ` ${response.statusText}` : ""} for ${url}`,
+        slug: refusal?.slug ?? "yak-transport-error",
+        reason: `yaks endpoint responded ${response.status}${response.statusText ? ` ${response.statusText}` : ""} for ${url}${refusal ? ` — ${refusal.remedy}` : ""}`,
         redaction,
         idempotencyKey,
       };
@@ -1032,22 +1074,22 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
       return {
         status: "warn",
         slug: "yak-transport-error",
-        reason: `yaks endpoint returned an unparseable 200: ${(err as Error).message}`,
+        reason: `yaks endpoint returned an unparseable ${response.status}: ${(err as Error).message}`,
         redaction,
         idempotencyKey,
       };
     }
 
-    // LenientYakReceipt, not the vendored YakReceipt directly — a
-    // contract_version the vendored literal doesn't know about (a bump the
-    // server shipped before this CLI re-vendored) must not turn an accepted,
-    // durably-stored delivery into a reported failure.
+    // LenientYakReceipt, not the package's YakReceipt directly — a
+    // contract_version the package's literal doesn't know about (a bump the
+    // server shipped before this CLI's package caught up) must not turn an
+    // accepted, durably-stored delivery into a reported failure.
     const receiptParsed = LenientYakReceipt.safeParse(receiptJson);
     if (!receiptParsed.success) {
       return {
         status: "warn",
         slug: "yak-transport-error",
-        reason: "yaks endpoint returned a 200 that does not match the receipt contract",
+        reason: `yaks endpoint returned a ${response.status} that does not match the receipt contract`,
         redaction,
         idempotencyKey,
       };

@@ -30,8 +30,7 @@ async function freshDir(prefix: string): Promise<string> {
   return dir;
 }
 
-/** A Runner that answers by exact argv match, {ok:false} for anything else —
- *  the same stub shape yak-identity.test.ts uses for resolveReporter. */
+/** A Runner that answers by exact argv match, {ok:false} for anything else. */
 function stubRunner(answers: Record<string, BoundedResult>): Runner {
   return async (cmd: string[]) => answers[cmd.join(" ")] ?? { ok: false };
 }

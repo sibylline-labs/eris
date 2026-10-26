@@ -1,11 +1,11 @@
 /**
- * yak-identity.ts — token/URL config resolution and reporter identity for
+ * yak-identity.ts — token/URL config resolution and caller identity for
  * `eris yak`.
  *
  * Owns the parts of a yak submission that are ABOUT THE CALLER, not about the
  * report: which Yaks endpoint to talk to, what bearer token authenticates the
- * call, a stable per-machine `device_id`, the task-scoped `execution_id`, and
- * an optional git-derived reporter identity. `plugins/yak/yak-context.ts` (sibling
+ * call, a stable per-machine `device_id`, and the task-scoped `execution_id`.
+ * `plugins/yak/yak-context.ts` (sibling
  * file, same phase) owns the richer best-effort PROVENANCE record and reuses
  * `runBounded` from here for its own bounded git probes.
  *
@@ -50,6 +50,7 @@ import { homedir } from "node:os";
 export type YakIdentitySlug =
   | "yak-config-permissive"
   | "yak-config-malformed"
+  | "yak-config-unwritable"
   | "yak-token-unresolved"
   | "yak-device-id-unwritable";
 
@@ -145,6 +146,34 @@ export async function readYaksFileConfig(
   return { value: config };
 }
 
+/**
+ * Replace `~/.eris/yaks.json` with `config`, whole. The temp file sits in the
+ * same directory and is CREATED at 0600 (`wx`: it never exists readable, and
+ * an existing path is never followed), then renamed over the destination, so
+ * a reader sees the old file or the new one and never a half-written or
+ * readable one. `~/.eris` is created 0700 when absent. The failure names the
+ * path, never a field's value. Returns the path written.
+ */
+export async function writeYaksFileConfig(
+  config: YaksFileConfig,
+  home: string = homedir(),
+): Promise<IdentityOutcome<string, "yak-config-unwritable">> {
+  const path = yaksConfigPath(home);
+  const tmp = join(home, ".eris", `.yaks.json.tmp-${process.pid}-${crypto.randomUUID()}`);
+  const body: YaksFileConfig = {};
+  if (config.url !== undefined) body.url = config.url;
+  if (config.token !== undefined) body.token = config.token;
+  try {
+    await fs.mkdir(join(home, ".eris"), { recursive: true, mode: 0o700 });
+    await fs.writeFile(tmp, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+    await fs.rename(tmp, path);
+    return { value: path };
+  } catch (err) {
+    await fs.rm(tmp, { force: true }).catch(() => undefined);
+    return { reason: `cannot write ${path}: ${(err as NodeJS.ErrnoException).code ?? "error"}`, slug: "yak-config-unwritable" };
+  }
+}
+
 /** `ERIS_YAKS_TOKEN` env → `yaks.json`'s `token`. Never includes
  *  the resolved token's own value in a failure message — there IS no token on
  *  the failure path, by construction. */
@@ -156,7 +185,7 @@ export function resolveToken(
   if (fromEnv && fromEnv.length > 0) return { value: fromEnv };
   if (fileConfig.token && fileConfig.token.length > 0) return { value: fileConfig.token };
   return {
-    reason: 'no yaks token: set ERIS_YAKS_TOKEN or add a "token" field to ~/.eris/yaks.json',
+    reason: "no yaks token: run 'eris login', or set ERIS_YAKS_TOKEN",
     slug: "yak-token-unresolved",
   };
 }
@@ -296,8 +325,8 @@ export function resolveExecutionId(
  * --porcelain` on a clean tree exits 0 with EMPTY stdout, and collapsing that
  * to "absent" the way an empty free-text field would be would confuse
  * "measured: clean" with "not measured".
- * Callers that want "empty means absent" (a git sha, an origin url, a
- * reporter's name) call `asText` on the result; callers that need to tell
+ * Callers that want "empty means absent" (a git sha, an origin url) call
+ * `asText` on the result; callers that need to tell
  * "clean" from "unmeasured" (a dirty flag) read `.ok` and `.stdout` directly.
  */
 export type BoundedResult = { ok: true; stdout: string } | { ok: false };
@@ -357,38 +386,11 @@ export async function runBounded(cmd: string[], cwd: string, timeoutMs: number):
 }
 
 /** Convenience for the common "trimmed non-empty string, else absent" case —
- *  a git sha/branch/origin/root, a reporter's name or email. See
+ *  a git sha/branch/origin/root. See
  *  `BoundedResult`'s header for why the boolean-fact case (dirty) must NOT
  *  go through this. */
 export function asText(result: BoundedResult): string | undefined {
   if (!result.ok) return undefined;
   const trimmed = result.stdout.trim();
   return trimmed.length > 0 ? trimmed : undefined;
-}
-
-// --- reporter ---------------------------------------------------------------
-
-/** The git author shape, `{name?, email?}`, matching the vendored
- *  `YakReporter` (`plugins/yak/yaks-schema.v1.ts`) — both fields optional,
- *  absent (never `""`) when `git config` has nothing to say.
- *  Never fails: an unset `user.name`/`user.email`, a missing `git` binary, or
- *  a `cwd` outside any repo all resolve to `{}`. */
-export type YakReporterInfo = { name?: string; email?: string };
-
-const GIT_CONFIG_TIMEOUT_MS = 500;
-
-export async function resolveReporter(
-  cwd: string = process.cwd(),
-  run: Runner = runBounded,
-): Promise<YakReporterInfo> {
-  const [name, email] = await Promise.all([
-    run(["git", "config", "user.name"], cwd, GIT_CONFIG_TIMEOUT_MS),
-    run(["git", "config", "user.email"], cwd, GIT_CONFIG_TIMEOUT_MS),
-  ]);
-  const reporter: YakReporterInfo = {};
-  const nameText = asText(name);
-  const emailText = asText(email);
-  if (nameText !== undefined) reporter.name = nameText;
-  if (emailText !== undefined) reporter.email = emailText;
-  return reporter;
 }

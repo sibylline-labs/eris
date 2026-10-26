@@ -1,8 +1,8 @@
 /**
  * yak-context.ts — best-effort provenance gather for `eris yak`.
  *
- * Produces a `YakProvenance` record (`plugins/yak/yaks-schema.v1.ts`) — six
- * optional categories, each a permissive `Record<string, unknown>`:
+ * Produces a `YakProvenance` record (`@sibylline-labs/yak-contract`) — six
+ * optional categories, each a permissive record:
  * `execution`, `harness`, `device`, `process`, `repo`, `git`. NEVER a gate,
  * NEVER a delay a caller should notice: every individual probe is wrapped so
  * one failure drops exactly that key, and the WHOLE gather is time-capped so
@@ -29,7 +29,7 @@
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 import { hostname } from "node:os";
-import type { YakProvenance } from "./yaks-schema.v1";
+import type { YakProvenance } from "eris/yak-contract";
 import { asText, runBounded, type Runner } from "./yak-identity";
 
 const GIT_PROBE_TIMEOUT_MS = 500;

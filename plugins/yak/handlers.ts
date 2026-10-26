@@ -57,8 +57,8 @@ Commands:
   fatal     The harness itself is broken
 
 ${USAGE_FLAG_BLOCK}
-Setup: ~/.eris/yaks.json holding {"url": "...", "token": "..."} at mode 0600,
-or export ERIS_YAKS_URL / ERIS_YAKS_TOKEN.
+Setup: 'eris login --url <url>' writes ~/.eris/yaks.json ({"url", "token"},
+mode 0600); or export ERIS_YAKS_URL / ERIS_YAKS_TOKEN.
 
 Run 'eris yak <command> --help' for the full flag reference.
 `;
