@@ -86,6 +86,13 @@ export ERIS_YAKS_URL=https://yaks.example.com     # your Yaks endpoint
 export ERIS_YAKS_TOKEN=<bearer token>
 ```
 
+Or sign in with a device code, if your endpoint offers one. `eris login` shows a
+code to approve in the browser and writes the token to `~/.eris/yaks.json`:
+
+```bash
+eris login --url https://yaks.example.com
+```
+
 Or, from a checkout, mint a bearer into `~/.eris/yaks.json` (mode `0600`). The
 script prints the entry your endpoint's operator needs to register:
 

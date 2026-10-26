@@ -60,7 +60,32 @@ text (see [Idempotency](#idempotency-and-replay)).
 There is no default endpoint: until a URL is configured, every yak warns
 `yak-url-unresolved` and exits 0.
 
-Mint the file with `bun plugins/yak/yak-setup.ts --url <endpoint>` (or with
+### `eris login`: a device code
+
+On an endpoint that offers device login, sign in from any terminal:
+
+```
+eris login --url https://yaks.example.com
+```
+
+It prints a link and a short code (and opens the link in a browser when stderr
+is a terminal; `--no-browser` skips that). Approve the code there, and the
+token the endpoint mints is written to `~/.eris/yaks.json` with the url beside
+it, so later runs need no `--url`. The file is replaced only after a token
+arrives, via a temp file created `0600` and renamed into place: a denied or
+expired code writes nothing (`login-denied`, `login-expired`, exit 1). Neither
+the device code nor the token is printed; the short code is the one value
+shown, and it is useless without the approval. Without `--url` the url is
+`ERIS_YAKS_URL`, then the file's own `url`. The CLI follows RFC 8628: it
+polls `/v1/device/token` at the advertised interval and slows down when told to.
+
+`eris logout` removes the token from the file and keeps the url. No route lets
+a token revoke itself, so it stays valid until you revoke it from the
+endpoint's dashboard (Settings > API Tokens).
+
+### `yak-setup.ts`: a hand-registered bearer
+
+Or mint the file with `bun plugins/yak/yak-setup.ts --url <endpoint>` (or with
 `ERIS_YAKS_URL` set) from an eris checkout. It writes the file and prints the
 follow-up step: the endpoint's operator has to register the bearer against
 this machine's source slug, which the script does not automate. Until both
@@ -158,6 +183,7 @@ to **stderr**, never stdout; under `--output json` the same information is
 either way (see [Exit codes](#--output-json) above).
 
 Classes covered: PEM private-key blocks, JWTs, `sib_` service tokens,
+`sibdc_` device codes (what `eris login` polls with),
 AWS access-key ids and `aws_secret_access_key` assignments,
 GitHub/Slack/Google/`sk-`-style API keys, `Authorization: Bearer|token …`
 headers, GCP service-account `"private_key"` values, connection strings with an
@@ -360,4 +386,5 @@ hints](#target-repo-hints) above.
 - [OUTPUT-CONTRACT.md](OUTPUT-CONTRACT.md) — the stdout/stderr split, exit
   codes, and the `--output json` machine surface this command participates in
 - [ERRORS.md](ERRORS.md) — every `yak-*` slug's `ERROR`/`fix`/`docs` heading
+- `eris login --help` — sign this machine in with a device code
 - `plugins/yak/yak-setup.ts --help` — mint this machine's bearer

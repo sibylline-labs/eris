@@ -50,6 +50,7 @@ import { homedir } from "node:os";
 export type YakIdentitySlug =
   | "yak-config-permissive"
   | "yak-config-malformed"
+  | "yak-config-unwritable"
   | "yak-token-unresolved"
   | "yak-device-id-unwritable";
 
@@ -145,6 +146,34 @@ export async function readYaksFileConfig(
   return { value: config };
 }
 
+/**
+ * Replace `~/.eris/yaks.json` with `config`, whole. The temp file sits in the
+ * same directory and is CREATED at 0600 (`wx`: it never exists readable, and
+ * an existing path is never followed), then renamed over the destination, so
+ * a reader sees the old file or the new one and never a half-written or
+ * readable one. `~/.eris` is created 0700 when absent. The failure names the
+ * path, never a field's value. Returns the path written.
+ */
+export async function writeYaksFileConfig(
+  config: YaksFileConfig,
+  home: string = homedir(),
+): Promise<IdentityOutcome<string, "yak-config-unwritable">> {
+  const path = yaksConfigPath(home);
+  const tmp = join(home, ".eris", `.yaks.json.tmp-${process.pid}-${crypto.randomUUID()}`);
+  const body: YaksFileConfig = {};
+  if (config.url !== undefined) body.url = config.url;
+  if (config.token !== undefined) body.token = config.token;
+  try {
+    await fs.mkdir(join(home, ".eris"), { recursive: true, mode: 0o700 });
+    await fs.writeFile(tmp, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+    await fs.rename(tmp, path);
+    return { value: path };
+  } catch (err) {
+    await fs.rm(tmp, { force: true }).catch(() => undefined);
+    return { reason: `cannot write ${path}: ${(err as NodeJS.ErrnoException).code ?? "error"}`, slug: "yak-config-unwritable" };
+  }
+}
+
 /** `ERIS_YAKS_TOKEN` env → `yaks.json`'s `token`. Never includes
  *  the resolved token's own value in a failure message — there IS no token on
  *  the failure path, by construction. */
@@ -156,7 +185,7 @@ export function resolveToken(
   if (fromEnv && fromEnv.length > 0) return { value: fromEnv };
   if (fileConfig.token && fileConfig.token.length > 0) return { value: fileConfig.token };
   return {
-    reason: 'no yaks token: set ERIS_YAKS_TOKEN or add a "token" field to ~/.eris/yaks.json',
+    reason: "no yaks token: run 'eris login', or set ERIS_YAKS_TOKEN",
     slug: "yak-token-unresolved",
   };
 }
