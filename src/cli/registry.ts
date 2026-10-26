@@ -95,16 +95,7 @@ export const VERBS = {
   completion: { impl: "ts", summary: "Emit shell tab-completion script (bash, zsh)" },
   "completion bash": { summary: "Emit the bash completion script" },
   "completion zsh": { summary: "Emit the zsh completion script" },
-  update: {
-    impl: "ts",
-    summary: "Update this eris binary to the latest release (--check, --to)",
-    json: true,
-    usage: "[--check] [--to <tag>]",
-    flags: [
-      { name: "--check", takesValue: false },
-      { name: "--to", takesValue: true },
-    ],
-  },
+  update: { impl: "ts", summary: "Print how to get the latest eris release (npx, bunx)", json: true },
 } as const satisfies Readonly<Record<string, Row>>;
 
 export type VerbPath = keyof typeof VERBS;

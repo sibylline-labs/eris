@@ -48,6 +48,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import pkg from "../../package.json";
 
 declare const __ERIS_BUILD_ID__: string | undefined;
 declare const __ERIS_RELEASE_REPO__: string | undefined;
@@ -63,8 +64,20 @@ export const BUILD_ID: string | null = typeof __ERIS_BUILD_ID__ === "undefined" 
 /** The GitHub repository (`owner/name`) this repository's releases are published to: a build's or a run's, unless its distribution names its own. */
 export const DEFAULT_RELEASE_REPO = "sibylline-labs/eris";
 
-/** The release tag a build was given (`build({ tag })`); `dev` for an untagged build and for a checkout. */
-export const VERSION: string = typeof __ERIS_VERSION__ === "string" ? __ERIS_VERSION__ : "dev";
+/**
+ * This build's version, from the first source that has one: the tag a build was
+ * given (`build({ tag })`); else the package's own version, which the release
+ * stamps into package.json before it publishes to npm, as `v<version>`; else
+ * `dev` (an untagged build, a checkout, and a git dependency, all `0.0.0`).
+ */
+export function versionOf(bakedTag: string | undefined, packageVersion: string | undefined): string {
+  if (bakedTag !== undefined) return bakedTag;
+  if (packageVersion !== undefined && packageVersion !== "0.0.0" && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(packageVersion)) return `v${packageVersion}`;
+  return "dev";
+}
+
+/** This build's version (`versionOf`): `eris --version` prints it and `eris update` compares releases with it. */
+export const VERSION: string = versionOf(typeof __ERIS_VERSION__ === "string" ? __ERIS_VERSION__ : undefined, BUILD_ID !== null ? undefined : pkg.version);
 
 /** Where a failure block's second `docs:` line points: this repository's public docs. */
 export const DEFAULT_DOCS_BASE = "https://github.com/sibylline-labs/eris/blob/main";

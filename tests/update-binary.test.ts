@@ -1,5 +1,7 @@
 /**
- * `eris update` on real compiled binaries: `build()` writes eris at two tags,
+ * The release `eris update` on real compiled binaries: `build()` writes the
+ * example distribution (examples/distribution, which composes `RELEASE_UPDATE`
+ * from `eris/sdk` as a distribution in another repository does) at two tags,
  * the older one is copied into a scratch directory and updates itself from the
  * loopback release fixture to the newer one, which then answers as that tag.
  * tests/update.test.ts covers every refusal against a stand-in binary; this file
@@ -13,12 +15,15 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSy
 import { join } from "node:path";
 import { buildInChild } from "eris/sdk/testing";
 import { checkoutOnly, expectFailBlock, REPO, type Sandbox, sandbox } from "./helpers/blackbox";
+import { IDENTITY } from "../examples/distribution/main";
 import { releaseFixture, type ReleaseFixture } from "./helpers/release-fixture";
 
 setDefaultTimeout(180_000);
 
-/** This repository's own build options (scripts/build.ts): the module a child bun builds from. */
-const CORE_BUILD = join(REPO, "scripts", "build.ts");
+/** The example distribution's build options: the module a child bun builds from. */
+const DISTRIBUTION_BUILD = join(REPO, "examples", "distribution", "build.ts");
+/** What the older binary prints for `--version`: its tag, and the distribution's own line. */
+const V1_VERSION = "eris v0.0.1 (example-org/eris-fork)\nexample distribution 1.0\n";
 const REPOSITORY = "example-org/eris-fork";
 const ASSET = `eris-${process.platform}-${process.arch}`;
 const TOKEN = ["ghp", "_", "b".repeat(36)].join("");
@@ -36,8 +41,8 @@ describe.skipIf(checkoutOnly("builds its own binaries from this checkout's sourc
   beforeAll(() => {
     expect(["darwin-arm64", "linux-x64"], `these tests run on a platform releases publish for, not ${process.platform}-${process.arch}`).toContain(`${process.platform}-${process.arch}`);
     rmSync(dist, { recursive: true, force: true });
-    buildInChild({ module: CORE_BUILD, releaseRepo: REPOSITORY, outfile: v1, tag: "v0.0.1" });
-    buildInChild({ module: CORE_BUILD, releaseRepo: REPOSITORY, outfile: v2, tag: "v0.0.2", versionExtra: "core example-pin", docsBase: DOCS_BASE });
+    buildInChild({ module: DISTRIBUTION_BUILD, releaseRepo: REPOSITORY, outfile: v1, tag: "v0.0.1" });
+    buildInChild({ module: DISTRIBUTION_BUILD, releaseRepo: REPOSITORY, outfile: v2, tag: "v0.0.2", versionExtra: "core example-pin", docsBase: DOCS_BASE });
     fx = releaseFixture(REPOSITORY);
     fx.publish({ tag: "v0.0.2", assets: { [ASSET]: readFileSync(v2) } });
   });
@@ -63,7 +68,7 @@ describe.skipIf(checkoutOnly("builds its own binaries from this checkout's sourc
   it("replaces itself with the newer release, and then answers as it", async () => {
     /** When the rename over a running executable fails, the new binary is not the one a later run starts, or its asset home is not its own, a user is left on the old release or with a binary that cannot run — observed by running the same path before and after. */
     const before = await sb.run(["--version"], { program: installed });
-    expect(before.stdout).toBe(`eris v0.0.1 (${REPOSITORY})\n`);
+    expect(before.stdout).toBe(V1_VERSION);
 
     const r = await run(["update"], { GH_TOKEN: TOKEN, TMPDIR: join(sb.dir, "does-not-exist") });
     expect({ status: r.status, stdout: r.stdout }).toEqual({ status: 0, stdout: "" });
@@ -90,7 +95,7 @@ describe.skipIf(checkoutOnly("builds its own binaries from this checkout's sourc
     /** When --check replaces the binary, or the exit code does not follow the answer, a script gating on it updates the wrong machines — observed at the exit codes and the binary's version across a check, an update and a second check. */
     const check = await run(["update", "--check"]);
     expect({ status: check.status, stdout: check.stdout, stderr: check.stderr }).toEqual({ status: 10, stdout: "update available: v0.0.1 -> v0.0.2\n", stderr: "" });
-    expect((await sb.run(["--version"], { program: installed })).stdout).toBe(`eris v0.0.1 (${REPOSITORY})\n`);
+    expect((await sb.run(["--version"], { program: installed })).stdout).toBe(V1_VERSION);
     expect((await run(["update"])).status).toBe(0);
     const again = await run(["--output", "json", "update", "--check"]);
     expect(again.status).toBe(0);
@@ -101,9 +106,9 @@ describe.skipIf(checkoutOnly("builds its own binaries from this checkout's sourc
     /** When a checksum mismatch is noticed after the rename, the user's binary is already the bad download — observed by running the same path after the refusal. */
     fx.publish({ tag: "v0.0.3", assets: { [ASSET]: readFileSync(v2) }, sums: `${"0".repeat(64)}  ${ASSET}\n` });
     const r = await run(["update", "--to", "v0.0.3"]);
-    expectFailBlock(r, "update-checksum-mismatch");
+    expectFailBlock(r, "update-checksum-mismatch", IDENTITY.docsBase);
     expect(readdirSync(bin)).toEqual(["eris"]);
-    expect((await sb.run(["--version"], { program: installed })).stdout).toBe(`eris v0.0.1 (${REPOSITORY})\n`);
+    expect((await sb.run(["--version"], { program: installed })).stdout).toBe(V1_VERSION);
   });
 
   /** Start `eris update` as a child we can signal; resolves with how it ended. */
@@ -134,7 +139,7 @@ describe.skipIf(checkoutOnly("builds its own binaries from this checkout's sourc
     expect(sent).toBe(true);
     expect(end.signal).toBe("SIGINT");
     expect(readdirSync(bin)).toEqual(["eris"]);
-    expect((await sb.run(["--version"], { program: installed })).stdout).toBe(`eris v0.0.1 (${REPOSITORY})\n`);
+    expect((await sb.run(["--version"], { program: installed })).stdout).toBe(V1_VERSION);
   });
 
   it("an interrupt while the new binary is being checked puts the old one back", async () => {
@@ -169,10 +174,11 @@ describe.skipIf(checkoutOnly("builds its own binaries from this checkout's sourc
     expect({ smokePid, alive: alive() }).toEqual({ smokePid, alive: false });
   });
 
-  it("a source checkout refuses, with the same fixture and no request made", async () => {
-    /** When the checkout updates itself, it replaces bun or its own shim — observed at the block and at the fixture. Paired with the replacements above, which made requests against the same fixture. */
-    const r = await sb.run(["update"], { env: { ERIS_UPDATE_API: fx.api } });
-    expectFailBlock(r, "update-not-compiled");
+  it("the distribution run from source refuses, with the same fixture and no request made", async () => {
+    /** When a source run updates itself, it replaces bun — observed at the block and at the fixture. Paired with the replacements above, which made requests against the same fixture. */
+    const entry = join(REPO, "examples", "distribution", "main.ts");
+    const r = await sb.run(["--no-env-file", "--config=/dev/null", entry, "update"], { program: process.execPath, env: { ERIS_UPDATE_API: fx.api, _ERIS_SHIM_DIR: undefined } });
+    expectFailBlock(r, "update-not-compiled", IDENTITY.docsBase);
     expect(fx.hits).toEqual([]);
   });
 });

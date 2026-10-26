@@ -239,9 +239,10 @@ function report(r: Run, why: string): string {
  * The whole OUTPUT-CONTRACT §4 grammar in one assertion: exactly one `ERROR `
  * line, exactly one `slug: ` line carrying <slug>, exactly two `docs: ` lines
  * (local, then GitHub), order ERROR < slug < every fix < docs, the prefixes
- * INCLUDING their single trailing space, exit 1, and nothing on stdout.
+ * INCLUDING their single trailing space, exit 1, and nothing on stdout. The
+ * GitHub line is under `docsBase`: core's, unless a distribution ran.
  */
-export function expectFailBlock(r: Run, slug: string): void {
+export function expectFailBlock(r: Run, slug: string, docsBase = "https://github.com/sibylline-labs/eris/blob/main"): void {
   const lines = r.stderr.split("\n");
   const idx = (p: string) => lines.map((l, i) => (l.startsWith(p) ? i : -1)).filter((i) => i >= 0);
   const errs = idx("ERROR ");
@@ -259,7 +260,7 @@ export function expectFailBlock(r: Run, slug: string): void {
     const lastFix = fixes.at(-1);
     if (lastFix !== undefined && !(slugs[0]! < lastFix && lastFix < docs[0]!)) problems.push("fix: lines must sit between slug: and docs:");
   }
-  if (!lines.some((l) => l.startsWith("docs: https://github.com/sibylline-labs/eris/blob/main/"))) problems.push("expected the GitHub docs: line");
+  if (!lines.some((l) => l.startsWith(`docs: ${docsBase}/`))) problems.push("expected the GitHub docs: line");
   if (r.status !== 1) problems.push(`expected exit 1, got ${r.status}`);
   if (r.stdoutBytes.length !== 0) problems.push("expected empty stdout");
   expect(problems, report(r, problems.join("; "))).toEqual([]);

@@ -1,8 +1,7 @@
 #!/bin/sh
 # eris — the entrypoint. It finds bun and execs the TS program, src/main.ts,
 # which routes every command. POSIX sh: consumers run it as `bash eris`,
-# `sh eris` and `exec <repo>/eris` (the install.sh wrapper), so it uses
-# nothing a POSIX shell lacks.
+# `sh eris` and `exec <repo>/eris`, so it uses nothing a POSIX shell lacks.
 #
 # Invariants:
 #   - Nothing is exported. What the router needs rides only into bun's
@@ -29,7 +28,7 @@ if ! command -v bun >/dev/null 2>&1; then
   {
     printf 'ERROR %s\n' "bun is not on PATH — eris routes every command through bun (src/main.ts)"
     printf 'slug: %s\n' eris-bun-missing
-    printf 'fix: %s\n' "install bun (https://bun.sh), then run ./install.sh --checkout in $eris_dir"
+    printf 'fix: %s\n' "install bun (https://bun.sh), then run bun install --frozen-lockfile in $eris_dir"
     printf 'docs: %s\n' "$eris_dir/$doc"
     printf 'docs: %s\n' "https://github.com/sibylline-labs/eris/blob/main/$doc"
   } >&2

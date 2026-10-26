@@ -81,9 +81,9 @@ Authoring side: [dev/PLUGINS.md](dev/PLUGINS.md#entitlements).
 without bun.
 The shim renders this block itself, since nothing past it can run.
 
-Fix: install bun (<https://bun.sh>) and run `./install.sh --checkout` in the eris
-checkout (it also installs the `node_modules` the verbs need). Or run
-`./install.sh` for the standalone release binary, which needs no bun.
+Fix: install bun (<https://bun.sh>), then run `bun install --frozen-lockfile` in the
+eris checkout (the `node_modules` the verbs need). An installed package
+(`npx @sibylline-labs/eris`) needs bun too.
 
 ### eris-cache-unwritable
 
@@ -107,7 +107,7 @@ repo-relative path rather than an absolute one. The second is the GitHub URL.
 
 Fix: set `ERIS_CACHE_DIR` to a directory eris can write, or `XDG_CACHE_HOME` (eris
 uses `$XDG_CACHE_HOME/eris`). On a read-only root filesystem, point it at a writable
-volume. A checkout install (`./install.sh --checkout`) writes no cache.
+volume. A checkout or an installed package writes no cache.
 
 ### eris-deps-not-installed
 
@@ -121,8 +121,7 @@ added a dependency. The `ERROR` line names the package and the source file that
 asked for it, instead of a bare `ERROR ResolveMessage: Cannot find package '…'`.
 
 Fix: `bun install --frozen-lockfile` from the eris checkout (the `fix:` line names
-the directory). `install.sh --checkout` does the same on a fresh checkout. eris does not run
-it for you: an inline install is unbounded and reaches the network mid-command.
+the directory). eris does not run it for you: an inline install is unbounded and reaches the network mid-command.
 
 Only a missing PACKAGE is reported this way. A missing relative module is a defect
 in the checkout's own source and still crashes with bun's message.
@@ -147,20 +146,18 @@ shim and a compiled binary remove it themselves and never raise this.
 
 ### update-not-compiled
 
-> Raised by `eris update` before any request.
+> Raised by a distribution's release `eris update` ([UPDATE.md](UPDATE.md#the-release-eris-update-distributions)) before any request.
 
-This eris runs from a source checkout (`./eris`, or the `~/.local/bin/eris`
-wrapper `install.sh --checkout` writes), not from a compiled release binary. A
-checkout has no single file to replace: it is a working tree under version
-control.
+This eris runs from source (a checkout, `./eris`), not from a compiled release
+binary. A checkout has no single file to replace: it is a working tree under
+version control.
 
 Fix: update the checkout, `git pull && bun install --frozen-lockfile` in the
-directory the `fix:` line names. To run a release binary instead, run
-`./install.sh` (see the README).
+directory the `fix:` line names.
 
 ### update-unsupported-platform
 
-> Raised by `eris update` before any request.
+> Raised by a distribution's release `eris update` ([UPDATE.md](UPDATE.md#the-release-eris-update-distributions)) before any request.
 
 Releases publish a binary for `darwin-arm64` and `linux-x64` only, and this eris
 was compiled for another platform (built from source on a machine with another
@@ -169,22 +166,9 @@ OS or CPU). There is no asset to download for it.
 Fix: build eris from source for this platform and run that build; see
 "From source" in the README. Updating means pulling and building again.
 
-### update-brew-managed
-
-> Raised by `eris update` before any request.
-
-Homebrew installed this eris: its real path (symlinks resolved) is under a
-Homebrew `Cellar` (`/opt/homebrew/Cellar`, `/usr/local/Cellar` or
-`/home/linuxbrew/.linuxbrew/Cellar`), or in a keg under any other prefix
-(a path holding `/Cellar/<formula>/<version>/`). Replacing a file Homebrew owns leaves its
-receipt and the file disagreeing, and the next `brew upgrade` or
-`brew uninstall` misbehaves.
-
-Fix: `brew upgrade eris`.
-
 ### update-api-invalid
 
-> Raised by `eris update` before any request.
+> Raised by a distribution's release `eris update` ([UPDATE.md](UPDATE.md#the-release-eris-update-distributions)) before any request.
 
 `ERIS_UPDATE_API`, the override for the releases API base (a GitHub Enterprise
 host, or a test server), is set to something eris will not use: it is not a URL,
@@ -198,7 +182,7 @@ or unset it to use `https://api.github.com`.
 
 ### update-token-invalid
 
-> Raised by `eris update` before any request.
+> Raised by a distribution's release `eris update` ([UPDATE.md](UPDATE.md#the-release-eris-update-distributions)) before any request.
 
 `GH_TOKEN` (or, when it is unset or blank, `GITHUB_TOKEN`) holds something no
 GitHub token contains: a space or line break inside the value, or a non-ASCII
@@ -210,7 +194,7 @@ Fix: set the variable to the token alone, or unset it.
 
 ### update-unreachable
 
-> Raised by `eris update` when the releases API or the download host does not
+> Raised by a distribution's release `eris update` ([UPDATE.md](UPDATE.md#the-release-eris-update-distributions)) when the releases API or the download host does not
 > answer.
 
 The connection was refused, the name did not resolve, the connection dropped, or
@@ -223,7 +207,7 @@ run `eris update` again.
 
 ### update-rate-limited
 
-> Raised by `eris update` when GitHub refuses the request for its rate limit.
+> Raised by a distribution's release `eris update` ([UPDATE.md](UPDATE.md#the-release-eris-update-distributions)) when GitHub refuses the request for its rate limit.
 
 GitHub answered 429, or 403 with the rate limit spent. An anonymous client gets
 60 requests an hour per address; an authenticated one gets far more. `eris
@@ -236,7 +220,7 @@ spent: wait for the reset time, then run `eris update` again.
 
 ### update-needs-token
 
-> Raised by `eris update` when GitHub answers 404 and no token is set.
+> Raised by a distribution's release `eris update` ([UPDATE.md](UPDATE.md#the-release-eris-update-distributions)) when GitHub answers 404 and no token is set.
 
 GitHub answers 404, not 403, to a request that is not allowed to see a private
 repository, so an anonymous 404 does not say whether the release is missing or
@@ -248,7 +232,7 @@ exist: list them at `https://github.com/<owner>/<repo>/releases`.
 
 ### update-release-not-found
 
-> Raised by `eris update` when the release is not installable.
+> Raised by a distribution's release `eris update` ([UPDATE.md](UPDATE.md#the-release-eris-update-distributions)) when the release is not installable.
 
 Either GitHub answered 404 to a request that carried a token, so the repository
 has no such release (or the token cannot see the repository), or the release
@@ -260,7 +244,7 @@ repository, the token must be able to read it.
 
 ### update-api-error
 
-> Raised by `eris update` for any other answer the API gives.
+> Raised by a distribution's release `eris update` ([UPDATE.md](UPDATE.md#the-release-eris-update-distributions)) for any other answer the API gives.
 
 An answer that is not a release and not one of the cases above: a 500, a 403 that
 is not the rate limit, a 401 (the token was rejected, or the API wants one), a
@@ -274,7 +258,7 @@ minutes.
 
 ### update-asset-missing
 
-> Raised by `eris update` before it downloads the binary.
+> Raised by a distribution's release `eris update` ([UPDATE.md](UPDATE.md#the-release-eris-update-distributions)) before it downloads the binary.
 
 The release exists but cannot be installed: it lists no `eris-<os>-<arch>` for
 this platform, no `SHA256SUMS`, or a `SHA256SUMS` with no line for this
@@ -286,7 +270,7 @@ Fix: choose another release with `eris update --to <tag>`.
 
 ### update-checksum-mismatch
 
-> Raised by `eris update` after the download, before anything is replaced.
+> Raised by a distribution's release `eris update` ([UPDATE.md](UPDATE.md#the-release-eris-update-distributions)) after the download, before anything is replaced.
 
 The downloaded binary's sha256 differs from the one in the release's
 `SHA256SUMS`. The `ERROR` line gives both. The partial file is removed and the
@@ -297,7 +281,7 @@ tampered with: do not install it.
 
 ### update-target-unwritable
 
-> Raised by `eris update`, before any request when it can tell.
+> Raised by a distribution's release `eris update` ([UPDATE.md](UPDATE.md#the-release-eris-update-distributions)), before any request when it can tell.
 
 The directory that holds the eris binary cannot be written, or a file there could
 not be created: a read-only filesystem, a directory owned by another user (a
@@ -305,11 +289,11 @@ system-wide install), a full disk. `eris update` stages the new binary beside th
 old one, so it needs write access to that directory, not only to the binary.
 
 Fix: run `eris update` as a user who owns the directory, or reinstall eris into a
-directory you own (`install.sh` installs to `~/.local/bin`).
+directory you own.
 
 ### update-smoke-failed
 
-> Raised by `eris update` after the replacement.
+> Raised by a distribution's release `eris update` ([UPDATE.md](UPDATE.md#the-release-eris-update-distributions)) after the replacement.
 
 The new binary was renamed into place and then run once (`eris --output json
 --version`); it did not start, exited non-zero, did not answer within 20 seconds,
