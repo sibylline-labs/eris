@@ -239,14 +239,6 @@ describe("eris login — the device-code grant", () => {
     expect(JSON.parse(readFileSync(yaksJson(), "utf8")).token).toBe(TOKEN);
   });
 
-  it("with no --url, no ERIS_YAKS_URL and no url in yaks.json, refuses before any request", async () => {
-    /** When login falls back to a built-in host, a machine's bearer is minted against a server the user never chose — observed at the stub (no request) and the exit code. */
-    const r = await drive(runLogin, []);
-    expect({ rc: r.rc, stdout: r.stdout }).toEqual({ rc: 1, stdout: "" });
-    expect(r.stderr).toContain("slug: login-url-unresolved");
-    expect(requests).toEqual([]);
-  });
-
   it("--no-browser prints the code without opening anything, and an ERIS_YAKS_TOKEN in the environment is called out", async () => {
     /** When a headless login spawns a browser, or the env token silently keeps winning over the one just written, the user believes they switched identity and did not — observed at the opener and stderr. */
     polls = [minted()];

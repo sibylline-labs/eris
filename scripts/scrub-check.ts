@@ -38,6 +38,8 @@ const SELF = "scripts/scrub-check.ts";
  *  points an agent at the hosted install steps and the dash, both on that domain. */
 const CONTACT_FILES = new Set(["README.md", "CONTRIBUTING.md", "SECURITY.md", "skills/eris-yaks/SKILL.md"]);
 const LICENCE_FILES = new Set(["LICENSE", "NOTICE"]);
+/** The public Yaks endpoint, eris's built-in default URL: allowed in any file. */
+const PUBLIC_HOSTS = new Set(["api.sibylline.group"]);
 /** The public mailboxes, allowed only in the contact files. */
 const CONTACT_ADDRESSES = new Set(["security@sibylline.group", "support@sibylline.group"]);
 
@@ -58,7 +60,7 @@ type Rule = { id: string; re: RegExp; allow?: (match: RegExpExecArray, path: str
 const RULES: Rule[] = [
   {
     // The public org (`sibylline-labs`) is fine anywhere; the contact domain only
-    // in the contact files; the copyright holder only in the licence files. A commit
+    // in the contact files, save the public endpoint host; the copyright holder only in the licence files. A commit
     // message (`path` empty) may also run the org into the next word: GitHub's
     // default merge message names the head branch, whose slug drops the `/` of an
     // `org/repo` it quotes (`sibylline-labsyak`).
@@ -68,7 +70,10 @@ const RULES: Rule[] = [
       const rest = line.slice(m.index + m[0].length);
       if (/^-labs\b/i.test(rest)) return true;
       if (/^-labs\w/i.test(rest)) return path === "";
-      if (/^\.group\b/i.test(rest)) return CONTACT_FILES.has(path);
+      if (/^\.group\b/i.test(rest)) {
+        const host = /[\w.-]*$/.exec(line.slice(0, m.index))![0] + m[0] + ".group";
+        return CONTACT_FILES.has(path) || PUBLIC_HOSTS.has(host.toLowerCase());
+      }
       if (/^ labs\b/i.test(rest)) return LICENCE_FILES.has(path);
       return false;
     },

@@ -190,24 +190,27 @@ export function resolveToken(
   };
 }
 
+/** Where a Yaks endpoint lives when nothing names another one. */
+export const DEFAULT_YAKS_URL = "https://api.sibylline.group";
+
 /**
- * `ERIS_YAKS_URL` env → `yaks.json`'s `url`. There is no default host: with
- * neither set this returns the `{ source: "unset" }` marker, and `yak.ts` maps
- * it to `yak-url-unresolved` (warn, exit 0), because a missing URL is
- * environment/config, never the agent's fault.
+ * The one Yaks base URL resolver, for `eris login` and every yak client:
+ * `--url` (the caller passes the flag's value) → `ERIS_YAKS_URL` env →
+ * `yaks.json`'s `url` → `DEFAULT_YAKS_URL`. An empty value at any step falls
+ * through to the next, so a URL always resolves; `source` says which step won.
  */
-export type YaksUrlOutcome =
-  | { value: string; source: "env" | "config" }
-  | { source: "unset" };
+export type YaksUrlSource = "flag" | "env" | "config" | "default";
 
 export function resolveUrl(
   fileConfig: YaksFileConfig,
   env: Record<string, string | undefined> = process.env,
-): YaksUrlOutcome {
+  flag?: string,
+): { value: string; source: YaksUrlSource } {
+  if (flag !== undefined && flag.length > 0) return { value: flag, source: "flag" };
   const fromEnv = env.ERIS_YAKS_URL;
   if (fromEnv && fromEnv.length > 0) return { value: fromEnv, source: "env" };
   if (fileConfig.url && fileConfig.url.length > 0) return { value: fileConfig.url, source: "config" };
-  return { source: "unset" };
+  return { value: DEFAULT_YAKS_URL, source: "default" };
 }
 
 // --- device_id ----------------------------------------------------------------

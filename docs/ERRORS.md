@@ -464,9 +464,10 @@ with stderr empty.
 
 ### yak-url-unresolved
 
-No Yaks base URL resolved. Set `ERIS_YAKS_URL` or add a `"url"` field to
-`~/.eris/yaks.json`; there is no default host. This is environment/config,
-never the agent's fault — it warns and exits 0 rather than failing the task.
+No longer raised. A Yaks base URL always resolves now: `ERIS_YAKS_URL`, then the
+`"url"` in `~/.eris/yaks.json`, then the default `https://api.sibylline.group`.
+An older eris warned with this slug (exit 0) when neither was set; with this
+one, set `ERIS_YAKS_URL` only to use another endpoint.
 
 ### yak-unreachable
 
@@ -539,9 +540,9 @@ one is written to a temp file beside it and renamed into place. Fix: make
 
 No bearer token resolved for the Yaks endpoint — neither `ERIS_YAKS_TOKEN` nor a
 `"token"` field in a readable `~/.eris/yaks.json`. Environment/config, warn +
-exit 0. Getting a token is a human step (`eris login`, or
-`plugins/yak/yak-setup.ts` then registration with the endpoint's operator), not
-something an agent can fix mid-task.
+exit 0. Fix: run `eris login` and approve the code it shows in your browser; it
+writes the token to `~/.eris/yaks.json`. Approving is a human step, not
+something an agent can do mid-task.
 
 ### yak-device-id-unwritable
 
@@ -573,9 +574,11 @@ classes: []`).
 
 ### login-url-unresolved
 
-`eris login` has no endpoint to sign in to: no `--url`, no `ERIS_YAKS_URL`, and
-no `"url"` in `~/.eris/yaks.json`. There is no default host. Fix: pass
-`--url <url>` (it is saved beside the token, so later runs need no flag).
+No longer raised. `eris login` always has an endpoint: `--url`, then
+`ERIS_YAKS_URL`, then the `"url"` in `~/.eris/yaks.json`, then the default
+`https://api.sibylline.group`. An empty `--url` is refused as
+[`flag-value-missing`](#flag-value-missing). An older eris raised this slug when
+none of the first three was set; with this one, run `eris login`.
 
 ### login-unreachable
 

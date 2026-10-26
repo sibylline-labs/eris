@@ -14,7 +14,10 @@
  *   - colour never depends on the developer's terminal (NO_COLOR set,
  *     FORCE_COLOR / CLICOLOR_FORCE removed).
  *   - nothing reaches a developer's real Yaks endpoint: ERIS_YAKS_URL and
- *     ERIS_YAKS_TOKEN are removed.
+ *     ERIS_YAKS_TOKEN are removed, and every https request goes to a dead
+ *     loopback proxy, so a URL-less command that falls back to the built-in
+ *     default fails to connect instead of reaching it. A test that means to
+ *     observe https traffic passes its own HTTPS_PROXY.
  *
  * `run` is ASYNC on purpose: a fixture started in-process (a `Bun.serve`
  * loopback) answers on this process's event loop, which a spawnSync would
@@ -124,7 +127,13 @@ const STRIP_ENV = [
   // A developer's own Yaks credentials: a sandboxed `eris yak` must never file a real report.
   "ERIS_YAKS_URL",
   "ERIS_YAKS_TOKEN",
+  // The dead proxy below must apply to every https host.
+  "NO_PROXY",
+  "no_proxy",
+  "https_proxy",
 ];
+/** Port 9 (discard) on loopback: nothing listens, so a CONNECT is refused at once. */
+const DEAD_PROXY = "http://127.0.0.1:9";
 
 export function sandbox(prefix = "eris-bb-"): Sandbox {
   // `.env` is created at 0666 & ~umask: pin it so a mode is a fact of the test.
@@ -142,6 +151,7 @@ export function sandbox(prefix = "eris-bb-"): Sandbox {
   env.HOME = home;
   env.TMPDIR = tmp;
   env.NO_COLOR = "1";
+  env.HTTPS_PROXY = DEAD_PROXY;
   if (ERIS_BIN !== null) env.ERIS_CACHE_DIR = ORACLE_CACHE;
 
   const sb: Sandbox = {

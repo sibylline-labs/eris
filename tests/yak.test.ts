@@ -425,24 +425,6 @@ describe("runYak — environment/config/transport (exit 0, WARN, never the failu
     }
   });
 
-  it("no URL resolvable: WARN + exit 0, slug yak-url-unresolved", async () => {
-    const home = await freshHome();
-    try {
-      const result = await runYak(
-        baseOpts({
-          argv: ["issue", "--summary", "s", "--body", "b"],
-          env: { ERIS_YAKS_TOKEN: "t" },
-          home,
-        }),
-      );
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toBe("");
-      expect(result.stderr).toContain("slug: yak-url-unresolved");
-    } finally {
-      await rm(home, { recursive: true, force: true });
-    }
-  });
-
   it("a group-readable ~/.eris/yaks.json is refused, never read: WARN + exit 0", async () => {
     const home = await freshHome();
     try {

@@ -50,12 +50,14 @@ describe("plugins/yak/yak-setup.ts", () => {
     expect(JSON.parse(readFileSync(dest(), "utf8")).url).toBe("https://flag.example");
   });
 
-  it("refuses with no --url and no ERIS_YAKS_URL, writing nothing", () => {
-    /** When a missing URL falls back to a built-in host, the bearer is minted for a server the user never chose and every yak goes there. */
+  it("refuses with no --url and no ERIS_YAKS_URL, writing nothing, and points at eris login for the default endpoint", () => {
+    /** When a missing URL falls back to the built-in host, a hand-minted bearer nobody registers is written and every yak 401s. */
     expect(setup([])).toEqual({
       rc: 1,
       stdout: "",
-      stderr: "no Yaks URL: pass --url <url> or set ERIS_YAKS_URL (usage: plugins/yak/yak-setup.ts [--slug <slug>] [--url <url>] [--force])\n",
+      stderr:
+        "no Yaks URL: pass --url <url> or set ERIS_YAKS_URL (usage: plugins/yak/yak-setup.ts [--slug <slug>] [--url <url>] [--force])\n" +
+        "  for https://api.sibylline.group, run 'eris login' instead\n",
     });
     expect(() => statSync(dest())).toThrow();
   });
