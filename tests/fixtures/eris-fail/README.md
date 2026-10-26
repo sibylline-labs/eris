@@ -13,7 +13,7 @@ test applies it to whatever slugs `docs/ERRORS.md` documents today. A slug added
 the capture is still checked.
 
 **Provenance.** The file was captured from the last version of the Bash `eris::report`
-before the port replaced it, run by the `bash` first on PATH (Homebrew bash 5 on macOS).
+before the port replaced it, run by the `bash` first on PATH (bash 5 on macOS).
 The capture ran one bash process over every slug × variant, with the failure-block
 library sourced:
 

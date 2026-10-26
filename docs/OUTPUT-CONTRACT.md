@@ -54,8 +54,7 @@ ANSI escape sequences may be written to stdout **only** when all three hold:
 2. `NO_COLOR` is unset or empty ([no-color.org](https://no-color.org)), and
 3. the selected output format is not `json`.
 
-No surface in this build writes colour, so a piped run is escape-free. (`install.sh`
-is not part of this: it is the installer, not the CLI.)
+No surface in this build writes colour, so a piped run is escape-free.
 
 stderr is not styled at all. The diagnostic helpers (`src/runtime/logging.ts`)
 write plain `LEVEL message` text unconditionally, so the failure block in §4 has

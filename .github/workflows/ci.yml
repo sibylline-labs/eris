@@ -136,9 +136,9 @@ jobs:
           sudo install "$RUNNER_TEMP/shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
           shellcheck --version
 
-      # The POSIX shim and installer, checked as sh: consumers run them under
-      # sh, dash and bash alike.
-      - run: shellcheck -s sh -S warning eris install.sh
+      # The POSIX shim, checked as sh: consumers run it under sh, dash and bash
+      # alike.
+      - run: shellcheck -s sh -S warning eris
 
   scrub:
     name: scrub-check (no private references, whole history)

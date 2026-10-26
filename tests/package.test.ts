@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkoutOnly, REPO } from "./helpers/blackbox";
 import { erisPaths } from "./helpers/tsconfig-paths";
@@ -49,6 +49,30 @@ describe.skipIf(checkoutOnly("npm packs the checkout's package.json; a compiled 
     for (const f of ["LICENSE", "NOTICE", "README.md", "package.json", "docs/ERRORS.md"]) expect(files().has(f)).toBe(true);
     const own = [...files()].filter((f) => /^(tests|scripts|rules|rule-tests|\.github|data|examples|packaging)\//.test(f) || /^(eris|install\.sh|bun\.lock|sgconfig\.yml|CLAUDE\.md|AGENTS\.md)$/.test(f));
     expect(own).toEqual([]);
+  });
+
+  it("reports the version the release stamped into package.json, once installed from the tarball", () => {
+    /** When the version comes only from a build's baked tag, every npm install reports `eris dev`, and a user cannot say which release they run — observed by packing the real tarball, stamping a version into it as the release job's `npm version` does, and running its `bin`. */
+    mkdirSync(join(REPO, ".scratch"), { recursive: true });
+    const dir = mkdtempSync(join(REPO, ".scratch", "pack-"));
+    try {
+      const pack = spawnSync("npm", ["pack", "--ignore-scripts", "--offline", "--pack-destination", dir], { cwd: REPO, encoding: "utf8" });
+      expect(pack.status).toBe(0);
+      const tgz = join(dir, pack.stdout.trim().split("\n").pop()!);
+      expect(spawnSync("tar", ["-xzf", tgz, "-C", dir]).status).toBe(0);
+      const installed = join(dir, "package");
+      const pkg = JSON.parse(readFileSync(join(installed, "package.json"), "utf8")) as { version: string };
+      // PAIRED: unstamped, the package says nothing of a release, so it reports dev.
+      expect(pkg.version).toBe("0.0.0");
+      // The dependencies an install would have fetched; this test stays offline.
+      symlinkSync(join(REPO, "node_modules"), join(installed, "node_modules"));
+      const version = () => spawnSync("bun", [join(installed, "bin", "eris.ts"), "--version"], { cwd: dir, encoding: "utf8" });
+      expect(version().stdout).toBe("eris dev (sibylline-labs/eris)\n");
+      writeFileSync(join(installed, "package.json"), JSON.stringify({ ...pkg, version: "1.2.3" }));
+      expect({ status: version().status, stdout: version().stdout }).toEqual({ status: 0, stdout: "eris v1.2.3 (sibylline-labs/eris)\n" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("resolves `eris/<subpath>` in this tree to exactly the files `exports` names, so a test that passes here passes in a dependent repository", () => {

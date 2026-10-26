@@ -24,7 +24,7 @@ const EXTS = [".ts", ".sh", ".json", ".yml", ".yaml"];
  *  would drag in thoughts/, data/ and every vendored tree. These are the
  *  sources that live at the top level and would otherwise be unguarded,
  *  including the extension-less `eris` shim. */
-const ROOT_FILES = ["eris", "install.sh"];
+const ROOT_FILES = ["eris"];
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -36,9 +36,9 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/** The shell eris still ships: the shim and the installer. */
+/** The shell eris still ships: the shim. */
 function shellSources(): string[] {
-  return ["eris", "install.sh"];
+  return ["eris"];
 }
 
 describe.skipIf(checkoutOnly("a scan of the checkout's source files, not of the program under test"))("source hygiene", () => {
@@ -106,7 +106,7 @@ describe.skipIf(checkoutOnly("a scan of the checkout's source files, not of the 
  * FREEZE — no new Bash.
  *
  * eris's Bash implementation is deleted. What shell remains is the POSIX `eris`
- * shim and `install.sh`. This ratchet keeps it that way: the surface — `.sh`
+ * shim. This ratchet keeps it that way: the surface — `.sh`
  * files, code lines and function definitions — is DOWN-ONLY as a whole.
  *
  * Units: `loc` is code lines — non-blank and not a whole-line comment, so a bug
@@ -173,9 +173,9 @@ function ratchet(actual: Record<string, number>, recorded: Record<string, number
   return out;
 }
 
-describe.skipIf(checkoutOnly("the checkout's shell surface (shim, install.sh); a binary has none"))("shell freeze", () => {
+describe.skipIf(checkoutOnly("the checkout's shell surface (the shim); a binary has none"))("shell freeze", () => {
   it("the shell surface does not grow, and every shrink is recorded", () => {
-    /** When the shim or the installer gains logic or a new .sh lands, this names the count that grew. */
+    /** When the shim gains logic or a new .sh lands, this names the count that grew. */
     expect(ratchet(measureShell(shellSources()), baseline.FREEZE)).toEqual([]);
   });
 
@@ -187,7 +187,7 @@ describe.skipIf(checkoutOnly("the checkout's shell surface (shim, install.sh); a
    */
   it("a synthetic .sh file trips the freeze, and a deletion demands a lower baseline", () => {
     const real = shellSources();
-    expect(real).toEqual(["eris", "install.sh"]);
+    expect(real).toEqual(["eris"]);
 
     const dir = mkdtempSync(join(tmpdir(), "eris-freeze-"));
     try {
@@ -200,8 +200,8 @@ describe.skipIf(checkoutOnly("the checkout's shell surface (shim, install.sh); a
       rmSync(dir, { recursive: true, force: true });
     }
 
-    const shrunk = ratchet(measureShell(real.filter((f) => f !== "install.sh")), baseline.FREEZE);
-    expect(shrunk.map((m) => m.split(":")[0])).toEqual(["FREEZE files", "FREEZE loc"]);
+    const shrunk = ratchet(measureShell(real.filter((f) => f !== "eris")), baseline.FREEZE);
+    expect(shrunk.map((m) => m.split(":")[0])).toEqual(["FREEZE loc"]);
     for (const m of shrunk) {
       expect(m).toContain("< baseline");
       expect(m).toContain(`Lower the count in ${BASELINE_PATH}`);

@@ -2,14 +2,15 @@
 
 A release is a tag. Pushing `vMAJOR.MINOR.PATCH` (or `vMAJOR.MINOR.PATCH-prerelease`)
 runs `.github/workflows/release.yml`, which builds a binary for each platform,
-tests it, and publishes it. Everything that installs or updates eris reads the
-result: `install.sh`, `eris update` ([UPDATE.md](../UPDATE.md)) and the Homebrew
-formula. The same run publishes the npm package, `@sibylline-labs/eris`
-([below](#the-npm-package)).
+tests it against the whole suite, publishes it to a GitHub release, and then
+publishes the npm package, `@sibylline-labs/eris` ([below](#the-npm-package)).
+npm is how eris is installed ([UPDATE.md](../UPDATE.md)); the GitHub release is the
+record the npm job waits on, in the shape a distribution's release `eris update`
+reads.
 
 ## The release's shape
 
-A release carries exactly these assets, and the readers above depend on the names:
+A release carries exactly these assets, and a release `eris update` depends on the names:
 
 | Asset | What it is |
 |---|---|
@@ -19,8 +20,8 @@ A release carries exactly these assets, and the readers above depend on the name
 
 The tag is the binary's version: the workflow builds with
 `bun scripts/build.ts --tag <tag>`, so `eris --version` prints it. The workflow
-refuses a binary that does not report its tag, and `eris update` refuses to keep
-one that does not.
+refuses a binary that does not report its tag, and a release `eris update` refuses
+to keep one that does not.
 
 ## Cutting a release
 
@@ -30,13 +31,13 @@ git tag v0.2.0 && git push origin v0.2.0
 
 A tag is `vMAJOR.MINOR.PATCH[-prerelease]`: numbers of at most nine digits, and
 dot-separated prerelease identifiers that are not empty (`RELEASE_TAG` in
-`src/cli/commands/update/semver.ts`, the grammar `eris update` orders releases by).
+`src/cli/commands/update/semver.ts`, the grammar a release `eris update` orders releases by).
 The release job refuses any other tag before it builds.
 
 A tag with a hyphen (`v0.3.0-rc.1`) is a pre-release. GitHub's "latest release"
-skips pre-releases, so `install.sh`, `eris update` and the tap ignore it until a
-person names it (`ERIS_VERSION=v0.3.0-rc.1 ./install.sh`, `eris update --to
-v0.3.0-rc.1`).
+skips pre-releases, and npm publishes them under the `next` dist-tag, so
+`@sibylline-labs/eris@latest` never resolves to one; name it to run it
+(`npx @sibylline-labs/eris@0.3.0-rc.1`).
 
 To release a ref that is not tagged yet, or to rebuild, dispatch the workflow:
 
@@ -59,42 +60,13 @@ under a tag that names another.
 3. **publish**, the only job with `contents: write`, writes `SHA256SUMS` over both
    binaries and creates the release with all three assets in one step (so "latest"
    never names a release without them). Re-running updates the assets in place.
-4. **tap** renders the Homebrew formula and pushes it to the tap repository, for a
-   stable release and only when the tap token is set (below).
-5. **npm** waits for **build** and **publish** (so a red oracle leg or a failed GitHub
+4. **npm** waits for **build** and **publish** (so a red oracle leg or a failed GitHub
    release publishes no package), stamps the
    tag's version into `package.json`, checks the tarball with `npm publish --dry-run`,
    and publishes it when the npm token is set (below).
 
-No job reads a secret except **tap** (its token) and **npm** (its own), and every action is
+No job reads a secret except **npm** (its own token), and every action is
 pinned to a commit SHA; `tests/workflows.test.ts` holds both, and the permissions.
-
-## The Homebrew tap
-
-The formula template is `packaging/homebrew/eris.rb.tmpl`; the tap job fills it with
-`scripts/render-formula.ts` (the tag, and each binary's checksum from the published
-`SHA256SUMS`) and commits the result as `Formula/eris.rb`. Users install with:
-
-```bash
-brew install <owner>/tap/eris
-```
-
-One-time setup for a repository `<owner>/eris`:
-
-1. Create the repository `<owner>/homebrew-tap` (public), with any initial commit.
-2. Create a token that can push to that repository and nothing else (a fine-grained
-   token with Contents: read and write on `<owner>/homebrew-tap` only).
-3. Store it as the secret `TAP_PUSH_TOKEN` of the `eris` repository.
-
-Until the secret exists, the tap job writes a notice and the release is otherwise
-unaffected. The tap checkout is the only step that holds the token, and nothing from
-this repository runs after it.
-
-To look at a formula without releasing:
-
-```bash
-bun scripts/render-formula.ts --tag v0.2.0 --sums SHA256SUMS
-```
 
 ## The npm package
 
@@ -123,14 +95,14 @@ fails red with a notice: a tag is not re-run on its own, so a release that skipp
 look green. Set the secret and re-run the job.
 
 What an npm install does not have: the `eris-bun-missing` block (bun not on `PATH` is `env`'s
-own message, since the shim is not what starts it), a working `eris update` (it runs from source, so
-it refuses with `update-not-compiled`, whose `fix:` line names a git checkout), and a tagged
-`eris --version` (it prints `dev`, as a checkout does).
+own message, since the shim is not what starts it). Its `eris --version` reports the stamped
+version as `v<version>` (`src/runtime/home.ts`, `versionOf`), and its `eris update` prints the
+npx / bunx / `bun add -g` commands ([UPDATE.md](../UPDATE.md)).
 
 ## A distribution's releases
 
-A distribution compiled with `build({ releaseRepo: "<owner>/<name>" })` updates itself
-from that repository ([UPDATE.md](../UPDATE.md#which-repository)). To be updatable it
+A distribution compiled with `build({ releaseRepo: "<owner>/<name>" })` that composes
+`RELEASE_UPDATE` ([PLUGINS.md](PLUGINS.md#distributions)) updates itself from that repository ([UPDATE.md](../UPDATE.md#which-repository)). To be updatable it
 publishes, for each release, the same assets under the same names (`eris-<os>-<arch>`
 for the platforms it ships, and `SHA256SUMS`), built with `build({ tag })` so each
 binary reports its tag. A private repository works with `GH_TOKEN` set, which also

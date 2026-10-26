@@ -57,7 +57,7 @@ function unwritable(dir: string, e: unknown): Refusal {
   return new Refusal({
     slug: "update-target-unwritable",
     what: `eris cannot write to ${dir}: ${reasonOf(e)}`,
-    fix: `run eris update as a user who can write to ${dir}\nor reinstall eris into a directory you own (install.sh installs to ~/.local/bin)`,
+    fix: `run eris update as a user who can write to ${dir}\nor reinstall eris into a directory you own`,
   });
 }
 

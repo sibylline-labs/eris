@@ -75,6 +75,7 @@ describe("the package's exports", () => {
       "PLUGINS",
       "PluginCompositionError",
       "REGISTRY",
+    "RELEASE_UPDATE",
       "argErrorWhat",
       "build",
       "childEnv",
