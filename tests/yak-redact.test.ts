@@ -473,7 +473,10 @@ describe("redact() — positive corpus, one class each", () => {
   it("redacts a credential assignment that sits inside a declined prose-colliding value", () => {
     // Fails if a declined `auth:`/`seed:`/`cookie:` match swallows the text
     // after it: the scan must resume inside the declined value, or the
-    // credential assignment there ships in plaintext. Observed at redact().text.
+    // credential assignment there ships in plaintext. Also fails if the inner
+    // marker grows the outer value into secret shape, so a second redact()
+    // (the server re-redacts client output) swallows it: observed at the
+    // second pass's text and total.
     const cases: Array<[string, string]> = [
       ["auth:token=hunter", "auth:token=«redacted:assignment»"],
       ["seed:password=hunter", "seed:password=«redacted:assignment»"],
@@ -484,6 +487,9 @@ describe("redact() — positive corpus, one class each", () => {
       const result = redact(input);
       expect(result.text, input).toBe(expected);
       expect(result.counts.assignment, input).toBe(1);
+      const again = redact(result.text);
+      expect(again.text, input).toBe(expected);
+      expect(again.total, input).toBe(0);
     }
   });
 

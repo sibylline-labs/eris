@@ -177,7 +177,7 @@
  * server that imports this module. A name that reads as a word (letters only,
  * not all upper-case) whose governed words are only those four is redacted
  * only when its unquoted value is secret-shaped (`isSecretShaped`: 16+
- * characters, or 8+ with a digit), which a generated session id, cookie,
+ * characters, or 8+ with a digit, markers not counted), which a generated session id, cookie,
  * numeric seed or bearer clears and an English word, a slash command or a
  * ticket id does not. A config-key spelling (`SEED`, `BASIC_AUTH_PASS`,
  * `session-key`) is not prose and keeps the 4-character rule. A quoted value
@@ -473,13 +473,18 @@ const MARKER_LED_RE = /['"]?«redacted:/y;
 const CREDENTIAL_NAME_RE =
   /SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]KEY|API[_-]KEY|CREDENTIAL|ACCESS[_-]KEY|MNEMONIC/i;
 const DIGIT_RE = /[0-9]/;
+const MARKER_GLOBAL_RE = new RegExp(MARKER, "g");
 // A name that reads as an English word: letters only, at least one lower-case.
 const WORD_NAME_RE = /^[A-Za-z]*[a-z][A-Za-z]*$/;
 
 /** True when an unquoted value could be a secret: 16+ characters, or 8+ with a
- *  digit. An English word, a slash command or a short ticket id is neither. */
+ *  digit, not counting any marker inside it. An English word, a slash command
+ *  or a short ticket id is neither. A marker is excluded so that redaction is
+ *  idempotent: the rescan of a declined value only ever swaps text for
+ *  markers, which cannot make the value secret-shaped on a second pass. */
 function isSecretShaped(value: string): boolean {
-  return value.length >= 16 || (value.length >= 8 && DIGIT_RE.test(value));
+  const residue = value.replace(MARKER_GLOBAL_RE, "");
+  return residue.length >= 16 || (residue.length >= 8 && DIGIT_RE.test(residue));
 }
 
 /** True when the match is a prose-colliding word name (`authorized: brief`,

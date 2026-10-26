@@ -198,7 +198,8 @@ assignments** — `NAME=value` or `NAME: value` where `NAME` matches
 A plain-word name (letters only, not all upper-case) whose only governed words
 are `SEED`, `SESSION`, `COOKIE` or `AUTH`, as in prose such as
 `authorized: /pls`, needs a secret-shaped unquoted value as well: 16+
-characters, or 8+ with a digit.
+characters, or 8+ with a digit, not counting any `«redacted:…»` marker inside
+it (so redacting already-redacted text changes nothing).
 
 **Redaction is defence in depth, not a boundary.** It is a pattern scrub, and a
 pattern scrub can always miss a shape it wasn't written for. Do not paste
