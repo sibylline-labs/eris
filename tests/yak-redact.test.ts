@@ -163,6 +163,27 @@ describe("redact() — positive corpus, one class each", () => {
     assertZeroExcept(result, "sib-token");
   });
 
+  it("when a sibdc_ device code is pasted, the whole code is redacted as sibdc-code, even when its secret embeds another class's shape", () => {
+    // A device code is `sibdc_<8-char user code>_<43 base64url>`, and once its
+    // login is approved it is the one thing that redeems the minted bearer, so a
+    // yak that quotes `eris login` debug output would hand that bearer to whoever
+    // polls first. Its secret can embed `-sk-` or `ghp_` (file header, reason 3).
+    const secrets: Array<[string, string]> = [
+      ["a plain secret", SIB_SECRET],
+      ["an -sk- run followed by 20+ chars", "aaaaaaaa" + "-sk" + "-" + "B".repeat(31)],
+      ["a ghp_ run", "abc" + GH_TOKEN],
+    ];
+    for (const [label, secret] of secrets) {
+      for (const userCode of ["BCDFGHJK", "bcdfghjk"]) {
+        const code = "sibdc" + "_" + userCode + "_" + secret;
+        const result = redact(`device_code=${code} polled`);
+        expect(result.text, label).toBe("device_code=«redacted:sibdc-code» polled");
+        expect(result.counts["sibdc-code"], label).toBe(1);
+        assertZeroExcept(result, "sibdc-code");
+      }
+    }
+  });
+
   it("when text is glued straight onto a sib_ token, the token is redacted and the glued-on text is left to the later passes", () => {
     // Pre-fix: the secret ran `{43,256}`, so it swallowed the letters glued
     // after a token, the anchor a later pass needs, and that pass's secret

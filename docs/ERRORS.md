@@ -526,13 +526,20 @@ leak surface. Fix: `chmod 0600 ~/.eris/yaks.json`.
 `~/.eris/yaks.json` exists but is not valid JSON, or is not a JSON object.
 Fix: recreate it as `{"url": "...", "token": "..."}`.
 
+### yak-config-unwritable
+
+`eris login` or `eris logout` could not write `~/.eris/yaks.json` (the `ERROR`
+line names the path and the errno). The previous file is untouched: the new
+one is written to a temp file beside it and renamed into place. Fix: make
+`~/.eris` writable by you, then run the command again.
+
 ### yak-token-unresolved
 
 No bearer token resolved for the Yaks endpoint — neither `ERIS_YAKS_TOKEN` nor a
 `"token"` field in a readable `~/.eris/yaks.json`. Environment/config, warn +
-exit 0. Minting a token is an operator step (`plugins/yak/yak-setup.ts`, then
-registration with the endpoint's operator), not something an agent can fix
-mid-task.
+exit 0. Getting a token is a human step (`eris login`, or
+`plugins/yak/yak-setup.ts` then registration with the endpoint's operator), not
+something an agent can fix mid-task.
 
 ### yak-device-id-unwritable
 
@@ -561,6 +568,47 @@ every other diagnostic — `redactions.skipped: true` on the record
 carries the same fact instead, which matters because a skipped scrub and a
 scrub that ran and found nothing otherwise look identical (`count: 0,
 classes: []`).
+
+### login-url-unresolved
+
+`eris login` has no endpoint to sign in to: no `--url`, no `ERIS_YAKS_URL`, and
+no `"url"` in `~/.eris/yaks.json`. There is no default host. Fix: pass
+`--url <url>` (it is saved beside the token, so later runs need no flag).
+
+### login-unreachable
+
+The endpoint could not be reached when the device login started, or stopped
+answering (a dropped connection or a 5xx, more than three polls in a row) while
+waiting for approval. Nothing was written. Fix: check the url and your
+connection, then run `eris login` again.
+
+### login-refused
+
+The endpoint answered, but not with a device login: it refused to start one
+(the `ERROR` line carries its error code, from either the RFC `{"error": …}`
+or the `{"error": {"code", "message"}}` shape, e.g. `invalid_device`,
+`device_unconfigured`), sent a malformed response, or refused the device code
+with a code other than the four RFC 8628 ones. Nothing was written. Fix: check
+the url points at an endpoint that offers device login.
+
+### login-denied
+
+The sign-in was denied on the approval page (`access_denied`). Nothing was
+written, and an existing `~/.eris/yaks.json` is left as it was. Fix: run
+`eris login` again if the denial was not intended.
+
+### login-expired
+
+The device code expired before it was approved: the endpoint answered
+`expired_token`, or the code's `expires_in` ran out locally. Nothing was
+written. Fix: run `eris login` again and approve the new code in time.
+
+### login-env-token-overrides
+
+A `WARN`, exit 0: `ERIS_YAKS_TOKEN` is set, and it wins over the token in
+`~/.eris/yaks.json`, so `eris yak` keeps using the environment's token after
+`eris login` (or still has one after `eris logout`). Fix: unset
+`ERIS_YAKS_TOKEN` to use the file's token.
 
 ## Adding a new slug
 

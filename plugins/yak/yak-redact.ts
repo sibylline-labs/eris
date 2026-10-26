@@ -12,7 +12,7 @@
  * client's — deriving from unredacted text would guarantee a mismatch on
  * every report.
  *
- * TWELVE CLASSES, applied in a fixed pipeline order, most-specific first.
+ * THIRTEEN CLASSES, applied in a fixed pipeline order, most-specific first.
  * Order is load-bearing for three reasons:
  *
  *   1. A JSON-embedded GCP private key ("private_key":"-----BEGIN...") is
@@ -27,8 +27,8 @@
  *      Running auth-header first means the marker is in place before
  *      `assignment`'s pass ever sees that text, so it is classified once, as
  *      the more specific class.
- *   3. `sib-token` runs right after `jwt`, before `aws-key`, `github-token`
- *      and `sk-key`. A token's base64url secret can itself contain `-sk-`
+ *   3. `sib-token` and `sibdc-code` run right after `jwt`, before `aws-key`,
+ *      `github-token` and `sk-key`. A token's base64url secret can itself contain `-sk-`
  *      (where `\bsk-` holds after the `-`) or `ghp_…`, so any of those classes
  *      running first would replace only the embedded run and leave
  *      `sib_<orgId>_<head>` in plaintext. It also runs before `assignment`, so
@@ -191,6 +191,7 @@ export type RedactionClass =
   | "pem"
   | "jwt"
   | "sib-token"
+  | "sibdc-code"
   | "aws-key"
   | "github-token"
   | "slack-token"
@@ -213,6 +214,7 @@ const REDACTION_CLASSES: RedactionClass[] = [
   "pem",
   "jwt",
   "sib-token",
+  "sibdc-code",
   "aws-key",
   "github-token",
   "slack-token",
@@ -278,6 +280,15 @@ const JWT_RE = /eyJ[A-Za-z0-9_-]{10,500}\.[A-Za-z0-9_-]{10,500}\.[A-Za-z0-9_-]{1
 // what blocks false positives. Ordered ahead of the classes whose shapes its
 // secret can contain (file header, reason 3).
 const SIB_TOKEN_RE = /sib_[0-9A-Za-z]{26}_[A-Za-z0-9_-]{43}/g;
+
+// `sibdc_` device codes, what `eris login` polls with: sibdc_<8-char user
+// code>_<43 base64url>. An approved code redeems a fresh `sib_` bearer for
+// whoever polls first, so it is a credential for its ten-minute life. Shaped
+// like SIB_TOKEN_RE and for the same reasons: contract-shaped, either case in
+// the user code (the issuer's alphabet is 20 upper-case consonants), exactly 43
+// in the secret, no leading `\b`, ordered ahead of the classes its secret can
+// embed (file header, reason 3). Neither shape can occur inside the other.
+const SIBDC_CODE_RE = /sibdc_[A-Za-z]{8}_[A-Za-z0-9_-]{43}/g;
 
 // AWS: access-key ids (AKIA/ASIA + 16 alnum) and the aws_secret_access_key
 // assignment, as two independent matches under one class.
@@ -557,6 +568,7 @@ function runPipeline(input: string): { text: string; counts: Record<RedactionCla
 
   // sib-token BEFORE aws-key / github-token / sk-key (reason 3, file header).
   text = runWholeMatchPass(text, "sib-token", SIB_TOKEN_RE, counts);
+  text = runWholeMatchPass(text, "sibdc-code", SIBDC_CODE_RE, counts);
 
   // aws-key: two independent regexes feeding one class.
   text = runWholeMatchPass(text, "aws-key", AWS_KEY_ID_RE, counts);

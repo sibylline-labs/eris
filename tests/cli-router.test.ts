@@ -36,6 +36,8 @@ describe("router table", () => {
       completion: "ts",
       "completion bash": "ts",
       "completion zsh": "ts",
+      login: "ts",
+      logout: "ts",
       update: "ts",
       yak: "ts",
       "yak fatal": "ts",
