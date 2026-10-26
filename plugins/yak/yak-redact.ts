@@ -174,16 +174,21 @@
  * and COOKIE are different: as infixes they sit inside ordinary English words
  * that end a clause with `:` (`authorized: /pls`, `TPM session: filing …`), so
  * any `x: y` matched and report prose was mangled, on the client and in every
- * server that imports this module. A name whose only governed words are those
- * four is redacted only when its unquoted value is secret-shaped
- * (`isSecretShaped`: 16+ characters, or 8+ with a digit), which every
- * generated session id, cookie, numeric seed and bearer clears and an English
- * word, a slash command or a ticket id does not. A quoted value and a value
- * led by an earlier class's marker are redacted as before: a quote is a
- * structural signal, and the marker-tail rules (MARKER GUARD) must not be
- * reopened. What still ships: a short, digit-free secret under one of those
- * four names (`session: hunter`), the same shape the 4-character minimum
- * already lets through.
+ * server that imports this module. A name that reads as a word (letters only,
+ * not all upper-case) whose governed words are only those four is redacted
+ * only when its unquoted value is secret-shaped (`isSecretShaped`: 16+
+ * characters, or 8+ with a digit), which a generated session id, cookie,
+ * numeric seed or bearer clears and an English word, a slash command or a
+ * ticket id does not. A config-key spelling (`SEED`, `BASIC_AUTH_PASS`,
+ * `session-key`) is not prose and keeps the 4-character rule. A quoted value
+ * and a value led by an earlier class's marker are redacted as before: a quote
+ * is a structural signal, and the marker-tail rules (MARKER GUARD) must not be
+ * reopened. A declined value is scanned again from its start, so an
+ * assignment inside it (`auth:token=…`, `?auth=ok&token=…`) is still found.
+ * What ships under such a word-name: a digit-free value of up to 15
+ * characters, or one of up to 7 with a digit (`session: hunter`,
+ * `seed: 1234567`), and the first word of a mnemonic (`seed: abandon …`; the
+ * unquoted value stops at whitespace, so the words after it shipped already).
  *
  * AUTH SCHEME (fixed): `AUTH_HEADER_RE` matched only `Bearer|Token`, so
  * `Authorization: Basic <base64>` fell through to the generic `assignment`
@@ -468,6 +473,8 @@ const MARKER_LED_RE = /['"]?«redacted:/y;
 const CREDENTIAL_NAME_RE =
   /SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]KEY|API[_-]KEY|CREDENTIAL|ACCESS[_-]KEY|MNEMONIC/i;
 const DIGIT_RE = /[0-9]/;
+// A name that reads as an English word: letters only, at least one lower-case.
+const WORD_NAME_RE = /^[A-Za-z]*[a-z][A-Za-z]*$/;
 
 /** True when an unquoted value could be a secret: 16+ characters, or 8+ with a
  *  digit. An English word, a slash command or a short ticket id is neither. */
@@ -475,12 +482,13 @@ function isSecretShaped(value: string): boolean {
   return value.length >= 16 || (value.length >= 8 && DIGIT_RE.test(value));
 }
 
-/** True when the match is a prose-colliding name (`authorized: brief`,
- *  `session: filing`) whose unquoted, non-marker value is not secret-shaped. */
+/** True when the match is a prose-colliding word name (`authorized: brief`,
+ *  `session: filing`) whose unquoted, non-marker value is not secret-shaped.
+ *  The caller rescans from the value's start, so nothing inside it is lost. */
 function isProseAssignment(groups: AssignmentGroups): boolean {
   if (groups.led !== undefined) return false;
   const name = groups.uname ?? groups.qname ?? "";
-  if (CREDENTIAL_NAME_RE.test(name)) return false;
+  if (!WORD_NAME_RE.test(name) || CREDENTIAL_NAME_RE.test(name)) return false;
   const first = groups.value[0];
   if (first === '"' || first === "'" || groups.value.startsWith("«redacted:")) return false;
   return !isSecretShaped(groups.value);
@@ -550,9 +558,13 @@ function runAssignmentPass(text: string, counts: Record<RedactionClass, number>)
   ASSIGNMENT_RE.lastIndex = 0;
   for (let m = ASSIGNMENT_RE.exec(text); m !== null; m = ASSIGNMENT_RE.exec(text)) {
     const groups = m.groups as unknown as AssignmentGroups;
-    if (isDeclinedAuthHeader(text, m, groups) || isProseAssignment(groups)) continue;
+    if (isDeclinedAuthHeader(text, m, groups)) continue;
     const end = m.index + m[0].length;
     const valueStart = end - groups.value.length;
+    if (isProseAssignment(groups)) {
+      ASSIGNMENT_RE.lastIndex = valueStart;
+      continue;
+    }
     MARKER_LED_RE.lastIndex = valueStart;
     if (MARKER_LED_RE.test(text)) markerLed = true;
     ranges.push([valueStart, end]);
@@ -562,9 +574,13 @@ function runAssignmentPass(text: string, counts: Record<RedactionClass, number>)
     ASSIGNMENT_LED_RE.lastIndex = 0;
     for (let m = ASSIGNMENT_LED_RE.exec(text); m !== null; m = ASSIGNMENT_LED_RE.exec(text)) {
       const groups = m.groups as unknown as AssignmentGroups;
-      if (isDeclinedAuthHeader(text, m, groups) || isProseAssignment(groups)) continue;
+      if (isDeclinedAuthHeader(text, m, groups)) continue;
       const end = m.index + m[0].length;
       const valueStart = end - groups.value.length;
+      if (isProseAssignment(groups)) {
+        ASSIGNMENT_LED_RE.lastIndex = valueStart;
+        continue;
+      }
       if (groups.led === undefined) {
         ranges.push([valueStart, end]);
         continue;

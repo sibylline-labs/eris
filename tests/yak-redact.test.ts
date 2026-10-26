@@ -459,11 +459,31 @@ describe("redact() — positive corpus, one class each", () => {
       ["password", "hunter2"],
       ["token", "brief"],
       ["SECRET", "enabled"],
+      ["SEED", "1234"],
+      ["BASIC_AUTH_PASS", "correcthorse"],
+      ["SESSION_KEY", "abcdefghijklmno"],
     ];
     for (const [name, value] of cases) {
       const result = redact(`${name}: ${value} trailing`);
       expect(result.text, name).toBe(`${name}: «redacted:assignment» trailing`);
       expect(result.counts.assignment, name).toBe(1);
+    }
+  });
+
+  it("redacts a credential assignment that sits inside a declined prose-colliding value", () => {
+    // Fails if a declined `auth:`/`seed:`/`cookie:` match swallows the text
+    // after it: the scan must resume inside the declined value, or the
+    // credential assignment there ships in plaintext. Observed at redact().text.
+    const cases: Array<[string, string]> = [
+      ["auth:token=hunter", "auth:token=«redacted:assignment»"],
+      ["seed:password=hunter", "seed:password=«redacted:assignment»"],
+      ["cookie: secret=abcdefg", "cookie: secret=«redacted:assignment»"],
+      ["GET /cb?auth=ok&token=hunter", "GET /cb?auth=ok&token=«redacted:assignment»"],
+    ];
+    for (const [input, expected] of cases) {
+      const result = redact(input);
+      expect(result.text, input).toBe(expected);
+      expect(result.counts.assignment, input).toBe(1);
     }
   });
 
