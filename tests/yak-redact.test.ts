@@ -446,6 +446,27 @@ describe("redact() — positive corpus, one class each", () => {
     }
   });
 
+  it("redacts a secret-shaped value under a prose-colliding name, and any value under a credential name", () => {
+    // Fails if the secret-shape requirement reaches too far: a real
+    // session id or cookie under AUTH/SESSION/SEED/COOKIE ships in plaintext, or
+    // a short password under PASSWORD/TOKEN/SECRET stops being redacted.
+    // Observed at redact().text and counts.assignment.
+    const cases: Array<[string, string]> = [
+      ["session", "x9y8z7w6"],
+      ["authorized", "abcdefghijklmnopqr"],
+      ["seed", "4815162342"],
+      ["cookie", "sid=abcdef0123456789"],
+      ["password", "hunter2"],
+      ["token", "brief"],
+      ["SECRET", "enabled"],
+    ];
+    for (const [name, value] of cases) {
+      const result = redact(`${name}: ${value} trailing`);
+      expect(result.text, name).toBe(`${name}: «redacted:assignment» trailing`);
+      expect(result.counts.assignment, name).toBe(1);
+    }
+  });
+
   it("redacts the lowercase aws_session_token shape, case-insensitively", () => {
     const value = AWS_SESSION;
     const result = redact(`aws_session_token: ${value}`);
@@ -736,6 +757,26 @@ describe("redact() — negative corpus, prose must survive untouched", () => {
       "a sib_ org id with no secret segment",
       `the failing request carried org ${"sib" + "_" + SIB_ULID} only`,
     ],
+    // --- yak bodies the assignment rule mangled: an
+    // English word ending in `:` that merely CONTAINS a prose-colliding governed
+    // word (AUTH, SESSION, SEED, COOKIE), followed by a word that is not
+    // secret-shaped.
+    [
+      "a commit-skill grant phrase: authorized: /pls",
+      "the only accepted grants are 'authorized: /pls', '/close-out'",
+    ],
+    [
+      "a commit-skill grant phrase: authorized: brief <issue>",
+      "re-ran with 'authorized: brief ABC-2889'",
+    ],
+    [
+      "a session label followed by a verb",
+      "End-to-end probe from the TPM session: filing the eris pull request",
+    ],
+    [
+      "a seed label followed by an English word",
+      "the fixture seed: deterministic, so replays match",
+    ],
   ];
 
   for (const [label, text] of proseCases) {
@@ -874,8 +915,9 @@ describe("redact() — idempotence", () => {
 // local schema validation), not this module.
 describe("redact() — marker length vs. replaced-value length (documented, not resolved here)", () => {
   it("a short redacted value can make the surrounding text LONGER than the input", () => {
-    const input = "replay seed: 4815 (deterministic)"; // value "4815" is 4 chars — the
+    const input = "replay token: 4815 (deterministic)"; // value "4815" is 4 chars — the
     // minimum for the unquoted alternative — well short of the marker's length.
+    // A credential name, since `seed` alone needs a secret-shaped value.
     const result = redact(input);
     expect(result.counts.assignment).toBe(1);
     expect(result.text.length).toBeGreaterThan(input.length);

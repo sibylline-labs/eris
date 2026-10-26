@@ -168,6 +168,23 @@
  * block, which pins this as intended behavior so a future reader sees it was
  * decided, not missed.
  *
+ * PROSE-COLLIDING NAMES: the trade-off above holds for credential
+ * names (SECRET, TOKEN, PASSWORD, PASSWD, PRIVATE_KEY, API_KEY, CREDENTIAL,
+ * ACCESS_KEY, MNEMONIC, and CLIENT_SECRET through SECRET). AUTH, SESSION, SEED
+ * and COOKIE are different: as infixes they sit inside ordinary English words
+ * that end a clause with `:` (`authorized: /pls`, `TPM session: filing …`), so
+ * any `x: y` matched and report prose was mangled, on the client and in every
+ * server that imports this module. A name whose only governed words are those
+ * four is redacted only when its unquoted value is secret-shaped
+ * (`isSecretShaped`: 16+ characters, or 8+ with a digit), which every
+ * generated session id, cookie, numeric seed and bearer clears and an English
+ * word, a slash command or a ticket id does not. A quoted value and a value
+ * led by an earlier class's marker are redacted as before: a quote is a
+ * structural signal, and the marker-tail rules (MARKER GUARD) must not be
+ * reopened. What still ships: a short, digit-free secret under one of those
+ * four names (`session: hunter`), the same shape the 4-character minimum
+ * already lets through.
+ *
  * AUTH SCHEME (fixed): `AUTH_HEADER_RE` matched only `Bearer|Token`, so
  * `Authorization: Basic <base64>` fell through to the generic `assignment`
  * pass, which eats only the scheme word (`AUTH` is a governed name) and
@@ -445,6 +462,30 @@ const ASSIGNMENT_LED_RE = assignmentRe(EXACT_MARKER_GUARD, `(?<led>['"]?«redact
 const QUOTED_VALUE_RE = new RegExp(QUOTED_VALUE, "y");
 const MARKER_LED_RE = /['"]?«redacted:/y;
 
+// A governed name with one of these words is a credential name whatever its
+// value looks like (file header, "PROSE-COLLIDING NAMES"). A name with only
+// AUTH, SESSION, SEED or COOKIE needs a secret-shaped value as well.
+const CREDENTIAL_NAME_RE =
+  /SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]KEY|API[_-]KEY|CREDENTIAL|ACCESS[_-]KEY|MNEMONIC/i;
+const DIGIT_RE = /[0-9]/;
+
+/** True when an unquoted value could be a secret: 16+ characters, or 8+ with a
+ *  digit. An English word, a slash command or a short ticket id is neither. */
+function isSecretShaped(value: string): boolean {
+  return value.length >= 16 || (value.length >= 8 && DIGIT_RE.test(value));
+}
+
+/** True when the match is a prose-colliding name (`authorized: brief`,
+ *  `session: filing`) whose unquoted, non-marker value is not secret-shaped. */
+function isProseAssignment(groups: AssignmentGroups): boolean {
+  if (groups.led !== undefined) return false;
+  const name = groups.uname ?? groups.qname ?? "";
+  if (CREDENTIAL_NAME_RE.test(name)) return false;
+  const first = groups.value[0];
+  if (first === '"' || first === "'" || groups.value.startsWith("«redacted:")) return false;
+  return !isSecretShaped(groups.value);
+}
+
 function runWholeMatchPass(
   text: string,
   cls: RedactionClass,
@@ -509,7 +550,7 @@ function runAssignmentPass(text: string, counts: Record<RedactionClass, number>)
   ASSIGNMENT_RE.lastIndex = 0;
   for (let m = ASSIGNMENT_RE.exec(text); m !== null; m = ASSIGNMENT_RE.exec(text)) {
     const groups = m.groups as unknown as AssignmentGroups;
-    if (isDeclinedAuthHeader(text, m, groups)) continue;
+    if (isDeclinedAuthHeader(text, m, groups) || isProseAssignment(groups)) continue;
     const end = m.index + m[0].length;
     const valueStart = end - groups.value.length;
     MARKER_LED_RE.lastIndex = valueStart;
@@ -521,7 +562,7 @@ function runAssignmentPass(text: string, counts: Record<RedactionClass, number>)
     ASSIGNMENT_LED_RE.lastIndex = 0;
     for (let m = ASSIGNMENT_LED_RE.exec(text); m !== null; m = ASSIGNMENT_LED_RE.exec(text)) {
       const groups = m.groups as unknown as AssignmentGroups;
-      if (isDeclinedAuthHeader(text, m, groups)) continue;
+      if (isDeclinedAuthHeader(text, m, groups) || isProseAssignment(groups)) continue;
       const end = m.index + m[0].length;
       const valueStart = end - groups.value.length;
       if (groups.led === undefined) {

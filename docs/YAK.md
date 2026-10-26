@@ -195,6 +195,9 @@ headers, GCP service-account `"private_key"` values, connection strings with an
 inline password, and **key-name
 assignments** — `NAME=value` or `NAME: value` where `NAME` matches
 `(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|API_KEY|CREDENTIAL|ACCESS_KEY|CLIENT_SECRET|MNEMONIC|SEED|SESSION|COOKIE|AUTH)`.
+A name whose only governed words are `SEED`, `SESSION`, `COOKIE` or `AUTH`
+(which also sit inside prose such as `authorized: /pls`) needs a secret-shaped
+unquoted value as well: 16+ characters, or 8+ with a digit.
 
 **Redaction is defence in depth, not a boundary.** It is a pattern scrub, and a
 pattern scrub can always miss a shape it wasn't written for. Do not paste
