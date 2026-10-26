@@ -8,12 +8,18 @@
  * hand-kept list of what it ought to hold.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkoutOnly, REPO } from "./helpers/blackbox";
 import { erisPaths } from "./helpers/tsconfig-paths";
+
+// npm's cold start alone can pass bun's 5s default on a CI runner.
+setDefaultTimeout(120_000);
+
+/** Long enough for a cold npm, short enough that a hung one fails inside the test's own timeout. */
+const NPM_DEADLINE_MS = 90_000;
 
 interface Manifest {
   exports: Record<string, string>;
@@ -25,8 +31,8 @@ const manifest = (): Manifest => JSON.parse(readFileSync(join(REPO, "package.jso
 
 /** The tarball's file list, as npm computes it. `--offline` makes any registry read fail instead of hang. */
 function packedFiles(): Set<string> {
-  const r = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts", "--offline"], { cwd: REPO, encoding: "utf8" });
-  if (r.status !== 0) throw new Error(`npm pack --dry-run exited ${r.status}\n${r.stdout}\n${r.stderr}`);
+  const r = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts", "--offline"], { cwd: REPO, encoding: "utf8", timeout: NPM_DEADLINE_MS });
+  if (r.status !== 0) throw new Error(`npm pack --dry-run exited ${r.status ?? r.signal}\n${r.stdout}\n${r.stderr}`);
   const [pack] = JSON.parse(r.stdout) as [{ files: { path: string }[] }];
   return new Set(pack.files.map((f) => f.path));
 }
@@ -62,7 +68,7 @@ describe.skipIf(checkoutOnly("npm packs the checkout's package.json; a compiled 
     mkdirSync(join(REPO, ".scratch"), { recursive: true });
     const dir = mkdtempSync(join(REPO, ".scratch", "pack-"));
     try {
-      const pack = spawnSync("npm", ["pack", "--ignore-scripts", "--offline", "--pack-destination", dir], { cwd: REPO, encoding: "utf8" });
+      const pack = spawnSync("npm", ["pack", "--ignore-scripts", "--offline", "--pack-destination", dir], { cwd: REPO, encoding: "utf8", timeout: NPM_DEADLINE_MS });
       expect(pack.status).toBe(0);
       const tgz = join(dir, pack.stdout.trim().split("\n").pop()!);
       expect(spawnSync("tar", ["-xzf", tgz, "-C", dir]).status).toBe(0);
