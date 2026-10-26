@@ -13,9 +13,17 @@
     "noEmit": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": false,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    // The package is `@sibylline-labs/eris`, and a repository that depends on it declares the key `eris`
+    // and imports `eris/sdk`. Here, where no such dependency is installed, the same specifiers resolve to
+    // the files package.json `exports` names; tests/package.test.ts holds the two lists equal.
+    "paths": {
+      "eris/sdk": ["./src/sdk.ts"],
+      "eris/sdk/testing": ["./testing/index.ts"],
+      "eris/yak-contract": ["./packages/yak-contract/src/index.ts"]
+    }
   },
-  "include": ["packages/**/*.ts", "plugins/**/*.ts", "examples/**/*.ts", "src/**/*.ts", "ts/**/*.ts", "testing/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
+  "include": ["bin/**/*.ts", "packages/**/*.ts", "plugins/**/*.ts", "examples/**/*.ts", "src/**/*.ts", "ts/**/*.ts", "testing/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
   // tests/fixtures holds inputs the tests read or run as data, never import.
   "exclude": ["node_modules", "dist", ".claude", "tests/fixtures"]
 }

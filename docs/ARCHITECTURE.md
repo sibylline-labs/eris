@@ -14,6 +14,9 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
 ([YAK.md](YAK.md)).
 
 - **`eris`** finds bun and execs `src/main.ts`. Nothing else.
+- **`bin/eris.ts`** is the same entry for an installed package: the `eris` command that `npm i -g
+  @sibylline-labs/eris`, `bun add -g`, `npx` and `bunx` link (`bin` in `package.json`). It starts under bun
+  through its shebang and calls `runProgram`.
 - **`src/main.ts`** routes every command line.
 - **`plugins/index.ts`** lists the plugins this build compiles in.
 - **`src/sdk.ts`** is `eris/sdk`, the one module through which another repository reaches core
@@ -43,8 +46,10 @@ same identity to `runProgram({ identity })`, and a binary keeps what its build b
 prints them. `eris update` (`src/cli/commands/update.ts`) replaces the binary with the newest
 release of its own repository, after checking it ([`UPDATE.md`](UPDATE.md)). The release is cut by
 `.github/workflows/release.yml`, which builds and tests both binaries, publishes them with a
-`SHA256SUMS`, and renders the Homebrew formula into the tap
-([`dev/RELEASING.md`](dev/RELEASING.md)).
+`SHA256SUMS`, renders the Homebrew formula into the tap, and publishes the package to npm
+([`dev/RELEASING.md`](dev/RELEASING.md)). The npm package is the source, run by bun: `exports` and
+`bin` name `.ts` files, and `files` in `package.json` is the allow-list of what the tarball holds
+(`tests/package.test.ts`).
 
 ---
 
@@ -52,6 +57,7 @@ release of its own repository, after checking it ([`UPDATE.md`](UPDATE.md)). The
 
 ```
   eris                        POSIX sh shim: unset BUN_CONFIG_VERBOSE_FETCH; exec bun src/main.ts
+  bin/eris.ts                 the npm bin: refuse BUN_CONFIG_VERBOSE_FETCH; runProgram()
    └─ src/main.ts             settings fill → route → handler (lazy import) | unknown
        ├─ src/sdk.ts          eris/sdk: what a distribution imports · src/build.ts: build()
        ├─ src/cli/            registry.ts (core's verbs) · compose.ts (core + plugins) · plugin.ts
@@ -78,6 +84,20 @@ release of its own repository, after checking it ([`UPDATE.md`](UPDATE.md)). The
   `src/main.ts` removes before anything is spawned.
 
 `tests/cli-shim.test.ts` pins each of these.
+
+### The package's bin
+
+`bin/eris.ts` is what an install links as `eris`. It has no shell to run, so its shebang,
+`#!/usr/bin/env -S bun --no-env-file --config=/dev/null`, does what the shim's `exec` does: bun never
+reads the caller's cwd `.env` or `bunfig.toml` preload. A bare `#!/usr/bin/env bun` does neither, so
+`npx eris` run in a service directory would load that directory's `.env` and run its preload.
+`env -S` splits the flags out of the one shebang line (GNU coreutils 8.30 and newer, macOS).
+
+The bin does not remove `BUN_CONFIG_VERBOSE_FETCH`; it refuses to run under it, with the
+`eris-verbose-fetch-set` failure block, before it imports the program. With bun absent the operating
+system's own `env: bun: No such file or directory` is the diagnostic; there is no `eris-bun-missing`
+block, because nothing of eris has started to print one. The install root is the package directory,
+whatever symlink the install put the bin behind. `tests/bin.test.ts` pins each of these.
 
 ### The router
 

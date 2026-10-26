@@ -23,7 +23,7 @@ bun scripts/scrub-check.ts --history # no private references in the tree or any 
 ```
 
 Every one of these is a PR gate: `.github/workflows/ci.yml` runs them all, and CI is the
-authority when this list and the workflow disagree. The suite needs `zsh`, `git` and `script`
+authority when this list and the workflow disagree. The suite needs `npm`, `zsh`, `git` and `script`
 on PATH (`tests/required-tools.txt`).
 
 ## Rules that bite

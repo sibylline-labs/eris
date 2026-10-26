@@ -4,7 +4,7 @@
  * The slugs are harvested from the source, never listed by hand: a hand list
  * silently stops covering the next slug somebody adds (eighteen once shipped
  * past one). The harvest reads the shell that remains (the `eris` shim) AND
- * every TypeScript tree (src/, ts/lib/, plugins/).
+ * every TypeScript tree (bin/, src/, ts/lib/, plugins/).
  *
  * Kebab-case with at least one hyphen is the discriminator (docs/ERRORS.md:
  * "Slugs are lowercase kebab-case"); that keeps prose out. The raisers:
@@ -72,6 +72,7 @@ function repoSources(): { bash: Source[]; ts: Source[] } {
   const read = (abs: string): Source => ({ path: relative(REPO, abs), text: readFileSync(abs, "utf8") });
   const bash = [join(REPO, "eris")].map(read);
   const ts = [
+    ...walk(join(REPO, "bin"), (p) => p.endsWith(".ts")),
     ...walk(join(REPO, "src"), (p) => p.endsWith(".ts")),
     ...walk(join(REPO, "ts/lib"), (p) => p.endsWith(".ts")),
     ...walk(join(REPO, "plugins"), (p) => p.endsWith(".ts")),

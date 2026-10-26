@@ -26,6 +26,7 @@ import { REGISTRY } from "../src/cli/registry";
 import { CLI, HANDLERS, main } from "../src/main";
 import { DEFAULT_DOCS_BASE, DEFAULT_RELEASE_REPO } from "../src/runtime/home";
 import { checkoutOnly, ERIS, oracleEnv, REPO, type Sandbox, sandbox } from "./helpers/blackbox";
+import { erisPaths } from "./helpers/tsconfig-paths";
 
 setDefaultTimeout(120_000);
 
@@ -63,7 +64,8 @@ function press(script: string, words: string[]): string[] {
 describe("the package's exports", () => {
   it("eris/sdk resolves through the package's own exports map, with the documented names, and a deep path does not", async () => {
     /** When the exports map loses `./sdk`, or a name a distribution imports leaves the SDK, a repository pinned to this one stops building at its next pin bump; when a deep path resolves again, a distribution couples to a core file a refactor moves silently: observed through the package specifier, as a dependent repository imports it. */
-    const sdk = await import("eris/sdk");
+    // The package names itself `@sibylline-labs/eris`, which is how it reaches its own exports map from here; a dependent repository's key `eris` reaches the same map (tsconfig `paths` stands in for it in this tree).
+    const sdk = await import("@sibylline-labs/eris/sdk");
     expect(Object.keys(sdk).sort()).toEqual([
       "BUILD_ID",
       "CliExit",
@@ -112,7 +114,7 @@ describe("the package's exports", () => {
     expect(sdk.REGISTRY).toBe(REGISTRY);
     expect(sdk.PLUGINS.map((p) => p.name)).toEqual(["yak"]);
     // Through a variable: the type checker refuses the literal the same way.
-    const deepPath = "eris/src/cli/compose";
+    const deepPath = "@sibylline-labs/eris/src/cli/compose";
     const deep = await import(deepPath).then(
       () => "resolved",
       (e: { code?: string }) => e.code,
@@ -136,13 +138,13 @@ describe("the package's exports", () => {
 
   it("eris/sdk/testing carries the test helpers a distribution's suites need, and eris/sdk (the list above) none of them", async () => {
     /** When a test helper moves into `eris/sdk` it ships in every distribution's SDK surface, and when one leaves the subpath a distribution's suites copy it again: observed through the package specifier, as a dependent repository's tests import it. */
-    const testing = await import("eris/sdk/testing");
+    const testing = await import("@sibylline-labs/eris/sdk/testing");
     expect(Object.keys(testing).sort()).toEqual(["buildInChild", "createFakeRunner"]);
   });
 
   it("eris/yak-contract resolves through the package's own exports map to the workspace contract package's module", async () => {
     /** When the exports map loses `./yak-contract`, or maps it to a copy of the contract rather than packages/yak-contract, a repository pinned to this one that imports the contract stops building at its next pin bump (or validates against a second, drifting schema): observed through the package specifier, as a dependent repository imports it. */
-    const contract = await import("eris/yak-contract");
+    const contract = await import("@sibylline-labs/eris/yak-contract");
     expect(contract.deriveIdempotencyKey).toBe(deriveIdempotencyKey);
     expect(contract.YakSubmission).toBe(YakSubmission);
   });
@@ -284,7 +286,17 @@ describe.skipIf(checkoutOnly("runs the example distribution and core from this c
     writeFileSync(
       config,
       JSON.stringify({
-        compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", strict: true, noEmit: true, skipLibCheck: true, types: ["bun-types"] },
+        compilerOptions: {
+          target: "ES2022",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          strict: true,
+          noEmit: true,
+          skipLibCheck: true,
+          types: ["bun-types"],
+          // Where a dependent repository's node_modules/eris would be; this tree has none.
+          paths: Object.fromEntries(Object.entries(erisPaths()).map(([specifier, targets]) => [specifier, targets.map((t) => join(REPO, t))])),
+        },
         include: ["../examples/distribution/**/*.ts"],
       }),
     );

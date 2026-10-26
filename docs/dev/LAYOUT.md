@@ -6,8 +6,13 @@ The annotated tree of the eris repo. Read the part for the area you are editing.
 
 ```
 eris                    # POSIX sh shim: unsets BUN_CONFIG_VERBOSE_FETCH, execs bun src/main.ts
+bin/eris.ts             # the package's `eris` command (package.json `bin`, for an npm or bun install): an
+                        #   `env -S bun --no-env-file --config=/dev/null` shebang, refuses BUN_CONFIG_VERBOSE_FETCH
+                        #   (eris-verbose-fetch-set), then runs src/main.ts's runProgram; tests/bin.test.ts
+package.json            # @sibylline-labs/eris: `bin`, `exports`, and `files`, the allow-list of what the npm
+                        #   tarball holds (tests/package.test.ts reads `npm pack --dry-run`)
 install.sh              # POSIX sh: downloads + verifies the release binary into ~/.local/bin/eris; --checkout: bun install --frozen-lockfile + a wrapper around the checkout
-src/                    # The TS program the shim runs
+src/                    # The TS program the shim and the bin run
 ├── main.ts             #   the entry: composes core with the build's plugins (CLI), HANDLERS, main, runProgram
 ├── sdk.ts              #   `eris/sdk`, the one module through which another repository reaches core (package.json exports):
 │                       #   the plugin SDK, composition, runProgram, the runtime, build()
@@ -53,7 +58,7 @@ testing/                # `eris/sdk/testing` (package.json exports): the test he
 scripts/build.ts        # `bun scripts/build.ts` → dist/eris-<os>-<arch> (gitignored): this repo's binary,
                         #   through src/build.ts; exports its options as BUILD
 scripts/render-formula.ts  # the Homebrew formula for a release, from packaging/homebrew/eris.rb.tmpl
-.github/workflows/      # ci.yml (the PR gates) · release.yml (tag → build, oracle, publish, tap)
+.github/workflows/      # ci.yml (the PR gates, the npm tarball's install-and-run included) · release.yml (tag → build, oracle, publish, tap, npm)
 sgconfig.yml            # the code-quality rules over eris's OWN source (ruleDirs: rules; cases in rule-tests/):
 rules/                  #   adhoc-argv-parse (one argv parser), env-read-own-property(-plugin) (env names
 rule-tests/             #   are read through readEnv), plugin-manifest-lazy-handlers + plugin-imports-sdk-only
