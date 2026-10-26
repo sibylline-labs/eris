@@ -20,7 +20,8 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
 - **`src/main.ts`** routes every command line.
 - **`plugins/index.ts`** lists the plugins this build compiles in.
 - **`src/sdk.ts`** is `eris/sdk`, the one module through which another repository reaches core
-  (the `exports` map names `eris/sdk/testing` and `eris/yak-contract` beside it, nothing deeper).
+  (the `exports` map names `eris/sdk/testing`, `eris/yak-contract` and `eris/yak-redact` beside it,
+  nothing deeper).
   A **distribution** depends on this package, composes core with this build's plugins and its own,
   and compiles its own binary with `build()` ([`dev/PLUGINS.md`](dev/PLUGINS.md#distributions)).
 - **`packages/yak-contract`** is the Yaks wire contract v2, a bun workspace package that builds
@@ -143,6 +144,8 @@ it is not a verb, but it renders JSON under `--output` and reads no file from th
   may also import `eris/sdk/testing` (`testing/`), which no source the binary bundles imports
   (`runtime-imports-no-testing`). `eris/yak-contract` is not core: it is the workspace package
   `packages/yak-contract`, which imports nothing of core (`tests/yak-contract-v2.test.ts`).
+  `eris/yak-redact` is `plugins/yak/yak-redact.ts`, the client's redaction pass, so a server that
+  redacts a submission runs the client's rules; it imports nothing (`tests/distribution.test.ts`).
 - **Completion imports the registry and nothing else.** `source <(eris completion bash)` runs on
   every shell start, so a broken source file elsewhere must not break a login shell.
   `tests/completion.test.ts` corrupts every other verb and every plugin's handler code in a copied

@@ -223,7 +223,7 @@ jobs:
 
       # A repository that declares the dependency under the key `eris` imports the
       # package's subpaths by that name, whatever the package is published as.
-      - name: A consumer under the key eris resolves eris/sdk and eris/yak-contract
+      - name: A consumer under the key eris resolves eris/sdk, eris/yak-contract and eris/yak-redact
         env:
           TARBALL: ${{ steps.pack.outputs.tarball }}
         run: |
@@ -234,7 +234,9 @@ jobs:
           cat >check.ts <<'TS'
           import { runProgram } from "eris/sdk";
           import { YAKS_CONTRACT_VERSION } from "eris/yak-contract";
+          import { redactDeep } from "eris/yak-redact";
           if (typeof runProgram !== "function" || YAKS_CONTRACT_VERSION !== "2.0.0") throw new Error("eris/sdk or eris/yak-contract did not resolve");
-          console.log("resolved eris/sdk and eris/yak-contract", YAKS_CONTRACT_VERSION);
+          if (redactDeep({ token: "ghp" + "_" + "a".repeat(36) }).total !== 1) throw new Error("eris/yak-redact did not resolve");
+          console.log("resolved eris/sdk, eris/yak-contract and eris/yak-redact", YAKS_CONTRACT_VERSION);
           TS
           bun check.ts

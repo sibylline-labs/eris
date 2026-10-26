@@ -18,7 +18,8 @@
     ".": "./src/main.ts",
     "./sdk": "./src/sdk.ts",
     "./sdk/testing": "./testing/index.ts",
-    "./yak-contract": "./packages/yak-contract/src/index.ts"
+    "./yak-contract": "./packages/yak-contract/src/index.ts",
+    "./yak-redact": "./plugins/yak/yak-redact.ts"
   },
   "files": [
     "bin",
