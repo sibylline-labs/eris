@@ -4,8 +4,10 @@
  * (docs/dev/PLUGINS.md#distributions). The package's `exports` map names it,
  * `eris/sdk/testing` (the test helpers, testing/, which this module does not
  * export, so no binary carries them), `eris/yak-contract` (the Yaks wire
- * contract, a workspace package of its own rather than core) and nothing
- * deeper, so a core file can move without breaking a distribution.
+ * contract, a workspace package of its own rather than core), `eris/yak-redact`
+ * (the client's redaction pass, plugins/yak/yak-redact.ts, which imports
+ * nothing) and nothing deeper, so a core file can move without breaking a
+ * distribution.
  *
  * What it carries:
  *

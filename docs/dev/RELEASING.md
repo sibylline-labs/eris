@@ -83,7 +83,8 @@ dist-tag, so `npm install @sibylline-labs/eris` never picks it up.
 Every pull request runs the `npm-pack` job of `ci.yml`: `npm pack`, `npm publish --dry-run`, then
 the tarball installed with `npm install -g` and with `bun add -g` and run from a directory that
 holds no checkout (`eris --help`; a cwd `bunfig.toml` preload must not run), and a consumer that
-declares the dependency under the key `eris` and imports `eris/sdk` and `eris/yak-contract`. It
+declares the dependency under the key `eris` and imports `eris/sdk`, `eris/yak-contract` and
+`eris/yak-redact`. It
 reads no secret and publishes nothing.
 
 Setup, once: create a token that can publish `@sibylline-labs/eris` and store it as the
