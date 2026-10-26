@@ -218,10 +218,9 @@ describe("tab presses: the tree from the registry", () => {
     expect(press(["eris", "--v"])).toEqual(["--version"]);
   });
 
-  it("update offers its own flags, and completes nothing for --to's value", () => {
-    /** When a core verb's row is not read by the generated tree, `eris update --<TAB>` offers nothing, or a tag is completed as a file. */
-    expect(sorted(press(["eris", "update", "--"]))).toEqual(["--check", "--help", "--to"]);
-    expect(press(["eris", "update", "--to", ""])).toEqual([]);
+  it("update offers only --help: core's row declares no flags", () => {
+    /** When the generated tree reads flags from somewhere other than the core row, `eris update --<TAB>` offers the release verb's --check or --to, which core's verb refuses. */
+    expect(sorted(press(["eris", "update", "--"]))).toEqual(["--help"]);
   });
 
   it("yak issue --<TAB> offers exactly the flags its row declares", () => {

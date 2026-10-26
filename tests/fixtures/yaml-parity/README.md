@@ -17,7 +17,7 @@ entry throws, so it never skips and never falls back to a live tool.
 port replaced them. The tools were:
 
 - yq `v4.53.2` (mikefarah).
-- The `bash` first on PATH on macOS, which was Homebrew bash 5.
+- The `bash` first on PATH on macOS, which was bash 5 (not the system's 3.2).
 - `LC_ALL=C` wherever the live oracle set it.
 
 The answers cannot be regenerated from this repository. They are the reference the

@@ -1,8 +1,21 @@
 # `eris --version` and `eris update`
 
-`eris --version` says which build this is. `eris update` replaces a compiled eris
-binary with the newest release of the repository it was built from, in place,
-after checking it.
+eris is an npm package, `@sibylline-labs/eris`, run by [bun](https://bun.sh). npm is
+the only way it is installed, so the package manager that installed it is what
+updates it. `eris --version` says which build this is. `eris update` prints the
+commands that get the latest release.
+
+## Installing
+
+```sh
+npx @sibylline-labs/eris@latest <command>      # run the latest release, no install
+bunx @sibylline-labs/eris@latest <command>     # the same, through bun
+bun add -g @sibylline-labs/eris@latest         # install `eris` globally
+```
+
+Every form needs bun on PATH: the package's `eris` command is TypeScript with a bun
+shebang (`bin/eris.ts`). A pre-release is published under npm's `next` dist-tag
+(`@sibylline-labs/eris@next`), which `latest` never resolves to.
 
 ## `eris --version`
 
@@ -22,18 +35,39 @@ of its own (a distribution reporting the core it was built on) prints it next.
 
 | Field | Meaning |
 |---|---|
-| `version` | The tag the build was given (`scripts/build.ts --tag`, `build({ tag })`). `dev` for an untagged build and for a source checkout. |
-| `release_repo` | The repository `eris update` reads releases from. |
+| `version` | The tag a compiled build was given (`build({ tag })`); else, for an installed package, `v` and the version the release stamped into its package.json; else `dev` (an untagged build, a source checkout, a git dependency). |
+| `release_repo` | The repository the build's releases are published to (the one a distribution's release `eris update` reads). |
 | `build_id` | The compiled binary's build id, prefixed by the tag; `null` in a checkout. |
 | `extra` | The line a distribution added (`build({ versionExtra })`); `null` when it added none. |
 
-Every field is baked into the binary at build time. A run from source reports `dev`, a
-null `build_id`, and the release repository and line its entry handed
+Every field is baked into a compiled binary at build time. A run from source reports
+its package's version (or `dev`), a null `build_id`, and the release repository and line its entry handed
 `runProgram({ identity })` (core's defaults when it handed none); a binary ignores that
 option. `--version` reads no file, so it
 answers even when the binary's asset cache cannot be written.
 
 ## `eris update`
+
+```
+$ eris update
+eris v0.3.0. Run the latest release with:
+  npx @sibylline-labs/eris@latest <command>
+  bunx @sibylline-labs/eris@latest <command>
+or install it globally (bun runs it, so bun must be on PATH):
+  bun add -g @sibylline-labs/eris@latest
+```
+
+It reads nothing, fetches nothing, changes nothing, and exits `0`. It takes no flags.
+`eris --output json update` prints `{"current":"v0.3.0","commands":[…]}`: this build's
+version and the same three commands, in the same order.
+
+## The release `eris update` (distributions)
+
+A distribution that publishes compiled binaries to GitHub releases composes a second
+`eris update` in place of core's: `RELEASE_UPDATE` from `eris/sdk`
+([dev/PLUGINS.md](dev/PLUGINS.md#distributions)). It replaces the running binary with
+the newest release of the repository it was built from, in place, after checking it.
+Everything below describes that verb; core's own build never runs it.
 
 ```
 eris update [--check] [--to <tag>]
@@ -75,8 +109,7 @@ is not one (`dev`) is offered every release.
 
 1. **Refuses before any request** what it cannot update in place: a source checkout
    ([`update-not-compiled`](ERRORS.md#update-not-compiled)), a platform with no release
-   binary ([`update-unsupported-platform`](ERRORS.md#update-unsupported-platform)), a
-   copy Homebrew installed ([`update-brew-managed`](ERRORS.md#update-brew-managed)), an
+   binary ([`update-unsupported-platform`](ERRORS.md#update-unsupported-platform)), an
    unusable `ERIS_UPDATE_API` ([`update-api-invalid`](ERRORS.md#update-api-invalid)),
    and, unless `--check`, a directory it cannot write
    ([`update-target-unwritable`](ERRORS.md#update-target-unwritable)).
@@ -120,7 +153,7 @@ binary is run without the token in its environment.
 
 A binary updates from the repository it was built to be released from, so one build
 never replaces itself with another's: the repository is fixed by `build({ releaseRepo })`
-(default `sibylline-labs/eris`). A checkout reports the one its entry handed
+(default `sibylline-labs/eris`). A run from source reports the one its entry handed
 `runProgram({ identity })`, else the default, and refuses to update in place anyway. A distribution that
 publishes its own releases must publish them in the same shape
 ([dev/RELEASING.md](dev/RELEASING.md)).

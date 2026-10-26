@@ -19,6 +19,7 @@ import { BUILD } from "../examples/distribution/build";
 import { DISTRIBUTION, DISTRIBUTION_PLUGINS, IDENTITY } from "../examples/distribution/main";
 import { deriveIdempotencyKey, YakSubmission } from "../packages/yak-contract/src/index";
 import yak from "../plugins/yak";
+import { redact, redactDeep } from "../plugins/yak/yak-redact";
 import { build } from "../src/build";
 import { composeCli, PluginCompositionError } from "../src/cli/compose";
 import type { ErisPlugin } from "../src/cli/plugin";
@@ -75,6 +76,7 @@ describe("the package's exports", () => {
       "PLUGINS",
       "PluginCompositionError",
       "REGISTRY",
+    "RELEASE_UPDATE",
       "argErrorWhat",
       "build",
       "childEnv",
@@ -147,6 +149,15 @@ describe("the package's exports", () => {
     const contract = await import("@sibylline-labs/eris/yak-contract");
     expect(contract.deriveIdempotencyKey).toBe(deriveIdempotencyKey);
     expect(contract.YakSubmission).toBe(YakSubmission);
+  });
+
+  it("eris/yak-redact resolves through the package's own exports map to the client's redaction module, which imports nothing", async () => {
+    /** When the exports map loses `./yak-redact`, or maps it to a copy of the rules, a server that redacts a submission before it commits stops building at its next pin bump (or redacts by rules that drift from the client's); when the module gains an import, that server pulls the client's code in with it: observed through the package specifier, as a dependent repository imports it, and at the module's source. */
+    const exported = await import("@sibylline-labs/eris/yak-redact");
+    expect(exported.redact).toBe(redact);
+    expect(exported.redactDeep).toBe(redactDeep);
+    const source = readFileSync(join(REPO, "plugins/yak/yak-redact.ts"), "utf8");
+    expect(source.match(/^\s*(?:import|export\s[^;]*\sfrom)\s/gm)).toBeNull();
   });
 
   it("root package.json dependencies carry no workspace: protocol so git-dependency consumers can install eris", () => {

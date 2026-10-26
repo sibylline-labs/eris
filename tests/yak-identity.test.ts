@@ -166,14 +166,15 @@ describe("resolveUrl", () => {
     expect(result).toEqual({ value: "https://file.test", source: "config" });
   });
 
-  it(
-    "when neither the env nor the file config carries a url, this returns the " +
-      "unset marker — there is no default host — observed at the returned discriminant",
-    () => {
-      const result = resolveUrl({}, {});
-      expect(result).toEqual({ source: "unset" });
-    },
-  );
+  it("when --url is passed, it wins over ERIS_YAKS_URL and the file config — observed at the returned value", () => {
+    const result = resolveUrl({ url: "https://file.test" }, { ERIS_YAKS_URL: "https://env.test" }, "https://flag.test");
+    expect(result).toEqual({ value: "https://flag.test", source: "flag" });
+  });
+
+  it("when nothing names a url (an empty flag and variable included), it falls to the public default — observed at the returned value", () => {
+    /** When the fallback is missing, a fresh machine's `eris yak` warns with no endpoint and `eris login` refuses. */
+    expect(resolveUrl({}, { ERIS_YAKS_URL: "" }, "")).toEqual({ value: "https://api.sibylline.group", source: "default" });
+  });
 });
 
 // --- resolveDeviceId ----------------------------------------------------------

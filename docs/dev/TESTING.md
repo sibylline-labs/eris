@@ -63,8 +63,7 @@ throws; it never falls back to a live tool.
   (the API, and a second origin standing in for asset storage that the API redirects
   to), recording every request's `Authorization`; `eris update`'s tests drive it, with
   `ERIS_UPDATE_API` pointing at it.
-- **External binaries are PATH executables** (`gh`, `uname`, `sysctl` and `brew`
-  for `tests/install-sh.test.ts`), never in-process fakes: the system under test
+- **External binaries are PATH executables**, never in-process fakes: the system under test
   is a separate process. To test "not installed", hide the real binary
   (`hideReal`, `tests/helpers/blackbox.ts`) and assert it no longer resolves.
 - **Real git repos**: `git init -q` in the sandbox, and resolve paths physically

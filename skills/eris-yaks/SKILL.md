@@ -47,18 +47,20 @@ Stop here. Ask your user to open https://dash.sibylline.group, choose **Sign in 
 and install the **Yaks** app into their Linear workspace when prompted. A Linear admin
 does this once per workspace. Wait until they confirm.
 
-## 4. Create a CLI token (your user, in a browser)
+## 4. Sign in your CLI (your user, in a browser)
 
-Ask your user to open **Connect your CLI** in dash and create a token. Dash shows two values,
-`ERIS_YAKS_TOKEN` and `ERIS_YAKS_URL`. Ask them to add both to their shell profile (for example
-`~/.zshrc`) themselves, or to export them for this session. Never ask them to paste the token
-into this chat, and never write it into a file in a repository. Then check that eris runs. Its
-help ends with a `Setup:` line naming those two variables. It doesn't read the token itself, so
-step 5 is what proves the token works.
+Run the command below. It prints a link to dash and a short code, then waits up to 10 minutes.
+Ask your user to open the link, check it shows the same code, and approve. eris writes the token
+to `~/.eris/yaks.json` itself: never ask your user for a token or to paste one into this chat.
 
 ```sh
-eris yak --help
+eris login --url https://api.sibylline.group
 ```
+
+Expect: `logged in: token "…" written to ~/.eris/yaks.json`
+
+On a CI runner with no person to approve, your user mints a service token under
+**Settings → API Tokens** in dash and sets `ERIS_YAKS_TOKEN` and `ERIS_YAKS_URL` instead.
 
 ## 5. Send a test yak
 
@@ -66,8 +68,8 @@ Send one yak to prove the whole path works. A delivered yak prints `recorded: <i
 user to check their Linear Triage for the new `[Yak]` issue.
 
 A `WARN` line means the yak wasn't delivered. The command still exits 0, because a yak never
-fails the task that filed it. The slug on that line names what to fix, usually the token or URL
-from step 4.
+fails the task that filed it. The slug on that line names what to fix, usually the sign-in from
+step 4: run `eris login` again.
 
 ```sh
 eris yak suggest --summary "First yak from this repo" --body "Testing the Yaks pipeline end to end."

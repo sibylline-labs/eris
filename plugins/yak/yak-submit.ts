@@ -320,9 +320,7 @@ const YAKS_INGRESS_PATH = "/v1/yaks";
 
 /** Warn-class slugs (environment/config/transport — never the
  *  agent's fault, so `yak.ts` maps every one of these to `WARN` + exit 0,
- *  never the exit-1 failure block). `yak-url-unresolved` is the slug
- *  `yak.ts` assigns to `yak-identity.ts`'s `{source: "unset"}` marker. The
- *  network-outcome ones come from a fetch outcome this module
+ *  never the exit-1 failure block). The network-outcome ones come from a fetch outcome this module
  *  observes directly. `yak-identity-id-too-long` and `yak-redaction-overflow`
  *  are both `too_big` zod failures on
  *  step 5, and both were previously misclassified as agent misuse even
@@ -332,7 +330,6 @@ const YAKS_INGRESS_PATH = "/v1/yaks";
  *  the caller's ORIGINAL text was in bounds until our own scrub pass grew
  *  it past the limit. */
 export type SubmitWarnSlug =
-  | "yak-url-unresolved"
   | "yak-unreachable"
   | "yak-timeout"
   | "yak-unauthorized"

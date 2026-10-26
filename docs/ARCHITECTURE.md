@@ -20,18 +20,17 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
 - **`src/main.ts`** routes every command line.
 - **`plugins/index.ts`** lists the plugins this build compiles in.
 - **`src/sdk.ts`** is `eris/sdk`, the one module through which another repository reaches core
-  (the `exports` map names `eris/sdk/testing` and `eris/yak-contract` beside it, nothing deeper).
+  (the `exports` map names `eris/sdk/testing`, `eris/yak-contract` and `eris/yak-redact` beside it,
+  nothing deeper).
   A **distribution** depends on this package, composes core with this build's plugins and its own,
   and compiles its own binary with `build()` ([`dev/PLUGINS.md`](dev/PLUGINS.md#distributions)).
 - **`packages/yak-contract`** is the Yaks wire contract v2, a bun workspace package that builds
   standalone. The `exports` map also names it, as `eris/yak-contract`, so a repository pinned to
   this one imports the contract without core.
 
-`install.sh` (POSIX `sh`) has two modes. By default it downloads the release binary for this
-OS/arch with `curl`, checks it against the release's `SHA256SUMS` and installs it to
-`~/.local/bin/eris`. `install.sh --checkout` checks bun, runs `bun install --frozen-lockfile` and
-writes a `~/.local/bin/eris` wrapper around the checkout. There is no build step for the checkout:
-`bash <checkout>/eris`, `sh <checkout>/eris` and the wrapper all run it as it stands.
+eris installs from npm only (`npx`, `bunx`, `bun add -g @sibylline-labs/eris`); the package's
+`bin/eris.ts` is the command. A checkout needs `bun install --frozen-lockfile` and no build step:
+`bash <checkout>/eris` and `sh <checkout>/eris` run it as it stands.
 
 `bun scripts/build.ts` also compiles the same program into one executable,
 `dist/eris-<os>-<arch>`, through `build()` (`src/build.ts`), the same call a distribution makes
@@ -43,10 +42,12 @@ A binary also knows which build it is, from the same call: `build({ tag })` bake
 the release repository, an optional version line and the docs base of a failure block
 (`VERSION` and `identity()`, `src/runtime/home.ts`); a distribution run from source hands the
 same identity to `runProgram({ identity })`, and a binary keeps what its build baked. `eris --version`
-prints them. `eris update` (`src/cli/commands/update.ts`) replaces the binary with the newest
-release of its own repository, after checking it ([`UPDATE.md`](UPDATE.md)). The release is cut by
+prints them. Core's `eris update` (`src/cli/commands/update.ts`) prints the npm commands for the
+latest release. A distribution that publishes binaries composes `RELEASE_UPDATE`
+(`src/cli/commands/update/`) in its place, which replaces the binary with the newest release of
+its own repository, after checking it ([`UPDATE.md`](UPDATE.md)). The release is cut by
 `.github/workflows/release.yml`, which builds and tests both binaries, publishes them with a
-`SHA256SUMS`, renders the Homebrew formula into the tap, and publishes the package to npm
+`SHA256SUMS`, and publishes the package to npm
 ([`dev/RELEASING.md`](dev/RELEASING.md)). The npm package is the source, run by bun: `exports` and
 `bin` name `.ts` files, and `files` in `package.json` is the allow-list of what the tarball holds
 (`tests/package.test.ts`).
@@ -71,8 +72,7 @@ release of its own repository, after checking it ([`UPDATE.md`](UPDATE.md)). The
 
 ### The shim
 
-`eris` is POSIX `sh` because consumers run it as `bash eris`, `sh eris` and through the
-`install.sh` wrapper (`exec <repo>/eris`). It:
+`eris` is POSIX `sh` because consumers run it as `bash eris`, `sh eris` and `exec <repo>/eris`. It:
 
 - removes `BUN_CONFIG_VERBOSE_FETCH` before bun starts. Under it bun prints every fetch, bearer and
   body included, to stderr, and bun reads it from its own environment at fetch time, so
@@ -143,6 +143,8 @@ it is not a verb, but it renders JSON under `--output` and reads no file from th
   may also import `eris/sdk/testing` (`testing/`), which no source the binary bundles imports
   (`runtime-imports-no-testing`). `eris/yak-contract` is not core: it is the workspace package
   `packages/yak-contract`, which imports nothing of core (`tests/yak-contract-v2.test.ts`).
+  `eris/yak-redact` is `plugins/yak/yak-redact.ts`, the client's redaction pass, so a server that
+  redacts a submission runs the client's rules; it imports nothing (`tests/distribution.test.ts`).
 - **Completion imports the registry and nothing else.** `source <(eris completion bash)` runs on
   every shell start, so a broken source file elsewhere must not break a login shell.
   `tests/completion.test.ts` corrupts every other verb and every plugin's handler code in a copied
@@ -170,7 +172,7 @@ byte-deterministic for a given composed registry. A row's completion domain is d
 its helper text is checked at composition (`src/cli/commands/completion/domain.ts`) so sourcing
 the script runs nothing and no helper can swallow core's text.
 
-**C4 — the shell only shrinks.** The shim and `install.sh` are frozen as one total (`.sh` files,
+**C4 — the shell only shrinks.** The shim is frozen as one total (`.sh` files,
 code lines, function definitions) by `tests/source-is-text.test.ts` against
 `tests/fixtures/ratchet-baseline.json` `FREEZE`. Growth fails; a shrink fails until the baseline is
 lowered in the same change, so freed room is never re-spent. The same file bans the quadratic

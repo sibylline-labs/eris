@@ -14,7 +14,10 @@
  *   - colour never depends on the developer's terminal (NO_COLOR set,
  *     FORCE_COLOR / CLICOLOR_FORCE removed).
  *   - nothing reaches a developer's real Yaks endpoint: ERIS_YAKS_URL and
- *     ERIS_YAKS_TOKEN are removed.
+ *     ERIS_YAKS_TOKEN are removed, and every https request goes to a dead
+ *     loopback proxy, so a URL-less command that falls back to the built-in
+ *     default fails to connect instead of reaching it. A test that means to
+ *     observe https traffic passes its own HTTPS_PROXY.
  *
  * `run` is ASYNC on purpose: a fixture started in-process (a `Bun.serve`
  * loopback) answers on this process's event loop, which a spawnSync would
@@ -124,7 +127,13 @@ const STRIP_ENV = [
   // A developer's own Yaks credentials: a sandboxed `eris yak` must never file a real report.
   "ERIS_YAKS_URL",
   "ERIS_YAKS_TOKEN",
+  // The dead proxy below must apply to every https host.
+  "NO_PROXY",
+  "no_proxy",
+  "https_proxy",
 ];
+/** Port 9 (discard) on loopback: nothing listens, so a CONNECT is refused at once. */
+const DEAD_PROXY = "http://127.0.0.1:9";
 
 export function sandbox(prefix = "eris-bb-"): Sandbox {
   // `.env` is created at 0666 & ~umask: pin it so a mode is a fact of the test.
@@ -142,6 +151,7 @@ export function sandbox(prefix = "eris-bb-"): Sandbox {
   env.HOME = home;
   env.TMPDIR = tmp;
   env.NO_COLOR = "1";
+  env.HTTPS_PROXY = DEAD_PROXY;
   if (ERIS_BIN !== null) env.ERIS_CACHE_DIR = ORACLE_CACHE;
 
   const sb: Sandbox = {
@@ -239,9 +249,10 @@ function report(r: Run, why: string): string {
  * The whole OUTPUT-CONTRACT §4 grammar in one assertion: exactly one `ERROR `
  * line, exactly one `slug: ` line carrying <slug>, exactly two `docs: ` lines
  * (local, then GitHub), order ERROR < slug < every fix < docs, the prefixes
- * INCLUDING their single trailing space, exit 1, and nothing on stdout.
+ * INCLUDING their single trailing space, exit 1, and nothing on stdout. The
+ * GitHub line is under `docsBase`: core's, unless a distribution ran.
  */
-export function expectFailBlock(r: Run, slug: string): void {
+export function expectFailBlock(r: Run, slug: string, docsBase = "https://github.com/sibylline-labs/eris/blob/main"): void {
   const lines = r.stderr.split("\n");
   const idx = (p: string) => lines.map((l, i) => (l.startsWith(p) ? i : -1)).filter((i) => i >= 0);
   const errs = idx("ERROR ");
@@ -259,7 +270,7 @@ export function expectFailBlock(r: Run, slug: string): void {
     const lastFix = fixes.at(-1);
     if (lastFix !== undefined && !(slugs[0]! < lastFix && lastFix < docs[0]!)) problems.push("fix: lines must sit between slug: and docs:");
   }
-  if (!lines.some((l) => l.startsWith("docs: https://github.com/sibylline-labs/eris/blob/main/"))) problems.push("expected the GitHub docs: line");
+  if (!lines.some((l) => l.startsWith(`docs: ${docsBase}/`))) problems.push("expected the GitHub docs: line");
   if (r.status !== 1) problems.push(`expected exit 1, got ${r.status}`);
   if (r.stdoutBytes.length !== 0) problems.push("expected empty stdout");
   expect(problems, report(r, problems.join("; "))).toEqual([]);

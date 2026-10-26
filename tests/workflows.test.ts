@@ -40,7 +40,7 @@ describe.skipIf(checkoutOnly("reads the checkout's workflow files"))("the workfl
   it("find the workflows they police", () => {
     /** When the directory or parser stops yielding workflows, every check below passes having read nothing. */
     expect(files).toEqual(expect.arrayContaining(["ci.yml", "release.yml"]));
-    expect(Object.keys(parsed("release.yml").jobs)).toEqual(["plan", "build", "publish", "tap", "npm"]);
+    expect(Object.keys(parsed("release.yml").jobs)).toEqual(["plan", "build", "publish", "npm"]);
   });
 
   it.each(files)("%s pins every action to a full commit SHA", (f) => {
@@ -56,7 +56,7 @@ describe.skipIf(checkoutOnly("reads the checkout's workflow files"))("the workfl
   });
 
   it("only the publish job can write contents, and only the npm job can mint an OIDC token", () => {
-    /** When a build or tap job gains write access, code it runs (the test suite, the render script) can alter releases or the repository; when a job other than npm holds `id-token: write`, code it runs can exchange the job's OIDC token for an npm publish token. */
+    /** When a build job gains write access, code it runs (the test suite) can alter releases or the repository; when a job other than npm holds `id-token: write`, code it runs can exchange the job's OIDC token for an npm publish token. */
     const writers = Object.entries(parsed("release.yml").jobs).flatMap(([name, job]) => (job.permissions === undefined ? [] : [[name, job.permissions] as const]));
     const writes = (p: Record<string, string>) => Object.fromEntries(Object.entries(p).filter(([, v]) => v === "write"));
     expect(writers.filter(([, p]) => Object.values(p).includes("write")).map(([name, p]) => [name, writes(p)])).toEqual([
@@ -67,32 +67,15 @@ describe.skipIf(checkoutOnly("reads the checkout's workflow files"))("the workfl
     expect(writers.flatMap(([, p]) => Object.values(p)).every((v) => v === "read" || v === "write")).toBe(true);
   });
 
-  it("no workflow reads a secret but the tap job, and it only its own token", () => {
-    /** When a secret is read outside the job meant to hold it, repo code that runs in other jobs (the suite, a build) can reach it; when the npm job reads one, a long-lived publish token is back in the pipeline that trusted publishing removed. ci.yml reads none. */
+  it("no workflow reads a secret", () => {
+    /** When a job reads a secret, repo code that runs in it (the suite, a build) can reach it; when the npm job reads one, a long-lived publish token is back in the pipeline that trusted publishing removed. ci.yml reads none. */
     const reads = (f: string, job: string) => [...JSON.stringify(parsed(f).jobs[job]).matchAll(/secrets\.(\w+)/g)].map((m) => m[1]);
-    expect(Object.keys(parsed("ci.yml").jobs).flatMap((j) => reads("ci.yml", j))).toEqual([]);
-    for (const job of ["plan", "build", "publish", "npm"]) expect({ job, secrets: reads("release.yml", job) }).toEqual({ job, secrets: [] });
-    expect(new Set(reads("release.yml", "tap"))).toEqual(new Set(["TAP_PUSH_TOKEN"]));
+    for (const f of ["ci.yml", "release.yml"]) for (const job of Object.keys(parsed(f).jobs)) expect({ f, job, secrets: reads(f, job) }).toEqual({ f, job, secrets: [] });
   });
 
-  it("the tap job is gated on the token through env, never through an if on secrets", () => {
-    /** When an `if` names `secrets`, GitHub rejects the whole workflow, so no release can be cut; when the gate is missing, a release without the tap token fails red after it published. */
+  it("no if names secrets: a job gates on a token through env", () => {
+    /** When an `if` names `secrets`, GitHub rejects the whole workflow, so no release can be cut. */
     for (const f of files) for (const job of Object.values(parsed(f).jobs)) for (const cond of [job.if, ...job.steps.map((s) => s.if)]) expect(cond ?? "").not.toContain("secrets.");
-    const tap = parsed("release.yml").jobs.tap!;
-    expect(tap.env?.HAVE_TAP).toBe("${{ secrets.TAP_PUSH_TOKEN != '' }}");
-    const gated = tap.steps.filter((s) => s.if?.includes("HAVE_TAP"));
-    expect(gated.length).toBe(tap.steps.length);
-  });
-
-  it("the tap job runs repo code before the tap token is on disk, and none after", () => {
-    /** When the render script runs after the tap checkout, repo code at the release commit runs with the tap token in the workspace's git config. */
-    const steps = parsed("release.yml").jobs.tap!.steps;
-    const tapCheckout = steps.findIndex((s) => s.with?.token !== undefined);
-    const render = steps.findIndex((s) => s.run?.includes("render-formula.ts"));
-    expect(tapCheckout).toBeGreaterThan(-1);
-    expect(render).toBeGreaterThan(-1);
-    expect(render).toBeLessThan(tapCheckout);
-    expect(steps.slice(tapCheckout + 1).some((s) => /\bbun\b/.test(s.run ?? ""))).toBe(false);
   });
 
   describe("the npm job", () => {
@@ -144,14 +127,14 @@ describe.skipIf(checkoutOnly("reads the checkout's workflow files"))("the releas
     "v0.2.0", "v10.20.30", "v0.3.0-rc.1", "v1.0.0-alpha-1", "v1.0.0-0.3.7", "v999999999.0.0",
     "0.2.0", "v0.2", "v0.2.0.1", "v0.2.0-", "v0.2.0-rc.", "v0.2.0-rc..1", "v0.2.0-.rc", "v1000000000.0.0", "v0.2.0+build", "v0.2.0-rc_1", "dev",
   ];
-  it("is one grammar: the release job's check, the formula renderer and eris update's parser agree on every tag", async () => {
-    /** When the release job accepts a tag eris update cannot order (an empty prerelease identifier, a ten-digit number), that release publishes and every binary reads its version as not-a-version and offers it as an update forever — observed by running the job's regex, the renderer's and the parser on one table. */
+  it("is one grammar: the release job's check, RELEASE_TAG and the release eris update's parser agree on every tag", async () => {
+    /** When the release job accepts a tag eris update cannot order (an empty prerelease identifier, a ten-digit number), that release publishes and every binary reads its version as not-a-version and offers it as an update forever — observed by running the job's regex, RELEASE_TAG and the parser on one table. */
     const { compareVersions, RELEASE_TAG } = await import("../src/cli/commands/update/semver");
     const step = parsed("release.yml").jobs.plan!.steps.find((s) => s.run?.includes("=~"))!;
     const workflow = new RegExp(/=~ (\^.*\$) \]\]/.exec(step.run!)![1]!);
     for (const tag of TAGS) {
       const parsedByUpdate = tag.startsWith("v") && compareVersions(tag, tag) !== null;
-      expect({ tag, workflow: workflow.test(tag), renderer: RELEASE_TAG.test(tag) }).toEqual({ tag, workflow: parsedByUpdate, renderer: parsedByUpdate });
+      expect({ tag, workflow: workflow.test(tag), releaseTag: RELEASE_TAG.test(tag) }).toEqual({ tag, workflow: parsedByUpdate, releaseTag: parsedByUpdate });
     }
   });
 });

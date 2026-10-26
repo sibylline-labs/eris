@@ -1,16 +1,15 @@
 name: release
 
 # Compiles eris into one executable per target, runs the black-box oracle against
-# each, publishes both binaries and a SHA256SUMS to a GitHub release, then updates
-# the Homebrew formula in the tap. install.sh, `eris update` and the formula all
-# read that release: `eris-<os>-<arch>` and SHA256SUMS, one `<sha256>  <name>`
-# line per binary. It also publishes the npm package, @sibylline-labs/eris, from the
-# same commit and under the same tag.
+# each, and publishes both binaries and a SHA256SUMS to a GitHub release:
+# `eris-<os>-<arch>` and SHA256SUMS, one `<sha256>  <name>` line per binary. Then it
+# publishes the npm package, @sibylline-labs/eris, from the same commit and under the
+# same tag. npm is how eris is installed (docs/UPDATE.md); the release is the record
+# the npm job waits on.
 #
 # Triggers:
 #   - push of a tag `v*`: releases that tag. A tag with a hyphen (v0.3.0-rc.1) is a
-#     pre-release, which `releases/latest`, install.sh and `eris update` skip, and
-#     which the tap does not follow.
+#     pre-release, which `releases/latest` skips and npm publishes under `next`.
 #   - workflow_dispatch (`tag`, `prerelease`): builds the dispatched ref and creates
 #     or updates the release for `tag`, creating the tag at that commit when it does
 #     not exist yet. A tag that already exists must be at that commit, or the `plan`
@@ -19,10 +18,9 @@ name: release
 #
 # Each target builds NATIVELY on its own runner: a bun compile targets its host.
 #
-# Secrets: none, except TAP_PUSH_TOKEN, read by the tap job alone. Without it the
-# release is published and the tap is left as it was. The npm job holds no token: it
-# publishes through npm trusted publishing, exchanging the job's GitHub OIDC token
-# (`id-token: write`) for a short-lived one bound to this repository and this file.
+# Secrets: none. The npm job holds no token: it publishes through npm trusted
+# publishing, exchanging the job's GitHub OIDC token (`id-token: write`) for a
+# short-lived one bound to this repository and this file.
 
 on:
   push:
@@ -83,8 +81,8 @@ jobs:
             tag="$REF_NAME"
             if [[ "$tag" == *-* ]]; then pre=true; else pre=false; fi
           fi
-          # The grammar `eris update` orders releases by (RELEASE_TAG in
-          # src/cli/commands/update/semver.ts), and the formula's version comes from.
+          # The grammar the release `eris update` orders releases by (RELEASE_TAG in
+          # src/cli/commands/update/semver.ts), and npm's version comes from.
           if ! [[ "$tag" =~ ^v[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
             echo "::error title=Bad release tag::'$tag' must look like v0.2.0 or v0.3.0-rc.1"
             exit 1
@@ -162,8 +160,8 @@ jobs:
           ERIS_BIN: ${{ steps.build.outputs.bin }}
         run: bun test ./tests
 
-      # The tag is the version the binary reports: `eris update` compares it with
-      # the next release's tag, and the formula's test matches it.
+      # The tag is the version the binary reports: a distribution's release
+      # `eris update` compares it with the next release's tag.
       - name: The binary reports its tag
         env:
           ERIS_BIN: ${{ steps.build.outputs.bin }}
@@ -201,7 +199,7 @@ jobs:
           merge-multiple: true
           path: assets
 
-      # install.sh, `eris update` and the formula read this file: one line per
+      # A distribution's release `eris update` reads this file: one line per
       # binary, `<sha256>  eris-<os>-<arch>`, bare names, so `sha256sum -c` works
       # beside them.
       - name: SHA256SUMS
@@ -224,76 +222,6 @@ jobs:
             gh release create "$TAG" "${files[@]}" --target "$GITHUB_SHA" --title "$TAG" --generate-notes --prerelease="$PRERELEASE"
           fi
           gh release view "$TAG" --json tagName,isPrerelease,assets --jq '{tagName, isPrerelease, assets: [.assets[].name]}'
-
-  # ---------------------------------------------------------------------------
-  # The Homebrew formula, rendered from the published SHA256SUMS and pushed to the
-  # tap. It runs only for a stable release, and only when TAP_PUSH_TOKEN (a token
-  # that can push to the tap repository and nothing else) is set: the `secrets`
-  # context is not available to an `if`, so the job reads it into `env` first and
-  # each step tests that.
-  tap:
-    name: tap (Homebrew formula)
-    needs: [plan, publish]
-    if: needs.plan.outputs.prerelease == 'false'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    concurrency:
-      group: tap-formula
-      cancel-in-progress: false
-    env:
-      HAVE_TAP: ${{ secrets.TAP_PUSH_TOKEN != '' }}
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      TAG: ${{ needs.plan.outputs.tag }}
-    steps:
-      - name: The tap token is not set
-        if: env.HAVE_TAP != 'true'
-        run: echo "::notice title=Homebrew tap not updated::TAP_PUSH_TOKEN is not set, so Formula/eris.rb was left as it was."
-
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        if: env.HAVE_TAP == 'true'
-        with:
-          persist-credentials: false
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        if: env.HAVE_TAP == 'true'
-        with:
-          bun-version-file: .bun-version
-
-      # Repo code (the render script) runs here, before the tap token is on disk.
-      - name: Render the formula
-        if: env.HAVE_TAP == 'true'
-        run: |
-          gh release download "$TAG" --pattern SHA256SUMS --dir sums
-          bun scripts/render-formula.ts --tag "$TAG" --sums sums/SHA256SUMS --repo "$GITHUB_REPOSITORY" --out eris.rb
-          cat eris.rb
-
-      # The tap's own checkout keeps the token, which is what lets it push. Nothing
-      # from this repository runs after it.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        if: env.HAVE_TAP == 'true'
-        with:
-          repository: ${{ github.repository_owner }}/homebrew-tap
-          token: ${{ secrets.TAP_PUSH_TOKEN }}
-          path: tap
-
-      - name: Commit and push
-        if: env.HAVE_TAP == 'true'
-        working-directory: tap
-        run: |
-          mkdir -p Formula
-          cp ../eris.rb Formula/eris.rb
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/eris.rb
-          if git diff --cached --quiet; then
-            echo "Formula/eris.rb is already at $TAG"
-            exit 0
-          fi
-          git commit -m "eris $TAG"
-          git pull --rebase
-          git push
 
   # ---------------------------------------------------------------------------
   # The npm package, @sibylline-labs/eris: this commit's source with the tag's version,

@@ -111,7 +111,7 @@ describe.skipIf(checkoutOnly("the eris shim; a binary has none"))("shim → rout
       {
         slug: "eris-bun-missing",
         what: "bun is not on PATH — eris routes every command through bun (src/main.ts)",
-        fix: `install bun (https://bun.sh), then run ./install.sh --checkout in ${REPO}`,
+        fix: `install bun (https://bun.sh), then run bun install --frozen-lockfile in ${REPO}`,
       },
       REPO,
     );

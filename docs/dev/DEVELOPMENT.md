@@ -6,26 +6,25 @@ it, and the conventions every change follows.
 Companion guides: [TESTING.md](TESTING.md) (the `bun test` suite),
 [ADDING-A-COMMAND.md](ADDING-A-COMMAND.md) (a new subcommand or group, end to end)
 [PLUGINS.md](PLUGINS.md) (a verb group as a build-time plugin) and
-[RELEASING.md](RELEASING.md) (cutting a release: the tag, the workflow, the Homebrew tap).
+[RELEASING.md](RELEASING.md) (cutting a release: the tag, the workflow, npm).
 
 ## Setup
 
 ```bash
 git clone https://github.com/sibylline-labs/eris && cd eris
-./install.sh --checkout   # bun install --frozen-lockfile, writes ~/.local/bin/eris
+bun install --frozen-lockfile
+./eris --help
 ```
 
-A bare `./install.sh` installs the release binary instead (`curl` from the GitHub
-releases, a SHA256SUMS check, `~/.local/bin/eris`). For development you want `--checkout`: the
-installed `eris` is then a thin `exec` wrapper around the repo copy, so the working
-tree is live. There is no build step for the checkout. The gates:
+`./eris` runs the working tree as it stands; put the checkout on your `PATH` to call it as
+`eris`. There is no build step for the checkout. The gates:
 
 ```bash
 bunx tsc --noEmit
 bun test ./tests
 ast-grep scan                          # rules/ over eris's own source
 ast-grep test --skip-snapshot-tests    # the rules' own cases, rule-tests/
-shellcheck -s sh -S warning eris install.sh
+shellcheck -s sh -S warning eris
 bun scripts/build.ts && ERIS_BIN=dist/eris-<os>-<arch> bun test ./tests
 ```
 

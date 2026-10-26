@@ -11,7 +11,6 @@ bin/eris.ts             # the package's `eris` command (package.json `bin`, for 
                         #   (eris-verbose-fetch-set), then runs src/main.ts's runProgram; tests/bin.test.ts
 package.json            # @sibylline-labs/eris: `bin`, `exports`, and `files`, the allow-list of what the npm
                         #   tarball holds (tests/package.test.ts reads `npm pack --dry-run`)
-install.sh              # POSIX sh: downloads + verifies the release binary into ~/.local/bin/eris; --checkout: bun install --frozen-lockfile + a wrapper around the checkout
 src/                    # The TS program the shim and the bin run
 ├── main.ts             #   the entry: composes core with the build's plugins (CLI), HANDLERS, main, runProgram
 ├── sdk.ts              #   `eris/sdk`, the one module through which another repository reaches core (package.json exports):
@@ -31,8 +30,10 @@ src/                    # The TS program the shim and the bin run
 │                       #   composed registry; it imports the registry only, because every shell start
 │                       #   runs it; domain.ts checks a row's completion domains), usage.ts (the
 │                       #   top-level usage: bare eris, -h, --help), version.ts (--version),
-│                       #   update.ts + update/ (eris update: github.ts the releases API and the
-│                       #   download, replace.ts the staged rename and its restore, semver.ts)
+│                       #   update.ts (eris update: prints the npm commands), update/ (RELEASE_UPDATE,
+│                       #   the in-place verb a distribution opts into: opt-in.ts the row and thunk,
+│                       #   release.ts the verb, github.ts the releases API and the download,
+│                       #   replace.ts the staged rename and its restore, semver.ts)
 └── runtime/            #   logging, process (the one spawn adapter), settings (~/.eris/settings.json),
                         #   env (readEnv), home (the install root: the checkout, a distribution's own root
                         #   when its entry names one, or a compiled binary's
@@ -41,7 +42,8 @@ ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN li
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
 plugins/yak/            # `eris yak` as a plugin: index.ts (the manifest: rows + handler thunks), handlers.ts
-                        #   (the dispatcher), yak.ts (the core), yak-{identity,context,redact,submit}.ts,
+                        #   (the dispatcher), yak.ts (the core), yak-{identity,context,redact,submit}.ts
+                        #   (yak-redact.ts imports nothing; package.json exports it as `eris/yak-redact`),
                         #   login.ts (`eris login`/`logout`, the device-code client), yak-setup.ts (mints the bearer; docs/YAK.md); the wire contract is packages/yak-contract, imported by name
 packages/yak-contract/  # the Yaks wire contract v2, a bun workspace package that builds standalone;
                         #   `eris/yak-contract` (package.json exports) is its src/index.ts.
@@ -57,8 +59,7 @@ testing/                # `eris/sdk/testing` (package.json exports): the test he
                         #   child bun, from a module exporting BUILD). Outside src/, so no binary carries it
 scripts/build.ts        # `bun scripts/build.ts` → dist/eris-<os>-<arch> (gitignored): this repo's binary,
                         #   through src/build.ts; exports its options as BUILD
-scripts/render-formula.ts  # the Homebrew formula for a release, from packaging/homebrew/eris.rb.tmpl
-.github/workflows/      # ci.yml (the PR gates, the npm tarball's install-and-run included) · release.yml (tag → build, oracle, publish, tap, npm)
+.github/workflows/      # ci.yml (the PR gates, the npm tarball's install-and-run included) · release.yml (tag → build, oracle, publish, npm)
 sgconfig.yml            # the code-quality rules over eris's OWN source (ruleDirs: rules; cases in rule-tests/):
 rules/                  #   adhoc-argv-parse (one argv parser), env-read-own-property(-plugin) (env names
 rule-tests/             #   are read through readEnv), plugin-manifest-lazy-handlers + plugin-imports-sdk-only
@@ -69,6 +70,5 @@ tests/                  # `bun test ./tests` — the whole suite. helpers/blackb
                         #   `./eris` in a physical per-test sandbox (PATH fakes, hideReal); helpers/plugins/
                         #   holds a tripwire plugin; helpers/release-fixture.ts is GitHub's releases API
                         #   on loopback, for eris update
-packaging/homebrew/     # eris.rb.tmpl, the formula the release workflow renders into the tap
 docs/                   # ARCHITECTURE.md, OUTPUT-CONTRACT.md, ERRORS.md, the verb docs, dev/
 ```

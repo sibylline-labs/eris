@@ -1,0 +1,22 @@
+id: yaks-url-single-resolver
+valid:
+  # The resolver, with the flag as its third argument.
+  - |
+    const url = resolveUrl(file, env, flags["--url"]);
+  # Prose naming the variable is not a read.
+  - |
+    fail("no Yaks URL: pass --url <url> or set ERIS_YAKS_URL");
+  # Another variable.
+  - |
+    const token = env.ERIS_YAKS_TOKEN;
+invalid:
+  - |
+    const url = p.flags["--url"] ?? env.ERIS_YAKS_URL;
+  - |
+    const url = process.env.ERIS_YAKS_URL;
+  - |
+    const url = ctx.env["ERIS_YAKS_URL"];
+  - |
+    const url = readEnv(ctx.env, "ERIS_YAKS_URL");
+  - |
+    const { ERIS_YAKS_URL } = env;

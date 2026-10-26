@@ -11,12 +11,11 @@ contract v2).
 
 ```bash
 bun install --frozen-lockfile        # deps (needed in a fresh clone or worktree)
-./install.sh --checkout              # dev install: deps + a ~/.local/bin/eris wrapper around this checkout
 bunx tsc --noEmit                    # typecheck
 bun test ./tests                     # the suite
 ast-grep scan                        # rules/ over the source, error severity
 ast-grep test --skip-snapshot-tests  # the rules' own cases, rule-tests/
-shellcheck -s sh -S warning eris install.sh
+shellcheck -s sh -S warning eris
 bun scripts/build.ts                 # compiled binary -> dist/eris-<os>-<arch>
 ERIS_BIN=dist/eris-<os>-<arch> bun test ./tests   # the same suite against the binary
 bun scripts/scrub-check.ts --history # no private references in the tree or any reachable commit
@@ -44,8 +43,7 @@ on PATH (`tests/required-tools.txt`).
   hold this.
 - **Read an env var by a computed name only through `readEnv`.** `env[name]` resolves
   `__proto__` and `constructor` to inherited values. The `env-read-own-property` rule holds this.
-- **The shell surface is frozen.** New logic goes to TypeScript, never into the shim or
-  `install.sh`. `tests/source-is-text.test.ts` ratchets that surface down-only against
+- **The shell surface is frozen.** New logic goes to TypeScript, never into the shim. `tests/source-is-text.test.ts` ratchets that surface down-only against
   `tests/fixtures/ratchet-baseline.json`: growth fails, and a shrink fails until you lower the
   baseline in the same change.
 - **Never background a process to draw UI, and never fan out unbounded.** An orphan holding a

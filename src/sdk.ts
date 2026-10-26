@@ -4,15 +4,19 @@
  * (docs/dev/PLUGINS.md#distributions). The package's `exports` map names it,
  * `eris/sdk/testing` (the test helpers, testing/, which this module does not
  * export, so no binary carries them), `eris/yak-contract` (the Yaks wire
- * contract, a workspace package of its own rather than core) and nothing
- * deeper, so a core file can move without breaking a distribution.
+ * contract, a workspace package of its own rather than core), `eris/yak-redact`
+ * (the client's redaction pass, plugins/yak/yak-redact.ts, which imports
+ * nothing) and nothing deeper, so a core file can move without breaking a
+ * distribution.
  *
  * What it carries:
  *
  *   - the plugin SDK (src/cli/plugin.ts): `definePlugin`, `readArgs`,
  *     `groupArgs` (over a plugin's own rows), `readEnv`, the failure block;
  *   - composition: core's rows (`REGISTRY`) and handlers (`HANDLERS`), this
- *     build's plugin list (`PLUGINS`), `composeCli` and its `menu` option;
+ *     build's plugin list (`PLUGINS`), `composeCli` and its `menu` option, and
+ *     `RELEASE_UPDATE`, the in-place `eris update` a distribution that
+ *     publishes binaries composes in place of core's;
  *   - the program: `runProgram({ cli })`, a distribution's process entry, and
  *     `main`, the seam a test drives;
  *   - argv and output helpers a handler shares with core's verbs, the global
@@ -37,6 +41,7 @@ export type { ArgError, SubOf } from "./cli/args";
 export { argErrorWhat, GlobalFlagError, parseGlobal, readVerbArgs, refuseArg, usageLine } from "./cli/args";
 export { sanitizeDisplay } from "./cli/output";
 export { onPath } from "./cli/ts-verb";
+export { RELEASE_UPDATE } from "./cli/commands/update/opt-in";
 export type { Cli, ComposeOptions, Session } from "./cli/compose";
 export { composeCli, NO_ENTITLEMENTS, PluginCompositionError } from "./cli/compose";
 export type { MainOptions, ProgramOptions } from "./main";

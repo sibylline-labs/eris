@@ -1597,8 +1597,8 @@ describe("toOutputRecord", () => {
   it("warn with no idempotency_key (raised before a payload was ever built): the field is absent, not null", () => {
     const record = toOutputRecord("suggest", {
       status: "warn",
-      slug: "yak-url-unresolved",
-      reason: "no url",
+      slug: "yak-unreachable",
+      reason: "cannot reach yaks endpoint",
     });
     expect(record).not.toHaveProperty("id");
     expect("idempotency_key" in record).toBe(false);

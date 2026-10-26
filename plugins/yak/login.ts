@@ -7,9 +7,10 @@
  * opens a browser when it can), then polls `<url>/v1/device/token` until the
  * code is approved, denied or expired. The bearer it is handed goes into
  * `~/.eris/yaks.json`, the one file `eris yak` reads (./yak-identity.ts), with
- * the url beside it. The url is the one `eris yak` already uses:
- * `--url`, else `ERIS_YAKS_URL`, else the file's own `url`; there is no default
- * host.
+ * the url beside it. The url comes from `resolveUrl`, the one resolver `eris
+ * yak` also reads: `--url`, else `ERIS_YAKS_URL`, else the file's own `url`,
+ * else `DEFAULT_YAKS_URL`, so there is always an endpoint (the parser refuses
+ * an empty `--url`).
  *
  * `eris logout` removes the token from that file and keeps the url. No route
  * lets a bearer revoke itself, so the token stays valid server-side until it is
@@ -37,12 +38,11 @@
 import { hostname as osHostname } from "node:os";
 import { renderFailureBlock, renderWarnLines, readArgs, type VerbContext } from "../../src/cli/plugin";
 import plugin from "./index";
-import { readYaksFileConfig, resolveUrl, runBounded, writeYaksFileConfig, yaksConfigPath } from "./yak-identity";
+import { DEFAULT_YAKS_URL, readYaksFileConfig, resolveUrl, runBounded, writeYaksFileConfig, yaksConfigPath } from "./yak-identity";
 import { promises as fs } from "node:fs";
 
 /** The `docs/ERRORS.md` slugs this module raises (`tests/errors-doc.test.ts`). */
 export type LoginSlug =
-  | "login-url-unresolved"
   | "login-unreachable"
   | "login-refused"
   | "login-denied"
@@ -68,7 +68,7 @@ browser, and the token is written to ~/.eris/yaks.json (mode 0600), where
 'eris yak' reads it. ERIS_YAKS_TOKEN, when set, still wins over the file.
 
   --url <url>    the endpoint (default: $ERIS_YAKS_URL, then the url
-                 already in ~/.eris/yaks.json)
+                 already in ~/.eris/yaks.json, then ${DEFAULT_YAKS_URL})
   --no-browser   print the link without trying to open a browser
 `;
 
@@ -182,12 +182,7 @@ export async function runLogin(args: string[], ctx: VerbContext, deps: LoginDeps
   const file = await readYaksFileConfig(home);
   if ("reason" in file) return fail(ctx, file.slug, file.reason, `fix or remove ${yaksConfigPath(home)}, then run 'eris login' again`);
 
-  const flagUrl = a.flags["--url"];
-  const resolved = flagUrl !== undefined && flagUrl !== "" ? { value: flagUrl } : resolveUrl(file.value, ctx.env);
-  if (!("value" in resolved)) {
-    return fail(ctx, "login-url-unresolved", "no endpoint to sign in to", "pass --url <url>, or set ERIS_YAKS_URL");
-  }
-  const url = resolved.value;
+  const url = resolveUrl(file.value, ctx.env, a.flags["--url"]).value;
   const base = url.replace(/\/+$/, "");
 
   // --- start -------------------------------------------------------------------

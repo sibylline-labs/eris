@@ -209,8 +209,9 @@ flags:
   --no-redact                  skip the secret-scrub pass (loud warning)
   --help, -h                   show this message
 
-Setup: 'eris login --url <url>' writes ~/.eris/yaks.json ({"url", "token"},
-mode 0600); or export ERIS_YAKS_URL / ERIS_YAKS_TOKEN.
+Setup: 'eris login' writes ~/.eris/yaks.json ({"url", "token"}, mode 0600;
+the url defaults to https://api.sibylline.group); or export ERIS_YAKS_URL /
+ERIS_YAKS_TOKEN.
 `;
 
 // ---------------------------------------------------------------------------
@@ -392,16 +393,6 @@ export async function runYak(opts: RunYakOptions): Promise<RunYakResult> {
   }
 
   const urlOutcome = resolveUrl(fileConfig, env);
-  if (!("value" in urlOutcome)) {
-    return warnResult(
-      verb,
-      "yak-url-unresolved",
-      'no yaks URL: set ERIS_YAKS_URL or add a "url" field to ~/.eris/yaks.json',
-      jsonOutput,
-      noRedactWarning,
-      flags.noRedact,
-    );
-  }
 
   const deviceIdOutcome = await resolveDeviceId(home);
   if ("reason" in deviceIdOutcome) {

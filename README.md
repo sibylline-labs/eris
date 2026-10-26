@@ -14,60 +14,37 @@ the task that filed it.
 
 ## Install
 
+eris is published to npm as `@sibylline-labs/eris` and runs on Bun, which must be on
+PATH. npm is the only install path:
+
+```bash
+npx @sibylline-labs/eris@latest --help      # run the latest release, no install
+bunx @sibylline-labs/eris@latest --help     # the same, through bun
+bun add -g @sibylline-labs/eris@latest      # install `eris` globally
+```
+
 ### From source
 
 You need Bun (the version in `.bun-version`) and git.
 
 ```bash
 git clone https://github.com/sibylline-labs/eris && cd eris
-./install.sh --checkout     # bun install --frozen-lockfile, then a ~/.local/bin/eris wrapper around this checkout
-eris --help
+bun install --frozen-lockfile
+./eris --help
 ```
 
-`./eris` in the checkout works without the wrapper too. To build a standalone
-binary instead, run `bun install --frozen-lockfile && bun scripts/build.ts`; it
-writes `dist/eris-<os>-<arch>`, which runs without Bun.
-
-### Release binaries
-
-Each tagged release is published on
-[GitHub Releases](https://github.com/sibylline-labs/eris/releases), with
-prebuilt binaries for `darwin-arm64` and `linux-x64` and a `SHA256SUMS` file
-([docs/dev/RELEASING.md](docs/dev/RELEASING.md)). Until the first release, build
-from source as above.
-
-`install.sh` run from a clone downloads the binary for your platform, checks it
-against the release's `SHA256SUMS`, and installs it to `~/.local/bin/eris`:
-
-```bash
-./install.sh                        # the latest release
-ERIS_VERSION=<tag> ./install.sh     # a specific release
-```
-
-It needs `curl`, plus `shasum` on macOS or `sha256sum` on Linux. On a platform with
-no release binary it says so and stops.
-
-With Homebrew:
-
-```bash
-brew install sibylline-labs/tap/eris
-```
+Put the checkout on your `PATH` to run it as `eris`. To build a standalone binary,
+run `bun scripts/build.ts`; it writes `dist/eris-<os>-<arch>`, which runs without Bun.
 
 ### Version and updates
 
 ```bash
-eris --version                      # eris v0.2.0 (sibylline-labs/eris)
-eris update --check                 # exit 0 up to date, 10 an update is available
-eris update                         # replace this binary with the latest release
-eris update --to v0.2.1             # a specific release, a pre-release or an older one
+eris --version                      # eris v0.3.0 (sibylline-labs/eris)
+eris update                         # prints the npx / bunx / bun add -g commands for the latest release
 ```
 
-`eris update` checks the download against the release's `SHA256SUMS`, runs the new
-binary once before dropping the old one, and puts the old one back if it does not
-answer. It refuses a source checkout (`git pull` instead) and a copy Homebrew
-installed (`brew upgrade eris`). For a private repository, or to avoid GitHub's
-anonymous rate limit, set `GH_TOKEN`. [docs/UPDATE.md](docs/UPDATE.md) has the
-exit codes, the JSON record and the refusals.
+`eris update` changes nothing: the package manager that installed eris updates it.
+[docs/UPDATE.md](docs/UPDATE.md) has the details.
 
 ## Quickstart
 
@@ -79,22 +56,24 @@ eris yak --help
 
 ### Filing a yak
 
-`eris yak` has no default endpoint. Configure one with environment variables:
+Sign in once with a device code. `eris login` shows a code to approve in the
+browser and writes the token to `~/.eris/yaks.json` (mode `0600`):
+
+```bash
+eris login
+```
+
+That signs in to `https://api.sibylline.group`. For another endpoint, pass
+`--url`, or configure it with environment variables:
 
 ```bash
 export ERIS_YAKS_URL=https://yaks.example.com     # your Yaks endpoint
 export ERIS_YAKS_TOKEN=<bearer token>
 ```
 
-Or sign in with a device code, if your endpoint offers one. `eris login` shows a
-code to approve in the browser and writes the token to `~/.eris/yaks.json`:
-
-```bash
-eris login --url https://yaks.example.com
-```
-
-Or, from a checkout, mint a bearer into `~/.eris/yaks.json` (mode `0600`). The
-script prints the entry your endpoint's operator needs to register:
+Or, for a self-hosted endpoint without device login, mint a bearer into
+`~/.eris/yaks.json` from a checkout. The script prints the entry your endpoint's
+operator needs to register:
 
 ```bash
 bun plugins/yak/yak-setup.ts --url https://yaks.example.com
@@ -103,7 +82,7 @@ bun plugins/yak/yak-setup.ts --url https://yaks.example.com
 Then file reports:
 
 ```bash
-eris yak issue   --summary "install.sh fails on Alpine" --body "sha256sum is missing from busybox"
+eris yak issue   --summary "completion fails on Alpine" --body "busybox sh lacks compgen"
 eris yak suggest --summary "a --dry-run for completion" --body-file notes.md
 eris yak fatal   --summary "eris exits before any verb runs" --body-file - < log.txt
 eris yak issue   --summary "…" --body "…" --repro "bun test tests/foo.test.ts" --repo acme/widgets
@@ -147,6 +126,10 @@ consumers in other languages. A repository that depends on this one (a git
 dependency pinned to a merge commit on `main`) imports the TypeScript contract
 as `eris/yak-contract`. The `eris yak` client in this build imports it and
 posts contract v2 submissions.
+
+The client's redaction pass, [`plugins/yak/yak-redact.ts`](plugins/yak/yak-redact.ts), is
+exported as `eris/yak-redact` (`redact`, `redactDeep`), so a server that redacts a submission
+before it commits runs the same rules. The module imports nothing.
 
 ## Documentation
 

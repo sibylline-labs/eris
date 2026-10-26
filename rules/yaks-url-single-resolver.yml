@@ -1,0 +1,46 @@
+# The Yaks base URL is resolved in one place, `resolveUrl` in
+# plugins/yak/yak-identity.ts: `--url`, then ERIS_YAKS_URL, then the url saved
+# in ~/.eris/yaks.json, then the built-in default. A second `flag ?? env` copy
+# skips the file or the default, so two commands disagree on where a bearer
+# goes.
+#
+# Matches a read of ERIS_YAKS_URL in any form this codebase uses: a member
+# (`env.ERIS_YAKS_URL`), a string subscript (`env["ERIS_YAKS_URL"]`), a
+# `readEnv(env, "ERIS_YAKS_URL")` call, or a destructured binding.
+id: yaks-url-single-resolver
+language: typescript
+severity: error
+message: >-
+  ERIS_YAKS_URL is read here. Resolve the Yaks URL with resolveUrl
+  (plugins/yak/yak-identity.ts), which applies --url, the variable, the
+  saved url and the default in one order.
+note: |
+  Pass a `--url` flag value as resolveUrl's third argument; the source it
+  returns says which of the four won.
+files:
+  - src/**/*.ts
+  - ts/**/*.ts
+  - plugins/**/*.ts
+ignores:
+  # The resolver itself.
+  - plugins/yak/yak-identity.ts
+rule:
+  any:
+    - kind: property_identifier
+      regex: ^ERIS_YAKS_URL$
+      inside:
+        kind: member_expression
+    - kind: shorthand_property_identifier_pattern
+      regex: ^ERIS_YAKS_URL$
+    - kind: string
+      regex: ^["'`]ERIS_YAKS_URL["'`]$
+      any:
+        - inside:
+            kind: subscript_expression
+        - inside:
+            kind: arguments
+            inside:
+              kind: call_expression
+              has:
+                field: function
+                regex: (^|\.)readEnv$
