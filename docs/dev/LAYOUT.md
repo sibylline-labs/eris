@@ -41,7 +41,8 @@ ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN li
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
 plugins/yak/            # `eris yak` as a plugin: index.ts (the manifest: rows + handler thunks), handlers.ts
-                        #   (the dispatcher), yak.ts (the core), yak-{identity,context,redact,submit}.ts,
+                        #   (the dispatcher), yak.ts (the core), yak-{identity,context,redact,submit}.ts
+                        #   (yak-redact.ts imports nothing; package.json exports it as `eris/yak-redact`),
                         #   login.ts (`eris login`/`logout`, the device-code client), yak-setup.ts (mints the bearer; docs/YAK.md); the wire contract is packages/yak-contract, imported by name
 packages/yak-contract/  # the Yaks wire contract v2, a bun workspace package that builds standalone;
                         #   `eris/yak-contract` (package.json exports) is its src/index.ts.
