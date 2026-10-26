@@ -34,7 +34,7 @@ defaults:
 jobs:
   bun:
     name: bun (typecheck + test)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -60,7 +60,7 @@ jobs:
 
   binary-oracle:
     name: binary oracle (build + bun test, ERIS_BIN)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # A hung suite never fails on its own; the timeout makes it red.
     timeout-minutes: 45
     steps:
@@ -98,7 +98,7 @@ jobs:
 
   ast-grep:
     name: ast-grep (scan + rule tests)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -120,7 +120,7 @@ jobs:
 
   shellcheck:
     name: shellcheck (-S warning, zero findings)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -142,7 +142,7 @@ jobs:
 
   scrub:
     name: scrub-check (no private references, whole history)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       # The full history: on a pull request HEAD is the merge commit, and
