@@ -20,6 +20,7 @@ interface Step {
 }
 interface Job {
   needs?: string | string[];
+  "runs-on"?: string;
   permissions?: Record<string, string>;
   if?: string;
   env?: Record<string, string>;
@@ -54,21 +55,24 @@ describe.skipIf(checkoutOnly("reads the checkout's workflow files"))("the workfl
     expect(parsed(f).permissions).toEqual({ contents: "read" });
   });
 
-  it("only the publish job can write, and only to contents", () => {
-    /** When a build or tap job gains write access, code it runs (the test suite, the render script) can alter releases or the repository. */
+  it("only the publish job can write contents, and only the npm job can mint an OIDC token", () => {
+    /** When a build or tap job gains write access, code it runs (the test suite, the render script) can alter releases or the repository; when a job other than npm holds `id-token: write`, code it runs can exchange the job's OIDC token for an npm publish token. */
     const writers = Object.entries(parsed("release.yml").jobs).flatMap(([name, job]) => (job.permissions === undefined ? [] : [[name, job.permissions] as const]));
-    expect(writers.filter(([, p]) => Object.values(p).includes("write"))).toEqual([["publish", { contents: "write" }]]);
-    // PAIRED: the other jobs that set permissions set them read-only.
-    expect(writers.filter(([name]) => name !== "publish").every(([, p]) => Object.values(p).every((v) => v === "read"))).toBe(true);
+    const writes = (p: Record<string, string>) => Object.fromEntries(Object.entries(p).filter(([, v]) => v === "write"));
+    expect(writers.filter(([, p]) => Object.values(p).includes("write")).map(([name, p]) => [name, writes(p)])).toEqual([
+      ["publish", { contents: "write" }],
+      ["npm", { "id-token": "write" }],
+    ]);
+    // PAIRED: every scope not listed above is read-only.
+    expect(writers.flatMap(([, p]) => Object.values(p)).every((v) => v === "read" || v === "write")).toBe(true);
   });
 
-  it("no workflow reads a secret but the tap and npm jobs, each only its own token", () => {
-    /** When a secret is read outside the job meant to hold it, repo code that runs in other jobs (the suite, a build) can reach it; when one job reads the other's token, a compromised publish step can push to the tap, or a tap step can publish the package. ci.yml reads none. */
+  it("no workflow reads a secret but the tap job, and it only its own token", () => {
+    /** When a secret is read outside the job meant to hold it, repo code that runs in other jobs (the suite, a build) can reach it; when the npm job reads one, a long-lived publish token is back in the pipeline that trusted publishing removed. ci.yml reads none. */
     const reads = (f: string, job: string) => [...JSON.stringify(parsed(f).jobs[job]).matchAll(/secrets\.(\w+)/g)].map((m) => m[1]);
     expect(Object.keys(parsed("ci.yml").jobs).flatMap((j) => reads("ci.yml", j))).toEqual([]);
-    for (const job of ["plan", "build", "publish"]) expect({ job, secrets: reads("release.yml", job) }).toEqual({ job, secrets: [] });
+    for (const job of ["plan", "build", "publish", "npm"]) expect({ job, secrets: reads("release.yml", job) }).toEqual({ job, secrets: [] });
     expect(new Set(reads("release.yml", "tap"))).toEqual(new Set(["TAP_PUSH_TOKEN"]));
-    expect(new Set(reads("release.yml", "npm"))).toEqual(new Set(["NPM_TOKEN"]));
   });
 
   it("the tap job is gated on the token through env, never through an if on secrets", () => {
@@ -94,37 +98,43 @@ describe.skipIf(checkoutOnly("reads the checkout's workflow files"))("the workfl
   describe("the npm job", () => {
     const npm = () => parsed("release.yml").jobs.npm!;
 
-    it("waits for the build, its oracle and the GitHub release, and holds only read access", () => {
-      /** When the npm job stops waiting for the build job, a red oracle leg still publishes the package; when it stops waiting for the publish job, npm carries a tag whose GitHub release failed; when it gains write access, the code it runs can alter the repository. */
+    it("waits for the build, its oracle and the GitHub release", () => {
+      /** When the npm job stops waiting for the build job, a red oracle leg still publishes the package; when it stops waiting for the publish job, npm carries a tag whose GitHub release failed. */
       expect([npm().needs].flat().sort()).toEqual(["build", "plan", "publish"]);
-      expect(npm().permissions).toEqual({ contents: "read" });
     });
 
-    it("is gated on the token through env, and the token is on disk only for the last step, which runs no repo code", () => {
-      /** When the token is exported job-wide, the checkout and the dry run hold it; when a step follows the one that holds it, repo-controlled code runs with the token on disk; when the publish runs lifecycle scripts, a prepublish script at the release commit runs with it — observed in the parsed job. */
-      const { env, steps } = npm();
-      expect(env?.HAVE_NPM).toBe("${{ secrets.NPM_TOKEN != '' }}");
-      // The job's own env reaches every step, so the secret may appear there only inside the presence test.
-      expect(Object.entries(env ?? {}).filter(([, v]) => v.includes("secrets.NPM_TOKEN")).map(([k]) => k)).toEqual(["HAVE_NPM"]);
-      const holders = steps.flatMap((s, i) => (JSON.stringify(s).includes("secrets.NPM_TOKEN") ? [i] : []));
-      expect(holders).toEqual([steps.length - 1]);
-      const last = steps.at(-1)!;
-      expect(last.if).toBe("env.HAVE_NPM == 'true'");
-      expect(last.run).toContain("npm publish");
-      expect(last.run).toContain("--ignore-scripts");
-      expect(/\b(bun|node|npx)\b/.test(last.run ?? "")).toBe(false);
+    it("publishes through trusted publishing: an OIDC token, on a GitHub-hosted runner, and no npm token anywhere", () => {
+      /** When `id-token: write` goes, npm has no credential and the publish fails ENEEDAUTH; when the job moves to a self-hosted runner (Blacksmith), npm refuses the OIDC exchange; when a step writes an authToken .npmrc (setup-node's registry-url) or reads NODE_AUTH_TOKEN, a token path that outlives the run is back — observed in the parsed job. */
+      const job = npm();
+      expect(job.permissions).toEqual({ contents: "read", "id-token": "write" });
+      expect(job["runs-on"]).toMatch(/^(ubuntu|macos|windows)-[\w.-]+$/);
+      const all = JSON.stringify(job);
+      for (const banned of ["NPM_TOKEN", "NODE_AUTH_TOKEN", "_authToken", "registry-url", "--userconfig"]) expect({ banned, found: all.includes(banned) }).toEqual({ banned, found: false });
+      const publish = job.steps.filter((s) => /\bnpm publish\b(?!.*--dry-run)/.test(s.run ?? ""));
+      expect(publish.length).toBe(1);
+      expect(publish[0]!.run).toContain("--access public");
+      const setupNode = job.steps.find((s) => s.uses?.startsWith("actions/setup-node@"));
+      // Every Node 22 bundles npm 10, below the 11.5.1 trusted publishing needs.
+      expect(setupNode?.with?.["node-version"]).toBe("24");
     });
 
-    it("fails red without the token, after checking the tarball, rather than passing having published nothing", () => {
-      /** When a release is cut without NPM_TOKEN and the job ends green, the version never reaches the registry and nothing says so (a tag is not re-run on its own); when the dry run is missing, the missing-token run proves nothing about the package. */
+    it("runs no repository code in any step, since the OIDC token reaches them all", () => {
+      /** When a step runs bun, node, npx, or an npm command without --ignore-scripts, code at the release commit (a lifecycle script, a test) runs in a job that can mint an npm publish token — observed in the parsed job. */
+      const runs = npm().steps.flatMap((s) => (s.run === undefined ? [] : [s.run]));
+      expect(runs.length).toBeGreaterThan(0);
+      for (const run of runs) {
+        expect(/\b(bun|node|npx)\b/.test(run)).toBe(false);
+        for (const line of run.split("\n").filter((l) => /\bnpm (publish|version|view|pack|install|ci|run)\b/.test(l))) expect(line).toContain("--ignore-scripts");
+      }
+    });
+
+    it("checks the tarball with a dry run before it publishes", () => {
+      /** When the dry run is gone or follows the publish, a tarball npm would reject is found only at the real publish, after the GitHub release is out. */
       const { steps } = npm();
       const dry = steps.findIndex((s) => /npm publish\b.*--dry-run/.test(s.run ?? ""));
-      const refuse = steps.findIndex((s) => s.if === "env.HAVE_NPM != 'true'");
+      const real = steps.findIndex((s) => /\bnpm publish\b(?!.*--dry-run)/.test(s.run ?? ""));
       expect(dry).toBeGreaterThan(-1);
-      expect(steps[dry]!.if).toBeUndefined();
-      expect(refuse).toBeGreaterThan(dry);
-      expect(steps[refuse]!.run).toContain("::error");
-      expect(steps[refuse]!.run).toContain("exit 1");
+      expect(real).toBeGreaterThan(dry);
     });
   });
 });

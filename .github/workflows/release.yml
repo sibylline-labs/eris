@@ -19,10 +19,10 @@ name: release
 #
 # Each target builds NATIVELY on its own runner: a bun compile targets its host.
 #
-# Secrets: none, except TAP_PUSH_TOKEN, read by the tap job alone, and NPM_TOKEN,
-# read by the npm job alone. Without the tap token the release is published and the
-# tap is left as it was. Without the npm token the release is published, the npm job
-# checks the package with a dry run and then fails, so a missing token is red.
+# Secrets: none, except TAP_PUSH_TOKEN, read by the tap job alone. Without it the
+# release is published and the tap is left as it was. The npm job holds no token: it
+# publishes through npm trusted publishing, exchanging the job's GitHub OIDC token
+# (`id-token: write`) for a short-lived one bound to this repository and this file.
 
 on:
   push:
@@ -298,24 +298,43 @@ jobs:
   # ---------------------------------------------------------------------------
   # The npm package, @sibylline-labs/eris: this commit's source with the tag's version,
   # published once every build leg's oracle is green and the GitHub release is out, so
-  # npm never carries a tag the release lacks. The `secrets` context is not
-  # available to an `if`, so the job reads the token into `env` first and each step
-  # tests that. No repository code runs here: npm with --ignore-scripts, and the token
-  # is on disk for the last step alone.
+  # npm never carries a tag the release lacks. It publishes through trusted publishing:
+  # npm trusts this repository's release.yml and nothing else, and needs a GitHub-hosted
+  # runner, Node >= 22.14 and npm >= 11.5.1. `id-token: write` reaches every step of the
+  # job, so no step runs repository code: npm with --ignore-scripts, no bun, no node.
   npm:
     name: npm (@sibylline-labs/eris)
     needs: [plan, build, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     env:
-      HAVE_NPM: ${{ secrets.NPM_TOKEN != '' }}
       TAG: ${{ needs.plan.outputs.tag }}
       PRERELEASE: ${{ needs.plan.outputs.prerelease }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+
+      # No registry-url: that writes an .npmrc that reads a token, and this job has none.
+      # Every Node 22 bundles npm 10; Node 24 bundles npm 11.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      # An npm too old for trusted publishing fails at the exchange as an auth error
+      # (ENEEDAUTH), which reads as a misconfigured publisher; this names the cause.
+      - name: npm supports trusted publishing
+        run: |
+          v=$(npm --version)
+          IFS=. read -r major minor patch <<<"${v%%-*}"
+          if (( major < 11 || (major == 11 && (minor < 5 || (minor == 5 && patch < 1))) )); then
+            echo "::error title=npm too old::npm $v cannot publish through trusted publishing, which needs 11.5.1 or later"
+            exit 1
+          fi
+          echo "npm $v"
 
       # The version is the tag's, without its `v`, set in package.json only: nothing is
       # committed. A pre-release goes to the `next` dist-tag, which `npm install` does
@@ -326,17 +345,7 @@ jobs:
           if [[ "$PRERELEASE" == true ]]; then dist=next; else dist=latest; fi
           npm publish --dry-run --ignore-scripts --tag "$dist"
 
-      - name: The npm token is not set
-        if: env.HAVE_NPM != 'true'
-        run: |
-          echo "::error title=Not published to npm::NPM_TOKEN is not set, so $TAG was checked with a dry run and not published. Set the secret, then re-run this job."
-          exit 1
-
-      # The token is written to a file only this step reads, and nothing runs after it.
       - name: Publish
-        if: env.HAVE_NPM == 'true'
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [[ "$PRERELEASE" == true ]]; then dist=next; else dist=latest; fi
           # A re-run after a publish succeeded: npm refuses a version twice, and the tag is already out.
@@ -344,6 +353,4 @@ jobs:
             echo "@sibylline-labs/eris@${TAG#v} is already published"
             exit 0
           fi
-          umask 077
-          printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" >"$RUNNER_TEMP/npmrc"
-          npm publish --userconfig "$RUNNER_TEMP/npmrc" --access public --ignore-scripts --tag "$dist"
+          npm publish --access public --ignore-scripts --tag "$dist"

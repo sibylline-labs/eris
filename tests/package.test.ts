@@ -18,6 +18,7 @@ import { erisPaths } from "./helpers/tsconfig-paths";
 interface Manifest {
   exports: Record<string, string>;
   bin?: Record<string, string>;
+  repository?: { type?: string; url?: string };
 }
 
 const manifest = (): Manifest => JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")) as Manifest;
@@ -49,6 +50,11 @@ describe.skipIf(checkoutOnly("npm packs the checkout's package.json; a compiled 
     for (const f of ["LICENSE", "NOTICE", "README.md", "package.json", "docs/ERRORS.md"]) expect(files().has(f)).toBe(true);
     const own = [...files()].filter((f) => /^(tests|scripts|rules|rule-tests|\.github|data|examples|packaging)\//.test(f) || /^(eris|install\.sh|bun\.lock|sgconfig\.yml|CLAUDE\.md|AGENTS\.md)$/.test(f));
     expect(own).toEqual([]);
+  });
+
+  it("names this repository as its source, in the form npm publishes, so a trusted publish from it is accepted", () => {
+    /** When `repository.url` names another repository (a fork, a rename), the registry rejects the release job's trusted publish, after the GitHub release is out; when it is in a form npm rewrites, every publish warns that package.json was auto-corrected. Observed at the manifest: npm normalizes https://github.com/sibylline-labs/eris to exactly this string. */
+    expect(manifest().repository).toEqual({ type: "git", url: "git+https://github.com/sibylline-labs/eris.git" });
   });
 
   it("resolves `eris/<subpath>` in this tree to exactly the files `exports` names, so a test that passes here passes in a dependent repository", () => {
