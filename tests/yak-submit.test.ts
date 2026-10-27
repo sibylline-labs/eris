@@ -641,7 +641,7 @@ describe("submitYak — over-length device_id/execution_id and redaction-caused 
     // "1234" (4 chars, the minimum unquoted length the pass accepts) is
     // replaced by the 21-char «redacted:assignment» marker. 191 raw chars
     // is within YAK_SUMMARY_MAX_LENGTH (200); the redacted text is 208.
-    const rawSummary = "x".repeat(180) + " seed: 1234";
+    const rawSummary = "x".repeat(180) + " token: 1234";
     expect(rawSummary.length).toBeLessThanOrEqual(YAK_SUMMARY_MAX_LENGTH);
 
     const result = await submitYak({
@@ -685,7 +685,7 @@ describe("submitYak — over-length device_id/execution_id and redaction-caused 
 
   it("a repro that redaction alone pushes over the limit is a WARN — the ORIGINAL text was in bounds", async () => {
     const fetchImpl = mock(async () => new Response("should never be called", { status: 200 }));
-    const rawRepro = "x".repeat(YAK_REPRO_MAX_LENGTH - 20) + " seed: 1234";
+    const rawRepro = "x".repeat(YAK_REPRO_MAX_LENGTH - 20) + " token: 1234";
     expect(rawRepro.length).toBeLessThanOrEqual(YAK_REPRO_MAX_LENGTH);
 
     const result = await submitYak({
@@ -900,7 +900,7 @@ describe("submitYak — --repo rides in provenance.repo.target_repos", () => {
 
   it("a --repo hint that redaction alone pushes over the limit is a WARN — the ORIGINAL text was in bounds", async () => {
     const fetchImpl = mock(async () => new Response("should never be called", { status: 200 }));
-    const rawHint = "x".repeat(YAK_REPO_HINT_MAX_LENGTH - 20) + " seed: 1234";
+    const rawHint = "x".repeat(YAK_REPO_HINT_MAX_LENGTH - 20) + " token: 1234";
     expect(rawHint.length).toBeLessThanOrEqual(YAK_REPO_HINT_MAX_LENGTH);
 
     const result = await submitYak({

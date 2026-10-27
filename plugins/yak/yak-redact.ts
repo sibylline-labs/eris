@@ -168,6 +168,28 @@
  * block, which pins this as intended behavior so a future reader sees it was
  * decided, not missed.
  *
+ * PROSE-COLLIDING NAMES: the trade-off above holds for credential
+ * names (SECRET, TOKEN, PASSWORD, PASSWD, PRIVATE_KEY, API_KEY, CREDENTIAL,
+ * ACCESS_KEY, MNEMONIC, and CLIENT_SECRET through SECRET). AUTH, SESSION, SEED
+ * and COOKIE are different: as infixes they sit inside ordinary English words
+ * that end a clause with `:` (`authorized: /pls`, `TPM session: filing …`), so
+ * any `x: y` matched and report prose was mangled, on the client and in every
+ * server that imports this module. A name that reads as a word (letters only,
+ * not all upper-case) whose governed words are only those four is redacted
+ * only when its unquoted value is secret-shaped (`isSecretShaped`: 16+
+ * characters, or 8+ with a digit, markers not counted), which a generated session id, cookie,
+ * numeric seed or bearer clears and an English word, a slash command or a
+ * ticket id does not. A config-key spelling (`SEED`, `BASIC_AUTH_PASS`,
+ * `session-key`) is not prose and keeps the 4-character rule. A quoted value
+ * and a value led by an earlier class's marker are redacted as before: a quote
+ * is a structural signal, and the marker-tail rules (MARKER GUARD) must not be
+ * reopened. A declined value is scanned again from its start, so an
+ * assignment inside it (`auth:token=…`, `?auth=ok&token=…`) is still found.
+ * What ships under such a word-name: a digit-free value of up to 15
+ * characters, or one of up to 7 with a digit (`session: hunter`,
+ * `seed: 1234567`), and the first word of a mnemonic (`seed: abandon …`; the
+ * unquoted value stops at whitespace, so the words after it shipped already).
+ *
  * AUTH SCHEME (fixed): `AUTH_HEADER_RE` matched only `Bearer|Token`, so
  * `Authorization: Basic <base64>` fell through to the generic `assignment`
  * pass, which eats only the scheme word (`AUTH` is a governed name) and
@@ -445,6 +467,43 @@ const ASSIGNMENT_LED_RE = assignmentRe(EXACT_MARKER_GUARD, `(?<led>['"]?«redact
 const QUOTED_VALUE_RE = new RegExp(QUOTED_VALUE, "y");
 const MARKER_LED_RE = /['"]?«redacted:/y;
 
+// A governed name with one of these words is a credential name whatever its
+// value looks like (file header, "PROSE-COLLIDING NAMES"). A name with only
+// AUTH, SESSION, SEED or COOKIE needs a secret-shaped value as well.
+const CREDENTIAL_NAME_RE =
+  /SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]KEY|API[_-]KEY|CREDENTIAL|ACCESS[_-]KEY|MNEMONIC/i;
+const DIGIT_RE = /[0-9]/;
+const MARKER_GLOBAL_RE = new RegExp(MARKER, "g");
+// A marker with text glued after it: the text may be the tail of the secret.
+const MARKER_TAIL_RE = new RegExp(`${MARKER}(?!$)`);
+// A name that reads as an English word: letters only, at least one lower-case.
+const WORD_NAME_RE = /^[A-Za-z]*[a-z][A-Za-z]*$/;
+
+/** True when an unquoted value could be a secret: 16+ characters, or 8+ with a
+ *  digit, not counting any marker inside it. An English word, a slash command
+ *  or a short ticket id is neither. A marker is excluded so that redaction is
+ *  idempotent: the rescan of a declined value only ever swaps text for
+ *  markers, which cannot make the value secret-shaped on a second pass. A
+ *  marker with a tail never reaches here (`isProseAssignment`), so no tail
+ *  of an over-long secret is discounted. */
+function isSecretShaped(value: string): boolean {
+  const residue = value.replace(MARKER_GLOBAL_RE, "");
+  return residue.length >= 16 || (residue.length >= 8 && DIGIT_RE.test(residue));
+}
+
+/** True when the match is a prose-colliding word name (`authorized: brief`,
+ *  `session: filing`) whose unquoted, non-marker value is not secret-shaped.
+ *  The caller rescans from the value's start, so nothing inside it is lost. */
+function isProseAssignment(groups: AssignmentGroups): boolean {
+  if (groups.led !== undefined) return false;
+  const name = groups.uname ?? groups.qname ?? "";
+  if (!WORD_NAME_RE.test(name) || CREDENTIAL_NAME_RE.test(name)) return false;
+  const first = groups.value[0];
+  if (first === '"' || first === "'" || groups.value.startsWith("«redacted:")) return false;
+  if (MARKER_TAIL_RE.test(groups.value)) return false;
+  return !isSecretShaped(groups.value);
+}
+
 function runWholeMatchPass(
   text: string,
   cls: RedactionClass,
@@ -512,6 +571,10 @@ function runAssignmentPass(text: string, counts: Record<RedactionClass, number>)
     if (isDeclinedAuthHeader(text, m, groups)) continue;
     const end = m.index + m[0].length;
     const valueStart = end - groups.value.length;
+    if (isProseAssignment(groups)) {
+      ASSIGNMENT_RE.lastIndex = valueStart;
+      continue;
+    }
     MARKER_LED_RE.lastIndex = valueStart;
     if (MARKER_LED_RE.test(text)) markerLed = true;
     ranges.push([valueStart, end]);
@@ -524,6 +587,10 @@ function runAssignmentPass(text: string, counts: Record<RedactionClass, number>)
       if (isDeclinedAuthHeader(text, m, groups)) continue;
       const end = m.index + m[0].length;
       const valueStart = end - groups.value.length;
+      if (isProseAssignment(groups)) {
+        ASSIGNMENT_LED_RE.lastIndex = valueStart;
+        continue;
+      }
       if (groups.led === undefined) {
         ranges.push([valueStart, end]);
         continue;
