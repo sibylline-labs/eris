@@ -90,6 +90,10 @@ export const runWidgets: VerbHandler = async (args, ctx) => {
   stdout carries the payload only, a failure is a slugged block from
   `renderFailureBlock`, and a warning is `renderWarnLines` (both re-exported by
   the SDK, with `erisHome`, the install root a block's `docs:` path resolves under).
+- Send the `eris login` bearer with the SDK's credential resolvers:
+  **`readYaksFileConfig`**, **`resolveToken`** and **`resolveUrl`**
+  (src/runtime/credentials.ts), never a copy of their order
+  (`yaks-url-single-resolver`).
 - Read an environment variable whose name you were handed with the SDK's
   **`readEnv(env, name)`**, never `env[name]`: an inherited name such as
   `__proto__` would read as set (`env-read-own-property-plugin`).

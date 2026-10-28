@@ -7,6 +7,7 @@
  */
 
 import type { ErisPlugin } from "../src/cli/plugin";
+import socrates from "./socrates";
 import yak from "./yak";
 
-export const PLUGINS: readonly ErisPlugin[] = [yak];
+export const PLUGINS: readonly ErisPlugin[] = [yak, socrates];

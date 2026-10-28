@@ -30,6 +30,17 @@ import type { CompletionDomain, Flag, FlagName, Row, SlotWord } from "./registry
 
 export { erisHome, renderFailureBlock, renderWarnLines } from "../../ts/lib/eris-fail";
 export { readEnv } from "../runtime/env";
+export {
+  DEFAULT_YAKS_URL,
+  readYaksFileConfig,
+  resolveToken,
+  resolveUrl,
+  writeYaksFileConfig,
+  yaksConfigPath,
+  type CredentialOutcome,
+  type YaksFileConfig,
+  type YaksUrlSource,
+} from "../runtime/credentials";
 export { CliExit } from "./args";
 export type { ArgSinks, CliContext, CompletionDomain, Flag, FlagName, GroupArgs, ReadOptions, Row, RowArgs, SlotWord, VerbContext, VerbHandler };
 
