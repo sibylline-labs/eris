@@ -18,3 +18,6 @@ export {
   type VerifiedBody,
   type WriteResult,
 } from "./doc-surgery";
+export * from "./entry-id";
+export * from "./match";
+export * from "./render";
