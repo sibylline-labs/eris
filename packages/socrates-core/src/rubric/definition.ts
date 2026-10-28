@@ -11,6 +11,7 @@
  */
 
 import { z } from "zod";
+import type { MatchCandidate } from "../match";
 
 export type RubricVersion = `rubric@v${number}`;
 
@@ -18,15 +19,19 @@ export type RubricVersion = `rubric@v${number}`;
 export type AnswerList = readonly [string, ...string[]];
 
 /** Where a firing gate sends the candidate instead of scoring it. */
-export type GateRoute = "reject" | "key-assumption";
+export type GateRoute = "reject" | "key-assumption" | "practice";
 
-/** A gate: any answer outside `passes` stops scoring and routes the candidate. */
-export interface GateQuestion<A extends AnswerList = AnswerList> {
+/**
+ * A gate: any answer outside `passes` stops scoring and routes the candidate, and so does any
+ * `firedBy` feature that holds, whatever the answer was.
+ */
+export interface GateQuestion<A extends AnswerList = AnswerList, F extends string = string> {
   readonly kind: "gate";
   readonly prompt: string;
   readonly answers: A;
   readonly passes: readonly A[number][];
   readonly route: GateRoute;
+  readonly firedBy?: readonly F[];
 }
 
 /** A soft question: each answer adds its fixed points to the score. */
@@ -39,11 +44,17 @@ export interface SoftQuestion<A extends AnswerList = AnswerList> {
 
 export type Question = GateQuestion | SoftQuestion;
 
+/** What a feature may check the statement against besides itself. Entry ids are opaque. */
+export interface FeatureContext {
+  /** The entries already recorded in the living docs. */
+  readonly recorded: readonly MatchCandidate[];
+}
+
 /** A feature eris checks on the statement itself; the model never answers it. */
 export interface Feature {
   readonly description: string;
   readonly points: number;
-  readonly detect: (statement: string) => boolean;
+  readonly detect: (statement: string, context: FeatureContext) => boolean;
 }
 
 export interface RubricDefinition {
@@ -55,10 +66,10 @@ export interface RubricDefinition {
   readonly features: { readonly [id: string]: Feature };
 }
 
-/** Holds each question's `passes` / `points` keys to that question's own answers. */
-type CheckedQuestions<Q> = {
+/** Holds each question's `passes` / `points` keys to its own answers, and `firedBy` to the rubric's features. */
+type CheckedQuestions<Q, F> = {
   readonly [K in keyof Q]: Q[K] extends { readonly kind: "gate"; readonly answers: infer A extends AnswerList }
-    ? GateQuestion<A>
+    ? GateQuestion<A, keyof F & string>
     : Q[K] extends { readonly kind: "soft"; readonly answers: infer A extends AnswerList }
       ? SoftQuestion<A>
       : never;
@@ -69,7 +80,7 @@ export function defineRubric<
   const V extends RubricVersion,
   const Q extends { readonly [id: string]: Question },
   const F extends { readonly [id: string]: Feature },
->(rubric: { readonly version: V; readonly threshold: number; readonly questions: Q & CheckedQuestions<Q>; readonly features: F }): {
+>(rubric: { readonly version: V; readonly threshold: number; readonly questions: Q & CheckedQuestions<Q, F>; readonly features: F }): {
   readonly version: V;
   readonly threshold: number;
   readonly questions: Q;
@@ -99,12 +110,25 @@ export type Features<R extends RubricDefinition> = { readonly [K in FeatureId<R>
 /** What each answer and feature added to the score, nonzero contributions only. */
 export type Breakdown<R extends RubricDefinition> = Readonly<Partial<Record<QuestionId<R> | FeatureId<R>, number>>>;
 
-/** One verdict, one kind; every kind carries the rubric version that produced it. */
+/** The gate that stopped scoring, the answer given to it, and the feature that fired it when one did. */
+interface GateFiring<R extends RubricDefinition> {
+  readonly rubric: R["version"];
+  readonly gate: GateId<R>;
+  readonly answer: string;
+  readonly feature?: FeatureId<R>;
+}
+
+/**
+ * One verdict, one kind; every kind carries the rubric version that produced it. Only the two
+ * scored kinds carry a score, so a practice is never also load-bearing, and it goes to the
+ * Practices doc rather than into review.
+ */
 export type Verdict<R extends RubricDefinition> =
   | { readonly kind: "load-bearing"; readonly rubric: R["version"]; readonly score: number; readonly threshold: number; readonly breakdown: Breakdown<R> }
   | { readonly kind: "not-load-bearing"; readonly rubric: R["version"]; readonly score: number; readonly threshold: number; readonly breakdown: Breakdown<R> }
-  | { readonly kind: "rejected"; readonly rubric: R["version"]; readonly gate: GateId<R>; readonly answer: string }
-  | { readonly kind: "rerouted"; readonly rubric: R["version"]; readonly gate: GateId<R>; readonly answer: string; readonly to: "key-assumption" };
+  | ({ readonly kind: "rejected" } & GateFiring<R>)
+  | ({ readonly kind: "rerouted"; readonly to: "key-assumption" } & GateFiring<R>)
+  | ({ readonly kind: "practice"; readonly to: "practices-doc" } & GateFiring<R>);
 
 export interface ScoreOptions<R extends RubricDefinition> {
   /** Gates an override skips. Each named gate is skipped; every other gate still runs. */
@@ -119,9 +143,9 @@ export function answersSchema<R extends RubricDefinition>(rubric: R): z.ZodType<
 }
 
 /** Runs each of the rubric's mechanical checks on the statement. */
-export function extractFeatures<R extends RubricDefinition>(rubric: R, statement: string): Features<R> {
+export function extractFeatures<R extends RubricDefinition>(rubric: R, statement: string, context: FeatureContext): Features<R> {
   const out: Record<string, boolean> = {};
-  for (const [id, f] of Object.entries(rubric.features)) out[id] = f.detect(statement);
+  for (const [id, f] of Object.entries(rubric.features)) out[id] = f.detect(statement, context);
   return out as Features<R>;
 }
 
@@ -132,14 +156,21 @@ export function extractFeatures<R extends RubricDefinition>(rubric: R, statement
 export function score<R extends RubricDefinition>(rubric: R, answers: Answers<R>, features: Features<R>, options: ScoreOptions<R> = {}): Verdict<R> {
   const bypass = new Set<string>(options.bypass ?? []);
   const given = answers as Readonly<Record<string, string>>;
+  const held = features as Readonly<Record<string, boolean>>;
   for (const [id, q] of Object.entries(rubric.questions)) {
     if (q.kind !== "gate" || bypass.has(id)) continue;
     const answer = given[id]!;
-    if (q.passes.includes(answer)) continue;
-    const gate = id as GateId<R>;
-    return q.route === "reject"
-      ? { kind: "rejected", rubric: rubric.version, gate, answer }
-      : { kind: "rerouted", rubric: rubric.version, gate, answer, to: q.route };
+    const feature = q.firedBy?.find((f) => held[f]);
+    if (feature === undefined && q.passes.includes(answer)) continue;
+    const firing: GateFiring<R> = { rubric: rubric.version, gate: id as GateId<R>, answer, ...(feature === undefined ? {} : { feature: feature as FeatureId<R> }) };
+    switch (q.route) {
+      case "reject":
+        return { kind: "rejected", ...firing };
+      case "key-assumption":
+        return { kind: "rerouted", ...firing, to: "key-assumption" };
+      case "practice":
+        return { kind: "practice", ...firing, to: "practices-doc" };
+    }
   }
   const breakdown: Record<string, number> = {};
   let total = 0;
@@ -149,7 +180,6 @@ export function score<R extends RubricDefinition>(rubric: R, answers: Answers<R>
     if (p !== 0) breakdown[id] = p;
     total += p;
   }
-  const held = features as Readonly<Record<string, boolean>>;
   for (const [id, f] of Object.entries(rubric.features)) {
     if (!held[id] || f.points === 0) continue;
     breakdown[id] = f.points;
