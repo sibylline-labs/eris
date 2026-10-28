@@ -36,19 +36,19 @@ export const SocratesCandidateKind = z.enum(SOCRATES_CANDIDATE_KINDS);
 /** The problem+json `type` prefix the gateway's errors carry. */
 export const PROBLEM_TYPE_PREFIX = "urn:hera:error:";
 
-const nonBlank = (max: number) =>
+export const nonBlank = (max: number) =>
   z
     .string()
     .min(1)
     .max(max)
     .refine((s) => s.trim().length > 0, "must not be blank");
 
-const Url = z
+export const Url = z
   .string()
   .max(SOCRATES_SOURCE_MAX_LENGTH)
   .regex(/^https?:\/\/[^\s/?#]+[^\s]*$/, "must be an absolute http(s) URL");
 
-const Version = z.literal(SOCRATES_CONTRACT_VERSION);
+export const Version = z.literal(SOCRATES_CONTRACT_VERSION);
 
 export const SocratesCandidate = z.object({
   kind: SocratesCandidateKind,
@@ -75,7 +75,10 @@ export type SocratesSubmitReceipt = z.infer<typeof SocratesSubmitReceipt>;
 
 export const HalLink = z.object({ href: Url, title: z.string().optional() });
 
-/** The gateway's RFC 7807 error. The not-entitled 402 carries `_links.subscribe`. */
+/**
+ * The gateway's RFC 7807 error. The not-entitled 402 carries `_links.subscribe`; a
+ * fragment refused because the org's evidence setting is off carries `_links.settings`.
+ */
 export const SocratesProblem = z.object({
   type: z.string().regex(/^urn:hera:error:[a-z][a-z0-9_]*$/),
   title: z.string(),
@@ -84,7 +87,7 @@ export const SocratesProblem = z.object({
   code: z.string(),
   request_id: z.string().optional(),
   retry_after: z.number().optional(),
-  _links: z.object({ subscribe: HalLink.optional() }).optional(),
+  _links: z.object({ subscribe: HalLink.optional(), settings: HalLink.optional() }).optional(),
 });
 export type SocratesProblem = z.infer<typeof SocratesProblem>;
 
