@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import {
@@ -18,7 +19,9 @@ import {
   type FeatureContext,
   type Features,
   RUBRIC_V1,
+  RUBRIC_V2,
   type RubricV1,
+  type RubricV2,
   rubricFor,
   score,
   type Verdict,
@@ -216,6 +219,7 @@ describe("socrates-core: what a server imports", () => {
   it("serves rubric@v1 by its stamp, and nothing for a version it does not know", () => {
     /** When the version a submission is stamped with does not resolve to its definition, the server reclassifies with the wrong rubric or none: observed at the package entry. */
     expect(rubricFor("rubric@v1")).toBe(RUBRIC_V1);
+    expect(rubricFor("rubric@v2")).toBe(RUBRIC_V2);
     expect(rubricFor("rubric@v999")).toBeUndefined();
   });
 
@@ -236,5 +240,89 @@ describe("socrates-core: what a server imports", () => {
     expect(stray).toEqual([]);
     // The scan sees real imports: a scanner that returned nothing would pass the check above for free.
     expect([...seen]).toEqual(expect.arrayContaining(["zod", "./definition"]));
+  });
+});
+
+/** A rubric's whole definition as text: every prompt, answer, point, route, trigger and feature body. */
+const fingerprint = (rubric: object): string =>
+  createHash("sha256")
+    .update(JSON.stringify(rubric, (_k, v: unknown) => (typeof v === "function" ? v.toString() : v)))
+    .digest("hex");
+
+describe("rubric@v1 stays frozen beside rubric@v2", () => {
+  it("keeps v1's definition byte for byte", () => {
+    /** When a v2 change edits v1 in place (a prompt, a point, a regex), every submission stamped rubric@v1 is reclassified by a rubric its client never ran: observed at the fingerprint of the published v1 definition. */
+    expect(fingerprint(RUBRIC_V1)).toBe("f4aa131765d35498904006fb6998567f439723be4ed4a6301377fd515fe0903a");
+    expect(Object.keys(RUBRIC_V1.questions)).toContain("reversal_reach");
+  });
+});
+
+const PASSING_V2: Answers<RubricV2> = {
+  already_recorded: "new",
+  end_condition: "none",
+  owning_layer: "no-other-owner",
+  practice: "what-the-system-is",
+  reversibility: "more-than-a-setting",
+  premise_basis: "observed",
+  consequence: "a-rule-this-codebase-relies-on",
+};
+
+// Shaped like the corpus candidates the operator rejected: a fact another layer holds, and a flag.
+const OWNED_ELSEWHERE = [
+  "Brand-forging sources close at the layer that owns them: the checker-backed lint gate owns the rule that every specifier resolves.",
+  "That an agent mounts only its track's writes is held by types and error-severity ast-grep rules.",
+  "exists() returns bool and an unreachable backend raises; the conformance kit pins this contract for every provider.",
+  "The viewer accepts only two complete documents and no delta format; turning deltas into a target is the CLI's job.",
+];
+const FLAGS = ['Preview tools register only when PREVIEW_TOOLS is exactly "true".', 'Claim links are offered only when CLAIM_LINKS is "true".'];
+
+describe("rubric@v2: the gates fire from the statement", () => {
+  it("rejects a fact another layer holds at owning_layer and a flag value at reversibility, whatever the model answered", () => {
+    /** When these gates read only the model's answer, as v1's did, the model calls nearly every candidate owner-less and more than a setting, and the corpus rejects they name reach review: observed at the verdict of candidates answered as passing every gate. */
+    for (const s of OWNED_ELSEWHERE) {
+      expect([s, score(RUBRIC_V2, PASSING_V2, extractFeatures(RUBRIC_V2, s, NOTHING_RECORDED))]).toEqual([
+        s,
+        { kind: "rejected", rubric: "rubric@v2", gate: "owning_layer", answer: "no-other-owner", feature: "owned_elsewhere_wording" },
+      ]);
+    }
+    for (const s of FLAGS) {
+      expect([s, score(RUBRIC_V2, PASSING_V2, extractFeatures(RUBRIC_V2, s, NOTHING_RECORDED))]).toEqual([
+        s,
+        { kind: "rejected", rubric: "rubric@v2", gate: "reversibility", answer: "more-than-a-setting", feature: "flag_value_wording" },
+      ]);
+    }
+    expect(score(RUBRIC_V2, PASSING_V2, extractFeatures(RUBRIC_V2, "A stopgap until the rates land.", NOTHING_RECORDED))).toMatchObject({ gate: "end_condition", feature: "end_condition_wording" });
+    // PAIRED: the accepted decisions, including "each invariant has one enforcing owner" and a named env var, fire none of them.
+    for (const s of [...ACCEPTED, "MAIA_CLAIM_LINKS gates the card", "Each invariant is enforced in exactly one place."]) {
+      const f = extractFeatures(RUBRIC_V2, s, NOTHING_RECORDED);
+      expect([s, f.owned_elsewhere_wording, f.flag_value_wording, f.end_condition_wording]).toEqual([s, false, false, false]);
+    }
+  });
+
+  it("reserves the reversibility gate for a setting-level choice", () => {
+    /** When the reversibility gate asks whether a decision can be reversed cheaply, any code decision reads as a two-way door and 80 of the corpus's 117 accepts were lost at it under v1: observed at the answers the v2 gate accepts and the verdict of a setting-level answer. */
+    expect(RUBRIC_V2.questions.reversibility.answers).toEqual(["more-than-a-setting", "setting-level"]);
+    expect(score(RUBRIC_V2, { ...PASSING_V2, reversibility: "setting-level" }, extractFeatures(RUBRIC_V2, "x", NOTHING_RECORDED))).toEqual({
+      kind: "rejected",
+      rubric: "rubric@v2",
+      gate: "reversibility",
+      answer: "setting-level",
+    });
+  });
+});
+
+describe("rubric@v2: the score", () => {
+  it("scores a rule this codebase relies on as load-bearing, and a change nothing relies on below the threshold", () => {
+    /** When only a reach outside the origin scores, as in v1, an invariant inside one repository (most of what the operator accepts) is never load-bearing; when nothing-relies-on-it still scores, every local choice reaches review: observed at the verdicts of the two answers, with every gate passing. */
+    for (const s of ACCEPTED) {
+      expect([s, score(RUBRIC_V2, PASSING_V2, extractFeatures(RUBRIC_V2, s, othersThan(s)))]).toEqual([
+        s,
+        { kind: "load-bearing", rubric: "rubric@v2", score: 3, threshold: 3, breakdown: { consequence: 3 } },
+      ]);
+    }
+    expect(score(RUBRIC_V2, { ...PASSING_V2, consequence: "nothing-beyond-this-change" }, extractFeatures(RUBRIC_V2, "x", NOTHING_RECORDED))).toMatchObject({
+      kind: "not-load-bearing",
+      score: 0,
+    });
   });
 });

@@ -29,8 +29,9 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
   this one imports the contract without core.
 - **`packages/socrates-core`** is Socrates' deterministic core, a bun workspace package exported
   as `eris/socrates-core`. It runs a Linear document write through an injected client (fetch,
-  splice, check, write, verify), and it holds the versioned rubric (`rubric@v1`: enum-answer gate
-  and soft questions, mechanically checked features, a pure scorer), so a server reclassifies a
+  splice, check, write, verify), and it holds the versioned rubrics (`rubric@v1`, `rubric@v2`: enum-answer gate
+  and soft questions, mechanically checked features, a pure scorer; a published version is frozen
+  and a change is a new one beside it), so a server reclassifies a
   stamped submission with the client's own definition. It imports nothing but `zod`; its tsconfig
   carries no Bun or Node types, because its consumer is a Cloudflare Worker.
 
