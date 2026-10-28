@@ -56,6 +56,7 @@ jobs:
 
       - run: bun install --frozen-lockfile
       - run: bunx tsc --noEmit
+      - run: bunx tsc --noEmit -p packages/socrates-core
       - run: bun test ./tests
 
   binary-oracle:

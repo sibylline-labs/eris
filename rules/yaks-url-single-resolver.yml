@@ -1,5 +1,5 @@
 # The Yaks base URL is resolved in one place, `resolveUrl` in
-# plugins/yak/yak-identity.ts: `--url`, then ERIS_YAKS_URL, then the url saved
+# src/runtime/credentials.ts: `--url`, then ERIS_YAKS_URL, then the url saved
 # in ~/.eris/yaks.json, then the built-in default. A second `flag ?? env` copy
 # skips the file or the default, so two commands disagree on where a bearer
 # goes.
@@ -12,7 +12,7 @@ language: typescript
 severity: error
 message: >-
   ERIS_YAKS_URL is read here. Resolve the Yaks URL with resolveUrl
-  (plugins/yak/yak-identity.ts), which applies --url, the variable, the
+  (src/runtime/credentials.ts), which applies --url, the variable, the
   saved url and the default in one order.
 note: |
   Pass a `--url` flag value as resolveUrl's third argument; the source it
@@ -23,7 +23,7 @@ files:
   - plugins/**/*.ts
 ignores:
   # The resolver itself.
-  - plugins/yak/yak-identity.ts
+  - src/runtime/credentials.ts
 rule:
   any:
     - kind: property_identifier

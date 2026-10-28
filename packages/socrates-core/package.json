@@ -1,9 +1,9 @@
 {
   "name": "@sibylline-labs/socrates-core",
   "version": "0.1.0",
-  "description": "Socrates' deterministic core: the versioned rubric, its enum answers, mechanically checked features and a pure scorer",
+  "description": "Socrates' deterministic core: living-doc surgery over an injected Linear client, and the versioned rubric with its pure scorer",
   "license": "Apache-2.0",
-  "private": false,
+  "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
