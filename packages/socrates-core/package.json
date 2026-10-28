@@ -1,0 +1,21 @@
+{
+  "name": "@sibylline-labs/socrates-core",
+  "version": "0.1.0",
+  "description": "Socrates living-doc surgery: fetch, splice, check, write and verify a Linear document body through an injected client",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "bun-types": "1.4.4",
+    "typescript": "^6.0.3"
+  }
+}

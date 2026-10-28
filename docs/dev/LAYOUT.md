@@ -53,6 +53,9 @@ packages/yak-contract/  # the Yaks wire contract v2, a bun workspace package tha
                         #   `eris/yak-contract` (package.json exports) is its src/index.ts.
                         #   src/v2.ts (Zod + inferred types), scripts/emit-json-schema.ts →
                         #   schema/yak-v2.schema.json (committed; `bun run emit-schema` in the package re-emits)
+packages/socrates-core/ # Socrates living-doc surgery, `eris/socrates-core`: src/doc-surgery.ts (applyOps, the pure
+                        #   splices and guards; writeDoc, the fetch-splice-check-write-verify pipe over an injected
+                        #   LinearDocPort; ensureDoc; parseTitle). Web APIs only: its tsconfig has no Bun/Node types
 skills/eris-yaks/       # SKILL.md: the agent skill that sets up Yaks (`npx skills add sibylline-labs/eris
                         #   --skill eris-yaks`); the skills CLI discovers skills/<name>/SKILL.md
 examples/plugins/widgets/  # the worked plugin example tests/plugins.test.ts composes
