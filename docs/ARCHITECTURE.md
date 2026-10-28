@@ -27,10 +27,12 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
 - **`packages/yak-contract`** is the Yaks wire contract v2, a bun workspace package that builds
   standalone. The `exports` map also names it, as `eris/yak-contract`, so a repository pinned to
   this one imports the contract without core.
-- **`packages/socrates-core`** is Socrates' living-doc surgery, a bun workspace package exported
+- **`packages/socrates-core`** is Socrates' deterministic core, a bun workspace package exported
   as `eris/socrates-core`. It runs a Linear document write through an injected client (fetch,
-  splice, check, write, verify) and imports nothing; its tsconfig carries no Bun or Node types,
-  because its consumer is a Cloudflare Worker.
+  splice, check, write, verify), and it holds the versioned rubric (`rubric@v1`: enum-answer gate
+  and soft questions, mechanically checked features, a pure scorer), so a server reclassifies a
+  stamped submission with the client's own definition. It imports nothing but `zod`; its tsconfig
+  carries no Bun or Node types, because its consumer is a Cloudflare Worker.
 
 eris installs from npm only (`npx`, `bunx`, `bun add -g @sibylline-labs/eris`); the package's
 `bin/eris.ts` is the command. A checkout needs `bun install --frozen-lockfile` and no build step:
@@ -152,7 +154,7 @@ it is not a verb, but it renders JSON under `--output` and reads no file from th
   `src/redact.ts` is also exported as `eris/yak-redact`, so a server that redacts a submission runs
   the client's rules; it imports nothing (`tests/distribution.test.ts`).
   `eris/socrates-core` is the workspace package `packages/socrates-core`, which imports nothing
-  (`bunx tsc --noEmit -p packages/socrates-core`, a CI step).
+  but `zod` (`bunx tsc --noEmit -p packages/socrates-core`, a CI step; `tests/socrates-rubric.test.ts`).
 - **Completion imports the registry and nothing else.** `source <(eris completion bash)` runs on
   every shell start, so a broken source file elsewhere must not break a login shell.
   `tests/completion.test.ts` corrupts every other verb and every plugin's handler code in a copied
