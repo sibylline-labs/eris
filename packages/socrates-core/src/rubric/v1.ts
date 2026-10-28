@@ -8,6 +8,7 @@
  * a feature or the threshold is a new version beside this one.
  */
 
+import { classifyMatch, MATCH_DEFAULTS } from "../match";
 import { defineRubric } from "./definition";
 
 const END_CONDITION = /\b(?:temporar(?:y|ily)|until|for now|right now|for the time being)\b/i;
@@ -18,11 +19,20 @@ const VERSION_NUMBER = /\bv?\d+\.\d+(?:\.\d+)?\b/;
 const MECHANISM = /\b(?:builds|renders|displays|is (?:offered|shown) when)\b/i;
 const INVARIANT = /\b(?:never|only|stays|not \w+(?: \w+)? but)\b/i;
 const CLAUSE_JOIN = /[;,]|\b(?:and|which|so that|then)\b/gi;
+const PRACTICE = /\b(?:sign(?:s|ed|ing)?[- ]off|before (?:any |each |every )?(?:code|commit|merg\w*|review\w*|release\w*|deploy\w*)|(?:its|their) own commit|(?:development|engineering) work)\b/i;
 
 export const RUBRIC_V1 = defineRubric({
   version: "rubric@v1",
   threshold: 3,
   questions: {
+    already_recorded: {
+      kind: "gate",
+      prompt: "Is this fact already recorded as an entry in the living docs?",
+      answers: ["new", "already-recorded"],
+      passes: ["new"],
+      route: "reject",
+      firedBy: ["matches_recorded_entry"],
+    },
     end_condition: {
       kind: "gate",
       prompt: "Does the decision carry an end condition (temporary, until X, right now)?",
@@ -35,6 +45,21 @@ export const RUBRIC_V1 = defineRubric({
       prompt: "Does another layer already own this fact (a lockfile, CI config, wrangler config, a lint rule, the PRD)?",
       answers: ["no-other-owner", "owned-elsewhere"],
       passes: ["no-other-owner"],
+      route: "reject",
+    },
+    practice: {
+      kind: "gate",
+      prompt: "Is it about how people work (a process, a review step, an operational habit), not what the system is?",
+      answers: ["what-the-system-is", "how-people-work"],
+      passes: ["what-the-system-is"],
+      route: "practice",
+      firedBy: ["practice_wording"],
+    },
+    reversibility: {
+      kind: "gate",
+      prompt: "Can the decision be reversed cheaply: a revert, a rename or a setting, with nothing outside its origin to change?",
+      answers: ["one-way-door", "two-way-door"],
+      passes: ["one-way-door"],
       route: "reject",
     },
     premise_basis: {
@@ -65,6 +90,16 @@ export const RUBRIC_V1 = defineRubric({
     },
   },
   features: {
+    matches_recorded_entry: {
+      description: "The statement strongly matches an entry already recorded (keyword overlap or Levenshtein similarity).",
+      points: 0,
+      detect: (s, { recorded }) => classifyMatch(s, recorded, MATCH_DEFAULTS).kind === "strong",
+    },
+    practice_wording: {
+      description: "The statement describes a step people take: a sign-off, something done before code or a merge, its own commit, development work.",
+      points: 0,
+      detect: (s) => PRACTICE.test(s),
+    },
     end_condition_wording: {
       description: "The statement says temporary, until, for now or right now.",
       points: -2,
