@@ -131,6 +131,17 @@ The client's redaction pass, [`plugins/yak/yak-redact.ts`](plugins/yak/yak-redac
 exported as `eris/yak-redact` (`redact`, `redactDeep`), so a server that redacts a submission
 before it commits runs the same rules. The module imports nothing.
 
+## Socrates doc surgery
+
+[`packages/socrates-core`](packages/socrates-core), exported as `eris/socrates-core`, writes a
+Socrates living doc in Linear through a client the caller injects. Linear takes a document body
+only whole, so a write fetches the doc, splices it locally (append or supersede an entry, replace
+a section, replace one decision-register row, patch prose that occurs once), checks the live body
+has not changed, writes the full body and fetches it again to verify. A frozen doc, a truncated
+fetch, a splice that would drop an entry or a register row, and a title Linear would autolink all
+refuse with a typed reason before anything is written. How an entry is identified is a function
+the caller passes.
+
 ## Documentation
 
 [docs/README.md](docs/README.md) indexes the references: the architecture,

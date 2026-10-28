@@ -35,12 +35,16 @@ src/                    # The TS program the shim and the bin run
 │                       #   release.ts the verb, github.ts the releases API and the download,
 │                       #   replace.ts the staged rename and its restore, semver.ts)
 └── runtime/            #   logging, process (the one spawn adapter), settings (~/.eris/settings.json),
-                        #   env (readEnv), home (the install root: the checkout, a distribution's own root
+                        #   env (readEnv), credentials (~/.eris/yaks.json and the url/token
+                        #   resolvers every bearer client shares), home (the install root: the checkout, a distribution's own root
                         #   when its entry names one, or a compiled binary's
                         #   per-build asset home)
 ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN lines
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
+plugins/socrates/       # `eris socrates submit`: index.ts (the manifest), submit.ts (the verb),
+                        #   socrates-contract.v1.ts (the vendored submit contract; its golden file is
+                        #   tests/fixtures/socrates-contract-v1.json)
 plugins/yak/            # `eris yak` as a plugin: index.ts (the manifest: rows + handler thunks), handlers.ts
                         #   (the dispatcher), yak.ts (the core), yak-{identity,context,redact,submit}.ts
                         #   (yak-redact.ts imports nothing; package.json exports it as `eris/yak-redact`),
@@ -49,6 +53,9 @@ packages/yak-contract/  # the Yaks wire contract v2, a bun workspace package tha
                         #   `eris/yak-contract` (package.json exports) is its src/index.ts.
                         #   src/v2.ts (Zod + inferred types), scripts/emit-json-schema.ts →
                         #   schema/yak-v2.schema.json (committed; `bun run emit-schema` in the package re-emits)
+packages/socrates-core/ # Socrates living-doc surgery, `eris/socrates-core`: src/doc-surgery.ts (applyOps, the pure
+                        #   splices and guards; writeDoc, the fetch-splice-check-write-verify pipe over an injected
+                        #   LinearDocPort; ensureDoc; parseTitle). Web APIs only: its tsconfig has no Bun/Node types
 skills/eris-yaks/       # SKILL.md: the agent skill that sets up Yaks (`npx skills add sibylline-labs/eris
                         #   --skill eris-yaks`); the skills CLI discovers skills/<name>/SKILL.md
 examples/plugins/widgets/  # the worked plugin example tests/plugins.test.ts composes

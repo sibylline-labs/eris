@@ -1,9 +1,9 @@
 {
   "name": "@sibylline-labs/socrates-core",
   "version": "0.1.0",
-  "description": "Pure Socrates core: entry rendering, keyword and Levenshtein matching, and entry-ID allocation",
+  "description": "Pure Socrates core: living-doc surgery through an injected Linear client, entry rendering, keyword and Levenshtein matching, and entry-ID allocation",
   "license": "Apache-2.0",
-  "private": false,
+  "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

@@ -615,6 +615,52 @@ A `WARN`, exit 0: `ERIS_YAKS_TOKEN` is set, and it wins over the token in
 `eris login` (or still has one after `eris logout`). Fix: unset
 `ERIS_YAKS_TOKEN` to use the file's token.
 
+### socrates-unknown-verb
+
+`eris socrates` was given a command it does not have. Fix: use `submit`, or
+run `eris socrates --help`.
+
+### socrates-flag-required
+
+`eris socrates submit` was run without `--title`, `--statement` or
+`--source`, which every candidate needs. Nothing was sent. Fix: pass all three.
+
+### socrates-candidate-invalid
+
+The candidate does not match the submit contract: a field is blank or over
+its bound (title 200, statement 4000, project 200 characters), `--source` is
+not an absolute `http(s)` URL, or `--kind` is not one of `decision`,
+`practice`, `prd` or `conflict`. The `ERROR` line names each field. Nothing
+was sent. Fix: correct the named fields.
+
+### socrates-unreachable
+
+The request to `<url>/v1/socrates/submit` did not complete: the host could
+not be reached, or no answer arrived within 30 seconds. The url is the one
+`eris login` saved (or `ERIS_YAKS_URL`). Nothing is retried. Fix: check the
+url and the connection, then run the command again.
+
+### socrates-not-entitled
+
+The endpoint answered with a problem+json error carrying a subscribe link
+(`_links.subscribe`): this workspace has not bought Socrates, or its
+entitlement has lapsed. The `fix:` line is the link. Fix: subscribe through
+it, then run the command again.
+
+### socrates-refused
+
+The endpoint answered with a problem+json error and no subscribe link. The
+`ERROR` line carries its `detail`, `code` and HTTP status; a 401 means the
+token was rejected. Fix: for a 401 run `eris login`; otherwise correct what
+the detail names.
+
+### socrates-bad-response
+
+The endpoint's answer was neither a submit receipt nor a problem+json error
+(a proxy page, an outage, a different service), or it was a receipt with a
+non-2xx status. Nothing in it is trusted. Fix: check the url points at a
+Socrates endpoint.
+
 ## Adding a new slug
 
 Call `emitFailureAndExit({ slug, what, fix, docs })` (or `reportFailure`, to
