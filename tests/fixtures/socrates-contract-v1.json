@@ -35,5 +35,213 @@
       "<html>502 Bad Gateway</html>",
       null
     ]
+  },
+  "messages": {
+    "classify": {
+      "request": {
+        "accept": [
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "candidate": {"kind": "decision", "title": "Errors use problem+json", "statement": "Every 4xx/5xx is RFC 7807 problem+json.", "source": "https://github.com/example/repo/pull/14"}, "answers": {"reversible": "no", "cross_project": "yes"}},
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v12", "candidate": {"kind": "decision", "title": "Errors use problem+json", "statement": "Every 4xx/5xx is RFC 7807 problem+json.", "source": "https://github.com/example/repo/pull/14"}, "answers": {"reversible": "cheap"}, "overrides": [{"gate": "reversible", "reason": "Human asked to log it in session."}]}
+        ],
+        "reject": [
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "candidate": {"kind": "decision", "title": "Errors use problem+json", "statement": "Every 4xx/5xx is RFC 7807 problem+json.", "source": "https://github.com/example/repo/pull/14"}, "answers": {}},
+          {"schema_version": "1.0.0", "rubric_version": "v1", "candidate": {"kind": "decision", "title": "Errors use problem+json", "statement": "Every 4xx/5xx is RFC 7807 problem+json.", "source": "https://github.com/example/repo/pull/14"}, "answers": {"reversible": "no"}},
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "candidate": {"kind": "decision", "title": "Errors use problem+json", "statement": "Every 4xx/5xx is RFC 7807 problem+json.", "source": "https://github.com/example/repo/pull/14"}, "answers": {"Reversible": "no"}},
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "candidate": {"kind": "decision", "title": "Errors use problem+json", "statement": "Every 4xx/5xx is RFC 7807 problem+json.", "source": "https://github.com/example/repo/pull/14"}, "answers": {"reversible": "No answer"}},
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "candidate": {"kind": "decision", "title": "Errors use problem+json", "statement": "Every 4xx/5xx is RFC 7807 problem+json.", "source": "https://github.com/example/repo/pull/14"}, "answers": {"reversible": "no"}, "overrides": [{"gate": "reversible"}]},
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "candidate": {"kind": "decision", "title": "Errors use problem+json", "statement": "Every 4xx/5xx is RFC 7807 problem+json.", "source": "https://github.com/example/repo/pull/14"}, "answers": {"reversible": "no"}, "overrides": [{"gate": "reversible", "reason": "   "}]},
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "candidate": {"kind": "decision", "title": "Errors use problem+json", "statement": "Every 4xx/5xx is RFC 7807 problem+json.", "source": "https://github.com/example/repo/pull/14"}, "answers": {"reversible": "no"}, "overrides": [{"gate": "reversible", "reason": "line one\nline two"}]},
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "candidate": {"kind": "decision", "title": "Errors use problem+json", "statement": "Every 4xx/5xx is RFC 7807 problem+json.", "source": "https://github.com/example/repo/pull/14"}, "answers": {"reversible": "no"}, "overrides": [{"gate": "reversible", "reason": "a"}, {"gate": "reversible", "reason": "b"}]},
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "candidate": {"kind": "decision", "title": "Errors use problem+json", "statement": "Every 4xx/5xx is RFC 7807 problem+json.", "source": "https://github.com/example/repo/pull/14"}, "answers": {"reversible": "no"}, "overrides": []},
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "answers": {"reversible": "no"}}
+        ]
+      },
+      "response": {
+        "accept": [
+          {"verdict": "fail", "rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "score": 0.4, "threshold": 0.6, "gates": [{"gate": "reversible", "kind": "hard", "outcome": "fail", "reason": "A cheap reversal rules out load-bearing ."}, {"gate": "cross_project", "kind": "soft", "outcome": "pass"}], "meta": {"_links": {"override": [{"href": "https://api.example.com/v1/socrates/classify", "method": "POST", "gate": "reversible"}]}}, "contract_version": "1.0.0"},
+          {"verdict": "pass", "rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "score": 0.9, "threshold": 0.6, "gates": [{"gate": "reversible", "kind": "hard", "outcome": "overridden", "reason": "Human asked to log it in session."}, {"gate": "practice", "kind": "hard", "outcome": "off"}], "meta": {"_links": {}}, "contract_version": "1.0.0"},
+          {"verdict": "escalate", "rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "score": 0.4, "threshold": 0.6, "gates": [{"gate": "reversible", "kind": "hard", "outcome": "fail", "reason": "A cheap reversal rules out load-bearing ."}, {"gate": "cross_project", "kind": "soft", "outcome": "pass"}], "meta": {"_links": {}}, "contract_version": "1.0.0"},
+          {"type": "urn:hera:error:entitlement_lapsed", "title": "Organization entitlement has lapsed", "status": 402, "detail": "This organization is not entitled to socrates", "code": "entitlement_lapsed", "_links": {"subscribe": {"href": "https://example.com/billing/subscribe?product=socrates"}}}
+        ],
+        "reject": [
+          {},
+          {"ok": true},
+          {"ok": false, "error": "x", "code": "x", "status": 402, "message": "x"},
+          {"type": "urn:hera:error:x", "title": "t", "status": 402, "detail": "x", "code": "x", "_links": {"settings": {"href": "javascript:alert(1)"}}},
+          "<html>502 Bad Gateway</html>",
+          null,
+          {"verdict": "fail", "rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "score": 0.4, "threshold": 0.6, "gates": [{"gate": "reversible", "kind": "hard", "outcome": "fail"}], "meta": {"_links": {"override": [{"href": "https://api.example.com/v1/socrates/classify", "method": "POST", "gate": "reversible"}]}}, "contract_version": "1.0.0"},
+          {"verdict": "fail", "rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "score": 0.4, "threshold": 0.6, "gates": [{"gate": "reversible", "kind": "hard", "outcome": "fail", "reason": "A cheap reversal rules out load-bearing ."}, {"gate": "cross_project", "kind": "soft", "outcome": "pass"}], "meta": {"_links": {"override": [{"href": "https://api.example.com/v1/socrates/classify", "method": "POST", "gate": "cross_project"}]}}, "contract_version": "1.0.0"},
+          {"verdict": "fail", "rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "score": 0.4, "threshold": 0.6, "gates": [{"gate": "reversible", "kind": "hard", "outcome": "fail", "reason": "A cheap reversal rules out load-bearing ."}, {"gate": "cross_project", "kind": "soft", "outcome": "pass"}], "meta": {"_links": {"override": [{"href": "https://api.example.com/v1/socrates/classify", "method": "GET", "gate": "reversible"}]}}, "contract_version": "1.0.0"},
+          {"verdict": "fail", "rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "score": 0.4, "threshold": 0.6, "gates": [{"gate": "reversible", "kind": "hard", "outcome": "fail", "reason": "A cheap reversal rules out load-bearing ."}, {"gate": "cross_project", "kind": "soft", "outcome": "pass"}], "meta": {"_links": {"override": [{"href": "eris://override", "method": "POST", "gate": "reversible"}]}}, "contract_version": "1.0.0"},
+          {"verdict": "fail", "rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "score": 0.4, "threshold": 0.6, "gates": [{"gate": "reversible", "kind": "hard", "outcome": "fail", "reason": "A cheap reversal rules out load-bearing ."}, {"gate": "cross_project", "kind": "soft", "outcome": "pass"}], "meta": {"_links": {"override": [{"href": "https://api.example.com/v1/socrates/classify", "method": "POST", "gate": "reversible"}, {"href": "https://api.example.com/v1/socrates/classify", "method": "POST", "gate": "reversible"}]}}, "contract_version": "1.0.0"},
+          {"verdict": "pass", "rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "score": 0.9, "threshold": 0.6, "gates": [{"gate": "reversible", "kind": "hard", "outcome": "overridden", "reason": "Human asked to log it in session."}, {"gate": "practice", "kind": "hard", "outcome": "off"}], "meta": {"_links": {"override": [{"href": "https://api.example.com/v1/socrates/classify", "method": "POST", "gate": "reversible"}]}}, "contract_version": "1.0.0"},
+          {"verdict": "fail", "rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "score": 0.4, "threshold": 0.6, "gates": [], "meta": {"_links": {"override": [{"href": "https://api.example.com/v1/socrates/classify", "method": "POST", "gate": "reversible"}]}}, "contract_version": "1.0.0"},
+          {"verdict": "fail", "rubric_version": "rubric@v1", "policy_hash": "ABC", "score": 0.4, "threshold": 0.6, "gates": [{"gate": "reversible", "kind": "hard", "outcome": "fail", "reason": "A cheap reversal rules out load-bearing ."}, {"gate": "cross_project", "kind": "soft", "outcome": "pass"}], "meta": {"_links": {"override": [{"href": "https://api.example.com/v1/socrates/classify", "method": "POST", "gate": "reversible"}]}}, "contract_version": "1.0.0"},
+          {"verdict": "maybe", "rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "score": 0.4, "threshold": 0.6, "gates": [{"gate": "reversible", "kind": "hard", "outcome": "fail", "reason": "A cheap reversal rules out load-bearing ."}, {"gate": "cross_project", "kind": "soft", "outcome": "pass"}], "meta": {"_links": {"override": [{"href": "https://api.example.com/v1/socrates/classify", "method": "POST", "gate": "reversible"}]}}, "contract_version": "1.0.0"},
+          {"verdict": "fail", "rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "score": 0.4, "threshold": 0.6, "gates": [{"gate": "reversible", "kind": "hard", "outcome": "fail", "reason": "A cheap reversal rules out load-bearing ."}, {"gate": "cross_project", "kind": "soft", "outcome": "pass"}], "contract_version": "1.0.0"}
+        ]
+      }
+    },
+    "policy": {
+      "response": {
+        "accept": [
+          {"rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversible": {"enabled": true, "weight": 1}, "practice": {"enabled": false, "weight": 0.5}}, "threshold": 0.6, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "epic_comment"}, "contract_version": "1.0.0"},
+          {"type": "urn:hera:error:entitlement_lapsed", "title": "Organization entitlement has lapsed", "status": 402, "detail": "This organization is not entitled to socrates", "code": "entitlement_lapsed", "_links": {"subscribe": {"href": "https://example.com/billing/subscribe?product=socrates"}}}
+        ],
+        "reject": [
+          {},
+          {"ok": true},
+          {"ok": false, "error": "x", "code": "x", "status": 402, "message": "x"},
+          {"type": "urn:hera:error:x", "title": "t", "status": 402, "detail": "x", "code": "x", "_links": {"settings": {"href": "javascript:alert(1)"}}},
+          "<html>502 Bad Gateway</html>",
+          null,
+          {"rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversible": {"enabled": true, "weight": 1}, "practice": {"enabled": false, "weight": 0.5}}, "threshold": 0.6, "verbosity": "loud", "escalation": "evidence", "auto_resolve": false, "reporting": "epic_comment"}, "contract_version": "1.0.0"},
+          {"rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversible": {"enabled": true, "weight": -1}}, "threshold": 0.6, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "epic_comment"}, "contract_version": "1.0.0"},
+          {"rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversible": {"enabled": true, "weight": 1}, "practice": {"enabled": false, "weight": 0.5}}, "threshold": 0.6, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "slack"}, "contract_version": "1.0.0"},
+          {"rubric_version": "rubric@v1", "policy_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversible": {"enabled": true, "weight": 1}, "practice": {"enabled": false, "weight": 0.5}}, "threshold": 0.6, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "epic_comment"}, "contract_version": "1.0.0"}
+        ]
+      }
+    },
+    "evidence_create": {
+      "request": {
+        "accept": [
+          {"schema_version": "1.0.0", "kind": "code", "provenance": "example/repo@deadbee:src/errors.ts#L10-L24", "content": "export const toProblem = …"},
+          {"schema_version": "1.0.0", "candidate_id": "cand_1", "kind": "session_utterance", "provenance": "https://example.com/sessions/42", "content": "Log that we never shadow-run."}
+        ],
+        "reject": [
+          {"schema_version": "1.0.0", "kind": "code", "provenance": "src/errors.ts", "content": "x"},
+          {"schema_version": "1.0.0", "kind": "code", "provenance": "example/repo@main:src/errors.ts#L10", "content": "x"},
+          {"schema_version": "1.0.0", "kind": "secret", "provenance": "https://example.com", "content": "x"},
+          {"schema_version": "1.0.0", "kind": "code", "provenance": "https://example.com", "content": "  "}
+        ]
+      },
+      "response": {
+        "accept": [
+          {"fragment_id": "frag_1", "expires_at": "2026-11-27T12:00:00Z", "contract_version": "1.0.0"},
+          {"type": "urn:hera:error:forbidden", "title": "Forbidden", "status": 403, "detail": "Evidence fragments are off for this organization", "code": "forbidden", "_links": {"settings": {"href": "https://example.com/dash/socrates/policy"}}},
+          {"type": "urn:hera:error:entitlement_lapsed", "title": "Organization entitlement has lapsed", "status": 402, "detail": "This organization is not entitled to socrates", "code": "entitlement_lapsed", "_links": {"subscribe": {"href": "https://example.com/billing/subscribe?product=socrates"}}}
+        ],
+        "reject": [
+          {},
+          {"ok": true},
+          {"ok": false, "error": "x", "code": "x", "status": 402, "message": "x"},
+          {"type": "urn:hera:error:x", "title": "t", "status": 402, "detail": "x", "code": "x", "_links": {"settings": {"href": "javascript:alert(1)"}}},
+          "<html>502 Bad Gateway</html>",
+          null,
+          {"fragment_id": "frag_1", "expires_at": "next month", "contract_version": "1.0.0"}
+        ]
+      }
+    },
+    "evidence_get": {
+      "request": {
+        "accept": [
+          {"fragment_id": "frag_1"}
+        ],
+        "reject": [
+          {},
+          {"fragment_id": "  "}
+        ]
+      },
+      "response": {
+        "accept": [
+          {"fragment_id": "frag_01JB8Z5Q9K", "candidate_id": "cand_01JB8Z5Q9K", "kind": "code", "provenance": "example/repo@deadbee:src/errors.ts#L10-L24", "content": "export const toProblem = …", "created_at": "2026-10-28T12:00:00Z", "expires_at": "2026-11-27T12:00:00Z", "contract_version": "1.0.0"},
+          {"type": "urn:hera:error:forbidden", "title": "Forbidden", "status": 403, "detail": "Evidence fragments are off for this organization", "code": "forbidden", "_links": {"settings": {"href": "https://example.com/dash/socrates/policy"}}}
+        ],
+        "reject": [
+          {},
+          {"ok": true},
+          {"ok": false, "error": "x", "code": "x", "status": 402, "message": "x"},
+          {"type": "urn:hera:error:x", "title": "t", "status": 402, "detail": "x", "code": "x", "_links": {"settings": {"href": "javascript:alert(1)"}}},
+          "<html>502 Bad Gateway</html>",
+          null,
+          {"fragment_id": "frag_01JB8Z5Q9K", "candidate_id": "cand_01JB8Z5Q9K", "kind": "code", "provenance": "example/repo@deadbee:src/errors.ts#L10-L24", "content": "", "created_at": "2026-10-28T12:00:00Z", "expires_at": "2026-11-27T12:00:00Z", "contract_version": "1.0.0"},
+          {"fragment_id": "frag_01JB8Z5Q9K", "candidate_id": "cand_01JB8Z5Q9K", "kind": "code", "provenance": "example/repo@deadbee:src/errors.ts#L10-L24", "content": "export const toProblem = …", "created_at": "2026-10-28", "expires_at": "2026-11-27T12:00:00Z", "contract_version": "1.0.0"}
+        ]
+      }
+    },
+    "consult": {
+      "request": {
+        "accept": [
+          {"doc": "practices", "project": "platform"},
+          {"doc": "canon"}
+        ],
+        "reject": [
+          {},
+          {"doc": "wiki"}
+        ]
+      },
+      "response": {
+        "accept": [
+          {"doc": "practices", "title": "Platform - Practices", "url": "https://docs.example.com/platform-practices", "markdown": "## Current\n\n* **P1 · Plans precede code**", "fetched_at": "2026-10-28T12:00:00.123Z", "contract_version": "1.0.0"},
+          {"doc": "canon", "title": "Canon", "url": "https://docs.example.com/canon", "markdown": "", "fetched_at": "2026-10-28T12:00:00+01:00", "contract_version": "1.0.0"},
+          {"type": "urn:hera:error:entitlement_lapsed", "title": "Organization entitlement has lapsed", "status": 402, "detail": "This organization is not entitled to socrates", "code": "entitlement_lapsed", "_links": {"subscribe": {"href": "https://example.com/billing/subscribe?product=socrates"}}}
+        ],
+        "reject": [
+          {},
+          {"ok": true},
+          {"ok": false, "error": "x", "code": "x", "status": 402, "message": "x"},
+          {"type": "urn:hera:error:x", "title": "t", "status": 402, "detail": "x", "code": "x", "_links": {"settings": {"href": "javascript:alert(1)"}}},
+          "<html>502 Bad Gateway</html>",
+          null,
+          {"doc": "practices", "title": "P", "url": "https://docs.example.com/x", "fetched_at": "2026-10-28T12:00:00Z", "contract_version": "1.0.0"}
+        ]
+      }
+    },
+    "resolve": {
+      "request": {
+        "accept": [
+          {"schema_version": "1.0.0", "epic": "epic_412"}
+        ],
+        "reject": [
+          {"schema_version": "1.0.0"},
+          {"schema_version": "1.0.0", "epic": ""}
+        ]
+      },
+      "response": {
+        "accept": [
+          {"epic": "epic_412", "outcome": "resolved", "applied": ["epic_413", "epic_414"], "carried_over": ["epic_415"], "carry_over_epic": "epic_420", "reporting": "pulse", "contract_version": "1.0.0"},
+          {"epic": "epic_412", "outcome": "queued", "applied": [], "carried_over": [], "reporting": "none", "contract_version": "1.0.0"},
+          {"type": "urn:hera:error:entitlement_lapsed", "title": "Organization entitlement has lapsed", "status": 402, "detail": "This organization is not entitled to socrates", "code": "entitlement_lapsed", "_links": {"subscribe": {"href": "https://example.com/billing/subscribe?product=socrates"}}}
+        ],
+        "reject": [
+          {},
+          {"ok": true},
+          {"ok": false, "error": "x", "code": "x", "status": 402, "message": "x"},
+          {"type": "urn:hera:error:x", "title": "t", "status": 402, "detail": "x", "code": "x", "_links": {"settings": {"href": "javascript:alert(1)"}}},
+          "<html>502 Bad Gateway</html>",
+          null,
+          {"epic": "epic_412", "outcome": "done", "applied": [], "carried_over": [], "reporting": "none", "contract_version": "1.0.0"}
+        ]
+      }
+    },
+    "status": {
+      "request": {
+        "accept": [
+          {},
+          {"candidate_id": "cand_1"}
+        ],
+        "reject": [
+          {"candidate_id": ""}
+        ]
+      },
+      "response": {
+        "accept": [
+          {"rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "pending_candidates": 3, "open_epics": [{"epic": "epic_412", "project": "platform", "url": "https://tracker.example.com/issue/epic_412", "open_children": 2}], "contract_version": "1.0.0"},
+          {"rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "pending_candidates": 0, "open_epics": [], "candidate": {"candidate_id": "cand_1", "state": "needs_input", "issue_url": "https://tracker.example.com/issue/epic_413"}, "contract_version": "1.0.0"},
+          {"type": "urn:hera:error:entitlement_lapsed", "title": "Organization entitlement has lapsed", "status": 402, "detail": "This organization is not entitled to socrates", "code": "entitlement_lapsed", "_links": {"subscribe": {"href": "https://example.com/billing/subscribe?product=socrates"}}}
+        ],
+        "reject": [
+          {},
+          {"ok": true},
+          {"ok": false, "error": "x", "code": "x", "status": 402, "message": "x"},
+          {"type": "urn:hera:error:x", "title": "t", "status": 402, "detail": "x", "code": "x", "_links": {"settings": {"href": "javascript:alert(1)"}}},
+          "<html>502 Bad Gateway</html>",
+          null,
+          {"rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "pending_candidates": -1, "open_epics": [], "contract_version": "1.0.0"},
+          {"rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "pending_candidates": 0, "open_epics": [], "candidate": {"candidate_id": "cand_1", "state": "lost"}, "contract_version": "1.0.0"}
+        ]
+      }
+    }
   }
 }

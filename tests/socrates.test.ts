@@ -14,6 +14,8 @@ import { join, resolve } from "node:path";
 import { SocratesProblem, SocratesSubmitReceipt, SocratesSubmitRequest, SocratesSubmitResponse } from "../plugins/socrates/socrates-contract.v1";
 import { runSocrates } from "../plugins/socrates/submit";
 import { REDACTION_CLASSES } from "../packages/outbound-scan/src/index";
+import * as Verbs from "../plugins/socrates/socrates-contract.v1.verbs";
+import type { ZodTypeAny } from "zod";
 import { CliExit } from "../src/cli/ts-verb";
 import { expectFailBlock, type Sandbox, sandbox } from "./helpers/blackbox";
 
@@ -25,6 +27,7 @@ const SUBSCRIBE = "https://example.com/billing/subscribe?product=socrates";
 const fixtures = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "socrates-contract-v1.json"), "utf8")) as {
   request: { accept: unknown[]; reject: unknown[] };
   response: { receipt: unknown[]; problem: unknown[]; reject: unknown[] };
+  messages: Record<string, Partial<Record<"request" | "response", { accept: unknown[]; reject: unknown[] }>>>;
 };
 
 describe("the submit contract v1, against the shared golden file", () => {
@@ -40,6 +43,38 @@ describe("the submit contract v1, against the shared golden file", () => {
     for (const raw of fixtures.response.problem) expect(SocratesProblem.safeParse(raw).success).toBe(true);
     for (const raw of fixtures.response.reject) expect({ raw, ok: SocratesSubmitResponse.safeParse(raw).success }).toEqual({ raw, ok: false });
   });
+});
+
+/** Every route beyond submit: its request (where it takes one) and its response union. */
+const MESSAGES: Record<string, { request?: ZodTypeAny; response: ZodTypeAny }> = {
+  classify: { request: Verbs.SocratesClassifyRequest, response: Verbs.SocratesClassifyResponse },
+  policy: { response: Verbs.SocratesPolicyResponse },
+  evidence_create: { request: Verbs.SocratesEvidenceCreateRequest, response: Verbs.SocratesEvidenceCreateResponse },
+  evidence_get: { request: Verbs.SocratesEvidenceGetRequest, response: Verbs.SocratesEvidenceGetResponse },
+  consult: { request: Verbs.SocratesConsultRequest, response: Verbs.SocratesConsultResponse },
+  resolve: { request: Verbs.SocratesResolveRequest, response: Verbs.SocratesResolveResponse },
+  status: { request: Verbs.SocratesStatusRequest, response: Verbs.SocratesStatusResponse },
+};
+
+describe("the contract v1 routes beyond submit, against the shared golden file", () => {
+  it("covers exactly the routes the fixture file holds", () => {
+    /** When a route is added on one side only, its messages go undecoded here. */
+    expect(Object.keys(fixtures.messages).sort()).toEqual(Object.keys(MESSAGES).sort());
+  });
+
+  for (const [name, schemas] of Object.entries(MESSAGES)) {
+    it(`${name}: accepts what the source accepts and refuses what it refuses`, () => {
+      /** When this copy drifts from the source, the client sends what the endpoint refuses, or reads an untyped body as a result. */
+      for (const side of ["request", "response"] as const) {
+        const schema = schemas[side];
+        const set = fixtures.messages[name]?.[side];
+        expect(set === undefined).toBe(schema === undefined);
+        if (!schema || !set) continue;
+        for (const raw of set.accept) expect({ raw, ok: schema.safeParse(raw).success }).toEqual({ raw, ok: true });
+        for (const raw of set.reject) expect({ raw, ok: schema.safeParse(raw).success }).toEqual({ raw, ok: false });
+      }
+    });
+  }
 });
 
 let server: ReturnType<typeof Bun.serve>;
