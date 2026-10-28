@@ -19,6 +19,7 @@
     "./sdk": "./src/sdk.ts",
     "./sdk/testing": "./testing/index.ts",
     "./yak-contract": "./packages/yak-contract/src/index.ts",
+    "./socrates-core": "./packages/socrates-core/src/index.ts",
     "./yak-redact": "./packages/outbound-scan/src/redact.ts",
     "./outbound-scan": "./packages/outbound-scan/src/index.ts"
   },
@@ -32,6 +33,8 @@
     "packages/outbound-scan/LICENSE.gitleaks",
     "packages/yak-contract/schema",
     "packages/yak-contract/package.json",
+    "packages/socrates-core/src",
+    "packages/socrates-core/package.json",
     "testing",
     "ts",
     "docs",
