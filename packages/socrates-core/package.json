@@ -1,0 +1,21 @@
+{
+  "name": "@sibylline-labs/socrates-core",
+  "version": "0.1.0",
+  "description": "Pure Socrates core: entry rendering, keyword and Levenshtein matching, and entry-ID allocation",
+  "license": "Apache-2.0",
+  "private": false,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "bun-types": "1.4.4",
+    "typescript": "^6.0.3"
+  }
+}

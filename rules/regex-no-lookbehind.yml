@@ -23,6 +23,7 @@ files:
   - src/**/*.ts
   - ts/**/*.ts
   - plugins/**/*.ts
+  - packages/**/*.ts
 rule:
   any:
     - kind: regex_pattern
