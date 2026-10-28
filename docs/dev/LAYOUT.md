@@ -43,8 +43,9 @@ ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN li
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
 plugins/socrates/       # `eris socrates submit`: index.ts (the manifest), submit.ts (the verb),
-                        #   socrates-contract.v1.ts (the vendored submit contract; its golden file is
-                        #   tests/fixtures/socrates-contract-v1.json)
+                        #   socrates-contract.v1.ts (the vendored submit contract) and
+                        #   socrates-contract.v1.verbs.ts (classify, policy, evidence, consult, resolve,
+                        #   status); their golden file is tests/fixtures/socrates-contract-v1.json
 plugins/yak/            # `eris yak` as a plugin: index.ts (the manifest: rows + handler thunks), handlers.ts
                         #   (the dispatcher), yak.ts (the core), yak-{identity,context,redact,submit}.ts
                         #   (yak-redact.ts imports nothing; package.json exports it as `eris/yak-redact`),
