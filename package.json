@@ -18,6 +18,7 @@
     ".": "./src/main.ts",
     "./sdk": "./src/sdk.ts",
     "./sdk/testing": "./testing/index.ts",
+    "./socrates-core": "./packages/socrates-core/src/index.ts",
     "./yak-contract": "./packages/yak-contract/src/index.ts",
     "./yak-redact": "./plugins/yak/yak-redact.ts"
   },
@@ -25,6 +26,8 @@
     "bin",
     "src",
     "plugins",
+    "packages/socrates-core/src",
+    "packages/socrates-core/package.json",
     "packages/yak-contract/src",
     "packages/yak-contract/schema",
     "packages/yak-contract/package.json",

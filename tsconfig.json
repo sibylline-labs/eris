@@ -20,6 +20,7 @@
     "paths": {
       "eris/sdk": ["./src/sdk.ts"],
       "eris/sdk/testing": ["./testing/index.ts"],
+      "eris/socrates-core": ["./packages/socrates-core/src/index.ts"],
       "eris/yak-contract": ["./packages/yak-contract/src/index.ts"],
       "eris/yak-redact": ["./plugins/yak/yak-redact.ts"]
     }

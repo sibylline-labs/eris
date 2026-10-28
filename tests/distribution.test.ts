@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { buildInChild } from "eris/sdk/testing";
 import { BUILD } from "../examples/distribution/build";
 import { DISTRIBUTION, DISTRIBUTION_PLUGINS, IDENTITY } from "../examples/distribution/main";
+import { RUBRIC_V1, score } from "../packages/socrates-core/src/index";
 import { deriveIdempotencyKey, YakSubmission } from "../packages/yak-contract/src/index";
 import yak from "../plugins/yak";
 import { redact, redactDeep } from "../plugins/yak/yak-redact";
@@ -149,6 +150,13 @@ describe("the package's exports", () => {
     const contract = await import("@sibylline-labs/eris/yak-contract");
     expect(contract.deriveIdempotencyKey).toBe(deriveIdempotencyKey);
     expect(contract.YakSubmission).toBe(YakSubmission);
+  });
+
+  it("eris/socrates-core resolves through the package's own exports map to the workspace socrates-core package's module", async () => {
+    /** When the exports map loses `./socrates-core`, or maps it to a copy of the rubric rather than packages/socrates-core, a server pinned to this repository stops building at its next pin bump (or reclassifies with a rubric that drifts from the client's): observed through the package specifier, as a dependent repository imports it. */
+    const core = await import("@sibylline-labs/eris/socrates-core");
+    expect(core.RUBRIC_V1).toBe(RUBRIC_V1);
+    expect(core.score).toBe(score);
   });
 
   it("eris/yak-redact resolves through the package's own exports map to the client's redaction module, which imports nothing", async () => {

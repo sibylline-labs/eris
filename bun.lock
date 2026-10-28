@@ -13,6 +13,17 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/socrates-core": {
+      "name": "@sibylline-labs/socrates-core",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^3.23.0",
+      },
+      "devDependencies": {
+        "bun-types": "1.4.4",
+        "typescript": "^6.0.3",
+      },
+    },
     "packages/yak-contract": {
       "name": "@sibylline-labs/yak-contract",
       "version": "0.1.0",
@@ -27,6 +38,8 @@
     },
   },
   "packages": {
+    "@sibylline-labs/socrates-core": ["@sibylline-labs/socrates-core@workspace:packages/socrates-core"],
+
     "@sibylline-labs/yak-contract": ["@sibylline-labs/yak-contract@workspace:packages/yak-contract"],
 
     "@types/node": ["@types/node@26.6.5", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-uMzsv9stDdofIZBx4UGh4Z9ZgXnGC9seRDscilBcTHAeOFk67MZg/k9bWVfO+bk4qZmG+l52hRnLwUiH2LnJTg=="],
