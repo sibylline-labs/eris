@@ -19,6 +19,7 @@ const YAK_FLAGS = [
   { name: "--repro", takesValue: true },
   { name: "--repo", takesValue: true, repeatable: true },
   { name: "--no-redact", takesValue: false },
+  { name: "--vendor", takesValue: false },
 ] as const;
 
 export default definePlugin({

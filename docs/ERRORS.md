@@ -633,6 +633,42 @@ not an absolute `http(s)` URL, or `--kind` is not one of `decision`,
 `practice`, `prd` or `conflict`. The `ERROR` line names each field. Nothing
 was sent. Fix: correct the named fields.
 
+### socrates-secret-detected
+
+A field holds a secret: a vendored gitleaks rule (gitleaks v8.30.1,
+`packages/outbound-scan`) matched the title, statement, source, project,
+`--override-reason`, or a string in the request body just before it was sent.
+The `ERROR` line names the field and the rule id, never the text. Nothing was
+sent. This check cannot be overridden: `--allow-redaction` does not reach it.
+Fix: remove the secret from the named field and run the command again.
+
+### socrates-override-invalid
+
+`--allow-redaction` named something that is not one of eris's redaction
+classes. Nothing was sent. Fix: use a class the `fix:` line lists, or drop the
+flag.
+
+### socrates-redacted
+
+A `WARN`, not a failure. One or more of eris's redaction classes matched a
+field, and the match was replaced with `«redacted:<class>»` before sending.
+The line names each class. If the match is not a secret, send it as written
+with `--allow-redaction <class> --override-reason <why>`, which reports the
+override to the eris vendor tracker.
+
+### socrates-override-unused
+
+A `WARN`. An `--allow-redaction` class matched nothing in the candidate, so
+nothing was overridden and no report was filed. Fix: drop the flag.
+
+### socrates-override-unreported
+
+A `WARN`. An override let text through, and the `eris yak issue --vendor`
+report of it was not delivered (the line names the yak's slug or how its run
+ended). The candidate was sent anyway: a yak never fails the task it reports
+on. Fix: see the named yak slug; a problem with eris itself is reported on the
+vendor route, the eris project's own tracker.
+
 ### socrates-unreachable
 
 The request to `<url>/v1/socrates/submit` did not complete: the host could

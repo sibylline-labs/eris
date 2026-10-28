@@ -25,6 +25,7 @@
  */
 
 import type { CliContext, VerbContext, VerbHandler } from "../main";
+import type { RunResult } from "../runtime/process";
 import { type ArgSinks, type GroupArgs, groupArgsIn, type ReadOptions, readRowArgs, type RowArgs } from "./args";
 import type { CompletionDomain, Flag, FlagName, Row, SlotWord } from "./registry";
 
@@ -42,6 +43,7 @@ export {
   type YaksUrlSource,
 } from "../runtime/credentials";
 export { CliExit } from "./args";
+export type { RunResult } from "../runtime/process";
 export type { ArgSinks, CliContext, CompletionDomain, Flag, FlagName, GroupArgs, ReadOptions, Row, RowArgs, SlotWord, VerbContext, VerbHandler };
 
 type Rows = Readonly<Record<string, Row>>;
@@ -93,4 +95,19 @@ export function readArgs<R extends Rows, P extends keyof R & string>(
 /** A group handler's first word: `bare`, `help`, one of the group's subs, or `unknown`. */
 export function groupArgs<R extends Rows>(rows: R, group: GroupsOf<R>, argv: readonly string[]) {
   return groupArgsIn(rows, group, argv);
+}
+
+/**
+ * Run another eris verb as a child of this one: the binary itself when
+ * compiled, else this bun on the same entry, with `--no-env-file
+ * --config=/dev/null` like every bun eris launches. For a plugin that must
+ * hand work to a verb another plugin owns (`plugin-imports-sdk-only` keeps it
+ * from importing that plugin). Goes through the subprocess adapter, so the
+ * deadline kills the whole tree. The adapter loads on the first call, not at
+ * shell start.
+ */
+export async function runErisVerb(argv: readonly string[], opts: { env: Record<string, string | undefined>; timeoutMs: number; cwd?: string }): Promise<RunResult> {
+  const [{ nodeRunner }, { isCompiled }] = await Promise.all([import("../runtime/process"), import("../runtime/home")]);
+  const self = isCompiled ? [process.execPath] : [process.execPath, "--no-env-file", "--config=/dev/null", Bun.main];
+  return nodeRunner.run([...self, ...argv], { timeoutMs: opts.timeoutMs, env: opts.env, ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}) });
 }

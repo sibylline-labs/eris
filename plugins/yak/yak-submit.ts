@@ -62,8 +62,9 @@ import {
   deriveIdempotencyKey,
   type YakVerb,
   type YakProvenance,
+  type YakRoute,
 } from "eris/yak-contract";
-import { redact, redactDeep, type RedactionClass } from "./yak-redact";
+import { redact, redactDeep, type RedactionClass } from "eris/outbound-scan";
 import type { IdentityOutcome } from "./yak-identity";
 
 /**
@@ -279,7 +280,7 @@ function zeroRedactionSummary(skipped = false): RedactionSummary {
 
 /** The canonical zero-filled `Record<RedactionClass, number>` — derived
  *  from `redact("")` rather than re-declaring the class list here, so
- *  this file has exactly one dependency on `yak-redact.ts`'s class set
+ *  this file has exactly one dependency on `redact.ts`'s class set
  *  (its own export) instead of a second, driftable copy. */
 function zeroRedactionCounts(): Record<RedactionClass, number> {
   return redact("").counts;
@@ -519,6 +520,9 @@ export interface SubmitParams {
    *  warning — printing that warning is `yak.ts`'s job; this module just
    *  honours the flag. */
   noRedact: boolean;
+  /** `--vendor` files into the vendor's tenant: a report about eris itself.
+   *  Absent: the caller's own workspace. */
+  route?: YakRoute;
   deviceId: string;
   executionId: string;
   provenance?: YakProvenance;
@@ -940,7 +944,7 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
   // docstring). Merged in AFTER `redactedProvenance` is computed, using the
   // ALREADY-redacted `finalRepro` from above — not a second `redactDeep`
   // pass over it, which would be redundant (a marker never re-matches any
-  // class, `plugins/yak/yak-redact.ts`'s own idempotence guarantee) and would
+  // class, `packages/outbound-scan/src/redact.ts`'s own idempotence guarantee) and would
   // double-count it in `redactionCounts` if it weren't idempotent.
   const provenanceWithRepro: YakProvenance | undefined =
     finalRepro !== undefined
@@ -960,13 +964,13 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
     provenanceWithRepoHints && Object.keys(provenanceWithRepoHints).length > 0 ? provenanceWithRepoHints : undefined;
 
   // The reporter is never sent: the ingress derives the tracker user from the
-  // bearer token, so the contract has no field for one. `route: "workspace"`
-  // files the report into the caller's own tenant; it is not an input to the
-  // idempotency key.
+  // bearer token, so the contract has no field for one. `route` (`workspace`
+  // unless `--vendor`) picks the tenant the report files into; it is not an
+  // input to the idempotency key.
   const submission: YakSubmission = {
     schema_version: YAKS_CONTRACT_VERSION,
     verb: params.verb,
-    route: "workspace",
+    route: params.route ?? "workspace",
     summary: redactedSummary,
     body: redactedBody,
     ...(finalEvidence !== undefined ? { evidence: finalEvidence } : {}),

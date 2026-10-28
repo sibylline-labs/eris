@@ -18,6 +18,9 @@ export {
   type VerifiedBody,
   type WriteResult,
 } from "./doc-surgery";
+export * from "./entry-id";
+export * from "./match";
+export * from "./render";
 
 export * from "./rubric/definition";
 export { RUBRIC_V1, type RubricV1 } from "./rubric/v1";

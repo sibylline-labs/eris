@@ -1,2 +1,6 @@
 eris
 Copyright 2026 Sibylline Labs
+
+This product includes detection rules derived from gitleaks
+(https://github.com/gitleaks/gitleaks), Copyright (c) 2019 Zachary Rice,
+licensed under the MIT License: packages/outbound-scan/LICENSE.gitleaks.

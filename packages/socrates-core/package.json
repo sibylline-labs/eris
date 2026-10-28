@@ -1,7 +1,7 @@
 {
   "name": "@sibylline-labs/socrates-core",
   "version": "0.1.0",
-  "description": "Socrates' deterministic core: living-doc surgery over an injected Linear client, and the versioned rubric with its pure scorer",
+  "description": "Pure Socrates core: living-doc surgery through an injected Linear client, entry rendering, keyword and Levenshtein matching, entry-ID allocation, and the versioned rubric with its pure scorer",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
