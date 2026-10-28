@@ -60,7 +60,7 @@ packages/yak-contract/  # the Yaks wire contract v2, a bun workspace package tha
 packages/socrates-core/ # Socrates living-doc surgery, `eris/socrates-core`: src/doc-surgery.ts (applyOps, the pure
                         #   splices and guards; writeDoc, the fetch-splice-check-write-verify pipe over an injected
                         #   LinearDocPort; ensureDoc; parseTitle). Web APIs only: its tsconfig has no Bun/Node types.
-                        #   src/rubric/definition.ts (the rubric shape, answers schema, pure scorer), v1.ts (rubric@v1);
+                        #   src/rubric/definition.ts (the rubric shape, answers schema, pure scorer), v1.ts, v2.ts (rubric@v1, @v2);
                         #   src/index.ts also serves RUBRICS / rubricFor(version)
 skills/eris-yaks/       # SKILL.md: the agent skill that sets up Yaks (`npx skills add sibylline-labs/eris
                         #   --skill eris-yaks`); the skills CLI discovers skills/<name>/SKILL.md
