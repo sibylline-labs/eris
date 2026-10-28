@@ -21,7 +21,8 @@
       "eris/sdk": ["./src/sdk.ts"],
       "eris/sdk/testing": ["./testing/index.ts"],
       "eris/yak-contract": ["./packages/yak-contract/src/index.ts"],
-      "eris/yak-redact": ["./plugins/yak/yak-redact.ts"]
+      "eris/yak-redact": ["./packages/outbound-scan/src/redact.ts"],
+      "eris/outbound-scan": ["./packages/outbound-scan/src/index.ts"]
     }
   },
   "include": ["bin/**/*.ts", "packages/**/*.ts", "plugins/**/*.ts", "examples/**/*.ts", "src/**/*.ts", "ts/**/*.ts", "testing/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],

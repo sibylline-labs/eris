@@ -72,7 +72,7 @@ describe("parseArgv", () => {
     expect(outcome.slug).toBe("yak-flag-missing-value");
   });
 
-  it("parses every flag, including --no-redact and --repro, for a full call", () => {
+  it("parses every flag, including --no-redact, --vendor and --repro, for a full call", () => {
     const outcome = parseArgv([
       "fatal",
       "--summary",
@@ -84,6 +84,7 @@ describe("parseArgv", () => {
       "--repro",
       "npm test -- --grep foo",
       "--no-redact",
+      "--vendor",
     ]);
     expect(outcome).toEqual({
       kind: "ok",
@@ -94,6 +95,7 @@ describe("parseArgv", () => {
         evidenceInline: "E",
         repro: "npm test -- --grep foo",
         noRedact: true,
+        vendor: true,
       },
     });
   });

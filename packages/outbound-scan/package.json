@@ -1,0 +1,15 @@
+{
+  "name": "@sibylline-labs/outbound-scan",
+  "version": "0.1.0",
+  "description": "What eris runs over text before it leaves the machine: a vendored gitleaks scan and its redaction classes",
+  "license": "Apache-2.0 AND MIT",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "LICENSE.gitleaks"
+  ]
+}

@@ -13,6 +13,10 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/outbound-scan": {
+      "name": "@sibylline-labs/outbound-scan",
+      "version": "0.1.0",
+    },
     "packages/yak-contract": {
       "name": "@sibylline-labs/yak-contract",
       "version": "0.1.0",
@@ -27,6 +31,8 @@
     },
   },
   "packages": {
+    "@sibylline-labs/outbound-scan": ["@sibylline-labs/outbound-scan@workspace:packages/outbound-scan"],
+
     "@sibylline-labs/yak-contract": ["@sibylline-labs/yak-contract@workspace:packages/yak-contract"],
 
     "@types/node": ["@types/node@26.6.5", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-uMzsv9stDdofIZBx4UGh4Z9ZgXnGC9seRDscilBcTHAeOFk67MZg/k9bWVfO+bk4qZmG+l52hRnLwUiH2LnJTg=="],

@@ -15,19 +15,22 @@ export default definePlugin({
     "socrates submit": {
       summary: "Submit one candidate (a decision, practice, PRD or conflict) for review",
       json: true,
-      usage: "--title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>]",
+      usage: "--title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--allow-redaction <class> --override-reason <text>]",
       flags: [
         { name: "--kind", takesValue: true },
         { name: "--title", takesValue: true },
         { name: "--statement", takesValue: true },
         { name: "--source", takesValue: true },
         { name: "--project", takesValue: true },
+        { name: "--allow-redaction", takesValue: true, repeatable: true },
+        { name: "--override-reason", takesValue: true },
       ],
     },
   },
   handlers: {
     socrates: async () => (await import("./submit")).runSocrates,
   },
-  jsonFix: `  eris socrates submit                     {candidate_id, deduped, contract_version}
+  jsonFix: `  eris socrates submit                     {candidate_id, deduped, contract_version, redactions,
+                                            overrides}
 `,
 });

@@ -1,8 +1,10 @@
 # Secrets surface: pattern-class vocabulary
 
 Repo-local addendum for the `secrets` surface registered in `.claude/surfaces.yml`:
-the yak redaction pass (`plugins/yak/yak-redact.ts`), its call site
-(`plugins/yak/yak-submit.ts`) and its tests (`tests/yak-redact.test.ts`). Format
+the redaction pass (`packages/outbound-scan/src/redact.ts`), the vendored gitleaks
+scan (`packages/outbound-scan/src/scan.ts`), their call sites
+(`plugins/yak/yak-submit.ts`, `plugins/socrates/submit.ts`) and their tests
+(`tests/yak-redact.test.ts`, `tests/outbound-scan.test.ts`). Format
 per the universal class core; class IDs use the prefix `S`.
 
 Seeded by hand from failure modes the pass's own header and tests already record,

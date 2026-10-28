@@ -20,7 +20,7 @@
  *     `GIT_PROBE_TIMEOUT_MS`
  *
  * `provenance` is redacted too: an origin URL can carry a token. That
- * redaction pass is `plugins/yak/yak-redact.ts`, applied by the submission
+ * redaction pass is `packages/outbound-scan/src/redact.ts`, applied by the submission
  * core (`yak-submit.ts`), which is where the whole payload — `summary`, `body`,
  * `evidence`, AND this provenance record — gets one redaction pass before
  * key derivation. This module only gathers; it does not redact.

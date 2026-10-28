@@ -19,13 +19,17 @@
     "./sdk": "./src/sdk.ts",
     "./sdk/testing": "./testing/index.ts",
     "./yak-contract": "./packages/yak-contract/src/index.ts",
-    "./yak-redact": "./plugins/yak/yak-redact.ts"
+    "./yak-redact": "./packages/outbound-scan/src/redact.ts",
+    "./outbound-scan": "./packages/outbound-scan/src/index.ts"
   },
   "files": [
     "bin",
     "src",
     "plugins",
     "packages/yak-contract/src",
+    "packages/outbound-scan/src",
+    "packages/outbound-scan/package.json",
+    "packages/outbound-scan/LICENSE.gitleaks",
     "packages/yak-contract/schema",
     "packages/yak-contract/package.json",
     "testing",

@@ -1,7 +1,7 @@
 # Shipped code builds no regex with a lookbehind (`(?<=` or `(?<!`). The bun
 # this repo pins (.bun-version) cannot compile a lookbehind to native code, so
 # the whole pattern runs in the regex interpreter, about ten times slower.
-# yak-redact.ts scans agent-authored text of any length on every submission;
+# packages/outbound-scan/src/redact.ts scans agent-authored text of any length on every submission;
 # one lookbehind on ASSIGNMENT_RE took the 200KB pathological-input test from
 # about 90ms to about 900ms on that bun, and past its budget in CI. A newer bun
 # compiles the same pattern natively, so a local run did not show it.
@@ -23,6 +23,7 @@ files:
   - src/**/*.ts
   - ts/**/*.ts
   - plugins/**/*.ts
+  - packages/**/*.ts
 rule:
   any:
     - kind: regex_pattern
