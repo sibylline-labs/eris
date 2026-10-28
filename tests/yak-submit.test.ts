@@ -29,7 +29,7 @@ import {
   type SubmitParams,
   type SubmitWarnSlug,
 } from "../plugins/yak/yak-submit";
-import { redact } from "../plugins/yak/yak-redact";
+import { redact } from "../packages/outbound-scan/src/redact";
 import {
   deriveIdempotencyKey,
   YakReceipt,
@@ -637,7 +637,7 @@ describe("submitYak — over-length device_id/execution_id and redaction-caused 
 
   it("a summary that redaction alone pushes over the limit is a WARN — the ORIGINAL text was in bounds", async () => {
     const fetchImpl = mock(async () => new Response("should never be called", { status: 200 }));
-    // "seed" is a governed assignment name (plugins/yak/yak-redact.ts); its value
+    // "seed" is a governed assignment name (packages/outbound-scan/src/redact.ts); its value
     // "1234" (4 chars, the minimum unquoted length the pass accepts) is
     // replaced by the 21-char «redacted:assignment» marker. 191 raw chars
     // is within YAK_SUMMARY_MAX_LENGTH (200); the redacted text is 208.

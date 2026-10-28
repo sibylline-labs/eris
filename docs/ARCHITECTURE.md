@@ -20,7 +20,7 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
 - **`src/main.ts`** routes every command line.
 - **`plugins/index.ts`** lists the plugins this build compiles in.
 - **`src/sdk.ts`** is `eris/sdk`, the one module through which another repository reaches core
-  (the `exports` map names `eris/sdk/testing`, `eris/yak-contract`, `eris/yak-redact` and `eris/socrates-core` beside it,
+  (the `exports` map names `eris/sdk/testing`, `eris/yak-contract`, `eris/outbound-scan`, `eris/yak-redact` and `eris/socrates-core` beside it,
   nothing deeper).
   A **distribution** depends on this package, composes core with this build's plugins and its own,
   and compiles its own binary with `build()` ([`dev/PLUGINS.md`](dev/PLUGINS.md#distributions)).
@@ -147,8 +147,10 @@ it is not a verb, but it renders JSON under `--output` and reads no file from th
   may also import `eris/sdk/testing` (`testing/`), which no source the binary bundles imports
   (`runtime-imports-no-testing`). `eris/yak-contract` is not core: it is the workspace package
   `packages/yak-contract`, which imports nothing of core (`tests/yak-contract-v2.test.ts`).
-  `eris/yak-redact` is `plugins/yak/yak-redact.ts`, the client's redaction pass, so a server that
-  redacts a submission runs the client's rules; it imports nothing (`tests/distribution.test.ts`).
+  `eris/outbound-scan` is the workspace package `packages/outbound-scan`: the vendored gitleaks scan
+  and the redaction pass every outbound text goes through (`eris yak`, `eris socrates`). Its
+  `src/redact.ts` is also exported as `eris/yak-redact`, so a server that redacts a submission runs
+  the client's rules; it imports nothing (`tests/distribution.test.ts`).
   `eris/socrates-core` is the workspace package `packages/socrates-core`, which imports nothing
   (`bunx tsc --noEmit -p packages/socrates-core`, a CI step).
 - **Completion imports the registry and nothing else.** `source <(eris completion bash)` runs on

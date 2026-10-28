@@ -53,7 +53,7 @@ import {
   type TextInputDeps,
   type YakOutputRecord,
 } from "./yak-submit";
-import { formatRedactionSummary } from "./yak-redact";
+import { formatRedactionSummary } from "eris/outbound-scan";
 import type { YakVerb } from "eris/yak-contract";
 
 // ---------------------------------------------------------------------------
@@ -108,6 +108,8 @@ export interface ParsedFlags {
    *  from the invoking process's own git remote instead. */
   repoHints?: string[];
   noRedact: boolean;
+  /** `--vendor`: file into the vendor's tenant, a report about eris itself. */
+  vendor: boolean;
 }
 
 export type ArgvOutcome =
@@ -174,7 +176,7 @@ export function parseArgv(argv: string[]): ArgvOutcome {
   }
   if (p === null) return { kind: "help" };
   const f = p.flags;
-  const flags: ParsedFlags = { noRedact: f["--no-redact"] };
+  const flags: ParsedFlags = { noRedact: f["--no-redact"], vendor: f["--vendor"] };
   if (f["--summary"] !== undefined) flags.summary = f["--summary"];
   if (f["--body"] !== undefined) flags.bodyInline = f["--body"];
   if (f["--body-file"] !== undefined) flags.bodyFile = f["--body-file"];
@@ -207,6 +209,8 @@ flags:
                                target repo this report concerns; auto-derived from this
                                process's own git remote when omitted
   --no-redact                  skip the secret-scrub pass (loud warning)
+  --vendor                     file a report about eris itself into the vendor's tracker,
+                               not your workspace
   --help, -h                   show this message
 
 Setup: 'eris login' writes ~/.eris/yaks.json ({"url", "token"}, mode 0600;
@@ -411,6 +415,7 @@ export async function runYak(opts: RunYakOptions): Promise<RunYakResult> {
     repro: flags.repro,
     repoHints: flags.repoHints,
     noRedact: flags.noRedact,
+    ...(flags.vendor ? { route: "vendor" as const } : {}),
     deviceId: deviceIdOutcome.value,
     executionId,
     provenance,

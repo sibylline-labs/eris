@@ -13,6 +13,10 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/outbound-scan": {
+      "name": "@sibylline-labs/outbound-scan",
+      "version": "0.1.0",
+    },
     "packages/socrates-core": {
       "name": "@sibylline-labs/socrates-core",
       "version": "0.1.0",
@@ -35,6 +39,8 @@
     },
   },
   "packages": {
+    "@sibylline-labs/outbound-scan": ["@sibylline-labs/outbound-scan@workspace:packages/outbound-scan"],
+
     "@sibylline-labs/socrates-core": ["@sibylline-labs/socrates-core@workspace:packages/socrates-core"],
 
     "@sibylline-labs/yak-contract": ["@sibylline-labs/yak-contract@workspace:packages/yak-contract"],

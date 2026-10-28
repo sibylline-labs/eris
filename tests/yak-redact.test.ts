@@ -1,5 +1,5 @@
 /**
- * Tests for plugins/yak/yak-redact.ts — the Yak submission redaction pass.
+ * Tests for packages/outbound-scan/src/redact.ts — the Yak submission redaction pass.
  *
  * A pure text-transformation pass, applied to `summary` / `body` / `evidence`
  * before key derivation so the Actor's re-derived key agrees with
@@ -24,7 +24,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { redact, redactDeep, formatRedactionSummary, type RedactionClass, type RedactionResult } from "../plugins/yak/yak-redact";
+import { redact, redactDeep, formatRedactionSummary, type RedactionClass, type RedactionResult } from "../packages/outbound-scan/src/redact";
 
 // --- helpers -------------------------------------------------------------------
 
@@ -854,7 +854,7 @@ describe("redact() — negative corpus, prose must survive untouched", () => {
 // of "this NAME is a log field, that NAME is a credential," and the
 // minimum-unquoted-value-length fix (>= 4 chars) only removes the CHEAPEST
 // false positives (single-digit/short values like `Session: 3`), not this
-// class. See plugins/yak/yak-redact.ts's file header, "THE NAME: VALUE
+// class. See packages/outbound-scan/src/redact.ts's file header, "THE NAME: VALUE
 // TRADE-OFF", for the reasoning: a false positive here costs one line's
 // readability; a miss costs a leaked credential. These are pinned as
 // INTENDED behavior — a future reader should see this was decided, not

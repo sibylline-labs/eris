@@ -13,12 +13,15 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { SocratesProblem, SocratesSubmitReceipt, SocratesSubmitRequest, SocratesSubmitResponse } from "../plugins/socrates/socrates-contract.v1";
 import { runSocrates } from "../plugins/socrates/submit";
+import { REDACTION_CLASSES } from "../packages/outbound-scan/src/index";
 import * as Verbs from "../plugins/socrates/socrates-contract.v1.verbs";
 import type { ZodTypeAny } from "zod";
 import { CliExit } from "../src/cli/ts-verb";
+import { expectFailBlock, type Sandbox, sandbox } from "./helpers/blackbox";
 
 const REPO = resolve(import.meta.dir, "..");
 const TOKEN = ["sib", "01HZX3K5Q8W2N4R6T8V0Y2B4D6", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
+const GHP = ["ghp", "Zq8Lr2Vm5Nx7Pk1Ws4Ty6Hb9Jd3Gf0Ca8Ee2"].join("_");
 const SUBSCRIBE = "https://example.com/billing/subscribe?product=socrates";
 
 const fixtures = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "socrates-contract-v1.json"), "utf8")) as {
@@ -133,7 +136,11 @@ describe("eris socrates submit", () => {
   it("prints a deduped receipt as a bare JSON record under --output json", async () => {
     /** When a dedup reads as a failure or the record grows a wrapper, a script branching on `deduped` breaks. */
     answer = () => Response.json({ candidate_id: "cand_1", deduped: true, contract_version: "1.0.0" });
-    expect(await drive(["submit", ...CANDIDATE], { format: "json" })).toMatchObject({ rc: 0, stdout: '{"candidate_id":"cand_1","deduped":true,"contract_version":"1.0.0"}\n', stderr: "" });
+    expect(await drive(["submit", ...CANDIDATE], { format: "json" })).toMatchObject({
+      rc: 0,
+      stdout: '{"candidate_id":"cand_1","deduped":true,"contract_version":"1.0.0","redactions":{"count":0,"classes":[]},"overrides":[]}\n',
+      stderr: "",
+    });
     expect((await drive(["submit", ...CANDIDATE])).stdout).toBe("already submitted: cand_1\n");
   });
 
@@ -178,5 +185,94 @@ describe("eris socrates submit", () => {
     const r = await drive(["submit", ...CANDIDATE], { env: { HOME: join(REPO, ".scratch", "no-such-home"), ERIS_YAKS_URL: `http://127.0.0.1:${server.port}` } });
     expect(r).toMatchObject({ rc: 1, slug: "yak-token-unresolved" });
     expect(requests).toEqual([]);
+  });
+
+  it("never sends a gitleaks-shaped secret, from any field, with or without an override", async () => {
+    /** When the scan misses a field or an override reaches past it, a live credential leaves the machine; observed at the loopback endpoint, which receives nothing, and at the block, which never prints the secret. */
+    const allowAll = REDACTION_CLASSES.flatMap((c) => ["--allow-redaction", c]);
+    const shapes = [
+      ["--title", GHP, "--statement", "s", "--source", "https://example.com/pr/14"],
+      ["--title", "t", "--statement", `we pasted ${GHP} here`, "--source", "https://example.com/pr/14"],
+      ["--title", "t", "--statement", "s", "--source", `https://example.com/pr/14?t=${GHP}`],
+      [...CANDIDATE, "--project", GHP],
+    ];
+    for (const shape of shapes) {
+      for (const extra of [[], ["--allow-redaction", "github-token", "--override-reason", "x"], [...allowAll, "--override-reason", "x"]]) {
+        const r = await drive(["submit", ...shape, ...extra]);
+        expect({ shape, extra, rc: r.rc, slug: r.slug, stdout: r.stdout }).toEqual({ shape, extra, rc: 1, slug: "socrates-secret-detected", stdout: "" });
+        expect(r.stderr).not.toContain(GHP);
+      }
+    }
+    const reason = await drive(["submit", ...CANDIDATE, "--allow-redaction", "assignment", "--override-reason", GHP]);
+    expect(reason).toMatchObject({ rc: 1, slug: "socrates-secret-detected" });
+    expect(requests).toEqual([]);
+  });
+
+  it("sends our redaction classes as markers, and says so on stderr", async () => {
+    /** When a redaction class is skipped on the socrates path, a token the yak path would scrub reaches the endpoint; when the WARN is missing, the caller cannot tell their text changed. Observed at the body the endpoint received. */
+    const sib = ["sib", "01HZX3K5Q8W2N4R6T8V0Y2B4D6", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
+    const r = await drive(["submit", "--title", "t", "--statement", `ERIS_TOKEN=${sib}`, "--source", "https://example.com/pr/14"], { format: "json" });
+    expect(r.rc).toBe(0);
+    expect(r.stderr).toContain("socrates-redacted");
+    expect(JSON.parse(r.stdout)).toMatchObject({ redactions: { count: 1, classes: ["sib-token"] }, overrides: [] });
+    expect(requests).toHaveLength(1);
+    expect((requests[0]!.body as { candidate: { statement: string } }).candidate.statement).toBe("ERIS_TOKEN=«redacted:sib-token»");
+  });
+
+  it("types the override: a known class, and a reason with it", async () => {
+    /** When an unknown class is accepted, a typo silently overrides nothing; when the reason is optional, the vendor yak carries no why. Observed at the slug, with nothing sent. */
+    expect(await drive(["submit", ...CANDIDATE, "--allow-redaction", "everything", "--override-reason", "x"])).toMatchObject({ rc: 1, slug: "socrates-override-invalid" });
+    expect(await drive(["submit", ...CANDIDATE, "--allow-redaction", "jwt"])).toMatchObject({ rc: 1, slug: "socrates-flag-required" });
+    expect(await drive(["submit", ...CANDIDATE, "--override-reason", "x"])).toMatchObject({ rc: 1, slug: "socrates-flag-required" });
+    expect(requests).toEqual([]);
+  });
+});
+
+describe("eris socrates submit --allow-redaction, through the eris entrypoint", () => {
+  let sb: Sandbox;
+  let both: ReturnType<typeof Bun.serve>;
+  const seen: { path: string; body: Record<string, unknown> }[] = [];
+  const sib = ["sib", "01HZX3K5Q8W2N4R6T8V0Y2B4D6", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
+
+  beforeAll(() => {
+    sb = sandbox("eris-socrates-");
+    both = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      async fetch(req) {
+        const path = new URL(req.url).pathname;
+        seen.push({ path, body: (await req.json()) as Record<string, unknown> });
+        if (path === "/v1/yaks") return Response.json({ id: "yak_1", idempotency_key: "k", replay: false, contract_version: "2.0.0" });
+        return Response.json({ candidate_id: "cand_1", deduped: false, contract_version: "1.0.0" });
+      },
+    });
+  });
+  afterAll(() => {
+    both.stop(true);
+    sb.cleanup();
+  });
+
+  it("files exactly one vendor yak naming the class, never the text, then sends the text as written", async () => {
+    /** When an override files no yak (or one per field, or into the caller's own workspace), the vendor never learns its pattern over-matched; when the yak carries the text, the override leaks what it let through to a second tracker. Observed at one loopback server standing in for both endpoints, across the child `eris yak` process. */
+    const env = { ERIS_YAKS_URL: `http://127.0.0.1:${both.port}`, ERIS_YAKS_TOKEN: TOKEN };
+    const args = ["socrates", "submit", "--title", `about ${sib}`, "--statement", `the fixture ${sib} is not live`, "--source", "https://example.com/pr/14", "--allow-redaction", "sib-token", "--override-reason", "a test fixture, not a credential"];
+    const r = await sb.run(args, { env });
+    expect({ status: r.status, stdout: r.stdout }).toEqual({ status: 0, stdout: "submitted: cand_1\n" });
+    expect(seen.map((s) => s.path)).toEqual(["/v1/yaks", "/v1/socrates/submit"]);
+    const yak = seen[0]!.body;
+    expect(yak).toMatchObject({ verb: "issue", route: "vendor" });
+    expect(JSON.stringify(yak)).not.toContain(sib.slice(4, 30));
+    expect(String(yak.body)).toContain("sib-token in statement (1)");
+    expect(String(yak.body)).toContain("sib-token in title (1)");
+    expect((seen[1]!.body as { candidate: { statement: string } }).candidate.statement).toBe(`the fixture ${sib} is not live`);
+  });
+
+  it("sends nothing, and files no yak, when a secret sits beside the override", async () => {
+    /** When the override path runs before the secret scan, the yak goes out and so might the secret; observed at the loopback server, which receives nothing. */
+    seen.length = 0;
+    const env = { ERIS_YAKS_URL: `http://127.0.0.1:${both.port}`, ERIS_YAKS_TOKEN: TOKEN };
+    const r = await sb.run(["socrates", "submit", "--title", "t", "--statement", `ERIS_TOKEN=${sib} and ${GHP}`, "--source", "https://example.com/pr/14", "--allow-redaction", "sib-token", "--override-reason", "x"], { env });
+    expectFailBlock(r, "socrates-secret-detected");
+    expect(seen).toEqual([]);
   });
 });

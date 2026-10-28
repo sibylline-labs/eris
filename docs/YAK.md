@@ -36,7 +36,14 @@ eris yak <issue|suggest|fatal>
   --repo <owner/name>                           optional, repeatable, ≤ 200 chars each,
                                                 ≤ 20 total — see below
   --no-redact                                   skip the secret-scrub pass (loud warning)
+  --vendor                                      file into the vendor's tracker, not your
+                                                workspace — see below
 ```
+
+`--vendor` sends the submission with `route: "vendor"`: a report about eris
+itself, which files into the eris project's own tracker instead of the
+caller's workspace. `eris socrates submit --allow-redaction` uses it to report
+each redaction override. The route is not an input to the idempotency key.
 
 `--body-file -` and `--evidence-file -` are mutually exclusive — there is only
 one stdin. `--body-file -` with no pipe fails immediately (`yak-stdin-is-a-tty`)

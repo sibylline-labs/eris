@@ -20,7 +20,7 @@ import { DISTRIBUTION, DISTRIBUTION_PLUGINS, IDENTITY } from "../examples/distri
 import { deriveIdempotencyKey, YakSubmission } from "../packages/yak-contract/src/index";
 import socrates from "../plugins/socrates";
 import yak from "../plugins/yak";
-import { redact, redactDeep } from "../plugins/yak/yak-redact";
+import { redact, redactDeep } from "../packages/outbound-scan/src/redact";
 import { build } from "../src/build";
 import { composeCli, PluginCompositionError } from "../src/cli/compose";
 import type { ErisPlugin } from "../src/cli/plugin";
@@ -109,6 +109,7 @@ describe("the package's exports", () => {
       "resolveToken",
       "resolveUrl",
       "rowsOfGroup",
+      "runErisVerb",
       "runMany",
       "runPool",
       "runProgram",
@@ -163,7 +164,7 @@ describe("the package's exports", () => {
     const exported = await import("@sibylline-labs/eris/yak-redact");
     expect(exported.redact).toBe(redact);
     expect(exported.redactDeep).toBe(redactDeep);
-    const source = readFileSync(join(REPO, "plugins/yak/yak-redact.ts"), "utf8");
+    const source = readFileSync(join(REPO, "packages/outbound-scan/src/redact.ts"), "utf8");
     expect(source.match(/^\s*(?:import|export\s[^;]*\sfrom)\s/gm)).toBeNull();
   });
 

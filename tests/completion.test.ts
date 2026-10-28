@@ -235,6 +235,7 @@ describe("tab presses: the tree from the registry", () => {
       "--repo",
       "--repro",
       "--summary",
+      "--vendor",
     ]);
     expect(press(["eris", "completion", "bash", "--"])).toEqual(["--help"]);
   });

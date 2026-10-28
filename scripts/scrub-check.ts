@@ -33,6 +33,9 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 const SELF = "scripts/scrub-check.ts";
+/** Files whose text is detection patterns, not prose: this script and the gitleaks rules
+ *  scripts/vendor-gitleaks.ts generates. Only the denylist runs over them. */
+const PATTERN_FILES = new Set([SELF, "packages/outbound-scan/src/gitleaks-rules.ts"]);
 
 /** Files allowed to name the public contact domain and the copyright holder. The eris-yaks skill
  *  points an agent at the hosted install steps and the dash, both on that domain. */
@@ -205,7 +208,7 @@ function scanTree(known: KnownShas, extra: readonly Rule[]): Hit[] {
     .filter((p) => p && !SKIP.has(p) && lstatSync(p, { throwIfNoEntry: false })?.isFile())
     .flatMap((p) => {
       const buf = readFileSync(p);
-      return isText(buf) ? scan(p, buf.toString("utf8"), { known, extra, extraOnly: p === SELF }) : [];
+      return isText(buf) ? scan(p, buf.toString("utf8"), { known, extra, extraOnly: PATTERN_FILES.has(p) }) : [];
     });
 }
 
@@ -219,7 +222,7 @@ function scanHistory(known: KnownShas, extra: readonly Rule[]): Hit[] {
     seen.add(sha);
     if (git("cat-file", "-t", sha).trim() !== "blob") continue;
     const text = git("cat-file", "-p", sha);
-    if (!text.includes("\0")) hits.push(...scan(path, text, { where: `${sha.slice(0, 10)}:${path}`, known, extra, extraOnly: path === SELF }));
+    if (!text.includes("\0")) hits.push(...scan(path, text, { where: `${sha.slice(0, 10)}:${path}`, known, extra, extraOnly: PATTERN_FILES.has(path) }));
   }
   for (const commit of git("rev-list", "HEAD").split("\n").filter(Boolean)) {
     hits.push(...scan("", git("log", "-1", "--format=%B", commit), { where: `commit ${commit.slice(0, 10)}`, known, extra }));

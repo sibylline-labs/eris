@@ -127,7 +127,7 @@ dependency pinned to a merge commit on `main`) imports the TypeScript contract
 as `eris/yak-contract`. The `eris yak` client in this build imports it and
 posts contract v2 submissions.
 
-The client's redaction pass, [`plugins/yak/yak-redact.ts`](plugins/yak/yak-redact.ts), is
+The client's redaction pass, [`packages/outbound-scan/src/redact.ts`](packages/outbound-scan/src/redact.ts), is
 exported as `eris/yak-redact` (`redact`, `redactDeep`), so a server that redacts a submission
 before it commits runs the same rules. The module imports nothing.
 

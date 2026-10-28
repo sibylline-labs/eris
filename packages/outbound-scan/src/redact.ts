@@ -1,5 +1,8 @@
 /**
- * yak-redact.ts — the Yak submission redaction pass.
+ * redact.ts — our redaction pass, run over every outbound text: a Yak
+ * submission (plugins/yak/yak-submit.ts) and a Socrates candidate, after the
+ * gitleaks scan (./scan.ts). Exported as `eris/yak-redact` too, so a server
+ * re-runs the same rules.
  *
  * Agent-authored Yak bodies are free text persisted server-side and posted
  * to an issue tracker. Redaction belongs in this CLI, which sees the material
@@ -209,20 +212,6 @@
  * every real `sk-…` key's actual context.
  */
 
-export type RedactionClass =
-  | "pem"
-  | "jwt"
-  | "sib-token"
-  | "sibdc-code"
-  | "aws-key"
-  | "github-token"
-  | "slack-token"
-  | "google-api-key"
-  | "sk-key"
-  | "auth-header"
-  | "gcp-private-key"
-  | "conn-string"
-  | "assignment";
 
 export interface RedactionResult {
   text: string;
@@ -230,9 +219,11 @@ export interface RedactionResult {
   total: number;
 }
 
-/** Every class, in a fixed order — the single source of truth for
- *  what a fresh `counts` record looks like. */
-const REDACTION_CLASSES: RedactionClass[] = [
+/** Every class, in a fixed order — the single source of truth for the
+ *  `RedactionClass` vocabulary and for what a fresh `counts` record looks
+ *  like. A caller that takes a class from outside (an override flag) parses
+ *  it against this tuple. */
+export const REDACTION_CLASSES = [
   "pem",
   "jwt",
   "sib-token",
@@ -246,7 +237,15 @@ const REDACTION_CLASSES: RedactionClass[] = [
   "gcp-private-key",
   "conn-string",
   "assignment",
-];
+] as const;
+
+export type RedactionClass = (typeof REDACTION_CLASSES)[number];
+
+/** Options for `redact`. `skip` names classes the pass does not apply: their
+ *  text stays as written, and a later class may still match it. */
+export interface RedactOptions {
+  skip?: ReadonlySet<RedactionClass>;
+}
 
 function emptyCounts(): Record<RedactionClass, number> {
   const counts = {} as Record<RedactionClass, number>;
@@ -619,37 +618,38 @@ function runAssignmentPass(text: string, counts: Record<RedactionClass, number>)
 
 // --- the pipeline, most-specific class first (see file header) -----------------
 
-function runPipeline(input: string): { text: string; counts: Record<RedactionClass, number> } {
+function runPipeline(input: string, skip: ReadonlySet<RedactionClass>): { text: string; counts: Record<RedactionClass, number> } {
   const counts = emptyCounts();
   let text = input;
+  const on = (cls: RedactionClass): boolean => !skip.has(cls);
 
   // gcp-private-key BEFORE the generic pem pass (reason 1, file header).
   GCP_PRIVATE_KEY_RE.lastIndex = 0;
-  text = text.replace(GCP_PRIVATE_KEY_RE, (_whole, prefix: string, _value: string, suffix: string) => {
+  if (on("gcp-private-key")) text = text.replace(GCP_PRIVATE_KEY_RE, (_whole, prefix: string, _value: string, suffix: string) => {
     counts["gcp-private-key"]++;
     return `${prefix}${marker("gcp-private-key")}${suffix}`;
   });
 
-  text = runWholeMatchPass(text, "pem", PEM_RE, counts);
-  text = runWholeMatchPass(text, "jwt", JWT_RE, counts);
+  if (on("pem")) text = runWholeMatchPass(text, "pem", PEM_RE, counts);
+  if (on("jwt")) text = runWholeMatchPass(text, "jwt", JWT_RE, counts);
 
   // sib-token BEFORE aws-key / github-token / sk-key (reason 3, file header).
-  text = runWholeMatchPass(text, "sib-token", SIB_TOKEN_RE, counts);
-  text = runWholeMatchPass(text, "sibdc-code", SIBDC_CODE_RE, counts);
+  if (on("sib-token")) text = runWholeMatchPass(text, "sib-token", SIB_TOKEN_RE, counts);
+  if (on("sibdc-code")) text = runWholeMatchPass(text, "sibdc-code", SIBDC_CODE_RE, counts);
 
   // aws-key: two independent regexes feeding one class.
-  text = runWholeMatchPass(text, "aws-key", AWS_KEY_ID_RE, counts);
-  text = runWholeMatchPass(text, "aws-key", AWS_SECRET_RE, counts);
+  if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_KEY_ID_RE, counts);
+  if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_SECRET_RE, counts);
 
-  text = runWholeMatchPass(text, "github-token", GITHUB_TOKEN_RE, counts);
-  text = runWholeMatchPass(text, "slack-token", SLACK_TOKEN_RE, counts);
-  text = runWholeMatchPass(text, "google-api-key", GOOGLE_API_KEY_RE, counts);
-  text = runWholeMatchPass(text, "sk-key", SK_KEY_RE, counts);
+  if (on("github-token")) text = runWholeMatchPass(text, "github-token", GITHUB_TOKEN_RE, counts);
+  if (on("slack-token")) text = runWholeMatchPass(text, "slack-token", SLACK_TOKEN_RE, counts);
+  if (on("google-api-key")) text = runWholeMatchPass(text, "google-api-key", GOOGLE_API_KEY_RE, counts);
+  if (on("sk-key")) text = runWholeMatchPass(text, "sk-key", SK_KEY_RE, counts);
 
   // auth-header BEFORE assignment (reason 2, file header).
-  text = runWholeMatchPass(text, "auth-header", AUTH_HEADER_RE, counts);
+  if (on("auth-header")) text = runWholeMatchPass(text, "auth-header", AUTH_HEADER_RE, counts);
 
-  text = runWholeMatchPass(text, "conn-string", CONN_STRING_RE, counts);
+  if (on("conn-string")) text = runWholeMatchPass(text, "conn-string", CONN_STRING_RE, counts);
 
   // assignment last: the catch-all, most likely to overlap an already-handled
   // class's surface text if run earlier.
@@ -660,7 +660,7 @@ function runPipeline(input: string): { text: string; counts: Record<RedactionCla
   // A quoted match reconstructs `q + qname + q` (the quotes are part of the
   // preserved NAME text, same as the original design preserved an unquoted
   // name verbatim); an unquoted match reconstructs `uname` alone.
-  text = runAssignmentPass(text, counts);
+  if (on("assignment")) text = runAssignmentPass(text, counts);
 
   return { text, counts };
 }
@@ -673,8 +673,8 @@ function runPipeline(input: string): { text: string; counts: Record<RedactionCla
  * their total. Idempotent: redacting the output of `redact()` again returns the
  * same text with every count at zero (tests/yak-redact.test.ts).
  */
-export function redact(text: string): RedactionResult {
-  const { text: redacted, counts } = runPipeline(text);
+export function redact(text: string, opts: RedactOptions = {}): RedactionResult {
+  const { text: redacted, counts } = runPipeline(text, opts.skip ?? new Set());
   const total = REDACTION_CLASSES.reduce((acc, c) => acc + counts[c], 0);
   return { text: redacted, counts, total };
 }
