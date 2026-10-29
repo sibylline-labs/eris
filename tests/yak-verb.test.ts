@@ -37,6 +37,7 @@ beforeAll(() => {
     port: 0,
     hostname: "127.0.0.1",
     async fetch(req) {
+      if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
       const body = (await req.json()) as Record<string, unknown>;
       bodies.push(body);
       return Response.json({ id: `obs-${bodies.length}`, idempotency_key: body.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
@@ -109,7 +110,7 @@ describe("eris yak — the group dispatcher", () => {
       stdout: "",
       // The block renderer is golden-pinned against bash (tests/eris-fail-golden.test.ts).
       stderr: renderFailureBlock(
-        { slug: "yak-unknown-verb", what: "unknown yak command 'bogus'", fix: "use one of: issue, suggest, fatal\nrun 'eris yak --help' for the full command list" },
+        { slug: "yak-unknown-verb", what: "unknown yak command 'bogus'", fix: "use one of: issue, suggest, fatal, status, discover, config\nrun 'eris yak --help' for the full command list" },
         REPO,
       ),
     });

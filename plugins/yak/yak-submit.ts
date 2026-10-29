@@ -1133,6 +1133,10 @@ export interface YakOutputRecord {
    *  is the RECEIPT's key, never the locally-derived one the mismatch is
    *  measured against. */
   key_mismatch?: boolean;
+  /** Present only when `delivered: true` and the org's status answered after
+   *  the submit: `false` means the yak is parked until an admin sets a
+   *  destination (text mode's `yak-parked-unconfigured` WARN). */
+  configured?: boolean;
   redactions: RedactionSummary;
   error?: { slug: string; reason: string };
 }

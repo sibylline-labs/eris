@@ -164,16 +164,18 @@ export function deriveTable(reg: Readonly<Record<string, Row>> = REGISTRY): Reco
 }
 
 /** The `--output json` allow-list: a group maps to `true` (every sub) or to
- *  the subs that qualify. */
+ *  the subs that qualify. The check reads a command line's first two words, so
+ *  a nested json row (`yak config get`) admits its sub (`config`), and the
+ *  nested verb that has no rendering is the handler's to refuse. */
 export function deriveJsonSurfaces(reg: Readonly<Record<string, Row>> = REGISTRY): Record<string, true | readonly string[]> {
   const out: Record<string, true | string[]> = Object.fromEntries(ARGV_SHAPE_JSON.map((shape) => [shape, true as const]));
   for (const [path, row] of Object.entries(reg)) {
     if (row.json !== true) continue;
     const words = path.split(" ");
     if (words.length === 1) out[path] = true;
-    else if (words.length === 2) {
+    else {
       const cur = out[words[0]!];
-      if (cur !== true) out[words[0]!] = [...(cur ?? []), words[1]!];
+      if (cur !== true && !(cur ?? []).includes(words[1]!)) out[words[0]!] = [...(cur ?? []), words[1]!];
     }
   }
   return out;

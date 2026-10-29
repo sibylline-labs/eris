@@ -14,7 +14,8 @@ if you can, and follow it where it differs from this file. The version for peopl
 https://yak.sibylline.group/install.
 
 Work through the steps in order. Each one says what to run and what you should see. Steps 3
-and 4 need your user in a browser: stop, ask them, and wait for them to confirm.
+and 4 need your user in a browser, and step 5 needs them to pick a Linear team: stop, ask
+them, and wait for their answer.
 
 ## 1. Check for bun
 
@@ -59,25 +60,70 @@ eris login --url https://api.sibylline.group
 
 Expect: `logged in: token "…" written to ~/.eris/yaks.json`
 
+The person who approves must be a Linear admin of the workspace: step 5 sets the org's
+destination, which only an admin may do.
+
 On a CI runner with no person to approve, your user mints a service token under
-**Settings → API Tokens** in dash and sets `ERIS_YAKS_TOKEN` and `ERIS_YAKS_URL` instead.
+**Settings → API Tokens** in dash and sets `ERIS_YAKS_TOKEN` and `ERIS_YAKS_URL` instead. A
+service token can file yaks but cannot set the destination, so do step 5 from a signed-in
+machine first.
 
-## 5. Send a test yak
+## 5. Configure the destination
 
-Send one yak to prove the whole path works. A delivered yak prints `recorded: <id>`. Ask your
-user to check their Linear Triage for the new `[Yak]` issue.
+Until a destination is set, the org accepts yaks and parks them, and nothing reaches Linear.
+List the teams the org can file into:
 
-A `WARN` line means the yak wasn't delivered. The command still exits 0, because a yak never
-fails the task that filed it. The slug on that line names what to fix, usually the sign-in from
-step 4: run `eris login` again.
+```sh
+eris yak discover teams
+```
+
+Expect: one line per team, `<KEY>  <name>  <id>`. Show your user the list and ask which team
+their yaks should land in. Wait for their answer. Then set it and check:
+
+```sh
+eris yak config set --team <KEY>
+eris yak status
+```
+
+Expect: `configured: yes`. The set prints the stored team, project, state and labels.
+
+- Leave the state out and yaks land in the team's default state. `eris yak discover states
+  --team <KEY>` marks its Triage state `(default)`. Add `--state Triage` to pick it.
+- Add `--project <name>` or `--labels <name,...>` only if your user asks for them. `eris yak
+  discover --team <KEY>` lists the names.
+- A `yak-admin-required` block means the login is not an admin's. Ask a Linear admin to
+  approve a fresh `eris login` (step 4), or to set the destination at
+  https://dash.sibylline.group/yak/config.
+
+## 6. Send a test yak and report the issue
+
+Send one yak to prove the whole path works:
 
 ```sh
 eris yak suggest --summary "First yak from this repo" --body "Testing the Yaks pipeline end to end."
 ```
 
-Expect: `recorded: <id>`
+Expect: `recorded: <id>`, with no `WARN` line.
 
-## 6. Teach every session to file
+A `WARN` line means something needs fixing. The command still exits 0, because a yak never
+fails the task that filed it. The slug on the line names the fix:
+
+- `yak-parked-unconfigured`: the yak was stored but the org has no destination. Go back to
+  step 5.
+- Most other slugs: the yak wasn't delivered, usually because of the sign-in. Run
+  `eris login` again (step 4).
+
+The yak becomes a Linear issue within a minute or so. Check:
+
+```sh
+eris yak status
+```
+
+Expect: `last filed: <KEY>-<n>`. If it still says `none` (or, on an org that has filed before,
+the same identifier as before the test), wait a minute and run it again. Tell
+your user the identifier: that `[Yak]` issue is in their Linear now.
+
+## 7. Teach every session to file
 
 Add this block to the repo's `AGENTS.md` (and `CLAUDE.md` if the repo has one), or to your
 user's global agent instructions, so that every future session knows when to file. Show your

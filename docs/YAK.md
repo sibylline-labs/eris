@@ -13,6 +13,17 @@ eris yak suggest --summary "…" --body-file -
 eris yak fatal   --summary "…" --body-file -
 ```
 
+Four more read and set where the org's yaks are filed. An org with no
+destination accepts yaks and parks them; see
+[The destination](#the-destination-status-discover-config).
+
+```
+eris yak status
+eris yak discover [teams|projects|states|labels] [--team <id|key|name>]
+eris yak config get
+eris yak config set --team <id|key|name> [--project <id|name|none>] [--state <id|name|none>] [--labels <id|name,…>]
+```
+
 ## Which verb
 
 | Verb | When |
@@ -160,8 +171,8 @@ yak core. Exit codes are unchanged from the table above. The one exception is
 `eris-bun-missing`: the shim prints it before bun starts, so no record exists.
 
 The record: `{verb, delivered, id?, idempotency_key?, replay?,
-contract_version?, key_mismatch?, redactions: {count, classes, skipped},
-error?}`. **`delivered` is the field to branch on — never `id == null`**. Three fields exist specifically because their text-mode stderr
+contract_version?, key_mismatch?, configured?, redactions: {count, classes, skipped},
+error?}`. **`delivered` is the field to branch on — never `id == null`**. Four fields exist specifically because their text-mode stderr
 equivalent is suppressed under json and would otherwise be silently lost:
 
 - **`redactions.skipped`** — `true` when `--no-redact` was set for this
@@ -174,6 +185,10 @@ equivalent is suppressed under json and would otherwise be silently lost:
   `idempotency_key` is the *receipt's* key, never the locally-derived one the
   mismatch is measured against, so this is the only way a machine caller can
   detect canonicalization drift.
+- **`configured`** — present only when `delivered: true` and the org's
+  status answered after the submit. `false` is text mode's
+  `yak-parked-unconfigured` WARN: the yak is stored, and parked until an
+  admin sets a destination.
 - **`error.slug`/`error.reason`** — the content of the `WARN`/`ERROR` line
   itself, on every non-delivered outcome.
 
@@ -368,6 +383,53 @@ Exactly the same split as everything after the receipt (see the top of this
 doc): this CLI captures and transmits `provenance.repo.target_repos`;
 rendering it into the issue belongs to the endpoint's issue-tracker write path.
 
+## The destination: `status`, `discover`, `config`
+
+An org's yaks are filed into the Linear team, project, state and labels its
+config names. Until a config exists, every yak is accepted, stored and
+**parked**: it files once an admin sets a destination. A delivered yak into an
+unconfigured org prints `recorded: <id>`, then the
+[`yak-parked-unconfigured`](ERRORS.md#yak-parked-unconfigured) WARN, and exits
+`0`. eris learns this from one `GET /v1/yaks/status` after the submit (the
+receipt does not carry it). A vendor yak reads no status.
+
+| Verb | Endpoint | Who | stdout (text) | `--output json` |
+|---|---|---|---|---|
+| `eris yak status` | `GET /v1/yaks/status` | any token | `configured`, `observations`, `last filed` | `{configured, observation_count, last_filed_issue_identifier}` |
+| `eris yak discover [kind]` | `GET /v1/yaks/discovery[?team_id=]` | org admin | the teams (the chosen one starred), and that team's projects, states (the Triage default marked) and labels, each with its id | `{teams, team_id, projects, workflow_states, labels, default_state_id}` |
+| `eris yak config get` | `GET /v1/yaks/config` | any token | `configured: no`, or the team, project, state, labels and last writer | `{configured: false}` or `{configured: true, config, updated_at, updated_by}` |
+| `eris yak config set …` | `PUT /v1/yaks/config` | org admin | the stored config | `{config, updated_at, updated_by}` |
+
+`config set` sends only the keys it is given; the server merges them over the
+stored config, and an org's first set must carry `--team`. Each value is an id
+or a name that eris resolves against `discover`, ignoring case: a team by key or
+name, a project, state or label by name. A name must match exactly one entry
+([`yak-config-no-match`](ERRORS.md#yak-config-no-match) lists the candidates).
+Every value is checked against discovery, a UUID included, so a set never
+stores an id the workspace does not list, or a group label. `--project none` and
+`--state none` clear the value back to the team's default, and `--labels none`
+clears the labels. `--labels` takes a comma list and may repeat. Names on a set without `--team` resolve against the stored team.
+
+"Org admin" means a user token whose member is an admin: a person who is a
+Linear admin of the workspace approved its `eris login`. A service token or a
+member's login gets [`yak-admin-required`](ERRORS.md#yak-admin-required). The
+dashboard's `/yak/config` page sets the same config.
+
+Unlike the three filing verbs, every failure here is the failure block on
+stderr, nothing on stdout, exit `1`. A config command that seemed to succeed
+would leave the org parked. Under `--output json`, stdout is the server's body,
+bare, fields this eris does not know included. The shapes are the contract's
+(`eris/yak-contract`, `admin.ts`). Each request is bounded at 15 seconds.
+
+The from-zero walk, after `eris login`:
+
+```sh
+eris yak discover teams            # pick a team key
+eris yak discover states --team ENG
+eris yak config set --team ENG --state Triage
+eris yak status                    # configured: yes
+```
+
 ## What a receipt does not promise
 
 **A receipt is not a promise that an issue was created.** The endpoint accepts,
@@ -379,8 +441,8 @@ endpoint is configured; the submission succeeds either way.
 
 In short: a `0` exit and a `recorded: <id>` line mean *the observation is
 durably stored and deduplicated*. They do not mean *a human has been paged* or
-*a ticket now exists*. If you need to confirm the latter, that's a question
-for the Yaks endpoint's own surfaces, not for this CLI's receipt.
+*a ticket now exists*. `eris yak status` says whether the org has a
+destination at all, and names the last issue it filed.
 
 ## Discoverability
 
@@ -390,7 +452,8 @@ job (a skill, a rule, or the project's agent instructions), not this CLI's.
 
 ## Not built here
 
-`eris yak list` / `get`, an offline queue for a machine with no network,
+`eris yak list` / `get` (one observation or cluster), a pending count in
+`status` (the server's status does not expose one), an offline queue for a machine with no network,
 automatic/hook-triggered reporting, and any agentic triage of what gets
 reported — all deliberately out of scope for v1. Reading cluster state,
 detecting a fix-mark, dispatching a sandboxed repro rerun, and recording

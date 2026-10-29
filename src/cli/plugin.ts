@@ -92,8 +92,9 @@ export function readArgs<R extends Rows, P extends keyof R & string>(
   return readRowArgs(path, rows[path]!, argv, io, opts);
 }
 
-/** A group handler's first word: `bare`, `help`, one of the group's subs, or `unknown`. */
-export function groupArgs<R extends Rows>(rows: R, group: GroupsOf<R>, argv: readonly string[]) {
+/** A group handler's first word: `bare`, `help`, one of the group's subs, or
+ *  `unknown`. `group` is a group or a sub with subs of its own (`"yak config"`). */
+export function groupArgs<R extends Rows>(rows: R, group: GroupsOf<R> | (keyof R & `${string} ${string}`), argv: readonly string[]) {
   return groupArgsIn(rows, group, argv);
 }
 

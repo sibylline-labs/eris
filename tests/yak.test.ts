@@ -574,6 +574,7 @@ describe("runYak — delivered (exit 0)", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         const body = await req.json();
         return Response.json({
           id: "obs-fresh",
@@ -605,6 +606,7 @@ describe("runYak — delivered (exit 0)", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         const body = await req.json();
         return Response.json({
           id: "obs-replay",
@@ -636,6 +638,7 @@ describe("runYak — delivered (exit 0)", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         sentBody = await req.json();
         return Response.json({
           id: "obs-repro",
@@ -671,6 +674,7 @@ describe("runYak — delivered (exit 0)", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         sentBody = await req.json();
         return Response.json({
           id: "obs-norepro",
@@ -702,6 +706,7 @@ describe("runYak — delivered (exit 0)", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         const body = await req.json();
         return Response.json({
           id: "obs-json",
@@ -810,6 +815,7 @@ describe("runYak — delivered (exit 0)", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         const body = await req.json();
         return Response.json({
           id: "obs-noredact",
@@ -847,6 +853,7 @@ describe("runYak — delivered (exit 0)", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         const body = await req.json();
         return Response.json({
           id: "obs-noredact-json",
@@ -889,6 +896,7 @@ describe("runYak — the ingress contract v2 (202 + v2 receipt, route workspace)
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         const body = (await req.json()) as { idempotency_key: string };
         requests.push({ path: new URL(req.url).pathname, body });
         return Response.json(
@@ -964,6 +972,7 @@ describe("runYak — the ingress refuses the report (401, 402, 413 each warn on 
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         requests.push({ method: req.method, path: new URL(req.url).pathname, body: await req.json() });
         return new Response("refused", { status });
       },
@@ -1091,6 +1100,7 @@ describe("runYak — redaction summary wiring (text mode stderr)", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         const body = await req.json();
         return Response.json({
           id: "obs-f4-delivered",
@@ -1143,6 +1153,7 @@ describe("runYak — redaction summary wiring (text mode stderr)", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         const body = await req.json();
         return Response.json({
           id: "obs-f4-json",
@@ -1178,6 +1189,7 @@ describe("runYak — redaction summary wiring (text mode stderr)", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         const body = await req.json();
         return Response.json({
           id: "obs-f4-clean",
@@ -1266,6 +1278,7 @@ describe("runYak — --repo target-repo hints", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         sentBody = await req.json();
         return Response.json({ id: "obs-repo-1", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
@@ -1296,6 +1309,7 @@ describe("runYak — --repo target-repo hints", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         sentBody = await req.json();
         return Response.json({ id: "obs-repo-2", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
@@ -1322,6 +1336,7 @@ describe("runYak — --repo target-repo hints", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         sentBody = await req.json();
         return Response.json({ id: "obs-repo-3", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
@@ -1351,6 +1366,7 @@ describe("runYak — --repo target-repo hints", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         sentBody = await req.json();
         return Response.json({ id: "obs-repo-4", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
@@ -1380,6 +1396,7 @@ describe("runYak — --repo target-repo hints", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         sentBody = await req.json();
         return Response.json({ id: "obs-repo-5", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },
@@ -1408,6 +1425,7 @@ describe("runYak — --repo target-repo hints", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
+        if (req.method !== "POST") return new Response("not found", { status: 404 }); // the post-submit status read
         sentBody = await req.json();
         return Response.json({ id: "obs-repo-6", idempotency_key: sentBody.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       },

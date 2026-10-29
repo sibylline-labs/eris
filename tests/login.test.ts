@@ -185,7 +185,7 @@ describe("eris login — the device-code grant", () => {
       { cwd: sandbox, ppid: 1 },
     );
     expect({ rc: yakRc, stdout: yakOut, stderr: yakErr }).toEqual({ rc: 0, stdout: "recorded: obs-1\n", stderr: "" });
-    expect(requests.at(-1)).toMatchObject({ path: "/v1/yaks", auth: `Bearer ${TOKEN}` });
+    expect(requests.find((r) => r.path === "/v1/yaks")).toMatchObject({ path: "/v1/yaks", auth: `Bearer ${TOKEN}` });
   });
 
   it.each([

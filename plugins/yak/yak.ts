@@ -53,6 +53,7 @@ import {
   type TextInputDeps,
   type YakOutputRecord,
 } from "./yak-submit";
+import { DASH_CONFIG_PAGE, readStatus } from "./yak-admin";
 import { formatRedactionSummary } from "eris/outbound-scan";
 import type { YakVerb } from "eris/yak-contract";
 
@@ -83,6 +84,12 @@ export type ArgvMisuseSlug =
   | "yak-unknown-flag"
   | "yak-positional-arg"
   | "yak-flag-missing-value";
+
+/** The WARN a delivered yak raises when its org has no destination. */
+export type ParkedSlug = "yak-parked-unconfigured";
+
+/** How long the post-submit status read may take before it is dropped. */
+const STATUS_TIMEOUT_MS = 5_000;
 
 export interface ParsedFlags {
   summary?: string;
@@ -448,10 +455,18 @@ export async function runYak(opts: RunYakOptions): Promise<RunYakResult> {
     return { stdout, stderr, exitCode: 0 };
   }
 
-  // delivered
+  // delivered. The receipt says nothing about the org's destination, so a
+  // workspace yak reads the status once: an unconfigured org accepts the yak
+  // and parks it, which is a WARN (still exit 0), not a silent `recorded:`. A
+  // status that does not answer adds nothing. A vendor yak files into the
+  // vendor's tenant, so the caller's config is not its destination.
+  const status = flags.vendor
+    ? null
+    : await readStatus(urlOutcome.value, tokenOutcome.value, { fetchImpl: opts.fetchImpl, timeoutMs: Math.min(opts.timeoutMs ?? STATUS_TIMEOUT_MS, STATUS_TIMEOUT_MS) });
+  const configured = status?.configured;
   let stdout: string;
   if (jsonOutput) {
-    stdout = `${JSON.stringify(toOutputRecord(verb, result))}\n`;
+    stdout = `${JSON.stringify({ ...toOutputRecord(verb, result), ...(configured === undefined ? {} : { configured }) })}\n`;
   } else {
     stdout = `${result.receipt.replay ? "already recorded" : "recorded"}: ${result.receipt.id}\n`;
   }
@@ -472,6 +487,12 @@ export async function runYak(opts: RunYakOptions): Promise<RunYakResult> {
       stderr += renderWarnLines(
         "locally-derived idempotency key does not match the receipt's — possible canonicalization drift between this CLI and the Yaks endpoint",
         "yak-key-mismatch",
+      );
+    }
+    if (configured === false) {
+      stderr += renderWarnLines(
+        `yak ${result.receipt.id} is parked: this org has no destination for its yaks, so nothing files to Linear until an admin sets one: eris yak discover teams, then eris yak config set --team <key> (or ${DASH_CONFIG_PAGE})`,
+        "yak-parked-unconfigured" satisfies ParkedSlug,
       );
     }
   }

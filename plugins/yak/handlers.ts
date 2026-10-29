@@ -56,12 +56,64 @@ Commands:
   suggest   An improvement to the harness: a missing capability or a better way of working
   fatal     The harness itself is broken
 
+  status    Whether this org has a destination for its yaks
+  discover  The Linear teams, projects, states and labels it can file into
+  config    Read or set that destination (get, set)
+
 ${USAGE_FLAG_BLOCK}
 Setup: 'eris login' writes ~/.eris/yaks.json ({"url", "token"}, mode 0600;
 the url defaults to https://api.sibylline.group); or export ERIS_YAKS_URL /
-ERIS_YAKS_TOKEN.
+ERIS_YAKS_TOKEN. Until an admin sets a destination ('eris yak config set
+--team <key>'), the org's yaks are accepted and parked.
 
 Run 'eris yak <command> --help' for the full flag reference.
+`;
+
+/** The admin verbs (./yak-admin.ts): `status`, `discover`, `config get|set`.
+ *  Null for a filing verb. A bare or unknown `config` word answers here. */
+async function adminHandler(verb: string, rest: string[], ctx: VerbContext): Promise<((deps: YakVerbDeps) => Promise<number>) | null> {
+  if (verb !== "status" && verb !== "discover" && verb !== "config") return null;
+  let admin: typeof import("./yak-admin");
+  try {
+    admin = await import("./yak-admin");
+  } catch (e) {
+    if (isMissingPackage(e)) return async () => depsMissing(verb, ctx);
+    throw e;
+  }
+  if (verb === "status") return async () => admin.runStatus(rest, ctx);
+  if (verb === "discover") return async () => admin.runDiscover(rest, ctx);
+  const c = groupArgs(plugin.rows, "yak config", rest);
+  if ((c.kind === "bare" || c.kind === "help") && ctx.format === "json") {
+    // The allow-list admits `config` for its json subs; the group itself has no rendering.
+    return async () => {
+      ctx.stderr.write(renderFailureBlock({ slug: "output-json-unsupported", what: "eris yak config has no JSON rendering", fix: "use: eris --output json yak config get" }, ctx.erisDir));
+      throw new CliExit(1);
+    };
+  }
+  if (c.kind === "bare" || c.kind === "help") {
+    return async () => {
+      ctx.stdout.write(CONFIG_USAGE);
+      return 0;
+    };
+  }
+  if (c.kind === "unknown") {
+    return async () => {
+      ctx.stderr.write(renderFailureBlock({ slug: "yak-unknown-verb", what: `unknown yak config command '${c.sub}'`, fix: "use one of: get, set" }, ctx.erisDir));
+      throw new CliExit(1);
+    };
+  }
+  return async () => (c.sub === "get" ? admin.runConfigGet(c.rest, ctx) : admin.runConfigSet(c.rest, ctx));
+}
+
+const CONFIG_USAGE = `Usage: eris yak config <command>
+
+Commands:
+  get     Show where this org's yaks are filed
+  set     Set where this org's yaks are filed (an org admin's):
+          --team <id|key|name> [--project <id|name|none>] [--state <id|name|none>]
+          [--labels <id|name,...>]
+
+Names resolve against 'eris yak discover'. An org's first set needs --team.
 `;
 
 /** A bun "cannot resolve a package" error, read from its structured fields. */
@@ -95,13 +147,15 @@ export async function runYakVerb(args: string[], ctx: VerbContext, deps: YakVerb
   if (g.kind === "unknown") {
     ctx.stderr.write(
       renderFailureBlock(
-        { slug: "yak-unknown-verb", what: `unknown yak command '${g.sub}'`, fix: "use one of: issue, suggest, fatal\nrun 'eris yak --help' for the full command list" },
+        { slug: "yak-unknown-verb", what: `unknown yak command '${g.sub}'`, fix: "use one of: issue, suggest, fatal, status, discover, config\nrun 'eris yak --help' for the full command list" },
         ctx.erisDir,
       ),
     );
     throw new CliExit(1);
   }
   const verb = g.sub;
+  const admin = await adminHandler(verb, g.rest, ctx);
+  if (admin !== null) return admin(deps);
 
   let runYak: RunYak;
   try {
