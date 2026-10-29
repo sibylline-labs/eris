@@ -39,6 +39,7 @@ import { SOCRATES_CONTRACT_VERSION, SOCRATES_SUBMIT_PATH, type SocratesProblem, 
 /** The `docs/ERRORS.md` slugs this module raises (`tests/errors-doc.test.ts`). */
 export type SocratesSlug =
   | "socrates-unknown-verb"
+  | "socrates-answers-invalid"
   | "socrates-flag-required"
   | "socrates-candidate-invalid"
   | "socrates-secret-detected"
@@ -58,9 +59,10 @@ const YAK_TIMEOUT_MS = 40_000;
 export const SOCRATES_USAGE = `Usage: eris socrates <command>
 
 Commands:
+  classify  Score one candidate's rubric answers locally and print the verdict
   submit    Submit one candidate (a decision, practice, PRD or conflict) for review
 
-Run 'eris socrates submit --help' for its flags.
+Run 'eris socrates <command> --help' for its flags.
 `;
 
 export const SUBMIT_USAGE = `Usage: eris socrates submit --title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>]
@@ -99,11 +101,11 @@ export interface SocratesDeps {
 }
 
 /** Drop control characters, so text a server sent cannot drive the terminal. */
-function printable(text: string): string {
+export function printable(text: string): string {
   return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
 }
 
-function fail(ctx: VerbContext, slug: SocratesSlug | "yak-config-permissive" | "yak-config-malformed" | "yak-token-unresolved", what: string, fix: string): never {
+export function fail(ctx: VerbContext, slug: SocratesSlug | "yak-config-permissive" | "yak-config-malformed" | "yak-token-unresolved", what: string, fix: string): never {
   ctx.stderr.write(renderFailureBlock({ slug, what, fix }, ctx.erisDir));
   throw new CliExit(1);
 }
@@ -160,7 +162,8 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
     ctx.stdout.write(SOCRATES_USAGE);
     return 0;
   }
-  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates command '${g.sub}'`, "use: submit\nrun 'eris socrates --help' for the command list");
+  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates command '${g.sub}'`, "use: classify, submit\nrun 'eris socrates --help' for the command list");
+  if (g.sub === "classify") return (await import("./classify")).runClassify(g.rest, ctx);
 
   const a = readArgs(plugin.rows, "socrates submit", g.rest, ctx, { help: SUBMIT_USAGE });
   if (a === null) return 0;

@@ -33,6 +33,9 @@ import { RUBRIC_V2 } from "./rubric/v2";
 /** Every published rubric, by version: what a server reclassifies a stamped submission with. */
 export const RUBRICS = { [RUBRIC_V1.version]: RUBRIC_V1, [RUBRIC_V2.version]: RUBRIC_V2 } as const;
 
+/** The rubric a new classification is scored with: the latest published version. */
+export const CURRENT_RUBRIC = RUBRIC_V2;
+
 export type PublishedRubricVersion = keyof typeof RUBRICS;
 
 /** The rubric a submission was stamped with, or undefined for a version this build does not know. */
