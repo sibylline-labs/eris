@@ -16,7 +16,7 @@
  * every report.
  *
  * THIRTEEN CLASSES, applied in a fixed pipeline order, most-specific first.
- * Order is load-bearing for three reasons:
+ * Order is load-bearing for four reasons:
  *
  *   1. A JSON-embedded GCP private key ("private_key":"-----BEGIN...") is
  *      also a syntactic match for the generic PEM-block pattern (`[\s\S]*?`
@@ -36,6 +36,13 @@
  *      running first would replace only the embedded run and leave
  *      `sib_<orgId>_<head>` in plaintext. It also runs before `assignment`, so
  *      `ERIS_TOKEN=sib_…` is classified once, as the more specific class.
+ *   4. `aws-key` runs after `github-token`, `slack-token`, `google-api-key`,
+ *      `sk-key` and `auth-header`. `AWS_KEY_ID_RE` is `\b`-anchored, and a
+ *      marker is non-word on both sides: a key id glued to one of those
+ *      tokens (`AKIA…ghp_…`) has no boundary on the first pass, so had it run
+ *      first, the later class's marker would hand it one on a second pass and
+ *      `redact()` would not be idempotent. None of those classes can match
+ *      inside an `AKIA`+16 `[0-9A-Z]` run, so running later splits no key id.
  *
  * MARKER GUARD. Each pass runs sequentially over the STRING RESULT of the
  * previous pass, and the `«redacted:<class>»` marker matches none of the
@@ -50,14 +57,19 @@
  * but the marker and text that cannot be secret:
  *
  *   - `assignment` declines a value that is EXACTLY one marker (`MARKER`):
- *     bare and ending where the value would end, or alone in matching quotes.
- *     The name stays, as it does for any redacted value.
+ *     bare or alone in matching quotes, and ending where an unquoted value
+ *     would end. The name stays, as it does for any redacted value.
  *   - `auth-header` declines a credential that is exactly one marker, ending
  *     at whitespace, after a known scheme word (`AUTH_DECLINED`). `assignment`
  *     must honour that too, or it would take `Authorization` as a governed
  *     name and `Bearer` as its value (`AUTH_DECLINED_RE`).
  *   - `conn-string` never declines: its scheme and host runs have no fixed
  *     edge, so with no separator around the span they can carry secret text.
+ *
+ * A quoted value runs on over any text glued after its closing quote, up to
+ * where an unquoted value would end: in sh, `token="abc"def` is the one value
+ * `abcdef`, so the glued text may be secret. Stopping at the quote would also
+ * leave `«redacted:assignment»def`, which a second pass redacts again.
  *
  * A value that runs on past a marker (`«redacted:sk-key»` followed by the tail
  * of a key longer than that class's cap, or by `.`, `%21`, `:x-oauth-…`) is
@@ -408,7 +420,7 @@ const CONN_STRING_RE =
 // count for the class that actually caught it. It declines only a value that
 // is EXACTLY one marker (file header, "MARKER GUARD"): unquoted and ending
 // where the unquoted value would end, or alone inside a matching pair of
-// quotes. A value that runs on past the marker (`«redacted:sk-key»<tail>`) is
+// quotes with nothing glued after the closing one. A value that runs on past the marker (`«redacted:sk-key»<tail>`) is
 // redacted whole.
 //
 // `AUTH_DECLINED_RE` is the same guard for the one header `auth-header` owns.
@@ -457,7 +469,7 @@ const assignmentRe = (valueGuard: string, ledValue = ""): RegExp => new RegExp(
 );
 
 // Declines only a value that is exactly a marker; redacts one that runs on past it.
-const EXACT_MARKER_GUARD = `(?!${MARKER}(?![^\\s,}\\]])|"${MARKER}"|'${MARKER}')`;
+const EXACT_MARKER_GUARD = `(?!(?:${MARKER}|"${MARKER}"|'${MARKER}')(?![^\\s,}\\]]))`;
 const ASSIGNMENT_RE = assignmentRe(EXACT_MARKER_GUARD);
 // The same, except a value that starts with a marker matches only its opening
 // quote and `«redacted:` (group `led`), so `runAssignmentPass` can work out its
@@ -564,6 +576,13 @@ function unquotedValueEnds(text: string): Int32Array {
 function runAssignmentPass(text: string, counts: Record<RedactionClass, number>): string {
   const ranges: Array<[number, number]> = [];
   let markerLed = false;
+  let ends: Int32Array | undefined;
+  const valueEnd = (valueStart: number, end: number): number => {
+    const first = text[valueStart];
+    if (first !== '"' && first !== "'") return end;
+    ends ??= unquotedValueEnds(text);
+    return Math.max(end, Math.min(ends[end], end + 20000));
+  };
   ASSIGNMENT_RE.lastIndex = 0;
   for (let m = ASSIGNMENT_RE.exec(text); m !== null; m = ASSIGNMENT_RE.exec(text)) {
     const groups = m.groups as unknown as AssignmentGroups;
@@ -576,10 +595,10 @@ function runAssignmentPass(text: string, counts: Record<RedactionClass, number>)
     }
     MARKER_LED_RE.lastIndex = valueStart;
     if (MARKER_LED_RE.test(text)) markerLed = true;
-    ranges.push([valueStart, end]);
+    ranges.push([valueStart, valueEnd(valueStart, end)]);
   }
   if (markerLed) {
-    const unquotedEnds = unquotedValueEnds(text);
+    const unquotedEnds = (ends ??= unquotedValueEnds(text));
     ASSIGNMENT_LED_RE.lastIndex = 0;
     for (let m = ASSIGNMENT_LED_RE.exec(text); m !== null; m = ASSIGNMENT_LED_RE.exec(text)) {
       const groups = m.groups as unknown as AssignmentGroups;
@@ -591,13 +610,13 @@ function runAssignmentPass(text: string, counts: Record<RedactionClass, number>)
         continue;
       }
       if (groups.led === undefined) {
-        ranges.push([valueStart, end]);
+        ranges.push([valueStart, valueEnd(valueStart, end)]);
         continue;
       }
       // The extent ASSIGNMENT_RE's value alternatives would give it.
       QUOTED_VALUE_RE.lastIndex = valueStart;
       const extent = QUOTED_VALUE_RE.test(text)
-        ? QUOTED_VALUE_RE.lastIndex
+        ? valueEnd(valueStart, QUOTED_VALUE_RE.lastIndex)
         : Math.min(unquotedEnds[valueStart], valueStart + 20000);
       ranges.push([valueStart, extent]);
     }
@@ -637,10 +656,6 @@ function runPipeline(input: string, skip: ReadonlySet<RedactionClass>): { text: 
   if (on("sib-token")) text = runWholeMatchPass(text, "sib-token", SIB_TOKEN_RE, counts);
   if (on("sibdc-code")) text = runWholeMatchPass(text, "sibdc-code", SIBDC_CODE_RE, counts);
 
-  // aws-key: two independent regexes feeding one class.
-  if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_KEY_ID_RE, counts);
-  if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_SECRET_RE, counts);
-
   if (on("github-token")) text = runWholeMatchPass(text, "github-token", GITHUB_TOKEN_RE, counts);
   if (on("slack-token")) text = runWholeMatchPass(text, "slack-token", SLACK_TOKEN_RE, counts);
   if (on("google-api-key")) text = runWholeMatchPass(text, "google-api-key", GOOGLE_API_KEY_RE, counts);
@@ -648,6 +663,11 @@ function runPipeline(input: string, skip: ReadonlySet<RedactionClass>): { text: 
 
   // auth-header BEFORE assignment (reason 2, file header).
   if (on("auth-header")) text = runWholeMatchPass(text, "auth-header", AUTH_HEADER_RE, counts);
+
+  // aws-key AFTER every class whose marker can sit beside a key id (reason 4,
+  // file header). Two independent regexes feed one class.
+  if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_KEY_ID_RE, counts);
+  if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_SECRET_RE, counts);
 
   if (on("conn-string")) text = runWholeMatchPass(text, "conn-string", CONN_STRING_RE, counts);
 

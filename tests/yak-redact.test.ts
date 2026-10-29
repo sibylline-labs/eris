@@ -935,6 +935,70 @@ describe("redact() — idempotence", () => {
     expect(jwtResult.counts.jwt).toBe(1);
     expect(jwtResult.counts.assignment).toBe(0);
   });
+
+  it("a quoted value with text glued after its closing quote is redacted whole, so a second pass changes nothing", () => {
+    // Goes red when the quoted value's range stops at its closing quote: pass 1
+    // leaves `«redacted:assignment»c`, a marker-led run pass 2 redacts again,
+    // and the glued text ships. In sh, `token="abc"def` is the one value `abcdef`.
+    const cases: Array<[string, string]> = [
+      [`token="abc"c`, "token=«redacted:assignment»"],
+      [`token="abcdefgh"7`, "token=«redacted:assignment»"],
+      [`password='hunter2'abc`, "password=«redacted:assignment»"],
+      [`"api_key": "x"tail, next`, `"api_key": «redacted:assignment», next`],
+      [`token="a"${ANTHROPIC_KEY}`, "token=«redacted:assignment»"],
+    ];
+    for (const [input, expected] of cases) {
+      const once = redact(input);
+      expect(once.text, input).toBe(expected);
+      expect(once.counts.assignment, input).toBe(1);
+      const twice = redact(once.text);
+      expect(twice.text, input).toBe(once.text);
+      expect(twice.total, input).toBe(0);
+    }
+  });
+
+  it("an AWS key id glued before another class's token is redacted on the first pass, not the second", () => {
+    // Goes red when aws-key runs before a class whose marker can sit right after
+    // a key id: pass 1 finds no word boundary after the id (a word char follows),
+    // the later class's marker supplies one, and pass 2 redacts the id.
+    for (const glued of [GH_TOKEN, SLACK_TOKEN, GOOGLE_KEY, "Authorization: Bearer xyz789"]) {
+      const input = `${AWS_KEY_ID}${glued}`;
+      const once = redact(input);
+      expect(once.text, input).not.toContain(AWS_KEY_ID);
+      expect(once.counts["aws-key"], input).toBe(1);
+      const twice = redact(once.text);
+      expect(twice.text, input).toBe(once.text);
+      expect(twice.total, input).toBe(0);
+    }
+  });
+
+  it("redacting twice equals redacting once over generated inputs", () => {
+    // Goes red when any composition of passes leaves text a second pass matches:
+    // a marker that hands a `\b`-anchored class its boundary, a marker-led run,
+    // a quoted value with a tail. Seeded, so a failure reproduces; the failing
+    // input is in the assertion message.
+    const pieces = [
+      "token", "password", "session", "auth", "SECRET_KEY", "x-api-key", `"api_key"`, `"private_key"`, "authorized",
+      "=", ":", ": ", "=\"", "\"", "'", " ", ",", "}", "]", ";", "&", "?", "/", "@", "\n",
+      "c", "7", "abc", "hunter2", "abcdefgh1234", "«redacted:sk-key»", "«redacted:assignment»",
+      AWS_KEY_ID, GH_TOKEN, SLACK_TOKEN, GOOGLE_KEY, ANTHROPIC_KEY, OVERLONG_SK, SIB_TOKEN, JWT,
+      "Authorization: Bearer ", "Authorization: Basic ", "postgres://u:", "@db", "aws_secret_access_key=", AWS_SECRET,
+    ];
+    let state = 20261029;
+    const next = (n: number): number => {
+      state = (Math.imul(state, 1103515245) + 12345) >>> 0;
+      return (state >>> 8) % n;
+    };
+    for (let i = 0; i < 20000; i++) {
+      let input = "";
+      for (let k = 2 + next(8); k > 0; k--) input += pieces[next(pieces.length)];
+      const once = redact(input);
+      const twice = redact(once.text);
+      if (twice.text !== once.text || twice.total !== 0) {
+        expect({ input, once: once.text, twice: twice.text, total: twice.total }).toEqual({ input, once: once.text, twice: once.text, total: 0 });
+      }
+    }
+  });
 });
 
 // --- 3b. redaction can grow a string past a caller's bound --------
