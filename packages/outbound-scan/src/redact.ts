@@ -36,22 +36,28 @@
  *      running first would replace only the embedded run and leave
  *      `sib_<orgId>_<head>` in plaintext. It also runs before `assignment`, so
  *      `ERIS_TOKEN=sib_…` is classified once, as the more specific class.
- *   4. `aws-key` runs after `github-token`, `slack-token`, `google-api-key`,
- *      `sk-key` and `auth-header`. `AWS_KEY_ID_RE` is `\b`-anchored, and a
- *      marker is non-word on both sides: a key id glued to one of those
- *      tokens (`AKIA…ghp_…`) has no boundary on the first pass, so had it run
- *      first, the later class's marker would hand it one on a second pass and
- *      `redact()` would not be idempotent. None of those classes can match
- *      inside an `AKIA`+16 `[0-9A-Z]` run, so running later splits no key id.
+ *   4. `aws-key`'s key-id regex runs after every whole-match class, just
+ *      before `assignment`. `AWS_KEY_ID_RE` is `\b`-anchored, and a marker is
+ *      non-word on both sides: a key id glued to a later class's match
+ *      (`AKIA…ghp_…`, or a 31-character conn-string scheme) has no boundary
+ *      on the first pass, so had it run first, that marker would hand it one
+ *      on a second pass and `redact()` would not be idempotent. No class
+ *      before it can match inside an `AKIA`+16 `[0-9A-Z]` run, so running later
+ *      splits no key id; conn-string may take a glued key id into its scheme
+ *      run, which redacts it under that class. `assignment` cannot split one:
+ *      its name needs a `\b` at the identifier's start. The secret-assignment
+ *      regex (`AWS_SECRET_RE`) stays ahead of the unanchored token classes, so
+ *      none of them cuts its value short.
  *
  * MARKER GUARD. Each pass runs sequentially over the STRING RESULT of the
  * previous pass, and the `«redacted:<class>»` marker matches none of the
  * patterns below by its own shape (verified in tests/yak-redact.test.ts —
- * idempotence and "marker is never re-matched"). Three passes are the
- * exception: each takes an arbitrary non-whitespace run as the value at a
- * position — `assignment` (after the operator), `auth-header` (the credential
- * after the scheme) and `conn-string` (the password in the userinfo) — and a
- * marker an earlier pass left at that position is exactly such a run. A pass
+ * idempotence and "marker is never re-matched"). Four passes are the
+ * exception: each takes an arbitrary run as the value at a position —
+ * `assignment` (after the operator), `auth-header` (the credential after the
+ * scheme), `gcp-private-key` (the JSON string) and `conn-string` (the password
+ * in the userinfo) — and a marker a pass left at that position, its own
+ * included, is exactly such a run. A pass
  * may decline such a value, so that the more specific class stays the only
  * one classified and counted, only where declining leaves in place nothing
  * but the marker and text that cannot be secret:
@@ -63,6 +69,8 @@
  *     at whitespace, after a known scheme word (`AUTH_DECLINED`). `assignment`
  *     must honour that too, or it would take `Authorization` as a governed
  *     name and `Bearer` as its value (`AUTH_DECLINED_RE`).
+ *   - `gcp-private-key` declines a JSON string value that is exactly one
+ *     marker; it takes any string, so it would otherwise re-match its own.
  *   - `conn-string` never declines: its scheme and host runs have no fixed
  *     edge, so with no separator around the span they can carry secret text.
  *
@@ -370,8 +378,9 @@ const AUTH_HEADER_RE = new RegExp(
 
 // GCP service-account "private_key" JSON field: the standard safe JSON-string
 // idiom for the value, so the surrounding quotes and key name survive and
-// only the material is replaced.
-const GCP_PRIVATE_KEY_RE = /("private_key"\s*:\s*")((?:[^"\\]|\\.)*)(")/g;
+// only the material is replaced. It declines a value that is exactly one
+// marker (file header, "MARKER GUARD"), or it would re-match its own output.
+const GCP_PRIVATE_KEY_RE = new RegExp(`("private_key"\\s*:\\s*")(?!${MARKER}")((?:[^"\\\\]|\\\\.)*)(")`, "g");
 
 // Connection strings with an inline password: proto://user:pass@host. Every
 // character class excludes the next delimiter, so there is no ambiguity for
@@ -656,6 +665,10 @@ function runPipeline(input: string, skip: ReadonlySet<RedactionClass>): { text: 
   if (on("sib-token")) text = runWholeMatchPass(text, "sib-token", SIB_TOKEN_RE, counts);
   if (on("sibdc-code")) text = runWholeMatchPass(text, "sibdc-code", SIBDC_CODE_RE, counts);
 
+  // aws-key, secret assignment: before github-token, slack-token, google-api-key
+  // and sk-key, which have no leading anchor and would cut its value short.
+  if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_SECRET_RE, counts);
+
   if (on("github-token")) text = runWholeMatchPass(text, "github-token", GITHUB_TOKEN_RE, counts);
   if (on("slack-token")) text = runWholeMatchPass(text, "slack-token", SLACK_TOKEN_RE, counts);
   if (on("google-api-key")) text = runWholeMatchPass(text, "google-api-key", GOOGLE_API_KEY_RE, counts);
@@ -664,12 +677,11 @@ function runPipeline(input: string, skip: ReadonlySet<RedactionClass>): { text: 
   // auth-header BEFORE assignment (reason 2, file header).
   if (on("auth-header")) text = runWholeMatchPass(text, "auth-header", AUTH_HEADER_RE, counts);
 
-  // aws-key AFTER every class whose marker can sit beside a key id (reason 4,
-  // file header). Two independent regexes feed one class.
-  if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_KEY_ID_RE, counts);
-  if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_SECRET_RE, counts);
-
   if (on("conn-string")) text = runWholeMatchPass(text, "conn-string", CONN_STRING_RE, counts);
+
+  // aws-key, key id: AFTER every class whose marker can sit beside it (reason 4,
+  // file header).
+  if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_KEY_ID_RE, counts);
 
   // assignment last: the catch-all, most likely to overlap an already-handled
   // class's surface text if run earlier.

@@ -905,6 +905,7 @@ describe("redact() — idempotence", () => {
         `token: '${m}'`,
         `Authorization: Bearer ${m}`,
         `Proxy-Authorization: Basic ${m} trailing`,
+        `{"private_key": "${m}"}`,
       ];
       for (const text of texts) {
         const result = redact(text);
@@ -961,7 +962,8 @@ describe("redact() — idempotence", () => {
     // Goes red when aws-key runs before a class whose marker can sit right after
     // a key id: pass 1 finds no word boundary after the id (a word char follows),
     // the later class's marker supplies one, and pass 2 redacts the id.
-    for (const glued of [GH_TOKEN, SLACK_TOKEN, GOOGLE_KEY, "Authorization: Bearer xyz789"]) {
+    // A 31-character scheme is conn-string's longest, so its match starts right after the key id.
+    for (const glued of [GH_TOKEN, SLACK_TOKEN, GOOGLE_KEY, "Authorization: Bearer xyz789", `${"a".repeat(31)}://u:p@db`]) {
       const input = `${AWS_KEY_ID}${glued}`;
       const once = redact(input);
       expect(once.text, input).not.toContain(AWS_KEY_ID);
@@ -970,6 +972,16 @@ describe("redact() — idempotence", () => {
       expect(twice.text, input).toBe(once.text);
       expect(twice.total, input).toBe(0);
     }
+  });
+
+  it("an aws_secret_access_key value is redacted whole even when another class's token sits inside it", () => {
+    // Goes red when AWS_SECRET_RE runs after google-api-key: that unanchored pass
+    // cuts the value first, AWS_SECRET_RE stops at its marker, and the rest of
+    // the value ships with no governed name left for assignment to find.
+    const input = `aws_secret_access_key=${"w".repeat(20)}${"AI" + "za" + "B".repeat(35)}${TAIL}`;
+    const once = redact(input);
+    expect(once.text).not.toContain(TAIL);
+    expect(redact(once.text).total).toBe(0);
   });
 
   it("redacting twice equals redacting once over generated inputs", () => {
@@ -982,7 +994,8 @@ describe("redact() — idempotence", () => {
       "=", ":", ": ", "=\"", "\"", "'", " ", ",", "}", "]", ";", "&", "?", "/", "@", "\n",
       "c", "7", "abc", "hunter2", "abcdefgh1234", "«redacted:sk-key»", "«redacted:assignment»",
       AWS_KEY_ID, GH_TOKEN, SLACK_TOKEN, GOOGLE_KEY, ANTHROPIC_KEY, OVERLONG_SK, SIB_TOKEN, JWT,
-      "Authorization: Bearer ", "Authorization: Basic ", "postgres://u:", "@db", "aws_secret_access_key=", AWS_SECRET,
+      "Authorization: Bearer ", "Authorization: Basic ", "postgres://u:", "@db", `${"a".repeat(31)}://u:p@db`,
+      "aws_secret_access_key=", AWS_SECRET,
     ];
     let state = 20261029;
     const next = (n: number): number => {
