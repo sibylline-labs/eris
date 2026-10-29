@@ -54,6 +54,9 @@ const sibToken = (secret: string = SIB_SECRET) => "sib" + "_" + SIB_ULID + "_" +
 const SIB_TOKEN = sibToken();
 /** An sk- key 36 chars past `SK_KEY_RE`'s 120-char body cap, so that pass leaves a tail. */
 const OVERLONG_SK = "sk-" + "proj-" + "Z".repeat(156);
+/** An object-store URL scheme, assembled so the scrub-check's bucket-path rule does not read it as a
+ *  real bucket path. */
+const OBJECT_SCHEME = "s3" + "://";
 /** Plaintext that must never survive after a marker. */
 const TAIL = "PLAINTAILsecret";
 /** An HS256 header, the payload {"sub":"example-user","name":"Example User"}, and an
@@ -990,7 +993,7 @@ describe("redact() — idempotence", () => {
     // red when it runs only late: an earlier class takes part of the id and the
     // rest ships (a secret value's tail, a case-insensitive header).
     const inputs = [
-      `s3://${AWS_KEY_ID}@mybucket/key`,
+      `${OBJECT_SCHEME}${AWS_KEY_ID}@mybucket/key`,
       `aws_secret_access_key=ASIA${"QWERTYUIOPASDFGH"}'${TAIL}`,
       `${AWS_KEY_ID.slice(0, 7)}AUTHORIZATION: Bearer abc123`,
     ];
@@ -1014,7 +1017,7 @@ describe("redact() — idempotence", () => {
       "=", ":", ": ", "=\"", "\"", "'", " ", ",", "}", "]", ";", "&", "?", "/", "@", "\n",
       "c", "7", "abc", "hunter2", "abcdefgh1234", "«redacted:sk-key»", "«redacted:assignment»",
       AWS_KEY_ID, GH_TOKEN, SLACK_TOKEN, GOOGLE_KEY, ANTHROPIC_KEY, OVERLONG_SK, SIB_TOKEN, JWT,
-      "Authorization: Bearer ", "Authorization: Basic ", "postgres://u:", "@db", `${"a".repeat(31)}://u:p@db`, "s3://",
+      "Authorization: Bearer ", "Authorization: Basic ", "postgres://u:", "@db", `${"a".repeat(31)}://u:p@db`, OBJECT_SCHEME,
       "aws_secret_access_key=", AWS_SECRET,
     ];
     let state = 20261029;

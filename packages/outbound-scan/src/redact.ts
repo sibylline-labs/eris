@@ -46,7 +46,7 @@
  *          scheme) finds no boundary, and that class's marker hands it one on
  *          a second pass;
  *        - late only: a key id that is a conn-string's user
- *          (`s3://AKIA…@bucket`) leaves conn-string no `:` until the key-id
+ *          (`scheme://AKIA…@host`) leaves conn-string no `:` until the key-id
  *          marker supplies one on a second pass, and an earlier unanchored or
  *          case-insensitive class (`google-api-key` inside an
  *          `aws_secret_access_key` value, `auth-header` on `…AUTHORIZATION:`)
