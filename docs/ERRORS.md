@@ -489,6 +489,9 @@ exit 0; the report was dropped, not delivered, and the agent's task is
 unaffected. A problem with eris itself is reported on the vendor route, the eris
 project's own tracker, rather than into the workspace.
 
+From `eris yak status`, `discover` or `config get|set` the same refusal is the
+failure block and exit 1: run `eris login` again.
+
 ### yak-not-entitled
 
 The Yaks endpoint answered `402`: the workspace is not entitled to Yaks (its
@@ -542,7 +545,9 @@ No bearer token resolved for the Yaks endpoint — neither `ERIS_YAKS_TOKEN` nor
 `"token"` field in a readable `~/.eris/yaks.json`. Environment/config, warn +
 exit 0. Fix: run `eris login` and approve the code it shows in your browser; it
 writes the token to `~/.eris/yaks.json`. Approving is a human step, not
-something an agent can do mid-task.
+something an agent can do mid-task. From `eris yak status`, `discover` or
+`config get|set` it is the failure block and exit 1, since those verbs have
+nothing to do without a token.
 
 ### yak-device-id-unwritable
 
@@ -571,6 +576,71 @@ every other diagnostic — `redactions.skipped: true` on the record
 carries the same fact instead, which matters because a skipped scrub and a
 scrub that ran and found nothing otherwise look identical (`count: 0,
 classes: []`).
+
+### yak-parked-unconfigured
+
+Informational, on a delivered yak: the endpoint accepted it (`recorded: <id>`),
+but this org has no destination for its yaks, so it is parked and nothing files
+to Linear until an admin sets one. Parked yaks file once a config exists. Fix:
+`eris yak discover teams`, then `eris yak config set --team <key>` (an org
+admin's), or set it on the dashboard's `/yak/config` page.
+Exit 0. eris reads `GET /v1/yaks/status` once after the submit to know; when that
+read does not answer, nothing is printed. Under `--output json` the record's
+`configured: false` carries the same fact, and stderr stays empty.
+
+### yak-admin-required
+
+`eris yak discover` or `eris yak config set` was refused with `403
+admin_required`: only an admin member of the org can list its Linear choices
+or change where its yaks are filed. A service token, or a member's login, is
+not enough. Fix: run `eris login` and have a person who is a Linear admin of the
+workspace approve it, or have an admin set the destination on the dashboard's
+`/yak/config` page. Exit 1.
+
+### yak-admin-unavailable
+
+`eris yak status`, `discover` or `config get|set` could not complete: the endpoint
+did not answer within 15 seconds, could not be reached, answered a status eris
+has no remedy for (a `5xx`, `502 linear_unavailable`, `503
+accounts_unavailable`), or answered a body that does not match the contract. Retry.
+If the body does not match, update eris (`eris update`). Exit 1.
+
+### yak-team-not-found
+
+`eris yak discover --team` or `eris yak config set --team` named a Linear team
+id the workspace does not list (`404 team_not_found`). Run `eris yak discover
+teams` and use one of its ids or keys. Exit 1.
+
+### yak-linear-disconnected
+
+The org's Linear connection is missing or revoked (`409 linear_disconnected`),
+so there is nothing to discover and no labels to ensure. A Linear admin
+reconnects it: sign in to the dashboard with Linear and install the Yaks
+app. Exit 1.
+
+### yak-config-invalid
+
+The endpoint refused the config (`422 invalid_config`), or `eris yak config set`
+was given names to resolve on an org with no config and no `--team`. An org's
+first set must carry `--team`, and every id must be one `eris yak discover`
+lists. Exit 1.
+
+### yak-config-set-empty
+
+`eris yak config set` was given no flag, so there was nothing to set. Pass
+`--team`, and optionally `--project`, `--state` and `--labels`. Exit 1.
+
+### yak-config-no-match
+
+A name given to `eris yak config set` (or `eris yak discover --team`) matched no
+entry, or more than one. Teams match by id, key or name; projects, states and
+labels by id or name, ignoring case. The fix lines list the candidates. Pass an id or
+a unique name. Exit 1.
+
+### yak-discover-unknown-kind
+
+`eris yak discover` was given a section it does not have. Use one of `teams`,
+`projects`, `states` and `labels`, or none for all four. Exit 1.
 
 ### login-url-unresolved
 

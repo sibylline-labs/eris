@@ -59,17 +59,47 @@ eris login --url https://api.sibylline.group
 
 Expect: `logged in: token "…" written to ~/.eris/yaks.json`
 
-On a CI runner with no person to approve, your user mints a service token under
-**Settings → API Tokens** in dash and sets `ERIS_YAKS_TOKEN` and `ERIS_YAKS_URL` instead.
+The person who approves must be a Linear admin of the workspace: step 5 sets the org's
+destination, which only an admin may do.
 
-## 5. Send a test yak
+On a CI runner with no person to approve, your user mints a service token under
+**Settings → API Tokens** in dash and sets `ERIS_YAKS_TOKEN` and `ERIS_YAKS_URL` instead. A
+service token can file yaks but cannot set the destination, so do step 5 from a signed-in
+machine first.
+
+## 5. Configure the destination
+
+An org with no destination accepts yaks and parks them: nothing reaches Linear until a team
+is set. Check, and set one if needed:
+
+```sh
+eris yak status
+```
+
+Expect: `configured: yes`. If it says `configured: no`, list the teams, ask your user which
+one yaks should land in (suggest one if they have no preference), and set it. A state is
+optional: the team's Triage state is marked `(default)` in `discover states`.
+
+```sh
+eris yak discover teams
+eris yak config set --team <KEY> --state Triage
+eris yak status
+```
+
+Expect: `configured: yes`. Add `--project <name>` or `--labels <name,...>` if your user
+wants them. `eris yak discover --team <KEY>` lists the names. A `yak-admin-required` block
+means the login is not an admin's: ask a Linear admin to approve a fresh `eris login`, or to
+set the destination at https://dash.sibylline.group/yak/config.
+
+## 6. Send a test yak
 
 Send one yak to prove the whole path works. A delivered yak prints `recorded: <id>`. Ask your
 user to check their Linear Triage for the new `[Yak]` issue.
 
-A `WARN` line means the yak wasn't delivered. The command still exits 0, because a yak never
-fails the task that filed it. The slug on that line names what to fix, usually the sign-in from
-step 4: run `eris login` again.
+A `WARN` line means something needs fixing. The command still exits 0, because a yak never
+fails the task that filed it. The slug on that line names what to fix: `yak-parked-unconfigured`
+means the yak was stored but has no destination (go back to step 5); most other slugs mean the
+yak wasn't delivered, usually because of the sign-in from step 4: run `eris login` again.
 
 ```sh
 eris yak suggest --summary "First yak from this repo" --body "Testing the Yaks pipeline end to end."
@@ -77,7 +107,7 @@ eris yak suggest --summary "First yak from this repo" --body "Testing the Yaks p
 
 Expect: `recorded: <id>`
 
-## 6. Teach every session to file
+## 7. Teach every session to file
 
 Add this block to the repo's `AGENTS.md` (and `CLAUDE.md` if the repo has one), or to your
 user's global agent instructions, so that every future session knows when to file. Show your

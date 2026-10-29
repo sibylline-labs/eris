@@ -248,7 +248,8 @@ describe("tab presses: the tree from the registry", () => {
 
   it("a group <TAB> offers its subs", () => {
     /** When a registry level is dropped, the second word of a group command completes nothing. */
-    expect(sorted(press(["eris", "yak", ""]))).toEqual(["fatal", "issue", "suggest"]);
+    expect(sorted(press(["eris", "yak", ""]))).toEqual(["config", "discover", "fatal", "issue", "status", "suggest"]);
+    expect(sorted(press(["eris", "yak", "config", ""]))).toEqual(["get", "set"]);
     expect(sorted(press(["eris", "completion", ""]))).toEqual(["bash", "zsh"]);
   });
 
