@@ -36,18 +36,25 @@
  *      running first would replace only the embedded run and leave
  *      `sib_<orgId>_<head>` in plaintext. It also runs before `assignment`, so
  *      `ERIS_TOKEN=sib_…` is classified once, as the more specific class.
- *   4. `aws-key`'s key-id regex runs after every whole-match class, just
- *      before `assignment`. `AWS_KEY_ID_RE` is `\b`-anchored, and a marker is
- *      non-word on both sides: a key id glued to a later class's match
- *      (`AKIA…ghp_…`, or a 31-character conn-string scheme) has no boundary
- *      on the first pass, so had it run first, that marker would hand it one
- *      on a second pass and `redact()` would not be idempotent. No class
- *      before it can match inside an `AKIA`+16 `[0-9A-Z]` run, so running later
- *      splits no key id; conn-string may take a glued key id into its scheme
- *      run, which redacts it under that class. `assignment` cannot split one:
- *      its name needs a `\b` at the identifier's start. The secret-assignment
- *      regex (`AWS_SECRET_RE`) stays ahead of the unanchored token classes, so
- *      none of them cuts its value short.
+ *   4. `aws-key`'s key-id regex runs twice: right after `sibdc-code`, and
+ *      again after `conn-string`, just before `assignment`. A marker is
+ *      non-word on both sides and carries a `:`, and a pass that runs after
+ *      another one meets that pass's markers. Each single position breaks
+ *      `redact()`'s idempotence:
+ *        - early only: `AWS_KEY_ID_RE` is `\b`-anchored, so a key id glued to a
+ *          later class's match (`AKIA…ghp_…`, or a 31-character conn-string
+ *          scheme) finds no boundary, and that class's marker hands it one on
+ *          a second pass;
+ *        - late only: a key id that is a conn-string's user
+ *          (`s3://AKIA…@bucket`) leaves conn-string no `:` until the key-id
+ *          marker supplies one on a second pass, and an earlier unanchored or
+ *          case-insensitive class (`google-api-key` inside an
+ *          `aws_secret_access_key` value, `auth-header` on `…AUTHORIZATION:`)
+ *          takes part of an id before it is seen.
+ *      The early run catches every id that already has its boundaries, so
+ *      the classes after it see a marker. The late run catches the ids that a
+ *      later marker gave a boundary. `assignment` cannot split an id: its
+ *      name needs a `\b` at the identifier's start.
  *
  * MARKER GUARD. Each pass runs sequentially over the STRING RESULT of the
  * previous pass, and the `«redacted:<class>»` marker matches none of the
@@ -665,8 +672,10 @@ function runPipeline(input: string, skip: ReadonlySet<RedactionClass>): { text: 
   if (on("sib-token")) text = runWholeMatchPass(text, "sib-token", SIB_TOKEN_RE, counts);
   if (on("sibdc-code")) text = runWholeMatchPass(text, "sibdc-code", SIBDC_CODE_RE, counts);
 
-  // aws-key, secret assignment: before github-token, slack-token, google-api-key
-  // and sk-key, which have no leading anchor and would cut its value short.
+  // aws-key: the key id and the secret assignment, before github-token,
+  // slack-token, google-api-key, sk-key and auth-header, none of which then
+  // takes part of either. The key id runs again below (reason 4, file header).
+  if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_KEY_ID_RE, counts);
   if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_SECRET_RE, counts);
 
   if (on("github-token")) text = runWholeMatchPass(text, "github-token", GITHUB_TOKEN_RE, counts);
@@ -679,8 +688,8 @@ function runPipeline(input: string, skip: ReadonlySet<RedactionClass>): { text: 
 
   if (on("conn-string")) text = runWholeMatchPass(text, "conn-string", CONN_STRING_RE, counts);
 
-  // aws-key, key id: AFTER every class whose marker can sit beside it (reason 4,
-  // file header).
+  // aws-key, key id again: a later class's marker can hand an id glued to it
+  // the `\b` it lacked above (reason 4, file header).
   if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_KEY_ID_RE, counts);
 
   // assignment last: the catch-all, most likely to overlap an already-handled
