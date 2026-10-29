@@ -715,7 +715,7 @@ function runPipeline(input: string, skip: ReadonlySet<RedactionClass>): { text: 
  * same text with every count at zero (tests/yak-redact.test.ts).
  */
 export function redact(text: string, opts: RedactOptions = {}): RedactionResult {
-  const { text: redacted, counts } = runPipeline(text, opts.skip ?? new Set());
+  const { text: redacted, counts } = runPipeline(text, opts.skip ?? new Set<RedactionClass>());
   const total = REDACTION_CLASSES.reduce((acc, c) => acc + counts[c], 0);
   return { text: redacted, counts, total };
 }
