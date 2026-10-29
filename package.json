@@ -25,6 +25,7 @@
   },
   "files": [
     "bin",
+    "tsconfig.json",
     "src",
     "plugins",
     "packages/yak-contract/src",
