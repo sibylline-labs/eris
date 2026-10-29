@@ -22,6 +22,9 @@
  *     `main`, the seam a test drives;
  *   - argv and output helpers a handler shares with core's verbs, the global
  *     `--output` pre-pass (`parseGlobal`, `GlobalFlagError`) included;
+ *   - the outbound secret scan's rules and string scan (`secretRules`,
+ *     `scanStrings`, the vendored gitleaks set eris/outbound-scan owns), so a
+ *     distribution scans what it sends with the rules core sends under;
  *   - the runtime: subprocesses (the only way eris spawns), the bounded pool
  *     (`runPool`, and the `ERIS_BATCH_*` readers), the diagnostics, the
  *     install root, and the build's identity (`BUILD_ID`, `releaseRepo()`, the
@@ -41,6 +44,8 @@ export { flagsOf, REGISTRY, rowsOfGroup } from "./cli/registry";
 export type { ArgError, SubOf } from "./cli/args";
 export { argErrorWhat, GlobalFlagError, parseGlobal, readVerbArgs, refuseArg, usageLine } from "./cli/args";
 export { sanitizeDisplay } from "./cli/output";
+export type { SecretHit } from "eris/outbound-scan";
+export { scanStrings, secretRules } from "eris/outbound-scan";
 export { onPath } from "./cli/ts-verb";
 export { RELEASE_UPDATE } from "./cli/commands/update/opt-in";
 export type { Cli, ComposeOptions, Session } from "./cli/compose";
