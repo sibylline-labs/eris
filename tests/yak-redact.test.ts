@@ -54,6 +54,9 @@ const sibToken = (secret: string = SIB_SECRET) => "sib" + "_" + SIB_ULID + "_" +
 const SIB_TOKEN = sibToken();
 /** An sk- key 36 chars past `SK_KEY_RE`'s 120-char body cap, so that pass leaves a tail. */
 const OVERLONG_SK = "sk-" + "proj-" + "Z".repeat(156);
+/** An object-store URL scheme, assembled so the scrub-check's bucket-path rule does not read it as a
+ *  real bucket path. */
+const OBJECT_SCHEME = "s3" + "://";
 /** Plaintext that must never survive after a marker. */
 const TAIL = "PLAINTAILsecret";
 /** An HS256 header, the payload {"sub":"example-user","name":"Example User"}, and an
@@ -905,6 +908,7 @@ describe("redact() — idempotence", () => {
         `token: '${m}'`,
         `Authorization: Bearer ${m}`,
         `Proxy-Authorization: Basic ${m} trailing`,
+        `{"private_key": "${m}"}`,
       ];
       for (const text of texts) {
         const result = redact(text);
@@ -934,6 +938,102 @@ describe("redact() — idempotence", () => {
     const jwtResult = redact(`{"session_token": "${jwt}"}`);
     expect(jwtResult.counts.jwt).toBe(1);
     expect(jwtResult.counts.assignment).toBe(0);
+  });
+
+  it("a quoted value with text glued after its closing quote is redacted whole, so a second pass changes nothing", () => {
+    // Goes red when the quoted value's range stops at its closing quote: pass 1
+    // leaves `«redacted:assignment»c`, a marker-led run pass 2 redacts again,
+    // and the glued text ships. In sh, `token="abc"def` is the one value `abcdef`.
+    const cases: Array<[string, string]> = [
+      [`token="abc"c`, "token=«redacted:assignment»"],
+      [`token="abcdefgh"7`, "token=«redacted:assignment»"],
+      [`password='hunter2'abc`, "password=«redacted:assignment»"],
+      [`"api_key": "x"tail, next`, `"api_key": «redacted:assignment», next`],
+      [`token="a"${ANTHROPIC_KEY}`, "token=«redacted:assignment»"],
+    ];
+    for (const [input, expected] of cases) {
+      const once = redact(input);
+      expect(once.text, input).toBe(expected);
+      expect(once.counts.assignment, input).toBe(1);
+      const twice = redact(once.text);
+      expect(twice.text, input).toBe(once.text);
+      expect(twice.total, input).toBe(0);
+    }
+  });
+
+  it("an AWS key id glued before another class's token is redacted on the first pass, not the second", () => {
+    // Goes red when aws-key runs before a class whose marker can sit right after
+    // a key id: pass 1 finds no word boundary after the id (a word char follows),
+    // the later class's marker supplies one, and pass 2 redacts the id.
+    // A 31-character scheme is conn-string's longest, so its match starts right after the key id.
+    for (const glued of [GH_TOKEN, SLACK_TOKEN, GOOGLE_KEY, "Authorization: Bearer xyz789", `${"a".repeat(31)}://u:p@db`]) {
+      const input = `${AWS_KEY_ID}${glued}`;
+      const once = redact(input);
+      expect(once.text, input).not.toContain(AWS_KEY_ID);
+      expect(once.counts["aws-key"], input).toBe(1);
+      const twice = redact(once.text);
+      expect(twice.text, input).toBe(once.text);
+      expect(twice.total, input).toBe(0);
+    }
+  });
+
+  it("an aws_secret_access_key value is redacted whole even when another class's token sits inside it", () => {
+    // Goes red when AWS_SECRET_RE runs after google-api-key: that unanchored pass
+    // cuts the value first, AWS_SECRET_RE stops at its marker, and the rest of
+    // the value ships with no governed name left for assignment to find.
+    const input = `aws_secret_access_key=${"w".repeat(20)}${"AI" + "za" + "B".repeat(35)}${TAIL}`;
+    const once = redact(input);
+    expect(once.text).not.toContain(TAIL);
+    expect(redact(once.text).total).toBe(0);
+  });
+
+  it("a key id that is a conn-string's user, or sits inside a secret or a header, is redacted on the first pass", () => {
+    // Goes red when the key-id pass runs only after conn-string: its marker
+    // carries the `:` conn-string's user:pass split needs, one pass late. Also
+    // red when it runs only late: an earlier class takes part of the id and the
+    // rest ships (a secret value's tail, a case-insensitive header).
+    const inputs = [
+      `${OBJECT_SCHEME}${AWS_KEY_ID}@mybucket/key`,
+      `aws_secret_access_key=ASIA${"QWERTYUIOPASDFGH"}'${TAIL}`,
+      `${AWS_KEY_ID.slice(0, 7)}AUTHORIZATION: Bearer abc123`,
+    ];
+    for (const input of inputs) {
+      const once = redact(input);
+      expect(once.text, input).not.toContain(TAIL);
+      expect(once.text, input).not.toMatch(/AKIA|ASIA/);
+      const twice = redact(once.text);
+      expect(twice.text, input).toBe(once.text);
+      expect(twice.total, input).toBe(0);
+    }
+  });
+
+  it("redacting twice equals redacting once over generated inputs", () => {
+    // Goes red when any composition of passes leaves text a second pass matches:
+    // a marker that hands a `\b`-anchored class its boundary, a marker-led run,
+    // a quoted value with a tail. Seeded, so a failure reproduces; the failing
+    // input is in the assertion message.
+    const pieces = [
+      "token", "password", "session", "auth", "SECRET_KEY", "x-api-key", `"api_key"`, `"private_key"`, "authorized",
+      "=", ":", ": ", "=\"", "\"", "'", " ", ",", "}", "]", ";", "&", "?", "/", "@", "\n",
+      "c", "7", "abc", "hunter2", "abcdefgh1234", "«redacted:sk-key»", "«redacted:assignment»",
+      AWS_KEY_ID, GH_TOKEN, SLACK_TOKEN, GOOGLE_KEY, ANTHROPIC_KEY, OVERLONG_SK, SIB_TOKEN, JWT,
+      "Authorization: Bearer ", "Authorization: Basic ", "postgres://u:", "@db", `${"a".repeat(31)}://u:p@db`, OBJECT_SCHEME,
+      "aws_secret_access_key=", AWS_SECRET,
+    ];
+    let state = 20261029;
+    const next = (n: number): number => {
+      state = (Math.imul(state, 1103515245) + 12345) >>> 0;
+      return (state >>> 8) % n;
+    };
+    for (let i = 0; i < 20000; i++) {
+      let input = "";
+      for (let k = 2 + next(8); k > 0; k--) input += pieces[next(pieces.length)];
+      const once = redact(input);
+      const twice = redact(once.text);
+      if (twice.text !== once.text || twice.total !== 0) {
+        expect({ input, once: once.text, twice: twice.text, total: twice.total }).toEqual({ input, once: once.text, twice: once.text, total: 0 });
+      }
+    }
   });
 });
 

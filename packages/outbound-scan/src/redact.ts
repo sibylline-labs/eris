@@ -16,7 +16,7 @@
  * every report.
  *
  * THIRTEEN CLASSES, applied in a fixed pipeline order, most-specific first.
- * Order is load-bearing for three reasons:
+ * Order is load-bearing for four reasons:
  *
  *   1. A JSON-embedded GCP private key ("private_key":"-----BEGIN...") is
  *      also a syntactic match for the generic PEM-block pattern (`[\s\S]*?`
@@ -36,28 +36,55 @@
  *      running first would replace only the embedded run and leave
  *      `sib_<orgId>_<head>` in plaintext. It also runs before `assignment`, so
  *      `ERIS_TOKEN=sib_…` is classified once, as the more specific class.
+ *   4. `aws-key`'s key-id regex runs twice: right after `sibdc-code`, and
+ *      again after `conn-string`, just before `assignment`. A marker is
+ *      non-word on both sides and carries a `:`, and a pass that runs after
+ *      another one meets that pass's markers. Each single position breaks
+ *      `redact()`'s idempotence:
+ *        - early only: `AWS_KEY_ID_RE` is `\b`-anchored, so a key id glued to a
+ *          later class's match (`AKIA…ghp_…`, or a 31-character conn-string
+ *          scheme) finds no boundary, and that class's marker hands it one on
+ *          a second pass;
+ *        - late only: a key id that is a conn-string's user
+ *          (`scheme://AKIA…@host`) leaves conn-string no `:` until the key-id
+ *          marker supplies one on a second pass, and an earlier unanchored or
+ *          case-insensitive class (`google-api-key` inside an
+ *          `aws_secret_access_key` value, `auth-header` on `…AUTHORIZATION:`)
+ *          takes part of an id before it is seen.
+ *      The early run catches every id that already has its boundaries, so
+ *      the classes after it see a marker. The late run catches the ids that a
+ *      later marker gave a boundary. `assignment` cannot split an id: its
+ *      name needs a `\b` at the identifier's start.
  *
  * MARKER GUARD. Each pass runs sequentially over the STRING RESULT of the
  * previous pass, and the `«redacted:<class>»` marker matches none of the
  * patterns below by its own shape (verified in tests/yak-redact.test.ts —
- * idempotence and "marker is never re-matched"). Three passes are the
- * exception: each takes an arbitrary non-whitespace run as the value at a
- * position — `assignment` (after the operator), `auth-header` (the credential
- * after the scheme) and `conn-string` (the password in the userinfo) — and a
- * marker an earlier pass left at that position is exactly such a run. A pass
+ * idempotence and "marker is never re-matched"). Four passes are the
+ * exception: each takes an arbitrary run as the value at a position —
+ * `assignment` (after the operator), `auth-header` (the credential after the
+ * scheme), `gcp-private-key` (the JSON string) and `conn-string` (the password
+ * in the userinfo) — and a marker a pass left at that position, its own
+ * included, is exactly such a run. A pass
  * may decline such a value, so that the more specific class stays the only
  * one classified and counted, only where declining leaves in place nothing
  * but the marker and text that cannot be secret:
  *
  *   - `assignment` declines a value that is EXACTLY one marker (`MARKER`):
- *     bare and ending where the value would end, or alone in matching quotes.
- *     The name stays, as it does for any redacted value.
+ *     bare or alone in matching quotes, and ending where an unquoted value
+ *     would end. The name stays, as it does for any redacted value.
  *   - `auth-header` declines a credential that is exactly one marker, ending
  *     at whitespace, after a known scheme word (`AUTH_DECLINED`). `assignment`
  *     must honour that too, or it would take `Authorization` as a governed
  *     name and `Bearer` as its value (`AUTH_DECLINED_RE`).
+ *   - `gcp-private-key` declines a JSON string value that is exactly one
+ *     marker; it takes any string, so it would otherwise re-match its own.
  *   - `conn-string` never declines: its scheme and host runs have no fixed
  *     edge, so with no separator around the span they can carry secret text.
+ *
+ * A quoted value runs on over any text glued after its closing quote, up to
+ * where an unquoted value would end: in sh, `token="abc"def` is the one value
+ * `abcdef`, so the glued text may be secret. Stopping at the quote would also
+ * leave `«redacted:assignment»def`, which a second pass redacts again.
  *
  * A value that runs on past a marker (`«redacted:sk-key»` followed by the tail
  * of a key longer than that class's cap, or by `.`, `%21`, `:x-oauth-…`) is
@@ -358,8 +385,9 @@ const AUTH_HEADER_RE = new RegExp(
 
 // GCP service-account "private_key" JSON field: the standard safe JSON-string
 // idiom for the value, so the surrounding quotes and key name survive and
-// only the material is replaced.
-const GCP_PRIVATE_KEY_RE = /("private_key"\s*:\s*")((?:[^"\\]|\\.)*)(")/g;
+// only the material is replaced. It declines a value that is exactly one
+// marker (file header, "MARKER GUARD"), or it would re-match its own output.
+const GCP_PRIVATE_KEY_RE = new RegExp(`("private_key"\\s*:\\s*")(?!${MARKER}")((?:[^"\\\\]|\\\\.)*)(")`, "g");
 
 // Connection strings with an inline password: proto://user:pass@host. Every
 // character class excludes the next delimiter, so there is no ambiguity for
@@ -408,7 +436,7 @@ const CONN_STRING_RE =
 // count for the class that actually caught it. It declines only a value that
 // is EXACTLY one marker (file header, "MARKER GUARD"): unquoted and ending
 // where the unquoted value would end, or alone inside a matching pair of
-// quotes. A value that runs on past the marker (`«redacted:sk-key»<tail>`) is
+// quotes with nothing glued after the closing one. A value that runs on past the marker (`«redacted:sk-key»<tail>`) is
 // redacted whole.
 //
 // `AUTH_DECLINED_RE` is the same guard for the one header `auth-header` owns.
@@ -457,7 +485,7 @@ const assignmentRe = (valueGuard: string, ledValue = ""): RegExp => new RegExp(
 );
 
 // Declines only a value that is exactly a marker; redacts one that runs on past it.
-const EXACT_MARKER_GUARD = `(?!${MARKER}(?![^\\s,}\\]])|"${MARKER}"|'${MARKER}')`;
+const EXACT_MARKER_GUARD = `(?!(?:${MARKER}|"${MARKER}"|'${MARKER}')(?![^\\s,}\\]]))`;
 const ASSIGNMENT_RE = assignmentRe(EXACT_MARKER_GUARD);
 // The same, except a value that starts with a marker matches only its opening
 // quote and `«redacted:` (group `led`), so `runAssignmentPass` can work out its
@@ -564,6 +592,13 @@ function unquotedValueEnds(text: string): Int32Array {
 function runAssignmentPass(text: string, counts: Record<RedactionClass, number>): string {
   const ranges: Array<[number, number]> = [];
   let markerLed = false;
+  let ends: Int32Array | undefined;
+  const valueEnd = (valueStart: number, end: number): number => {
+    const first = text[valueStart];
+    if (first !== '"' && first !== "'") return end;
+    ends ??= unquotedValueEnds(text);
+    return Math.max(end, Math.min(ends[end], end + 20000));
+  };
   ASSIGNMENT_RE.lastIndex = 0;
   for (let m = ASSIGNMENT_RE.exec(text); m !== null; m = ASSIGNMENT_RE.exec(text)) {
     const groups = m.groups as unknown as AssignmentGroups;
@@ -576,10 +611,10 @@ function runAssignmentPass(text: string, counts: Record<RedactionClass, number>)
     }
     MARKER_LED_RE.lastIndex = valueStart;
     if (MARKER_LED_RE.test(text)) markerLed = true;
-    ranges.push([valueStart, end]);
+    ranges.push([valueStart, valueEnd(valueStart, end)]);
   }
   if (markerLed) {
-    const unquotedEnds = unquotedValueEnds(text);
+    const unquotedEnds = (ends ??= unquotedValueEnds(text));
     ASSIGNMENT_LED_RE.lastIndex = 0;
     for (let m = ASSIGNMENT_LED_RE.exec(text); m !== null; m = ASSIGNMENT_LED_RE.exec(text)) {
       const groups = m.groups as unknown as AssignmentGroups;
@@ -591,13 +626,13 @@ function runAssignmentPass(text: string, counts: Record<RedactionClass, number>)
         continue;
       }
       if (groups.led === undefined) {
-        ranges.push([valueStart, end]);
+        ranges.push([valueStart, valueEnd(valueStart, end)]);
         continue;
       }
       // The extent ASSIGNMENT_RE's value alternatives would give it.
       QUOTED_VALUE_RE.lastIndex = valueStart;
       const extent = QUOTED_VALUE_RE.test(text)
-        ? QUOTED_VALUE_RE.lastIndex
+        ? valueEnd(valueStart, QUOTED_VALUE_RE.lastIndex)
         : Math.min(unquotedEnds[valueStart], valueStart + 20000);
       ranges.push([valueStart, extent]);
     }
@@ -637,7 +672,9 @@ function runPipeline(input: string, skip: ReadonlySet<RedactionClass>): { text: 
   if (on("sib-token")) text = runWholeMatchPass(text, "sib-token", SIB_TOKEN_RE, counts);
   if (on("sibdc-code")) text = runWholeMatchPass(text, "sibdc-code", SIBDC_CODE_RE, counts);
 
-  // aws-key: two independent regexes feeding one class.
+  // aws-key: the key id and the secret assignment, before github-token,
+  // slack-token, google-api-key, sk-key and auth-header, none of which then
+  // takes part of either. The key id runs again below (reason 4, file header).
   if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_KEY_ID_RE, counts);
   if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_SECRET_RE, counts);
 
@@ -650,6 +687,10 @@ function runPipeline(input: string, skip: ReadonlySet<RedactionClass>): { text: 
   if (on("auth-header")) text = runWholeMatchPass(text, "auth-header", AUTH_HEADER_RE, counts);
 
   if (on("conn-string")) text = runWholeMatchPass(text, "conn-string", CONN_STRING_RE, counts);
+
+  // aws-key, key id again: a later class's marker can hand an id glued to it
+  // the `\b` it lacked above (reason 4, file header).
+  if (on("aws-key")) text = runWholeMatchPass(text, "aws-key", AWS_KEY_ID_RE, counts);
 
   // assignment last: the catch-all, most likely to overlap an already-handled
   // class's surface text if run earlier.
