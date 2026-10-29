@@ -115,6 +115,8 @@ describe("the package's exports", () => {
       "runPool",
       "runProgram",
       "sanitizeDisplay",
+      "scanStrings",
+      "secretRules",
       "signalTree",
       "usageLine",
       "warn",
@@ -123,6 +125,10 @@ describe("the package's exports", () => {
     ]);
     // The SDK's composition inputs are core's own, so a distribution composes what this build composes.
     expect(sdk.REGISTRY).toBe(REGISTRY);
+    // The scan a distribution reaches is outbound-scan's own, not a copy, so it refuses on the rules core refuses on.
+    const scan = await import("@sibylline-labs/eris/outbound-scan");
+    expect(sdk.secretRules).toBe(scan.secretRules);
+    expect(sdk.scanStrings).toBe(scan.scanStrings);
     expect(sdk.PLUGINS.map((p) => p.name)).toEqual(["yak", "socrates"]);
     // Through a variable: the type checker refuses the literal the same way.
     const deepPath = "@sibylline-labs/eris/src/cli/compose";
