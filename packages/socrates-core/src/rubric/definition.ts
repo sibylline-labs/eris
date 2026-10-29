@@ -97,6 +97,11 @@ export type GateId<R extends RubricDefinition> = {
   [K in QuestionId<R>]: QuestionsOf<R>[K] extends { readonly kind: "gate" } ? K : never;
 }[QuestionId<R>];
 
+/** A gate whose firing rejects the candidate: the only gates an override may bypass. */
+export type RejectGateId<R extends RubricDefinition> = {
+  [K in GateId<R>]: QuestionsOf<R>[K] extends { readonly route: "reject" } ? K : never;
+}[GateId<R>];
+
 export type FeatureId<R extends RubricDefinition> = keyof R["features"] & string;
 
 /** One enum answer per question, and nothing else. */
@@ -150,6 +155,18 @@ export function extractFeatures<R extends RubricDefinition>(rubric: R, statement
 }
 
 /**
+ * Whether one gate fires on these answers and features: the answer it was given, and the feature
+ * that fired it when one did, or undefined when it passes. Pure, and the scorer's own test.
+ */
+export function gateFiring<R extends RubricDefinition>(rubric: R, gate: GateId<R>, answers: Answers<R>, features: Features<R>): { readonly answer: string; readonly feature?: FeatureId<R> } | undefined {
+  const q = rubric.questions[gate] as GateQuestion;
+  const answer = (answers as Readonly<Record<string, string>>)[gate]!;
+  const feature = q.firedBy?.find((f) => (features as Readonly<Record<string, boolean>>)[f]);
+  if (feature === undefined && q.passes.includes(answer)) return undefined;
+  return { answer, ...(feature === undefined ? {} : { feature: feature as FeatureId<R> }) };
+}
+
+/**
  * The verdict for one candidate. Pure: it reads only its arguments, so the same
  * answers and features always give the same verdict.
  */
@@ -159,10 +176,9 @@ export function score<R extends RubricDefinition>(rubric: R, answers: Answers<R>
   const held = features as Readonly<Record<string, boolean>>;
   for (const [id, q] of Object.entries(rubric.questions)) {
     if (q.kind !== "gate" || bypass.has(id)) continue;
-    const answer = given[id]!;
-    const feature = q.firedBy?.find((f) => held[f]);
-    if (feature === undefined && q.passes.includes(answer)) continue;
-    const firing: GateFiring<R> = { rubric: rubric.version, gate: id as GateId<R>, answer, ...(feature === undefined ? {} : { feature: feature as FeatureId<R> }) };
+    const fired = gateFiring(rubric, id as GateId<R>, answers, features);
+    if (fired === undefined) continue;
+    const firing: GateFiring<R> = { rubric: rubric.version, gate: id as GateId<R>, ...fired };
     switch (q.route) {
       case "reject":
         return { kind: "rejected", ...firing };

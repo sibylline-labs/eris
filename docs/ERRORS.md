@@ -687,21 +687,36 @@ A `WARN`, exit 0: `ERIS_YAKS_TOKEN` is set, and it wins over the token in
 
 ### socrates-unknown-verb
 
-`eris socrates` was given a command it does not have. Fix: use `submit`, or
-run `eris socrates --help`.
+`eris socrates` was given a command it does not have. Fix: use `classify` or
+`submit`, or run `eris socrates --help`.
 
 ### socrates-flag-required
 
-`eris socrates submit` was run without `--title`, `--statement` or
-`--source`, which every candidate needs. Nothing was sent. Fix: pass all three.
+`eris socrates submit` or `eris socrates classify` was run without `--title`,
+`--statement` or `--source`, which every candidate needs. Nothing was sent. Fix:
+pass all three. Also raised when `submit`'s `--allow-redaction` and
+`--override-reason` are not given together, and when `classify --request` is
+given with another flag: the request carries the whole candidate, so pass
+everything inside it or drop it.
 
 ### socrates-candidate-invalid
 
-The candidate does not match the submit contract: a field is blank or over
+The candidate does not match the contract: a field is blank or over
 its bound (title 200, statement 4000, project 200 characters), `--source` is
 not an absolute `http(s)` URL, or `--kind` is not one of `decision`,
 `practice`, `prd` or `conflict`. The `ERROR` line names each field. Nothing
-was sent. Fix: correct the named fields.
+was sent. `classify` also raises it when `--request` is not a JSON object, or
+names a `rubric_version` this build does not score. Fix: correct the named
+fields.
+
+### socrates-answers-invalid
+
+`eris socrates classify` was given answers that do not fit the rubric: a
+question has no answer, an answer is not one of its question's enum values, a
+key is not one of the rubric's questions, a question is answered twice, or an
+`--answer` is not `<question>=<answer>`. Nothing was scored. The `fix:` lines
+list every question with its answers. Fix: answer every question once, with
+one of its answers.
 
 ### socrates-secret-detected
 
@@ -714,9 +729,16 @@ Fix: remove the secret from the named field and run the command again.
 
 ### socrates-override-invalid
 
-`--allow-redaction` named something that is not one of eris's redaction
-classes. Nothing was sent. Fix: use a class the `fix:` line lists, or drop the
-flag.
+`eris socrates submit --allow-redaction` named something that is not one of
+eris's redaction classes. Nothing was sent. Fix: use a class the `fix:` line
+lists, or drop the flag.
+
+For `eris socrates classify --override <gate>=<reason>`, it means the override
+cannot apply. The reason is missing, blank, multi-line or over 200
+characters. Or the gate is not one of the rubric's gates, routes the candidate
+(a practice, an inferred premise) rather than rejecting it, does not reject
+these answers, or is named twice. Nothing was scored. Fix: override only the
+gate a rejection named, once, with a one-line reason.
 
 ### socrates-redacted
 

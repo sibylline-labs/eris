@@ -1,6 +1,6 @@
 /**
- * The socrates plugin's manifest: `eris socrates submit` as registry rows plus
- * a handler thunk (docs/dev/PLUGINS.md).
+ * The socrates plugin's manifest: `eris socrates submit` and `eris socrates
+ * classify` as registry rows plus a handler thunk (docs/dev/PLUGINS.md).
  *
  * No `product`: every install has the verbs, and the endpoint answers an
  * unentitled workspace with a subscribe link, which the verb prints.
@@ -26,11 +26,29 @@ export default definePlugin({
         { name: "--override-reason", takesValue: true },
       ],
     },
+    "socrates classify": {
+      summary: "Score one candidate's rubric answers locally and print the verdict",
+      json: true,
+      usage: "(--title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] --answer <question>=<answer>... | --request <json>) [--override <gate>=<reason>]...",
+      flags: [
+        { name: "--kind", takesValue: true },
+        { name: "--title", takesValue: true },
+        { name: "--statement", takesValue: true },
+        { name: "--source", takesValue: true },
+        { name: "--project", takesValue: true },
+        { name: "--answer", takesValue: true, repeatable: true },
+        { name: "--override", takesValue: true, repeatable: true },
+        { name: "--request", takesValue: true },
+      ],
+    },
   },
   handlers: {
     socrates: async () => (await import("./submit")).runSocrates,
   },
   jsonFix: `  eris socrates submit                     {candidate_id, deduped, contract_version, redactions,
                                             overrides}
+  eris socrates classify                   {verdict, rubric_version, score?, threshold?, breakdown?,
+                                            gate?, answer?, feature?, route?, reason?, overrides,
+                                            meta: {_links: {override?}}}
 `,
 });
