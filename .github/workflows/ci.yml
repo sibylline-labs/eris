@@ -204,6 +204,12 @@ jobs:
           bun add --global "$TARBALL"
           out=$("$BUN_INSTALL/bin/eris" --help)
           [[ "$out" == "Usage: eris "* ]] || { echo "::error title=bun add -g::eris --help printed: $out"; exit 1; }
+          # The installed yak verb must load its TypeScript core. The plugins import
+          # the `eris/*` aliases from tsconfig.json `paths`, so a tarball without it
+          # stops every `eris yak` at yak-deps-not-installed. No token here, so a
+          # loaded core WARNs about sign-in instead and still exits 0.
+          yak=$(HOME="$RUNNER_TEMP/yak-home" "$BUN_INSTALL/bin/eris" yak suggest --summary probe --body probe 2>&1 || true)
+          [[ "$yak" != *yak-deps-not-installed* ]] || { echo "::error title=bun add -g::eris yak cannot load its core: $yak"; exit 1; }
 
       # Run from a directory whose bunfig.toml preloads a script, each installed
       # command must not run it. A bare `bun` in the same directory does, which is
