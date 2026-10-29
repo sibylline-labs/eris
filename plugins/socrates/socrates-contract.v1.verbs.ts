@@ -10,8 +10,9 @@
  *  - Every response is a two-member union: body | `SocratesProblem`.
  *  - A failed gate says why. An override link names a hard gate that failed, at
  *    most once, and a `pass` offers none. An override reason is one line.
- *  - Rubric answers are a `snake_case` map: the questions belong to the rubric
- *    version, not to this file.
+ *  - Rubric answers map a `snake_case` gate key to the answer as the rubric
+ *    spells it (kebab-case): the questions belong to the rubric version, not to
+ *    this file.
  *  - IDs are opaque bounded strings. The policy hash names a policy, never an entry.
  */
 
@@ -51,6 +52,8 @@ export const SocratesCandidateState = z.enum(["pending", "filed", "needs_input",
 export const SocratesResolveOutcome = z.enum(["resolved", "queued"]);
 
 const Key = z.string().max(SOCRATES_KEY_MAX_LENGTH).regex(/^[a-z][a-z0-9_]*$/, "must be a snake_case key");
+/** Published answers are kebab-case; `_` stays legal so every value `Key` accepted still decodes. */
+const Answer = z.string().max(SOCRATES_KEY_MAX_LENGTH).regex(/^[a-z][a-z0-9_-]*$/, "must be a lowercase rubric answer");
 const RubricVersion = z.string().regex(/^rubric@v[1-9][0-9]*$/, "must be rubric@v<N>");
 const PolicyHash = z.string().regex(/^[0-9a-f]{64}$/, "must be a lowercase sha256 hex");
 const IsoDatetime = z
@@ -87,7 +90,7 @@ export const SocratesClassifyRequest = z.object({
   schema_version: Version,
   rubric_version: RubricVersion,
   candidate: SocratesCandidate,
-  answers: z.record(Key, Key).refine((a) => Object.keys(a).length > 0, "needs at least one rubric answer"),
+  answers: z.record(Key, Answer).refine((a) => Object.keys(a).length > 0, "needs at least one rubric answer"),
   overrides: z.array(SocratesOverride).min(1).refine(uniqueGates, "one override per gate").optional(),
 });
 export type SocratesClassifyRequest = z.infer<typeof SocratesClassifyRequest>;

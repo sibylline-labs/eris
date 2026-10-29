@@ -15,6 +15,7 @@ import { SocratesProblem, SocratesSubmitReceipt, SocratesSubmitRequest, Socrates
 import { runSocrates } from "../plugins/socrates/submit";
 import { REDACTION_CLASSES } from "../packages/outbound-scan/src/index";
 import * as Verbs from "../plugins/socrates/socrates-contract.v1.verbs";
+import { RUBRIC_V1, RUBRIC_V2 } from "../packages/socrates-core/src/index";
 import type { ZodTypeAny } from "zod";
 import { CliExit } from "../src/cli/ts-verb";
 import { expectFailBlock, type Sandbox, sandbox } from "./helpers/blackbox";
@@ -75,6 +76,19 @@ describe("the contract v1 routes beyond submit, against the shared golden file",
       }
     });
   }
+
+  it("classify: every answer of every published rubric decodes", () => {
+    /** Published rubrics are frozen, so an answer spelling the wire refuses can never be sent. */
+    const candidate = { kind: "decision", title: "t", statement: "s", source: "https://example.com" };
+    for (const [version, rubric] of [["rubric@v1", RUBRIC_V1], ["rubric@v2", RUBRIC_V2]] as const) {
+      for (const [gate, question] of Object.entries(rubric.questions)) {
+        for (const answer of question.answers) {
+          const raw = { schema_version: "1.0.0", rubric_version: version, candidate, answers: { [gate]: answer } };
+          expect({ version, gate, answer, ok: Verbs.SocratesClassifyRequest.safeParse(raw).success }).toEqual({ version, gate, answer, ok: true });
+        }
+      }
+    }
+  });
 });
 
 let server: ReturnType<typeof Bun.serve>;
