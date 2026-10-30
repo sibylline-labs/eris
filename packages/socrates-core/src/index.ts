@@ -19,6 +19,7 @@ export {
   type WriteResult,
 } from "./doc-surgery";
 export * from "./entry-id";
+export * from "./issue-entry";
 export * from "./match";
 export * from "./render";
 

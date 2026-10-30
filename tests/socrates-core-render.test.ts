@@ -154,6 +154,15 @@ describe("issue-entry shape", () => {
       ].join("\n"),
     });
   });
+
+  test("a conflict site's register IDs sit before its link, outside the label", () => {
+    /** When a site's register IDs render inside the link label, Linear's chip rewrite drops them from the line the resolver reads. */
+    const sites = [{ ...conflict.sites[0]!, decisions: ["ACME-K11", "ACME-BILL-K4"] }, conflict.sites[1]!];
+    expect(renderConflictEntry({ ...conflict, sites }).description.split("\n").slice(3, 5)).toEqual([
+      "- `ACME-K11`, `ACME-BILL-K4` in [Practices](https://docs.example.com/acme/document/practices)",
+      "- [LBD](https://docs.example.com/acme/document/lbd)",
+    ]);
+  });
 });
 
 describe("formatEntryDate", () => {
@@ -182,6 +191,7 @@ describe("inputs that would break an entry's shape are refused, not rewritten", 
     ["a lowercase ID", () => renderPractice({ ...practice, handle: { id: "acme-p3" } }), "bad-handle"],
     ["a 7-hex hash", () => renderPractice({ ...practice, handle: { hash: HASH.slice(1) } }), "bad-handle"],
     ["a conflict with one site", () => renderConflictEntry({ ...conflict, sites: conflict.sites.slice(0, 1) }), "too-few-sites"],
+    ["a conflict site ID that is not a register ID", () => renderConflictEntry({ ...conflict, sites: [{ ...conflict.sites[0]!, decisions: ["acme-k1"] }, conflict.sites[1]!] }), "bad-decision"],
     ["a PRD whose title would exceed 80 characters", () => renderPrdEntry({ ...prd, prd: { ...prd.prd, label: "x".repeat(70) } }), "title-too-long"],
   ];
   for (const [name, render, reason] of cases) {

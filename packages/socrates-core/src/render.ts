@@ -44,11 +44,18 @@ export type PrdEntry = {
   crossProject: readonly { decision: string; project: Link }[];
 };
 
+/**
+ * One authoritative site a conflict links. `decisions` are the register IDs it involves at that site; they render
+ * before the link, never inside its label, because Linear rewrites a doc link into a chip and the resolver reads
+ * the IDs from the rest of the bullet line.
+ */
+export type ConflictSite = Link & { decisions?: readonly string[] };
+
 export type ConflictEntry = {
   title: string;
   summary: string;
   /** Every authoritative site involved: docs, register rows, issues, Canon, code. At least two. */
-  sites: readonly Link[];
+  sites: readonly ConflictSite[];
   /** A resolution a reviewer can accept, when one can be proposed. */
   proposedResolution?: string;
 };
@@ -62,7 +69,8 @@ export type EntryRenderReason =
   | "bad-link"
   | "bad-date"
   | "bad-handle"
-  | "too-few-sites";
+  | "too-few-sites"
+  | "bad-decision";
 
 export class EntryRenderError extends Error {
   constructor(
@@ -79,6 +87,13 @@ export const ENTRY_TITLE_MAX_LENGTH = 80;
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"] as const;
 
 const LINE_BREAK = /[\r\n\u2028\u2029]/;
+
+/**
+ * A register ID: an uppercase prefix of one or more segments, then a segment of letters and a number (`ACME-K11`,
+ * `ACME-BILL-K4`, `SAAS-P3`). The resolver matches register rows and Plan bullets by exactly this shape.
+ */
+export const DECISION_ID = "[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[A-Z]+[1-9][0-9]*";
+const DECISION_ID_EXACT = new RegExp(`^${DECISION_ID}$`);
 
 /** Single-line review footer for issue entries: the reply lands on this issue, never on a linked one. */
 const ANSWER_HERE = "Answer on this issue. A comment here is authoritative, and Socrates carries it to every linked site.";
@@ -137,12 +152,20 @@ export function renderConflictEntry(entry: ConflictEntry): IssueEntry {
   if (entry.sites.length < 2) {
     throw new EntryRenderError("too-few-sites", `a conflict links at least two sites, got ${entry.sites.length}`);
   }
-  const lines = [entry.summary.trim(), "", "Authoritative sites:", ...entry.sites.map((site) => `- ${renderLink(site)}`)];
+  const lines = [entry.summary.trim(), "", "Authoritative sites:", ...entry.sites.map(renderSite)];
   if (entry.proposedResolution !== undefined) {
     lines.push("", "Proposed resolution:", "", entry.proposedResolution.trim());
   }
   lines.push("", ANSWER_HERE);
   return { title, description: lines.join("\n") };
+}
+
+function renderSite(site: ConflictSite): string {
+  const decisions = (site.decisions ?? []).map((id) => {
+    if (!DECISION_ID_EXACT.test(id)) throw new EntryRenderError("bad-decision", `${JSON.stringify(id)} is not a register ID such as ACME-K11`);
+    return `\`${id}\``;
+  });
+  return decisions.length === 0 ? `- ${renderLink(site)}` : `- ${decisions.join(", ")} in ${renderLink(site)}`;
 }
 
 // ---------------------------------------------------------------------------
