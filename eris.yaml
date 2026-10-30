@@ -1,0 +1,7 @@
+# Repo conventions the agent harness reads before its generic rules fire.
+service: eris
+repo:
+  github: eris
+  conventions:
+    commit_subject_key: none
+    test_intent_comment: when-docblock
