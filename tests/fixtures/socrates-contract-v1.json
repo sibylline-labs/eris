@@ -3,7 +3,8 @@
   "request": {
     "accept": [
       { "schema_version": "1.0.0", "candidate": { "kind": "decision", "title": "Errors use problem+json", "statement": "Every 4xx/5xx is RFC 7807 problem+json with code as an extension member.", "source": "https://github.com/example/repo/pull/14" } },
-      { "schema_version": "1.0.0", "candidate": { "kind": "practice", "title": "Plans precede code", "statement": "A plan is committed before the first commit it describes.", "source": "https://example.com/notes#plan", "project": "platform" } }
+      { "schema_version": "1.0.0", "candidate": { "kind": "practice", "title": "Plans precede code", "statement": "A plan is committed before the first commit it describes.", "source": "https://example.com/notes#plan", "project": "platform" } },
+      { "schema_version": "1.0.0", "candidate": { "kind": "decision", "title": "Errors use problem+json", "statement": "Every 4xx/5xx is RFC 7807 problem+json with code as an extension member.", "source": "https://github.com/example/repo/pull/14" }, "now": true }
     ],
     "reject": [
       { "schema_version": "2.0.0", "candidate": { "kind": "decision", "title": "t", "statement": "s", "source": "https://example.com" } },
@@ -11,7 +12,8 @@
       { "schema_version": "1.0.0", "candidate": { "kind": "decision", "title": "   ", "statement": "s", "source": "https://example.com" } },
       { "schema_version": "1.0.0", "candidate": { "kind": "decision", "title": "t", "statement": "s", "source": "repo@abc:path#L1" } },
       { "schema_version": "1.0.0", "candidate": { "kind": "decision", "title": "t", "source": "https://example.com" } },
-      { "schema_version": "1.0.0" }
+      { "schema_version": "1.0.0" },
+      { "schema_version": "1.0.0", "candidate": { "kind": "decision", "title": "t", "statement": "s", "source": "https://example.com" }, "now": "yes" }
     ]
   },
   "response": {
