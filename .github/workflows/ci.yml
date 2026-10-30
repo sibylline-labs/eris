@@ -175,12 +175,15 @@ jobs:
 
       # The tarball npm would publish, and npm's own check that it can: a dry run
       # uploads nothing and needs no token. --ignore-scripts, so no repo script runs.
+      # The checkout's version is 0.0.0 (release stamps the real one), and npm
+      # refuses to tag a version below the published one `latest` implicitly, so
+      # the dry run names a tag of its own.
       - name: Pack and dry-run publish
         id: pack
         run: |
           tarball=$(npm pack --ignore-scripts --silent --pack-destination "$RUNNER_TEMP")
           echo "tarball=$RUNNER_TEMP/$tarball" >>"$GITHUB_OUTPUT"
-          npm publish --dry-run --ignore-scripts
+          npm publish --dry-run --ignore-scripts --tag ci-dry-run
 
       # An install from the tarball alone, run from a directory with no checkout
       # in it. The command's shebang is `env -S bun ...`, which needs GNU env 8.30
