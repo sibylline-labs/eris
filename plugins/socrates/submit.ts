@@ -23,6 +23,9 @@
  *   - A response body is read only through `SocratesSubmitResponse`: a receipt
  *     prints, a problem+json error becomes a failure block, and anything else
  *     is `socrates-bad-response`. No untyped JSON reaches the output.
+ *   - A `prd` or `conflict` candidate is sent only when socrates-core's
+ *     `issueEntryOf` files its (redacted) statement; the server runs the same
+ *     check before it files the issue.
  *   - One request, no retry. The deadline covers the whole exchange, headers
  *     and body.
  *   - A failure is a slugged block on stderr and exit 1, with nothing on
@@ -32,6 +35,7 @@
 
 import { homedir } from "node:os";
 import { isRedactionClass, prepareOutbound, REDACTION_CLASSES, redact, type Override, type RedactionClass, type SecretHit, scanSecrets, scanStrings } from "eris/outbound-scan";
+import { issueEntryOf } from "eris/socrates-core";
 import { CliExit, groupArgs, readArgs, readYaksFileConfig, renderFailureBlock, renderWarnLines, resolveToken, resolveUrl, runErisVerb, type VerbContext } from "../../src/cli/plugin";
 import plugin from "./index";
 import { SOCRATES_CONTRACT_VERSION, SOCRATES_SUBMIT_PATH, type SocratesProblem, SocratesSubmitRequest, SocratesSubmitResponse } from "./socrates-contract.v1";
@@ -80,7 +84,9 @@ what they match with «redacted:<class>» and print a WARN.
   --title <text>       required, <= 200 chars
   --statement <text>   required, <= 4000 chars
   --source <url>       required, an absolute http(s) link to where it was decided
-  --kind <kind>        decision (default), practice, prd or conflict
+  --kind <kind>        decision (default), practice, prd or conflict; a prd or
+                       conflict statement follows the grammar in
+                       'eris socrates classify --help' and files as one issue
   --project <name>     optional project hint, <= 200 chars
   --allow-redaction <class>
                        repeatable: send what this redaction class matched as
@@ -190,6 +196,11 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.slice(1).join(".") || "candidate"}: ${i.message}`).join("; ");
     fail(ctx, "socrates-candidate-invalid", `the candidate does not match the contract (${issues})`, "run 'eris socrates submit --help' for each flag's bounds");
+  }
+  const { candidate } = parsed.data;
+  if (candidate.kind === "prd" || candidate.kind === "conflict") {
+    const entry = issueEntryOf({ ...candidate, kind: candidate.kind });
+    if (!entry.ok) fail(ctx, "socrates-candidate-invalid", `the ${candidate.kind} statement cannot be filed (${printable(entry.reason)})`, "run 'eris socrates classify --help' for the statement grammar");
   }
   const leaked = scanStrings(parsed.data);
   if (leaked.length > 0) secretFound(ctx, leaked);

@@ -21,10 +21,13 @@
  *     inferred premise) is not a rejection and offers no override.
  *   - stdout is the verdict and nothing else; the JSON record is parsed
  *     through `ClassifyReport` before it is written.
+ *   - A `prd` or `conflict` candidate is never scored: it files as one review
+ *     issue, so its verdict is its kind once socrates-core's `issueEntryOf`
+ *     accepts the statement, and it takes no answers and no overrides.
  */
 
 import { homedir } from "node:os";
-import { answersSchema, type Answers, CURRENT_RUBRIC, extractFeatures, type Features, type GateId, gateFiring, type RejectGateId, rubricFor, score, type Verdict } from "eris/socrates-core";
+import { answersSchema, type Answers, CURRENT_RUBRIC, extractFeatures, type Features, type GateId, gateFiring, issueEntryOf, type RejectGateId, rubricFor, score, type Verdict } from "eris/socrates-core";
 import { z } from "zod";
 import { readArgs, readYaksFileConfig, resolveUrl, type VerbContext } from "../../src/cli/plugin";
 import plugin from "./index";
@@ -38,7 +41,9 @@ export const CLASSIFY_USAGE = `Usage: eris socrates classify --title <text> --st
 
 Score one candidate's rubric answers locally (${CURRENT_RUBRIC.version}) and print the verdict:
 load-bearing, not-load-bearing, rejected, rerouted (to a key assumption) or
-practice (to the Practices doc). Nothing is sent. The same answers always give
+practice (to the Practices doc). A --kind prd or conflict candidate is not
+scored: its statement is checked against the grammar below and the verdict is
+prd or conflict, one review issue. Nothing is sent. The same answers always give
 the same verdict. --output json prints {verdict, rubric_version, score?,
 threshold?, breakdown?, gate?, answer?, feature?, route?, reason?, overrides,
 meta: {_links: {override?}}}.
@@ -59,6 +64,21 @@ ${Object.entries(CURRENT_RUBRIC.questions)
                        reason (<= 200 chars). Files no yak.
   --request <json>     instead of the flags above: {candidate, answers,
                        overrides?, rubric_version?}
+
+A prd statement (the PRD is --title linked to --source), one line each:
+  Decisions: \`ACME-K1\`–\`ACME-K57\`        the range the PRD locked
+  Confirmed by: <name>
+  Decisions that touch other projects:     optional, then one per line:
+  - \`ACME-K4\`: [Project](https://...)
+
+A conflict statement:
+  <summary>
+
+  Authoritative sites:                     two or more, one per line:
+  - [Label](https://...)
+  - \`ACME-K11\`, \`ACME-K12\` in [Doc](https://...)
+
+  Proposed resolution:                     optional, then its text
 `;
 
 type Rubric = typeof CURRENT_RUBRIC;
@@ -69,7 +89,7 @@ const RubricVersion = z.string().regex(/^rubric@v[1-9][0-9]*$/);
 /** The JSON record this verb prints. */
 const ClassifyReport = z
   .object({
-    verdict: z.enum(["load-bearing", "not-load-bearing", "rejected", "rerouted", "practice"]),
+    verdict: z.enum(["load-bearing", "not-load-bearing", "rejected", "rerouted", "practice", "prd", "conflict"]),
     rubric_version: RubricVersion,
     score: z.number().optional(),
     threshold: z.number().optional(),
@@ -77,7 +97,7 @@ const ClassifyReport = z
     gate: z.string().optional(),
     answer: z.string().optional(),
     feature: z.string().optional(),
-    route: z.enum(["key-assumption", "practices-doc"]).optional(),
+    route: z.enum(["key-assumption", "practices-doc", "review-issue"]).optional(),
     reason: z.string().optional(),
     overrides: z.array(SocratesOverride),
     meta: z.object({ _links: z.object({ override: z.array(SocratesOverrideLink).min(1).optional() }) }),
@@ -198,11 +218,31 @@ function firing(rubric: Rubric, v: { gate: string; answer: string; feature?: str
 
 function text(r: ClassifyReport): string {
   const lines: string[] = [];
-  if (r.score !== undefined) lines.push(`${r.verdict}: score ${r.score} of ${r.threshold} (${r.rubric_version})`);
+  if (r.verdict === "prd" || r.verdict === "conflict") lines.push(`${r.verdict}: one review issue (${r.rubric_version}) -> ${r.route}`, `  why: ${r.reason}`);
+  else if (r.score !== undefined) lines.push(`${r.verdict}: score ${r.score} of ${r.threshold} (${r.rubric_version})`);
   else lines.push(`${r.verdict}: ${r.gate} (${r.rubric_version})${r.route !== undefined ? ` -> ${r.route}` : ""}`, `  why: ${r.reason}`);
   for (const o of r.overrides) lines.push(`  overrode ${o.gate}: ${printable(o.reason)}`);
   for (const l of r.meta._links.override ?? []) lines.push(`  override: re-run with --override ${l.gate}=<one-line reason> (or ${l.method} ${l.href} with overrides)`);
   return `${lines.join("\n")}\n`;
+}
+
+/** A `prd` or `conflict` candidate: the statement must file, and nothing is scored or overridden. */
+function issueVerdict(ctx: VerbContext, rubric: Rubric, candidate: { kind: "prd" | "conflict"; title: string; statement: string; source: string }, input: ClassifyInput): number {
+  const given = (v: unknown) => v !== undefined && (Array.isArray(v) ? v.length > 0 : typeof v !== "object" || v === null || Object.keys(v).length > 0);
+  if (given(input.answers)) fail(ctx, "socrates-answers-invalid", `a ${candidate.kind} entry is not scored, so it takes no rubric answers`, "drop --answer");
+  if (given(input.overrides)) fail(ctx, "socrates-override-invalid", `a ${candidate.kind} entry has no gate to override`, "drop --override");
+  const entry = issueEntryOf(candidate);
+  if (!entry.ok) fail(ctx, "socrates-candidate-invalid", `the ${candidate.kind} statement cannot be filed (${printable(entry.reason)})`, "run 'eris socrates classify --help' for the statement grammar");
+  const out = ClassifyReport.parse({
+    verdict: candidate.kind,
+    rubric_version: rubric.version,
+    route: "review-issue",
+    reason: `files as one review issue: ${entry.value.title}`,
+    overrides: [],
+    meta: { _links: {} },
+  });
+  ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify(out)}\n` : text(out));
+  return 0;
 }
 
 export async function runClassify(args: string[], ctx: VerbContext): Promise<number> {
@@ -221,6 +261,8 @@ export async function runClassify(args: string[], ctx: VerbContext): Promise<num
   const rubric = rubricOf(ctx, input.rubricVersion);
   const candidate = SocratesCandidate.safeParse(input.candidate);
   if (!candidate.success) fail(ctx, "socrates-candidate-invalid", `the candidate does not match the contract (${printable(issues(candidate.error, "candidate"))})`, "run 'eris socrates classify --help' for each flag's bounds");
+  const { kind } = candidate.data;
+  if (kind === "prd" || kind === "conflict") return issueVerdict(ctx, rubric, { ...candidate.data, kind }, input);
   const answers = answersOf(ctx, rubric, input.answers);
   // No living-doc entries are read locally, so `already_recorded` fires only on its answer here; the server reclassifies.
   const features = extractFeatures(rubric, candidate.data.statement, { recorded: [] });

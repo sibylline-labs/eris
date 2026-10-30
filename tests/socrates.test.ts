@@ -190,6 +190,7 @@ describe("eris socrates submit", () => {
     /** When a malformed candidate leaves the machine, the endpoint is the first to validate it. */
     expect(await drive(["submit", "--title", "t", "--statement", "s", "--source", "repo@abc:path#L1"])).toMatchObject({ rc: 1, slug: "socrates-candidate-invalid" });
     expect(await drive(["submit", ...CANDIDATE, "--kind", "opinion"])).toMatchObject({ rc: 1, slug: "socrates-candidate-invalid" });
+    expect(await drive(["submit", ...CANDIDATE, "--kind", "conflict"])).toMatchObject({ rc: 1, slug: "socrates-candidate-invalid" });
     expect(await drive(["submit", "--title", "t"])).toMatchObject({ rc: 1, slug: "socrates-flag-required" });
     expect(requests).toEqual([]);
   });
