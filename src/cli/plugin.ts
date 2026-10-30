@@ -112,3 +112,14 @@ export async function runErisVerb(argv: readonly string[], opts: { env: Record<s
   const self = isCompiled ? [process.execPath] : [process.execPath, "--no-env-file", "--config=/dev/null", Bun.main];
   return nodeRunner.run([...self, ...argv], { timeoutMs: opts.timeoutMs, env: opts.env, ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}) });
 }
+
+/**
+ * Run an external binary (`git`, say) through the subprocess adapter: argv
+ * only, never a shell, and the deadline kills the whole tree. A plugin reaches
+ * a tool here instead of spawning it (`plugin-imports-sdk-only`). The adapter
+ * loads on the first call, not at shell start.
+ */
+export async function runCommand(argv: readonly string[], opts: { env: Record<string, string | undefined>; timeoutMs: number; cwd?: string }): Promise<RunResult> {
+  const { nodeRunner } = await import("../runtime/process");
+  return nodeRunner.run(argv, { timeoutMs: opts.timeoutMs, env: opts.env, ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}) });
+}

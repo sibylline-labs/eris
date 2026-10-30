@@ -110,6 +110,7 @@ describe("the package's exports", () => {
       "resolveToken",
       "resolveUrl",
       "rowsOfGroup",
+      "runCommand",
       "runErisVerb",
       "runMany",
       "runPool",

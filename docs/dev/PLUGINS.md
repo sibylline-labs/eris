@@ -97,6 +97,10 @@ export const runWidgets: VerbHandler = async (args, ctx) => {
 - Read an environment variable whose name you were handed with the SDK's
   **`readEnv(env, name)`**, never `env[name]`: an inherited name such as
   `__proto__` would read as set (`env-read-own-property-plugin`).
+- Run an external binary with **`runCommand(argv, {env, timeoutMs, cwd?})`**,
+  and another plugin's verb with **`runErisVerb`**: both go through the
+  subprocess adapter, so the deadline kills the whole tree. Never spawn one
+  yourself.
 
 ## What a plugin may import
 
