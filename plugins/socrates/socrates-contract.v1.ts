@@ -59,9 +59,11 @@ export const SocratesCandidate = z.object({
 });
 export type SocratesCandidate = z.infer<typeof SocratesCandidate>;
 
+/** `now`: file under today's review Epic straight away, which the server does for every submit. */
 export const SocratesSubmitRequest = z.object({
   schema_version: Version,
   candidate: SocratesCandidate,
+  now: z.boolean().optional(),
 });
 export type SocratesSubmitRequest = z.infer<typeof SocratesSubmitRequest>;
 

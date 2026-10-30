@@ -65,7 +65,7 @@ Commands:
 Run 'eris socrates <command> --help' for its flags.
 `;
 
-export const SUBMIT_USAGE = `Usage: eris socrates submit --title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>]
+export const SUBMIT_USAGE = `Usage: eris socrates submit --title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--now]
                             [--allow-redaction <class> --override-reason <text>]
 
 Send one candidate to the Socrates endpoint and print its receipt:
@@ -82,6 +82,8 @@ what they match with «redacted:<class>» and print a WARN.
   --source <url>       required, an absolute http(s) link to where it was decided
   --kind <kind>        decision (default), practice, prd or conflict
   --project <name>     optional project hint, <= 200 chars
+  --now                file under today's review Epic straight away (every
+                       submit already does; the flag says so explicitly)
   --allow-redaction <class>
                        repeatable: send what this redaction class matched as
                        written. Files one 'eris yak issue --vendor' naming the
@@ -167,7 +169,7 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
 
   const a = readArgs(plugin.rows, "socrates submit", g.rest, ctx, { help: SUBMIT_USAGE });
   if (a === null) return 0;
-  const { "--title": title, "--statement": statement, "--source": source, "--kind": kind, "--project": project, "--allow-redaction": allowArgs, "--override-reason": reason } = a.flags;
+  const { "--title": title, "--statement": statement, "--source": source, "--kind": kind, "--project": project, "--now": now, "--allow-redaction": allowArgs, "--override-reason": reason } = a.flags;
   const missing = (["--title", "--statement", "--source"] as const).filter((f) => a.flags[f] === undefined);
   if (missing.length > 0) fail(ctx, "socrates-flag-required", `missing ${missing.join(", ")}`, "eris socrates submit --title <text> --statement <text> --source <url>");
   if (allowArgs.length > 0 && reason === undefined) fail(ctx, "socrates-flag-required", "--allow-redaction needs --override-reason", "add --override-reason <why the match is not a secret>");
@@ -186,6 +188,7 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   const parsed = SocratesSubmitRequest.safeParse({
     schema_version: SOCRATES_CONTRACT_VERSION,
     candidate: { kind: kind ?? "decision", title: clean.title, statement: clean.statement, source: clean.source, ...(clean.project !== undefined ? { project: clean.project } : {}) },
+    ...(now ? { now: true } : {}),
   });
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.slice(1).join(".") || "candidate"}: ${i.message}`).join("; ");

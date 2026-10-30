@@ -147,6 +147,12 @@ describe("eris socrates submit", () => {
     ]);
   });
 
+  it("sends now: true under --now", async () => {
+    /** When the flag is dropped from the body, `submit --now` silently asks for nothing. Without the flag, the exact body above carries no `now`. */
+    expect(await drive(["submit", ...CANDIDATE, "--now"])).toMatchObject({ rc: 0, stdout: "submitted: cand_1\n", stderr: "" });
+    expect(requests.map((r) => (r.body as { now?: unknown }).now)).toEqual([true]);
+  });
+
   it("prints a deduped receipt as a bare JSON record under --output json", async () => {
     /** When a dedup reads as a failure or the record grows a wrapper, a script branching on `deduped` breaks. */
     answer = () => Response.json({ candidate_id: "cand_1", deduped: true, contract_version: "1.0.0" });
