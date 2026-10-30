@@ -14,8 +14,12 @@
  *     never advances it. The same repo state and cursor print the same bytes.
  *   - The cursor moves only by `--advance`, only to a commit HEAD contains, and
  *     never back past the stored one while that one still resolves.
- *   - Over `--limit`, the oldest sources are listed, so list, advance to the
- *     last one, list again walks the range without a gap.
+ *   - Over `--limit` after a cursor, the oldest sources are listed, so list,
+ *     advance to the last one, list again walks the range without a gap. With
+ *     no cursor the newest `--limit` are the window, and older history is
+ *     named in a WARN and `truncated`, never skipped silently.
+ *   - A line of `git log` output is a source only when it opens with a sha, so
+ *     a user's git config (signature lines) cannot add one.
  *   - The file is replaced whole (tmp + rename), never written in place. Two
  *     concurrent advances can lose one write; every loss leaves a cursor older
  *     or absent, so a later run re-lists sources and never skips one.
@@ -24,7 +28,7 @@
  *   - A remote url's credentials never reach the cursor file or the output.
  */
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -57,8 +61,9 @@ subject}], truncated}.
                    are processed, and print it. --output json prints
                    {repo, cursor}
 
-With no cursor yet, the last <limit> commits are listed. The cursor is kept
-per repo in ~/.eris/socrates/cursors.json.
+With no cursor yet, the last <limit> commits are listed, and a WARN says when
+history goes back further. The cursor is kept per repo in
+~/.eris/socrates/cursors.json.
 `;
 
 const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
@@ -107,7 +112,7 @@ async function isAncestor(ctx: VerbContext, git: Git, older: string, newer: stri
 async function repoKey(git: Git, root: string): Promise<string> {
   const r = await git(["config", "--get", "remote.origin.url"]);
   const url = r.ok ? r.out.trim() : "";
-  return url === "" ? root : url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, "$1");
+  return url === "" ? root : url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, "$1");
 }
 
 function cursorPath(ctx: VerbContext, deps: SocratesDeps): string {
@@ -144,6 +149,7 @@ async function writeCursor(ctx: VerbContext, file: string, key: string, sha: str
     await writeFile(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
     await rename(tmp, file);
   } catch (err) {
+    await rm(tmp, { force: true }).catch(() => undefined);
     fail(ctx, "socrates-cursor-invalid", `cannot write ${file}: ${printable((err as Error).message)}`, "fix the directory's permissions, then run the command again");
   }
 }
@@ -151,7 +157,7 @@ async function writeCursor(ctx: VerbContext, file: string, key: string, sha: str
 function parseLog(out: string): Source[] {
   return out
     .split("\n")
-    .filter((line) => line !== "")
+    .filter((line) => SHA.test(line.split(FS, 1)[0]!))
     .map((line) => {
       const [sha = "", committed_at = "", ...rest] = line.split(FS);
       return { kind: "commit", sha, committed_at, subject: rest.join(FS) };
@@ -172,13 +178,14 @@ export async function runDiscover(args: string[], ctx: VerbContext, deps: Socrat
 
   const git = gitIn(ctx, deps.cwd ?? process.cwd());
   const top = await git(["rev-parse", "--show-toplevel"]);
-  if (!top.ok) fail(ctx, "socrates-not-a-repo", top.code === null ? top.why : "this directory is not inside a git repo", "run discover from inside the repo whose sources you want");
+  if (!top.ok) fail(ctx, "socrates-not-a-repo", top.code === null ? top.why : "this directory is not inside a git repo", top.code === null ? "check that git runs here, then run the command again" : "run discover from inside the repo whose sources you want");
   const root = top.out.trim();
   const head = await commitOf(ctx, git, "HEAD");
   if (head === null) fail(ctx, "socrates-not-a-repo", `${root} has no commits yet`, "commit something, then run discover again");
   const repo = await repoKey(git, root);
   const file = cursorPath(ctx, deps);
-  const stored = (await readCursors(ctx, file)).repos[repo];
+  const repos = (await readCursors(ctx, file)).repos;
+  const stored = Object.hasOwn(repos, repo) ? repos[repo] : undefined;
 
   if (advance !== undefined) {
     const to = await commitOf(ctx, git, advance);
@@ -186,7 +193,7 @@ export async function runDiscover(args: string[], ctx: VerbContext, deps: Socrat
     if (!(await isAncestor(ctx, git, to, head))) fail(ctx, "socrates-cursor-invalid", `${to} is not in HEAD's history`, "advance to a commit 'eris socrates discover' listed on this branch");
     const from = stored === undefined ? null : await commitOf(ctx, git, stored);
     if (from !== null && !(await isAncestor(ctx, git, from, to))) {
-      fail(ctx, "socrates-cursor-invalid", `${to} is behind the cursor (${from}); the cursor only moves forward`, "advance to a commit after the cursor, or list with --since <rev> to look back");
+      fail(ctx, "socrates-cursor-invalid", `${to} does not come after the cursor (${from}); the cursor only moves forward`, "advance to a commit after the cursor, or list with --since <rev> to look back");
     }
     if (from !== to) await writeCursor(ctx, file, repo, to);
     ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify({ repo, cursor: to })}\n` : `cursor: ${to}\n`);
@@ -203,14 +210,20 @@ export async function runDiscover(args: string[], ctx: VerbContext, deps: Socrat
   }
 
   const format = `--format=%H${"%x1f"}%cI${"%x1f"}%s`;
-  const log = await git(after === null ? ["log", "--first-parent", "--no-color", `--max-count=${limit}`, format, head] : ["log", "--first-parent", "--no-color", "--reverse", format, `${after}..${head}`]);
+  const log = await git(after === null ? ["log", "--first-parent", "--no-color", "--no-show-signature", `--max-count=${limit + 1}`, format, head] : ["log", "--first-parent", "--no-color", "--no-show-signature", "--reverse", format, `${after}..${head}`]);
   if (!log.ok) fail(ctx, "socrates-not-a-repo", log.why, "check that git runs here, then run the command again");
-  const all = after === null ? parseLog(log.out).reverse() : parseLog(log.out);
-  const sources = all.slice(0, limit);
+  const all = parseLog(log.out);
+  // With a cursor the range is walked oldest first, so the oldest are kept; with none, the
+  // newest `limit` are the window and one more was read only to tell whether history goes back further.
+  const sources = after === null ? all.slice(0, limit).reverse() : all.slice(0, limit);
   const truncated = all.length > sources.length;
   if (truncated) {
     const slug: DiscoverWarnSlug = "socrates-discover-truncated";
-    ctx.stderr.write(renderWarnLines(`listed the oldest ${sources.length} of ${all.length} commits; advance to the last one listed, then run discover again`, slug));
+    const why =
+      after === null
+        ? `no cursor yet: listed the last ${sources.length} commits, and older history is not listed; pass --since <rev> to start further back`
+        : `listed the oldest ${sources.length} of ${all.length} commits; advance to the last one listed, then run discover again`;
+    ctx.stderr.write(renderWarnLines(why, slug));
   }
 
   if (ctx.format === "json") {

@@ -725,7 +725,8 @@ one of its answers.
 
 A field holds a secret: a vendored gitleaks rule (gitleaks v8.30.1,
 `packages/outbound-scan`) matched the title, statement, source, project,
-`--override-reason`, or a string in the request body just before it was sent.
+`--override-reason`, or a string in the request body just before it was sent
+(for `resolve`, the Epic).
 The `ERROR` line names the field and the rule id, never the text. Nothing was
 sent. This check cannot be overridden: `--allow-redaction` does not reach it.
 Fix: remove the secret from the named field and run the command again.
@@ -810,8 +811,8 @@ PATH.
 `eris socrates discover` could not use the processed-source cursor. The
 stored cursor or `--since` names no commit in this repo (history was rewritten,
 or the repo was replaced); `--advance` named no commit, a commit outside
-HEAD's history, or one behind the stored cursor (the cursor only moves
-forward); or `~/.eris/socrates/cursors.json` cannot be read, parsed or written.
+HEAD's history, or one that does not come after the stored cursor (the
+cursor only moves forward); or `~/.eris/socrates/cursors.json` cannot be read, parsed or written.
 Nothing was written. Fix: as the `fix:` line says. `--advance <rev>` moves a
 cursor whose commit is gone, and removing the file starts every repo over.
 
@@ -826,6 +827,9 @@ outside 1-500 or not a whole number, or `--advance` with `--since` or
 A `WARN`, not a failure. More commits follow the cursor than `--limit` allows,
 so `discover` listed the oldest of them. Fix: process those, run
 `eris socrates discover --advance <the last sha listed>`, then list again.
+With no cursor yet, it means history goes back further than the last
+`--limit` commits it listed. Fix: pass `--since <rev>` to start further back,
+or accept the window.
 
 ## Adding a new slug
 

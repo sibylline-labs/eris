@@ -135,6 +135,10 @@ describe("eris socrates resolve", () => {
     expect(await drive(["resolve"])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-flag-required" });
     expect(await drive(["resolve", " "])).toMatchObject({ rc: 1, slug: "socrates-flag-required" });
     expect(await drive(["resolve", "epic_401", "epic_402"])).toMatchObject({ rc: 1 });
+    const ghp = ["ghp", "Zq8Lr2Vm5Nx7Pk1Ws4Ty6Hb9Jd3Gf0Ca8Ee2"].join("_");
+    const leak = await drive(["resolve", ghp]);
+    expect(leak).toMatchObject({ rc: 1, slug: "socrates-secret-detected" });
+    expect(leak.stderr).not.toContain(ghp);
     expect(requests).toEqual([]);
   });
 });

@@ -7,6 +7,8 @@
  * every Linear read and write; this verb names the Epic and nothing else.
  *
  * Invariants:
+ *   - Nothing leaves the machine before `eris/outbound-scan` has run over the
+ *     body: a gitleaks hit refuses it (`socrates-secret-detected`).
  *   - The request body is `SocratesResolveRequest`'s parse; the reply is read
  *     only through `SocratesResolveResponse` (./client.ts owns the exchange).
  *   - The Epic is required. The contract's request needs it, and the client
@@ -16,6 +18,7 @@
  *     state and cannot tell a first run from a repeat.
  */
 
+import { scanStrings } from "eris/outbound-scan";
 import { readArgs, type VerbContext } from "../../src/cli/plugin";
 import { fail, postSocrates, printable, type SocratesDeps, socratesEndpoint } from "./client";
 import plugin from "./index";
@@ -58,6 +61,9 @@ export async function runResolve(args: string[], ctx: VerbContext, deps: Socrate
 
   const parsed = SocratesResolveRequest.safeParse({ schema_version: SOCRATES_CONTRACT_VERSION, epic });
   if (!parsed.success) fail(ctx, "socrates-flag-required", `not an Epic identifier: '${printable(epic)}'`, "eris socrates resolve <epic>: the closed Epic's Socrates comment prints the exact command");
+
+  const leaked = scanStrings(parsed.data);
+  if (leaked.length > 0) fail(ctx, "socrates-secret-detected", `a secret was found in <epic> (${leaked.map((h) => h.rule).join(", ")}); nothing was sent`, "pass the Epic's identifier; this check cannot be overridden");
 
   const endpoint = await socratesEndpoint(ctx, deps);
   const receipt = await postSocrates(ctx, deps, endpoint, {

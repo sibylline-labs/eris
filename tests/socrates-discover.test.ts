@@ -139,6 +139,40 @@ describe("eris socrates discover", () => {
     expect(JSON.parse(readFileSync(cursors, "utf8")).repos["https://example.com/acme/app.git"]).toBe(b);
   });
 
+  it("says when a first run leaves older history unlisted", async () => {
+    /** When the no-cursor window is silent, advancing past it skips the older history for good with nothing on stderr or in the JSON to say so. */
+    const shas = ["one", "two", "three"].map((s) => commit(`feat: ${s}`));
+    const r = await drive(["--limit", "2"], { format: "json" });
+    expect(r.rc).toBe(0);
+    expect(r.stderr).toContain("slug: socrates-discover-truncated");
+    expect(JSON.parse(r.stdout)).toMatchObject({ cursor: null, truncated: true, sources: [{ sha: shas[1] }, { sha: shas[2] }] });
+    expect(await drive(["--limit", "3"])).toMatchObject({ rc: 0, stderr: "" });
+  });
+
+  it("lists only commits when the user's git config prints signature lines", async () => {
+    /** When `log.showSignature` lines parse as sources, discover lists a commit named "No signature" and counts it toward --limit. */
+    const key = join(sb.dir, "signing");
+    expect(Bun.spawnSync(["ssh-keygen", "-q", "-t", ["ed", "25519"].join(""), "-N", "", "-f", key]).exitCode).toBe(0);
+    const base = commit("feat: base");
+    git("-c", "gpg.format=ssh", "-c", `user.signingkey=${key}`, "commit", "--allow-empty", "-q", "-S", "-m", "feat: signed");
+    const signed = git("rev-parse", "HEAD");
+    git("config", "log.showSignature", "true");
+    expect(await drive(["--since", base])).toMatchObject({ rc: 0, stdout: line(signed, "feat: signed") });
+  });
+
+  it("keys the cursor safely: a password with @ is stripped whole, and an inherited name is no cursor", async () => {
+    /** When the credential strip stops at the first @, part of a password lands in the cursor file; when the key lookup reads inherited properties, a remote named constructor can never list. */
+    const a = commit("feat: a");
+    git("remote", "set-url", "origin", "https://alice:p@ss@example.com/acme/app.git");
+    await drive(["--advance", a]);
+    expect(readFileSync(cursors, "utf8")).not.toContain("ss@");
+    expect(Object.keys(JSON.parse(readFileSync(cursors, "utf8")).repos)).toEqual(["https://example.com/acme/app.git"]);
+    for (const name of ["constructor", "toString"]) {
+      git("remote", "set-url", "origin", name);
+      expect({ name, ...(await drive([])) }).toMatchObject({ name, rc: 0, stdout: line(a, "feat: a") });
+    }
+  });
+
   it("refuses outside a repo, on an empty repo, on a malformed cursor file and on bad flags", async () => {
     /** When these read as an empty listing, a user is told there is nothing to process when discover could not look. */
     expect(await drive([], { cwd: sb.home })).toMatchObject({ rc: 1, stdout: "", slug: "socrates-not-a-repo" });
