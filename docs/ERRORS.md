@@ -687,8 +687,8 @@ A `WARN`, exit 0: `ERIS_YAKS_TOKEN` is set, and it wins over the token in
 
 ### socrates-unknown-verb
 
-`eris socrates` was given a command it does not have. Fix: use `classify` or
-`submit`, or run `eris socrates --help`.
+`eris socrates` was given a command it does not have. Fix: use `classify`,
+`discover`, `resolve` or `submit`, or run `eris socrates --help`.
 
 ### socrates-flag-required
 
@@ -697,7 +697,10 @@ A `WARN`, exit 0: `ERIS_YAKS_TOKEN` is set, and it wins over the token in
 pass all three. Also raised when `submit`'s `--allow-redaction` and
 `--override-reason` are not given together, and when `classify --request` is
 given with another flag: the request carries the whole candidate, so pass
-everything inside it or drop it.
+everything inside it or drop it. `eris socrates resolve` raises it when the
+Epic is missing or is not an identifier (blank, or over 200 characters);
+nothing was sent. Fix: pass the Epic's identifier, as the Epic's Socrates
+comment prints the command.
 
 ### socrates-candidate-invalid
 
@@ -722,7 +725,8 @@ one of its answers.
 
 A field holds a secret: a vendored gitleaks rule (gitleaks v8.30.1,
 `packages/outbound-scan`) matched the title, statement, source, project,
-`--override-reason`, or a string in the request body just before it was sent.
+`--override-reason`, or a string in the request body just before it was sent
+(for `resolve`, the Epic).
 The `ERROR` line names the field and the rule id, never the text. Nothing was
 sent. This check cannot be overridden: `--allow-redaction` does not reach it.
 Fix: remove the secret from the named field and run the command again.
@@ -763,7 +767,8 @@ vendor route, the eris project's own tracker.
 
 ### socrates-unreachable
 
-The request to `<url>/v1/socrates/submit` did not complete: the host could
+The request to the endpoint (`<url>/v1/socrates/submit`, or
+`/v1/socrates/resolve`) did not complete: the host could
 not be reached, or no answer arrived within 30 seconds. The url is the one
 `eris login` saved (or `ERIS_YAKS_URL`). Nothing is retried. Fix: check the
 url and the connection, then run the command again.
@@ -779,15 +784,52 @@ it, then run the command again.
 
 The endpoint answered with a problem+json error and no subscribe link. The
 `ERROR` line carries its `detail`, `code` and HTTP status; a 401 means the
-token was rejected. Fix: for a 401 run `eris login`; otherwise correct what
-the detail names.
+token was rejected. For `resolve`, a 404 means the endpoint holds no review
+Epic by that id and a 409 that the Epic is still open (or has more entries
+than one resolve reads); the `fix:` line says which. Fix: for a 401 run
+`eris login`; otherwise correct what the detail names.
 
 ### socrates-bad-response
 
-The endpoint's answer was neither a submit receipt nor a problem+json error
+The endpoint's answer was neither a receipt nor a problem+json error
 (a proxy page, an outage, a different service), or it was a receipt with a
-non-2xx status. Nothing in it is trusted. Fix: check the url points at a
-Socrates endpoint.
+non-2xx status. Nothing in it is trusted. For `resolve`, such an answer with
+HTTP 404 means the endpoint does not serve `/v1/socrates/resolve`: the server
+predates the route. Fix: check the url points at a Socrates endpoint, or
+update the server.
+
+### socrates-not-a-repo
+
+`eris socrates discover` found no history to list: the working directory is
+not inside a git repo, the repo has no commits, or `git` could not run or gave
+no answer within 10 seconds (the `ERROR` line says which). Nothing was written.
+Fix: run discover from inside the repo whose sources you want, with `git` on
+PATH.
+
+### socrates-cursor-invalid
+
+`eris socrates discover` could not use the processed-source cursor. The
+stored cursor or `--since` names no commit in this repo (history was rewritten,
+or the repo was replaced); `--advance` named no commit, a commit outside
+HEAD's history, or one that does not come after the stored cursor (the
+cursor only moves forward); or `~/.eris/socrates/cursors.json` cannot be read, parsed or written.
+Nothing was written. Fix: as the `fix:` line says. `--advance <rev>` moves a
+cursor whose commit is gone, and removing the file starts every repo over.
+
+### socrates-discover-invalid
+
+`eris socrates discover` was given flags it cannot combine or read: `--limit`
+outside 1-500 or not a whole number, or `--advance` with `--since` or
+`--limit` (advancing lists nothing). Fix: as the `fix:` line shows.
+
+### socrates-discover-truncated
+
+A `WARN`, not a failure. More commits follow the cursor than `--limit` allows,
+so `discover` listed the oldest of them. Fix: process those, run
+`eris socrates discover --advance <the last sha listed>`, then list again.
+With no cursor yet, it means history goes back further than the last
+`--limit` commits it listed. Fix: pass `--since <rev>` to start further back,
+or accept the window.
 
 ## Adding a new slug
 

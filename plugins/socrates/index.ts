@@ -1,6 +1,7 @@
 /**
- * The socrates plugin's manifest: `eris socrates submit` and `eris socrates
- * classify` as registry rows plus a handler thunk (docs/dev/PLUGINS.md).
+ * The socrates plugin's manifest: `eris socrates submit`, `classify`,
+ * `resolve` and `discover` as registry rows plus a handler thunk
+ * (docs/dev/PLUGINS.md).
  *
  * No `product`: every install has the verbs, and the endpoint answers an
  * unentitled workspace with a subscribe link, which the verb prints.
@@ -42,6 +43,22 @@ export default definePlugin({
         { name: "--request", takesValue: true },
       ],
     },
+    "socrates resolve": {
+      summary: "Resolve a closed review Epic on the server and print what it did",
+      json: true,
+      pos: ["epic?"],
+      usage: "<epic>",
+    },
+    "socrates discover": {
+      summary: "List the commits in this repo since the processed-source cursor",
+      json: true,
+      usage: "[--since <rev>] [--limit <n>] | --advance <rev>",
+      flags: [
+        { name: "--since", takesValue: true },
+        { name: "--limit", takesValue: true },
+        { name: "--advance", takesValue: true },
+      ],
+    },
   },
   handlers: {
     socrates: async () => (await import("./submit")).runSocrates,
@@ -51,5 +68,10 @@ export default definePlugin({
   eris socrates classify                   {verdict, rubric_version, score?, threshold?, breakdown?,
                                             gate?, answer?, feature?, route?, reason?, overrides,
                                             meta: {_links: {override?}}}
+  eris socrates resolve                    {epic, outcome, applied, carried_over, carry_over_epic?,
+                                            reporting, contract_version}
+  eris socrates discover                   {repo, cursor, head, sources: [{kind, sha, committed_at,
+                                            subject}], truncated}
+  eris socrates discover --advance         {repo, cursor}
 `,
 });

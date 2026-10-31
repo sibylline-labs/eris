@@ -33,7 +33,7 @@ import { readArgs, readYaksFileConfig, resolveUrl, type VerbContext } from "../.
 import plugin from "./index";
 import { SocratesCandidate } from "./socrates-contract.v1";
 import { SOCRATES_ROUTES, SocratesOverride, SocratesOverrideLink } from "./socrates-contract.v1.verbs";
-import { fail, printable } from "./submit";
+import { fail, printable } from "./client";
 
 export const CLASSIFY_USAGE = `Usage: eris socrates classify --title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>]
                               --answer <question>=<answer>... [--override <gate>=<reason>]...

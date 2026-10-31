@@ -9,6 +9,9 @@ surfaces:
       - packages/outbound-scan/**
       - plugins/yak/yak-submit.ts
       - plugins/socrates/submit.ts
+      - plugins/socrates/client.ts
+      - plugins/socrates/resolve.ts
+      - plugins/socrates/discover.ts
       - scripts/vendor-gitleaks.ts
       - tests/yak-redact.test.ts
       - tests/outbound-scan.test.ts
@@ -20,5 +23,7 @@ surfaces:
       credential to a place it cannot be recalled from.
       packages/outbound-scan holds the redaction pipeline (redact.ts), the
       vendored gitleaks rules and the scan that refuses on them (scan.ts);
-      yak-submit.ts and socrates/submit.ts are the call sites; the test files
+      yak-submit.ts and socrates/submit.ts and resolve.ts are the call sites,
+      client.ts carries the bearer, discover.ts strips a remote url's
+      credentials before keeping it; the test files
       pin each class and each secret shape.
