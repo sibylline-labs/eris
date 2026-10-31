@@ -22,9 +22,13 @@
  *     the machine.
  *   - A response body is read only through `SocratesSubmitResponse`, by
  *     ./client.ts, which owns the exchange's own invariants.
+ *   - A `prd` or `conflict` candidate is sent only when socrates-core's
+ *     `issueEntryOf` files its (redacted) statement; the server runs the same
+ *     check before it files the issue.
  */
 
 import { isRedactionClass, prepareOutbound, REDACTION_CLASSES, redact, type Override, type RedactionClass, type SecretHit, scanSecrets, scanStrings } from "eris/outbound-scan";
+import { issueEntryOf } from "eris/socrates-core";
 import { groupArgs, readArgs, renderWarnLines, runErisVerb, type VerbContext } from "../../src/cli/plugin";
 import { fail, postSocrates, printable, type SocratesDeps, socratesEndpoint } from "./client";
 import plugin from "./index";
@@ -49,7 +53,7 @@ Commands:
 Run 'eris socrates <command> --help' for its flags.
 `;
 
-export const SUBMIT_USAGE = `Usage: eris socrates submit --title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>]
+export const SUBMIT_USAGE = `Usage: eris socrates submit --title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--now]
                             [--allow-redaction <class> --override-reason <text>]
 
 Send one candidate to the Socrates endpoint and print its receipt:
@@ -64,8 +68,12 @@ what they match with «redacted:<class>» and print a WARN.
   --title <text>       required, <= 200 chars
   --statement <text>   required, <= 4000 chars
   --source <url>       required, an absolute http(s) link to where it was decided
-  --kind <kind>        decision (default), practice, prd or conflict
+  --kind <kind>        decision (default), practice, prd or conflict; a prd or
+                       conflict statement follows the grammar in
+                       'eris socrates classify --help' and files as one issue
   --project <name>     optional project hint, <= 200 chars
+  --now                file under today's review Epic straight away (every
+                       submit already does; the flag says so explicitly)
   --allow-redaction <class>
                        repeatable: send what this redaction class matched as
                        written. Files one 'eris yak issue --vendor' naming the
@@ -131,7 +139,7 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
 
   const a = readArgs(plugin.rows, "socrates submit", g.rest, ctx, { help: SUBMIT_USAGE });
   if (a === null) return 0;
-  const { "--title": title, "--statement": statement, "--source": source, "--kind": kind, "--project": project, "--allow-redaction": allowArgs, "--override-reason": reason } = a.flags;
+  const { "--title": title, "--statement": statement, "--source": source, "--kind": kind, "--project": project, "--now": now, "--allow-redaction": allowArgs, "--override-reason": reason } = a.flags;
   const missing = (["--title", "--statement", "--source"] as const).filter((f) => a.flags[f] === undefined);
   if (missing.length > 0) fail(ctx, "socrates-flag-required", `missing ${missing.join(", ")}`, "eris socrates submit --title <text> --statement <text> --source <url>");
   if (allowArgs.length > 0 && reason === undefined) fail(ctx, "socrates-flag-required", "--allow-redaction needs --override-reason", "add --override-reason <why the match is not a secret>");
@@ -150,10 +158,16 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   const parsed = SocratesSubmitRequest.safeParse({
     schema_version: SOCRATES_CONTRACT_VERSION,
     candidate: { kind: kind ?? "decision", title: clean.title, statement: clean.statement, source: clean.source, ...(clean.project !== undefined ? { project: clean.project } : {}) },
+    ...(now ? { now: true } : {}),
   });
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.slice(1).join(".") || "candidate"}: ${i.message}`).join("; ");
     fail(ctx, "socrates-candidate-invalid", `the candidate does not match the contract (${issues})`, "run 'eris socrates submit --help' for each flag's bounds");
+  }
+  const { candidate } = parsed.data;
+  if (candidate.kind === "prd" || candidate.kind === "conflict") {
+    const entry = issueEntryOf({ ...candidate, kind: candidate.kind });
+    if (!entry.ok) fail(ctx, "socrates-candidate-invalid", `the ${candidate.kind} statement cannot be filed (${printable(entry.reason)})`, "run 'eris socrates classify --help' for the statement grammar");
   }
   const leaked = scanStrings(parsed.data);
   if (leaked.length > 0) secretFound(ctx, leaked);

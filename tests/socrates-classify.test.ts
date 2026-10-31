@@ -160,4 +160,23 @@ describe("eris socrates classify", () => {
     expect(await drive(["--statement", "s", ...answers()])).toMatchObject({ rc: 1, slug: "socrates-flag-required" });
     expect(fetches).toEqual([]);
   });
+
+  it("gives a prd or conflict candidate its kind as the verdict, never a rubric score", async () => {
+    /** When a PRD is scored as a decision, the owning-layer gate rejects it (the PRD owns it) and the one entry a PRD should file as never is. */
+    const prd = ["--kind", "prd", "--title", "PRD — Acme Billing", "--source", "https://docs.example.com/acme/document/billing", "--statement", "Decisions: `ACME-K1`–`ACME-K57`\nConfirmed by: dana"];
+    expect(await json(prd)).toEqual({
+      verdict: "prd",
+      rubric_version: "rubric@v2",
+      route: "review-issue",
+      reason: "files as one review issue: PRD authored: PRD — Acme Billing",
+      overrides: [],
+      meta: { _links: {} },
+    });
+    const conflict = ["--kind", "conflict", "--title", "Two sources disagree", "--source", "https://example.com/pr/14", "--statement", "S.\n\nAuthoritative sites:\n- `ACME-K11` in [Doc](https://docs.example.com/a)\n- [Code](https://code.example.com/b)"];
+    expect((await drive(conflict)).stdout).toBe("conflict: one review issue (rubric@v2) -> review-issue\n  why: files as one review issue: Two sources disagree\n");
+    expect(await drive([...conflict.slice(0, -1), "S. with no sites"])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-candidate-invalid" });
+    expect(await drive([...prd, ...answers()])).toMatchObject({ rc: 1, slug: "socrates-answers-invalid" });
+    expect(await drive([...prd, "--override", "end_condition=a"])).toMatchObject({ rc: 1, slug: "socrates-override-invalid" });
+    expect(fetches).toEqual([]);
+  });
 });
