@@ -48,6 +48,7 @@ Commands:
   classify  Score one candidate's rubric answers locally and print the verdict
   discover  List the commits in this repo since the processed-source cursor
   resolve   Resolve a closed review Epic on the server and print what it did
+  settings  Change where this org's Socrates reviews file (team)
   submit    Submit one candidate (a decision, practice, PRD or conflict) for review
 
 Run 'eris socrates <command> --help' for its flags.
@@ -132,10 +133,11 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
     ctx.stdout.write(SOCRATES_USAGE);
     return 0;
   }
-  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates command '${g.sub}'`, "use: classify, discover, resolve, submit\nrun 'eris socrates --help' for the command list");
+  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates command '${g.sub}'`, "use: classify, discover, resolve, settings, submit\nrun 'eris socrates --help' for the command list");
   if (g.sub === "classify") return (await import("./classify")).runClassify(g.rest, ctx);
   if (g.sub === "resolve") return (await import("./resolve")).runResolve(g.rest, ctx, deps);
   if (g.sub === "discover") return (await import("./discover")).runDiscover(g.rest, ctx, deps);
+  if (g.sub === "settings") return (await import("./settings")).runSettings(g.rest, ctx, deps);
 
   const a = readArgs(plugin.rows, "socrates submit", g.rest, ctx, { help: SUBMIT_USAGE });
   if (a === null) return 0;

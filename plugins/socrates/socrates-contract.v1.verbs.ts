@@ -29,6 +29,7 @@ export const SOCRATES_ROUTES = {
   consult: { method: "GET", path: "/v1/socrates/consult" },
   resolve: { method: "POST", path: "/v1/socrates/resolve" },
   status: { method: "GET", path: "/v1/socrates/status" },
+  settings_team: { method: "PUT", path: "/v1/socrates/settings/team" },
 } as const;
 
 export const SOCRATES_KEY_MAX_LENGTH = 64;
@@ -210,3 +211,18 @@ export const SocratesStatusResult = z.object({
 });
 export type SocratesStatusResult = z.infer<typeof SocratesStatusResult>;
 export const SocratesStatusResponse = z.union([SocratesStatusResult, SocratesProblem]);
+
+// --- settings team ----------------------------------------------------------
+
+/** `team` is a Linear team UUID on the project; `null` clears the override. */
+export const SocratesSettingsTeamRequest = z.object({ schema_version: Version, project: ProjectHint.optional(), team: Id.nullable() });
+
+const TeamRef = z.object({ id: Id, key: Id });
+export const SocratesSettingsTeamReceipt = z.object({
+  project: Id,
+  override: TeamRef.nullable(),
+  filing_team: z.object({ id: Id, key: Id, source: z.enum(["override", "lead", "first"]) }),
+  contract_version: Version,
+});
+export type SocratesSettingsTeamReceipt = z.infer<typeof SocratesSettingsTeamReceipt>;
+export const SocratesSettingsTeamResponse = z.union([SocratesSettingsTeamReceipt, SocratesProblem]);
