@@ -1,7 +1,10 @@
 export {
   applyOps,
   canonicalizeLinear,
+  ENTRY_HANDLE_ID,
   ensureDoc,
+  entryTitleLine,
+  parseEntryTitleLine,
   parseTitle,
   writeDoc,
   type ApplyResult,
