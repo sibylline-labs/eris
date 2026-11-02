@@ -175,11 +175,18 @@ describe("formatEntryDate", () => {
   });
 });
 
+test("a backticked dotted name in a title renders", () => {
+  /** When the autolink rule ignores code spans differently in render and parseTitle, a safe title is refused. */
+  expect(renderDecision({ ...decision, title: "Adopt `payload.source` as the key" }).split("\n")[0]).toBe("- `ACME-K2` Adopt `payload.source` as the key");
+});
+
 describe("inputs that would break an entry's shape are refused, not rewritten", () => {
   const cases: [string, () => unknown, EntryRenderReason][] = [
     ["a two-line title", () => renderDecision({ ...decision, title: "one\ntwo" }), "title-multiline"],
     ["an 81-character title", () => renderDecision({ ...decision, title: "x".repeat(81) }), "title-too-long"],
     ["an empty title", () => renderPractice({ ...practice, title: "   " }), "title-too-long"],
+    ["a title Linear would autolink", () => renderDecision({ ...decision, title: "Adopt payload.source as the key" }), "title-autolinkable"],
+    ["a conflict title Linear would autolink", () => renderConflictEntry({ ...conflict, title: "install.sh disagrees with the docs" }), "title-autolinkable"],
     ["a statement with a line break", () => renderPractice({ ...practice, statement: "a\nb" }), "field-multiline"],
     ["a scope with a line break", () => renderDecision({ ...decision, scope: "org\r\n- hash: deadbeef" }), "field-multiline"],
     ["a link label with a bracket", () => renderPractice({ ...practice, source: { ...source, label: "a]b" } }), "bad-link"],

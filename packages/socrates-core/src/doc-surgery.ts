@@ -130,7 +130,11 @@ const ANCHOR_LINE_RE = /^\s*<a id="[^"]+"><\/a>\s*$/;
 // A register row: its first cell is a code-spanned ID, backticks possibly escaped.
 const ROW_KEY_RE = /^\|\s*\\?`([^`\\|]+)\\?`\s*\|/;
 
-const MAX_TITLE_LEN = 80;
+/** The longest entry or doc title, counted on the bare title: an entry's readable-ID handle is not part of it. */
+export const ENTRY_TITLE_MAX_LENGTH = 80;
+/** A readable entry ID as an entry's title line carries it (`ACME-P3`, `ACME-K10`). */
+export const ENTRY_HANDLE_ID = "[A-Z][A-Z0-9]*-[A-Z]+[1-9][0-9]*";
+const HANDLE_PREFIX_RE = new RegExp(`^\`(${ENTRY_HANDLE_ID})\`[ \t]+`);
 const TITLE_LINK_SAFE_RE = /`[^`]*`|\[[^\]]*\]\([^)]*\)/g;
 const AUTOLINKABLE_RE = /\b[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b/;
 
@@ -181,9 +185,22 @@ export function parseTitle(raw: string): { ok: true; title: Title } | Refused {
   const refuse = (reason: Extract<Refusal, { kind: "bad-title" }>["reason"]): Refused => ({ ok: false, refusal: { kind: "bad-title", reason, title: raw } });
   if (title === "") return refuse("empty");
   if (/[\r\n]/.test(title)) return refuse("multi-line");
-  if (title.length > MAX_TITLE_LEN) return refuse("too-long");
+  if (title.length > ENTRY_TITLE_MAX_LENGTH) return refuse("too-long");
   if (AUTOLINKABLE_RE.test(title.replace(TITLE_LINK_SAFE_RE, " "))) return refuse("autolinkable");
   return { ok: true, title: title as Title };
+}
+
+/** An entry's top bullet line: the readable-ID handle in a code span, then the title. */
+export function entryTitleLine(handleId: string | null, title: Title): string {
+  return handleId === null ? `- ${title}` : `- \`${handleId}\` ${title}`;
+}
+
+/** Read the text of an entry's top bullet (after `- `): strip a leading readable-ID handle, then parse the bare title. */
+export function parseEntryTitleLine(text: string): { ok: true; handleId: string | null; title: Title } | Refused {
+  const handle = HANDLE_PREFIX_RE.exec(text);
+  const title = parseTitle(handle === null ? text : text.slice(handle[0].length));
+  if (!title.ok) return title;
+  return { ok: true, handleId: handle?.[1] ?? null, title: title.title };
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +325,7 @@ function checkEntry(entryMd: string, identity: EntryIdentity): { ok: true; id: s
   const found = blocks(lines, 0, lines.length);
   if (found.length !== 1 || found[0]!.end !== lines.length) return refuse({ kind: "bad-entry", reason: "an entry is exactly one top-level bullet and its nested lines" });
   const titleLine = lines.find((l) => TOP_BULLET_RE.test(l))!;
-  const title = parseTitle(titleLine.slice(2));
+  const title = parseEntryTitleLine(titleLine.slice(2));
   if (!title.ok) return title;
   const id = identity.entryId(canonicalizeLinear(entryMd));
   if (id === null) return refuse({ kind: "unidentified-entry" });
