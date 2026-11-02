@@ -786,8 +786,10 @@ The endpoint answered with a problem+json error and no subscribe link. The
 `ERROR` line carries its `detail`, `code` and HTTP status; a 401 means the
 token was rejected. For `resolve`, a 404 means the endpoint holds no review
 Epic by that id and a 409 that the Epic is still open (or has more entries
-than one resolve reads); the `fix:` line says which. Fix: for a 401 run
-`eris login`; otherwise correct what the detail names.
+than one resolve reads); the `fix:` line says which. For `settings team`, a
+403 `admin_required` means only an org admin may change it, and a 422 that the
+team id is not one of the project's teams (the detail lists them). Fix: for a
+401 run `eris login`; otherwise correct what the detail names.
 
 ### socrates-bad-response
 

@@ -55,6 +55,7 @@ const MESSAGES: Record<string, { request?: ZodTypeAny; response: ZodTypeAny }> =
   consult: { request: Verbs.SocratesConsultRequest, response: Verbs.SocratesConsultResponse },
   resolve: { request: Verbs.SocratesResolveRequest, response: Verbs.SocratesResolveResponse },
   status: { request: Verbs.SocratesStatusRequest, response: Verbs.SocratesStatusResponse },
+  settings_team: { request: Verbs.SocratesSettingsTeamRequest, response: Verbs.SocratesSettingsTeamResponse },
 };
 
 describe("the contract v1 routes beyond submit, against the shared golden file", () => {

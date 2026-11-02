@@ -59,6 +59,8 @@ export function fail(ctx: VerbContext, slug: SocratesSlug | "yak-config-permissi
 /** What one route posts and how its refusals read. */
 export interface SocratesCall<T> {
   path: string;
+  /** The route's method; `POST` when absent. */
+  method?: "POST" | "PUT";
   body: unknown;
   /** The route's response union: its reply, or the gateway's problem+json. */
   decoder: ZodType<T | SocratesProblem>;
@@ -94,7 +96,7 @@ export async function socratesEndpoint(ctx: VerbContext, deps: SocratesDeps): Pr
   return { base: resolveUrl(file.value, ctx.env).value.replace(/\/+$/, ""), token: token.value };
 }
 
-/** POST `call.body` to the endpoint with its bearer and return the decoded reply. */
+/** Send `call.body` (POST unless the call says PUT) to the endpoint with its bearer and return the decoded reply. */
 export async function postSocrates<T extends object>(ctx: VerbContext, deps: SocratesDeps, endpoint: SocratesEndpoint, call: SocratesCall<T>): Promise<T> {
   const url = `${endpoint.base}${call.path}`;
 
@@ -102,7 +104,7 @@ export async function postSocrates<T extends object>(ctx: VerbContext, deps: Soc
   let body: unknown;
   try {
     const res = await (deps.fetch ?? fetch)(url, {
-      method: "POST",
+      method: call.method ?? "POST",
       headers: { "content-type": "application/json", accept: "application/json, application/problem+json", authorization: `Bearer ${endpoint.token}` },
       body: JSON.stringify(call.body),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

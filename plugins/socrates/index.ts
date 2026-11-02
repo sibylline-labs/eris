@@ -49,6 +49,17 @@ export default definePlugin({
       pos: ["epic?"],
       usage: "<epic>",
     },
+    "socrates settings": { summary: "Change where this org's Socrates reviews file (team)" },
+    "socrates settings team": {
+      summary: "Set or clear the Linear team a project's review Epics file on (an org admin's)",
+      json: true,
+      pos: ["team?"],
+      usage: "<team-uuid> [--project <name>] | --clear [--project <name>]",
+      flags: [
+        { name: "--project", takesValue: true },
+        { name: "--clear", takesValue: false },
+      ],
+    },
     "socrates discover": {
       summary: "List the commits in this repo since the processed-source cursor",
       json: true,
@@ -70,6 +81,8 @@ export default definePlugin({
                                             meta: {_links: {override?}}}
   eris socrates resolve                    {epic, outcome, applied, carried_over, carry_over_epic?,
                                             reporting, contract_version}
+  eris socrates settings team              {project, override: {id, key}?, filing_team: {id, key,
+                                            source}, contract_version}
   eris socrates discover                   {repo, cursor, head, sources: [{kind, sha, committed_at,
                                             subject}], truncated}
   eris socrates discover --advance         {repo, cursor}
