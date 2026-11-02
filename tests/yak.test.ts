@@ -1488,3 +1488,40 @@ describe("runYak — --repo target-repo hints", () => {
     }
   });
 });
+
+describe("runYak — an over-cap submission warns locally and sends nothing", () => {
+  it("text mode: a >256 KiB environment value in provenance — stdout empty, WARN yak-payload-too-large, exit 0, no request", async () => {
+    // When the client posts an over-cap body, the agent waits on a round trip (or a timeout)
+    // to learn what the contract already says; when it fails it as misuse, an environment it
+    // never controls stops its task — observed at the CLI seam as the requests the ingress saw,
+    // the `slug:` line and the exit code.
+    const home = await freshHome();
+    const requests: string[] = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        requests.push(`${req.method} ${new URL(req.url).pathname}`);
+        return new Response("not found", { status: 404 });
+      },
+    });
+    try {
+      const result = await runYak(
+        baseOpts({
+          argv: ["issue", "--summary", "s", "--body", "b"],
+          env: { ERIS_YAKS_URL: server.url.toString(), ERIS_YAKS_TOKEN: "t", CLAUDE_CODE_ENTRYPOINT: "a".repeat(300_000) },
+          home,
+          cwd: home,
+        }),
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toMatch(/^WARN .*over the 262144-byte cap/m);
+      expect(result.stderr).toContain("slug: yak-payload-too-large");
+      expect(result.stderr).not.toContain("ERROR ");
+      expect(requests.filter((r) => r.startsWith("POST"))).toEqual([]);
+    } finally {
+      server.stop(true);
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+});
