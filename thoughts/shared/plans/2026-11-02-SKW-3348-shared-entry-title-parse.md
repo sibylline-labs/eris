@@ -144,3 +144,23 @@ autolinking now fail earlier at render with `title-autolinkable`.
 
 - SKW-3348; related SKW-2544 (Olympus submit rule), SKW-3081 (blocked).
 - `packages/socrates-core/src/doc-surgery.ts:133,179-187,305-316`; `src/render.ts:85,108-122,194-216`.
+
+## Gate Amendments (premise-gate + plan-review)
+
+Premise-gate: CLEAR, 6/6 observed (`thoughts/shared/premise/2026-11-02-SKW-3348.md`). Step 1: the repo has no
+`.claude/rules/` or `thoughts/retros/`; the sibling for the parse/format pair is `parseTitle`
+(`doc-surgery.ts:179`), whose `Title` brand the new functions reuse; no library is added; every touched file sits
+in `packages/socrates-core/tsconfig.json` `include: ["src/**/*.ts"]` and the root `tsconfig.json` `include`
+(`packages/**/*.ts`, `tests/**/*.ts`).
+
+| Check | Status | Plan change / steering note |
+|---|---|---|
+| 1. Class closure & type monotonicity | CLEAN | `rg -n 'parseTitle\(\|slice\(2\)\|TOP_BULLET_RE' packages/socrates-core/src plugins src` → the only title-line reader is `checkEntry` (l.310-311); `TOP_BULLET_RE` l.233 is block splitting, not title parsing. All three `checkEntry` callers (append, supersede new, supersede re-render) inherit the fix. `checkTitle` narrows `string` → `Title`; `EntryRenderReason` gains `title-autolinkable`, a widening with no exhaustive consumer outside the package's tests (premise P5). Touched-file diagnostics: package `bun run typecheck` must print 0 errors; root `bunx tsc --noEmit` must print only the 3 pre-existing `src/runtime/process.ts` errors (none in a touched file). |
+| 2. Static rung & red-on-main proof | CLEAN | Single-parse invariant is on the arch rung (one function pair, local constant deleted) and the type rung (`Title` input to `entryTitleLine`); no lint row. Red on main observed for the AC (93-char line → `bad-title`/`too-long`) and for autolinkable render (renders instead of throwing). |
+| 3. Gate delta-invariance & cardinality | N/A | no gate, diff or matcher. |
+| 4. Post-publish & remediation round-trip | AMENDED | Round trip is the invariant itself: the AC test must feed `renderDecision`/`renderPractice` output straight into `applyOps` (no hand-written md), and also assert the applied body contains the handle and full 80-char title, so the fix cannot pass by dropping the handle. |
+| 5. Transactions & k-step interleavings | N/A | pure functions, no state. |
+| 6. Loop-invariant oracle budget | N/A | no timing loops; the handle × title matrix is ≤ 12 `applyOps` calls on a small doc (< 5 ms). |
+| 7. Stack checklist (CLI / Compiler / Static Gates) | CLEAN | no shell, temp-file or config-parser change; no eris governance site (define-future: empty); downstream Olympus pin bump is planned in What We're NOT Doing (owned by the SKW-2544 loop, noted on SKW-3081). |
+
+**Verdict:** PASS
