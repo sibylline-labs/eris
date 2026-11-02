@@ -224,6 +224,12 @@ export async function build(opts: BuildOptions): Promise<BuildResult> {
   const outfile = resolve(root, opts.outfile ?? join("dist", `eris-${platform}`));
   const result = await Bun.build({
     entrypoints: [entry],
+    // Bytecode: the binary starts from precompiled bytecode rather than parsing its whole bundle
+    // on every launch (`--version` measured 80–90 ms → 10 ms). Bytecode needs ESM output for
+    // the entry's top-level await. No minify: a completion helper reads function names off the
+    // stack.
+    bytecode: true,
+    format: "esm",
     compile: {
       outfile,
       ...(opts.target !== undefined ? { target: opts.target } : {}),
