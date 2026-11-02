@@ -208,6 +208,14 @@ describe("eris socrates submit", () => {
     expect(requests).toEqual([]);
   });
 
+  it("refuses an ERIS_YAKS_TOKEN with no URL rather than sending it to the default host", async () => {
+    /** When an env bearer falls through to the built-in URL, a token set for one endpoint is posted to api.sibylline.group: observed at the slug and exit code, before any request. */
+    const r = await drive(["submit", ...CANDIDATE], { env: { HOME: join(REPO, ".scratch", "no-such-home"), ERIS_YAKS_TOKEN: TOKEN } });
+    expect(r).toMatchObject({ rc: 1, slug: "yak-url-unresolved" });
+    expect(r.stderr).not.toContain(TOKEN);
+    expect(requests).toEqual([]);
+  });
+
   it("never sends a gitleaks-shaped secret, from any field, with or without an override", async () => {
     /** When the scan misses a field or an override reaches past it, a live credential leaves the machine; observed at the loopback endpoint, which receives nothing, and at the block, which never prints the secret. */
     const allowAll = REDACTION_CLASSES.flatMap((c) => ["--allow-redaction", c]);

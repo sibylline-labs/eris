@@ -1,0 +1,49 @@
+id: yaks-token-single-resolver
+valid:
+  # Asking which source supplies the bearer, without the bearer.
+  - |
+    if (yaksTokenSource(file, env) === "env") warn();
+  # Prose naming the variable is not a read.
+  - |
+    fail("no yaks token: run 'eris login', or set ERIS_YAKS_TOKEN");
+  # Another variable.
+  - |
+    const url = resolveUrl(file, env, flags["--url"]);
+  # Building a child's env: a key, a spread, a write.
+  - |
+    const child = { ...env, ERIS_YAKS_TOKEN: "x" };
+  - |
+    env.ERIS_YAKS_TOKEN = "x";
+  - |
+    env["ERIS_YAKS_TOKEN"] = token;
+  - |
+    delete env.ERIS_YAKS_TOKEN;
+invalid:
+  - |
+    const token = env.ERIS_YAKS_TOKEN;
+  - |
+    const token = process.env.ERIS_YAKS_TOKEN;
+  - |
+    if (ctx.env.ERIS_YAKS_TOKEN) warn();
+  - |
+    const token = ctx.env?.ERIS_YAKS_TOKEN ?? "";
+  - |
+    const token = env["ERIS_YAKS_TOKEN"];
+  - |
+    const token = env['ERIS_YAKS_TOKEN'];
+  - |
+    const token = env[`ERIS_YAKS_TOKEN`];
+  - |
+    const token = readEnv(ctx.env, "ERIS_YAKS_TOKEN");
+  - |
+    const token = sdk.readEnv(env, `ERIS_YAKS_TOKEN`);
+  - |
+    const { ERIS_YAKS_TOKEN } = env;
+  - |
+    const { ERIS_YAKS_TOKEN: token } = env;
+  - |
+    const { ERIS_YAKS_TOKEN: token = "" } = env;
+  - |
+    const { "ERIS_YAKS_TOKEN": token } = env;
+  - |
+    if ("ERIS_YAKS_TOKEN" in env) warn();

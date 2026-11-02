@@ -14,6 +14,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { YAKS_CONTRACT_VERSION } from "eris/yak-contract";
 import { runYakVerb } from "../plugins/yak/handlers";
+import { runStatus } from "../plugins/yak/yak-admin";
 import { CliExit } from "../src/cli/ts-verb";
 
 const REPO = resolve(import.meta.dir, "..");
@@ -153,6 +154,27 @@ describe("eris yak status", () => {
     expect(rc).toBe(1);
     expect(stderr).toContain("slug: yak-token-unresolved");
     expect(requests).toHaveLength(0);
+  });
+
+  it("ERIS_YAKS_TOKEN with no URL: the yak-url-unresolved block, exit 1, nothing sent", async () => {
+    /** When an env bearer falls through to the built-in URL, status reads another tenant's host with a token set for this one: observed at the exit code, the block and an injected fetch that records no call. */
+    let stderr = "";
+    const fetched: string[] = [];
+    let rc: number;
+    try {
+      rc = await runStatus(
+        [],
+        { erisDir: REPO, env: { PATH: process.env.PATH, HOME: home, ERIS_YAKS_TOKEN: "tok" }, format: "text", stdout: { write: () => true }, stderr: { write: (s: string) => ((stderr += s), true) } },
+        { home, fetchImpl: (async (u: string | URL | Request) => (fetched.push(String(u)), new Response("{}"))) as typeof fetch },
+      );
+    } catch (e) {
+      if (!(e instanceof CliExit)) throw e;
+      rc = e.code;
+    }
+    expect(rc).toBe(1);
+    expect(stderr).toContain("slug: yak-url-unresolved");
+    expect(stderr).toContain("ERIS_YAKS_URL");
+    expect(fetched).toEqual([]);
   });
 });
 

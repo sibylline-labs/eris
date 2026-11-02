@@ -38,7 +38,7 @@
 import { hostname as osHostname } from "node:os";
 import { renderFailureBlock, renderWarnLines, readArgs, type VerbContext } from "../../src/cli/plugin";
 import plugin from "./index";
-import { DEFAULT_YAKS_URL, readYaksFileConfig, resolveUrl, runBounded, writeYaksFileConfig, yaksConfigPath } from "./yak-identity";
+import { DEFAULT_YAKS_URL, readYaksFileConfig, resolveUrl, runBounded, writeYaksFileConfig, yaksConfigPath, yaksTokenSource } from "./yak-identity";
 import { promises as fs } from "node:fs";
 
 /** The `docs/ERRORS.md` slugs this module raises (`tests/errors-doc.test.ts`). */
@@ -242,7 +242,7 @@ export async function runLogin(args: string[], ctx: VerbContext, deps: LoginDeps
       if (file.value.token !== undefined && file.value.token !== token) {
         ctx.stderr.write("replaced the token that was in the file; revoke it under Settings > API Tokens if nothing else uses it\n");
       }
-      if (ctx.env.ERIS_YAKS_TOKEN) {
+      if (yaksTokenSource({}, ctx.env) === "env") {
         ctx.stderr.write(renderWarnLines("ERIS_YAKS_TOKEN is set and overrides the token just written; unset it to use this login", "login-env-token-overrides"));
       }
       const name = typeof body?.name === "string" ? printable(body.name) : "eris";
@@ -293,7 +293,7 @@ export async function runLogout(args: string[], ctx: VerbContext, deps: Pick<Log
     ctx.stdout.write(`logged out: removed the token from ${path}\n`);
     ctx.stderr.write("the token stays valid until it is revoked under Settings > API Tokens\n");
   }
-  if (ctx.env.ERIS_YAKS_TOKEN) {
+  if (yaksTokenSource({}, ctx.env) === "env") {
     ctx.stderr.write(renderWarnLines("ERIS_YAKS_TOKEN is still set, so 'eris yak' keeps authenticating with it", "login-env-token-overrides"));
   }
   return 0;

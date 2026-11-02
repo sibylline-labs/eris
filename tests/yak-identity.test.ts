@@ -15,8 +15,10 @@ import {
   yaksConfigPath,
   deviceIdPath,
   readYaksFileConfig,
-  resolveToken,
   resolveUrl,
+  resolveYaksBearer,
+  yaksTokenSource,
+  type YaksBearer,
   resolveDeviceId,
   resolveExecutionId,
   runBounded,
@@ -118,41 +120,65 @@ describe("readYaksFileConfig", () => {
   );
 });
 
-// --- resolveToken / resolveUrl -----------------------------------------------
+// --- resolveYaksBearer / resolveUrl ------------------------------------------
 
-describe("resolveToken", () => {
-  it(
-    "when ERIS_YAKS_TOKEN is set, this wins over the file config's token " +
-      "— observed at the returned value",
-    () => {
-      const result = resolveToken({ token: "from-file" }, { ERIS_YAKS_TOKEN: "from-env" });
-      expect("value" in result).toBe(true);
-      if ("value" in result) expect(result.value).toBe("from-env");
-    },
-  );
+describe("resolveYaksBearer", () => {
+  // Each URL source paired with each token source. `default` + `env` is the one
+  // pairing that fails: a token set for one endpoint never goes to the built-in host.
+  const FILE_TOKEN = { token: "from-file" };
+  const ENV_TOKEN = { ERIS_YAKS_TOKEN: "from-env" };
+  const cases: Array<{ url: string; file: { url?: string; token?: string }; env: Record<string, string>; flag?: string; want: { tokenSource: string; url: string; urlSource: string } | "yak-url-unresolved" }> = [
+    { url: "flag", file: FILE_TOKEN, env: {}, flag: "https://flag.test", want: { tokenSource: "config", url: "https://flag.test", urlSource: "flag" } },
+    { url: "flag", file: {}, env: ENV_TOKEN, flag: "https://flag.test", want: { tokenSource: "env", url: "https://flag.test", urlSource: "flag" } },
+    { url: "env", file: FILE_TOKEN, env: { ERIS_YAKS_URL: "https://env.test" }, want: { tokenSource: "config", url: "https://env.test", urlSource: "env" } },
+    { url: "env", file: {}, env: { ...ENV_TOKEN, ERIS_YAKS_URL: "https://env.test" }, want: { tokenSource: "env", url: "https://env.test", urlSource: "env" } },
+    { url: "config", file: { ...FILE_TOKEN, url: "https://file.test" }, env: {}, want: { tokenSource: "config", url: "https://file.test", urlSource: "config" } },
+    { url: "config", file: { url: "https://file.test" }, env: ENV_TOKEN, want: { tokenSource: "env", url: "https://file.test", urlSource: "config" } },
+    { url: "default", file: FILE_TOKEN, env: {}, want: { tokenSource: "config", url: "https://api.sibylline.group", urlSource: "default" } },
+    { url: "default", file: {}, env: { ...ENV_TOKEN, ERIS_YAKS_URL: "" }, want: "yak-url-unresolved" },
+  ];
 
-  it(
-    "when only the file config carries a token, this resolves it — observed at the returned value",
-    () => {
-      const result = resolveToken({ token: "from-file" }, {});
-      expect("value" in result).toBe(true);
-      if ("value" in result) expect(result.value).toBe("from-file");
-    },
-  );
-
-  it(
-    "when neither ERIS_YAKS_TOKEN nor the file config carries a token, this fails " +
-      "with slug yak-token-unresolved and the failure message never mentions a token value " +
-      "— observed at the returned reason",
-    () => {
-      const result = resolveToken({}, {});
-      expect("reason" in result).toBe(true);
-      if ("reason" in result) {
-        expect(result.slug).toBe("yak-token-unresolved");
-        expect(result.reason).not.toMatch(/from-file|from-env/);
+  for (const c of cases) {
+    const tokenSource = "ERIS_YAKS_TOKEN" in c.env ? "env" : "config";
+    it(`${c.url} url + ${tokenSource} token → ${typeof c.want === "string" ? c.want : "paired"}`, () => {
+      /** When a pairing resolves differently, a bearer goes to a host nobody named for it (env + default), or a login bearer loses its endpoint: observed at the returned value. */
+      const result = resolveYaksBearer(c.file, c.env, c.flag);
+      if (typeof c.want === "string") {
+        expect(result).toMatchObject({ slug: c.want });
+        if ("reason" in result) {
+          expect(result.reason).not.toContain("from-env");
+          expect(result.fix).toContain("ERIS_YAKS_URL");
+        }
+      } else {
+        expect<unknown>("value" in result ? result.value : result).toEqual({ ...c.want, token: tokenSource === "env" ? "from-env" : "from-file" });
       }
-    },
-  );
+    });
+  }
+
+  it("ERIS_YAKS_TOKEN wins over the file's token, and the pairing follows the env token", () => {
+    /** When the file's token wins, an exported CI token is silently ignored; when the env token borrows the file's default-path licence, it reaches the default host: observed at the returned value. */
+    expect(resolveYaksBearer({ token: "from-file" }, { ERIS_YAKS_TOKEN: "from-env" })).toMatchObject({ slug: "yak-url-unresolved" });
+    expect(resolveYaksBearer({ token: "from-file", url: "https://file.test" }, { ERIS_YAKS_TOKEN: "from-env" })).toEqual({
+      value: { token: "from-env", tokenSource: "env", url: "https://file.test", urlSource: "config" },
+    });
+  });
+
+  it("no token anywhere fails yak-token-unresolved, carrying no token value", () => {
+    /** When a missing token resolves, the endpoint's 401 hides the local fix: observed at the returned failure. */
+    expect(resolveYaksBearer({}, {})).toEqual({ reason: "no yaks token: run 'eris login', or set ERIS_YAKS_TOKEN", slug: "yak-token-unresolved", fix: "run 'eris login'" });
+  });
+
+  it("yaksTokenSource names the source and never the token", () => {
+    /** When it returns the token, a plugin can pair a bare bearer with any URL again: observed at the returned value. */
+    expect([yaksTokenSource({ token: "t" }, { ERIS_YAKS_TOKEN: "e" }), yaksTokenSource({ token: "t" }, {}), yaksTokenSource({}, { ERIS_YAKS_TOKEN: "" })]).toEqual(["env", "config", null]);
+  });
+
+  it("the type refuses an env token paired with the default URL", () => {
+    /** When the `env` arm's `urlSource` widens back to every source, `bunx tsc --noEmit` reports this directive unused: observed by the typecheck gate. */
+    // @ts-expect-error an ERIS_YAKS_TOKEN bearer cannot carry the default URL
+    const pairing: YaksBearer = { token: "t", tokenSource: "env", url: "https://api.sibylline.group", urlSource: "default" };
+    expect(pairing.tokenSource).toBe("env");
+  });
 });
 
 describe("resolveUrl", () => {

@@ -427,6 +427,28 @@ describe("runYak — environment/config/transport (exit 0, WARN, never the failu
     }
   });
 
+  it("ERIS_YAKS_TOKEN with no URL: WARN yak-url-unresolved, exit 0, and nothing is fetched", async () => {
+    /** When an env bearer falls through to the built-in URL, a self-hosted token is posted to api.sibylline.group: observed at the injected fetch, which records no call. */
+    const home = await freshHome();
+    const fetched: string[] = [];
+    try {
+      const result = await runYak(
+        baseOpts({
+          argv: ["issue", "--summary", "s", "--body", "b"],
+          env: { ERIS_YAKS_TOKEN: "self-hosted-token" },
+          home,
+          fetchImpl: (async (u: string | URL | Request) => (fetched.push(String(u)), new Response("{}", { status: 500 }))) as typeof fetch,
+        }),
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toContain("slug: yak-url-unresolved");
+      expect(result.stderr).not.toContain("self-hosted-token");
+      expect(fetched).toEqual([]);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it("a group-readable ~/.eris/yaks.json is refused, never read: WARN + exit 0", async () => {
     const home = await freshHome();
     try {

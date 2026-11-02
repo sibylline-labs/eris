@@ -107,8 +107,8 @@ describe("the package's exports", () => {
       "renderWarnLines",
       "resolveConcurrency",
       "resolveDeadlineMs",
-      "resolveToken",
       "resolveUrl",
+      "resolveYaksBearer",
       "rowsOfGroup",
       "runCommand",
       "runErisVerb",
@@ -123,6 +123,7 @@ describe("the package's exports", () => {
       "warn",
       "writeYaksFileConfig",
       "yaksConfigPath",
+      "yaksTokenSource",
     ]);
     // The SDK's composition inputs are core's own, so a distribution composes what this build composes.
     expect(sdk.REGISTRY).toBe(REGISTRY);

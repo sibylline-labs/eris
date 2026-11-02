@@ -1,0 +1,84 @@
+# The Yaks bearer is resolved in one place, `resolveYaksBearer` in
+# src/runtime/credentials.ts, which pairs it with the URL it goes to. A hand
+# read of ERIS_YAKS_TOKEN gets the bearer without that pairing, so an env token
+# can be sent to the built-in host nobody named for it.
+#
+# Matches a read in any form this codebase uses: a member (`env.X`, `env?.X`),
+# a string or template subscript, a `readEnv(env, "X")` call, a destructure
+# (plain, renamed or defaulted) and an `"X" in env` probe. A write
+# (`env.X = …`, building a child's env) and `delete env.X` are not reads.
+id: yaks-token-single-resolver
+language: typescript
+severity: error
+message: >-
+  ERIS_YAKS_TOKEN is read here. Resolve the bearer with resolveYaksBearer
+  (src/runtime/credentials.ts), which pairs it with its URL, or ask which
+  source supplies it with yaksTokenSource.
+note: |
+  yaksTokenSource(fileConfig, env) answers "env", "config" or null without
+  handing out the token.
+files:
+  - src/**/*.ts
+  - ts/**/*.ts
+  - plugins/**/*.ts
+ignores:
+  # The resolver itself.
+  - src/runtime/credentials.ts
+rule:
+  all:
+    - any:
+        - kind: property_identifier
+          regex: ^ERIS_YAKS_TOKEN$
+          inside:
+            kind: member_expression
+        - kind: shorthand_property_identifier_pattern
+          regex: ^ERIS_YAKS_TOKEN$
+        - kind: property_identifier
+          regex: ^ERIS_YAKS_TOKEN$
+          inside:
+            kind: pair_pattern
+        - kind: string
+          regex: ^["']ERIS_YAKS_TOKEN["']$
+          inside:
+            kind: pair_pattern
+        - kind: string
+          regex: ^["']ERIS_YAKS_TOKEN["']$
+          inside:
+            kind: binary_expression
+            has:
+              field: operator
+              regex: ^in$
+        - kind: string
+          regex: ^["'`]ERIS_YAKS_TOKEN["'`]$
+          any:
+            - inside:
+                kind: subscript_expression
+            - inside:
+                kind: arguments
+                inside:
+                  kind: call_expression
+                  has:
+                    field: function
+                    regex: (^|\.)readEnv$
+        - kind: template_string
+          regex: ^`ERIS_YAKS_TOKEN`$
+          any:
+            - inside:
+                kind: subscript_expression
+            - inside:
+                kind: arguments
+                inside:
+                  kind: call_expression
+                  has:
+                    field: function
+                    regex: (^|\.)readEnv$
+    - not:
+        inside:
+          kind: assignment_expression
+          field: left
+          stopBy: end
+    - not:
+        inside:
+          kind: unary_expression
+          regex: ^delete\s
+          stopBy: end
