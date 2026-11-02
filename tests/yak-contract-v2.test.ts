@@ -13,7 +13,18 @@ import Ajv from "ajv";
 import { readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { buildJsonSchema, SCHEMA_FILE } from "../packages/yak-contract/scripts/emit-json-schema";
-import { deriveIdempotencyKey, YakSubmission } from "../packages/yak-contract/src/index";
+import {
+  deriveIdempotencyKey,
+  YAK_BODY_MAX_LENGTH,
+  YAK_EVIDENCE_MAX_LENGTH,
+  YAK_ID_MAX_LENGTH,
+  YAK_IDEMPOTENCY_KEY_MAX_LENGTH,
+  YAK_REPO_HINT_MAX_LENGTH,
+  YAK_REPO_HINTS_MAX_COUNT,
+  YAK_REQUEST_MAX_BYTES,
+  YAK_SUMMARY_MAX_LENGTH,
+  YakSubmission,
+} from "../packages/yak-contract/src/index";
 import { resolveExecutionId } from "../plugins/yak/yak-identity";
 
 const PACKAGE_DIR = resolve(import.meta.dir, "../packages/yak-contract");
@@ -145,5 +156,32 @@ describe("yak-contract v2: standalone", () => {
     expect(stray).toEqual([]);
     // The scan sees real imports: a scanner that returned nothing would pass the check above for free.
     expect([...seen]).toEqual(expect.arrayContaining(["zod", "zod-to-json-schema", "./v2", "../src/index"]));
+  });
+});
+
+describe("yak-contract v2: the whole-body byte cap", () => {
+  it("every bounded field at its maximum, each character at JSON's worst escape, still fits under the cap", () => {
+    // When a field maximum grows (or the cap shrinks) without the other following, a submission
+    // the schema accepts is refused as too large by the ingress and by the client's pre-check —
+    // observed as the serialised byte length of the largest contract-valid body with no
+    // provenance beyond the typed repo hints.
+    const worst = (n: number) => "\u0001".repeat(n);
+    const submission = {
+      schema_version: "2.0.0",
+      verb: "suggest",
+      route: "workspace",
+      summary: worst(YAK_SUMMARY_MAX_LENGTH),
+      body: worst(YAK_BODY_MAX_LENGTH),
+      evidence: worst(YAK_EVIDENCE_MAX_LENGTH),
+      device_id: worst(YAK_ID_MAX_LENGTH),
+      execution_id: worst(YAK_ID_MAX_LENGTH),
+      idempotency_key: worst(YAK_IDEMPOTENCY_KEY_MAX_LENGTH),
+      provenance: { repo: { target_repos: Array.from({ length: YAK_REPO_HINTS_MAX_COUNT }, () => worst(YAK_REPO_HINT_MAX_LENGTH)) } },
+    };
+    expect(YakSubmission.strict().safeParse(submission).success).toBe(true);
+    const wire = new TextEncoder().encode(JSON.stringify(submission)).byteLength;
+    expect(wire).toBeGreaterThan(172_368);
+    expect(wire).toBeLessThanOrEqual(YAK_REQUEST_MAX_BYTES);
+    expect(YAK_REQUEST_MAX_BYTES).toBe(262_144);
   });
 });

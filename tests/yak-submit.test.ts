@@ -37,6 +37,7 @@ import {
   YAKS_CONTRACT_VERSION,
   YAK_BODY_MAX_LENGTH,
   YAK_ID_MAX_LENGTH,
+  YAK_REQUEST_MAX_BYTES,
   YAK_SUMMARY_MAX_LENGTH,
 } from "eris/yak-contract";
 
@@ -1628,5 +1629,75 @@ describe("toOutputRecord", () => {
 describe("DEFAULT_SUBMIT_TIMEOUT_MS", () => {
   it("is one 30s bound, the same as a `curl --max-time 30` call", () => {
     expect(DEFAULT_SUBMIT_TIMEOUT_MS).toBe(30_000);
+  });
+});
+
+describe("submitYak — the whole-body byte cap (YAK_REQUEST_MAX_BYTES) is checked before any request", () => {
+  /** A `fetchImpl` that records each body it is handed and accepts it. */
+  function recordingFetch() {
+    const bodies: string[] = [];
+    const fetchImpl = mock(async (_url: string, init?: RequestInit) => {
+      const body = String(init?.body);
+      bodies.push(body);
+      return new Response(JSON.stringify(freshReceipt({ idempotency_key: JSON.parse(body).idempotency_key })), { status: 200 });
+    });
+    return { fetchImpl: fetchImpl as unknown as typeof fetch, bodies };
+  }
+
+  const bytes = (s: string) => new TextEncoder().encode(s).byteLength;
+  /** The submission with `pad` in provenance; `noRedact` so the bytes measured are the bytes padded. */
+  const padded = (pad: string, fetchImpl: typeof fetch): SubmitParams => ({
+    ...BASE_PARAMS,
+    noRedact: true,
+    provenance: { harness: { pad } },
+    url: "http://example.invalid",
+    token: "t",
+    fetchImpl,
+  });
+
+  /** The ASCII pad length that makes the serialised body exactly `target` bytes. */
+  async function padFor(target: number): Promise<number> {
+    const { fetchImpl, bodies } = recordingFetch();
+    await submitYak(padded("", fetchImpl));
+    return target - bytes(bodies[0]!);
+  }
+
+  it("a body of exactly the cap is sent, and the bytes measured are the bytes sent", async () => {
+    // When the client compares with >= (the ingress refuses only MORE than the cap) or measures
+    // a different string than it sends, a submission the endpoint would accept is refused —
+    // observed as the one body the fetch received and its byte length.
+    const { fetchImpl, bodies } = recordingFetch();
+    const result = await submitYak(padded("a".repeat(await padFor(YAK_REQUEST_MAX_BYTES)), fetchImpl));
+    expect(result.status).toBe("delivered");
+    expect(bodies).toHaveLength(1);
+    expect(bytes(bodies[0]!)).toBe(YAK_REQUEST_MAX_BYTES);
+  });
+
+  it("one byte over the cap: warn yak-payload-too-large naming the size, the cap and the remedy; nothing sent", async () => {
+    // When the pre-check is missing or runs after the request, an over-cap report costs a
+    // network round trip to learn what the contract already says, and a slow endpoint stalls
+    // the agent mid-task — observed as the fetch call count and the `SubmitResult`.
+    const { fetchImpl, bodies } = recordingFetch();
+    const result = await submitYak(padded("a".repeat((await padFor(YAK_REQUEST_MAX_BYTES)) + 1), fetchImpl));
+    expect(result.status).toBe("warn");
+    if (result.status !== "warn") throw new Error("unreachable");
+    expect(result.slug).toBe("yak-payload-too-large");
+    expect(result.reason).toContain(`${YAK_REQUEST_MAX_BYTES + 1} bytes`);
+    expect(result.reason).toContain(String(YAK_REQUEST_MAX_BYTES));
+    expect(result.reason).toContain("nothing was sent");
+    expect(result.reason).toMatch(/--evidence/);
+    expect(result.idempotencyKey).toBeDefined();
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("counts UTF-8 bytes, not characters: a body under the cap in characters but over it in bytes is refused", async () => {
+    // When the check measures `.length` (UTF-16 code units), a non-ASCII body passes locally and
+    // is then refused by the endpoint, which counts bytes — observed as the fetch call count.
+    const { fetchImpl, bodies } = recordingFetch();
+    const pad = "é".repeat(YAK_REQUEST_MAX_BYTES / 2 + 1);
+    expect(pad.length).toBeLessThan(YAK_REQUEST_MAX_BYTES);
+    const result = await submitYak(padded(pad, fetchImpl));
+    expect(result.status === "warn" && result.slug).toBe("yak-payload-too-large");
+    expect(bodies).toHaveLength(0);
   });
 });

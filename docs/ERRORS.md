@@ -503,10 +503,12 @@ workspace.
 
 ### yak-payload-too-large
 
-The Yaks endpoint answered `413`: the submission exceeded the endpoint's
-whole-body size cap. The per-field length checks pass locally first, so the sum
-is what overflowed; trim `--evidence` (the largest field), `--repro` or the
-`--repo` hints. Warn + exit 0; the
+The submission exceeded the whole-body size cap: 256 KiB of UTF-8, the
+contract's `YAK_REQUEST_MAX_BYTES`. eris measures the serialised body before it
+sends and stops there, with nothing sent; an endpoint `413` is the same rung.
+The per-field length checks pass first, so the sum is what overflowed: trim
+`--evidence` (the largest field), `--repro` or the `--repo` hints, or a very
+large environment value eris copies into provenance. Warn + exit 0; the
 report was dropped, not delivered, and the agent's task is unaffected. A problem
 with eris itself is reported on the vendor route, the eris project's own tracker,
 rather than into the workspace.

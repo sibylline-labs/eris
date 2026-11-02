@@ -34,7 +34,10 @@
  *        request (an over-bound field is a local, actionable
  *        exit-1 error naming the field/length/max — never a silent
  *        server-side truncation, which would desync the stored payload
- *        from the key we already derived from it)
+ *        from the key we already derived from it), then measure the
+ *        serialised body's UTF-8 bytes against the contract's
+ *        `YAK_REQUEST_MAX_BYTES`: an over-cap body is the endpoint's 413
+ *        rung (`yak-payload-too-large`, WARN) taken locally, with nothing sent
  *     6. one bounded `fetch` POST (30s), no retry — a retry loop is
  *        latency an agent pays mid-task
  *     7. compare our derived key against the receipt's `idempotency_key`
@@ -59,6 +62,7 @@ import {
   YAKS_CONTRACT_VERSION,
   YAK_REPO_HINT_MAX_LENGTH,
   YAK_REPO_HINTS_MAX_COUNT,
+  YAK_REQUEST_MAX_BYTES,
   deriveIdempotencyKey,
   type YakVerb,
   type YakProvenance,
@@ -340,6 +344,11 @@ export type SubmitWarnSlug =
   | "yak-identity-id-too-long"
   | "yak-redaction-overflow";
 
+/** What trims a body back under the whole-body cap: shared by the endpoint's 413
+ *  row and the local pre-check, so both rungs give the same remedy. */
+const PAYLOAD_TOO_LARGE_REMEDY =
+  "trim --evidence, --repro or the --repo hints (or a very large environment value eris copies into provenance)";
+
 /**
  * The endpoint's refusals that no retry fixes and the operator can act on:
  * its HTTP status -> the warn slug plus the local remedy the reason ends with.
@@ -370,7 +379,7 @@ const REFUSAL_BY_STATUS: ReadonlyMap<number, { slug: SubmitWarnSlug; remedy: str
     413,
     {
       slug: "yak-payload-too-large",
-      remedy: "the submission exceeded the endpoint's whole-body size cap; trim --evidence, --repro or the --repo hints",
+      remedy: `the submission exceeded the endpoint's whole-body size cap; ${PAYLOAD_TOO_LARGE_REMEDY}`,
     },
   ],
 ]);
@@ -996,6 +1005,20 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
     return { status: "misuse", slug: failure.slug, reason: failure.reason, idempotencyKey, redaction };
   }
 
+  // The bytes measured are the bytes sent: `wire` is serialised once and is the
+  // request body below. The ingress refuses strictly more than the cap.
+  const wire = JSON.stringify(parsed.data);
+  const wireBytes = new TextEncoder().encode(wire).byteLength;
+  if (wireBytes > YAK_REQUEST_MAX_BYTES) {
+    return {
+      status: "warn",
+      slug: "yak-payload-too-large",
+      reason: `the submission is ${wireBytes} bytes, over the ${YAK_REQUEST_MAX_BYTES}-byte cap the yaks endpoint enforces; nothing was sent — ${PAYLOAD_TOO_LARGE_REMEDY}`,
+      redaction,
+      idempotencyKey,
+    };
+  }
+
   // --- step 6: one bounded POST, no retry -----------------------------------
   //
   // The deadline covers the WHOLE exchange — connect, headers, AND body — not
@@ -1024,7 +1047,7 @@ export async function submitYak(params: SubmitParams): Promise<SubmitResult> {
           "content-type": "application/json",
           authorization: `Bearer ${params.token}`,
         },
-        body: JSON.stringify(parsed.data),
+        body: wire,
         signal: controller.signal,
       });
     } catch (err) {

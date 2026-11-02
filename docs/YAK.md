@@ -66,6 +66,12 @@ letting the server truncate silently — a server-side truncation would desync
 the stored payload from the dedup key this CLI already derived from the full
 text (see [Idempotency](#idempotency-and-replay)).
 
+The whole request body has a cap too: 256 KiB of UTF-8 (`YAK_REQUEST_MAX_BYTES`
+in `@sibylline-labs/yak-contract`, the value the endpoint enforces). A body over
+it warns [`yak-payload-too-large`](ERRORS.md#yak-payload-too-large) and exits
+`0` without a request. Every submission whose fields are within their maxima
+fits under the cap, so the overflow is in `provenance`.
+
 ## Setup
 
 `eris yak` reads its endpoint URL and bearer token from **one file**,
@@ -154,7 +160,7 @@ under `--output json`) names the remedy instead of a generic transport failure:
 |---|---|---|
 | `401` | [`yak-unauthorized`](ERRORS.md#yak-unauthorized) | The endpoint rejected the bearer token. Check `~/.eris/yaks.json` / `ERIS_YAKS_TOKEN`, and that the token is registered. |
 | `402` | [`yak-not-entitled`](ERRORS.md#yak-not-entitled) | The workspace is not entitled to Yaks (plan or seat). |
-| `413` | [`yak-payload-too-large`](ERRORS.md#yak-payload-too-large) | The submission exceeded the endpoint's whole-body size cap. Trim `--evidence`. |
+| `413` | [`yak-payload-too-large`](ERRORS.md#yak-payload-too-large) | The submission exceeded the endpoint's whole-body size cap. Trim `--evidence`. eris checks the cap before sending, so this status comes only from an endpoint whose cap is smaller than the contract's. |
 | any other non-2xx | [`yak-transport-error`](ERRORS.md#yak-transport-error) | An outage, a missing route, a proxy page: no local remedy is known. |
 
 Each rung's `ERRORS.md` entry notes that a problem with eris itself is reported

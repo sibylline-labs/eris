@@ -149,6 +149,20 @@ export const YAK_REPO_HINT_MAX_LENGTH = 200;
 /** More hints than any single report spans repos. */
 export const YAK_REPO_HINTS_MAX_COUNT = 20;
 
+/**
+ * The whole `POST /v1/yaks` body, in UTF-8 bytes. The ingress answers a larger
+ * body with `413 payload_too_large` before it reads past the cap, and the
+ * client refuses one before it sends. A body of exactly this many bytes is
+ * accepted.
+ *
+ * Derivation: the bounded strings above sum to 28,728 characters (summary 200,
+ * body 4,000, evidence 20,000, two ids 400, idempotency key 128, 20 repo hints
+ * 4,000). At JSON's worst escape of 6 bytes a character (`\u0001`) that is
+ * 172,368 bytes, so 256 KiB admits every submission those maxima allow and
+ * leaves the rest for `provenance`, which this schema does not bound.
+ */
+export const YAK_REQUEST_MAX_BYTES = 256 * 1024;
+
 // ---------------------------------------------------------------------------
 // Submission-adjacent shapes
 // ---------------------------------------------------------------------------
