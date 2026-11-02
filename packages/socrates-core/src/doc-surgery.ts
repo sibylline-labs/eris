@@ -132,7 +132,7 @@ const ROW_KEY_RE = /^\|\s*\\?`([^`\\|]+)\\?`\s*\|/;
 
 /** The longest entry or doc title, counted on the bare title: an entry's readable-ID handle is not part of it. */
 export const ENTRY_TITLE_MAX_LENGTH = 80;
-/** A readable entry ID as an entry's title line carries it (`ACME-P3`, `SAAS-D10`). */
+/** A readable entry ID as an entry's title line carries it (`ACME-P3`, `ACME-K10`). */
 export const ENTRY_HANDLE_ID = "[A-Z][A-Z0-9]*-[A-Z]+[1-9][0-9]*";
 const HANDLE_PREFIX_RE = new RegExp(`^\`(${ENTRY_HANDLE_ID})\`[ \t]+`);
 const TITLE_LINK_SAFE_RE = /`[^`]*`|\[[^\]]*\]\([^)]*\)/g;

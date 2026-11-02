@@ -175,7 +175,7 @@ describe("formatEntryDate", () => {
   });
 });
 
-test("a backticked dotted name in a title renders (SKW-3348)", () => {
+test("a backticked dotted name in a title renders", () => {
   /** When the autolink rule ignores code spans differently in render and parseTitle, a safe title is refused. */
   expect(renderDecision({ ...decision, title: "Adopt `payload.source` as the key" }).split("\n")[0]).toBe("- `ACME-K2` Adopt `payload.source` as the key");
 });

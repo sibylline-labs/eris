@@ -315,7 +315,7 @@ describe("ensureDoc", () => {
   });
 });
 
-describe("an entry render accepts is an entry applyOps accepts (SKW-3348)", () => {
+describe("an entry render accepts is an entry applyOps accepts", () => {
   /** A rendered entry is named by its backticked handle, or by its `hash:` field. */
   const rendered: EntryIdentity = {
     entryId: (block) => /^- `([A-Z][A-Z0-9-]*\d)` /m.exec(block)?.[1] ?? /^ {2}- hash: ([0-9a-f]{8})$/m.exec(block)?.[1] ?? null,
@@ -324,7 +324,7 @@ describe("an entry render accepts is an entry applyOps accepts (SKW-3348)", () =
   const source = { label: "eris#42", url: "https://github.com/acme/app/pull/42" };
   const date = { date: "2026-11-02" };
   const longest = "x".repeat(ENTRY_TITLE_MAX_LENGTH);
-  const handles = [{ id: "SAAS-D10" }, { id: "ABCDEFGH-D999" }, { hash: "0c43" + "e7d3" }];
+  const handles = [{ id: "ACME-K10" }, { id: "ABCDEFGH-K999" }, { hash: "0c43" + "e7d3" }];
 
   for (const handle of handles) {
     for (const title of [longest, "y"]) {
@@ -345,23 +345,23 @@ describe("an entry render accepts is an entry applyOps accepts (SKW-3348)", () =
 
   it("supersedes with an 80-char title on both sides", () => {
     /** When only append was fixed, a supersede whose new or re-rendered entry carries a full-length title is still refused. */
-    const old = renderDecision({ handle: { id: "SAAS-D1" }, title: longest, statement: "s", scope: "org", source, date });
+    const old = renderDecision({ handle: { id: "ACME-K1" }, title: longest, statement: "s", scope: "org", source, date });
     const seeded = applyOps(doc, [{ op: "append_entry", section: "## Current", entryMd: old }], rendered);
     if (!seeded.ok) throw new Error(JSON.stringify(seeded.refusal));
-    const next = renderDecision({ handle: { id: "SAAS-D10" }, title: longest, statement: "t", scope: "org", source, date });
-    const again = renderDecision({ handle: { id: "SAAS-D1" }, title: longest, statement: "s", scope: "org", source, date, supersededBy: "SAAS-D10" });
-    expect(applyOps(seeded.body, [{ op: "supersede_entry", targetId: "SAAS-D1", newEntryMd: next, supersededEntryMd: again }], rendered)).toMatchObject({ ok: true });
+    const next = renderDecision({ handle: { id: "ACME-K10" }, title: longest, statement: "t", scope: "org", source, date });
+    const again = renderDecision({ handle: { id: "ACME-K1" }, title: longest, statement: "s", scope: "org", source, date, supersededBy: "ACME-K10" });
+    expect(applyOps(seeded.body, [{ op: "supersede_entry", targetId: "ACME-K1", newEntryMd: next, supersededEntryMd: again }], rendered)).toMatchObject({ ok: true });
   });
 
   it("still refuses an 81-char title behind a handle", () => {
     /** When stripping the handle also loosened the limit, an over-long hand-written entry reaches the doc. */
-    const md = `- \`SAAS-D10\` ${"x".repeat(ENTRY_TITLE_MAX_LENGTH + 1)}\n  - statement: s`;
+    const md = `- \`ACME-K10\` ${"x".repeat(ENTRY_TITLE_MAX_LENGTH + 1)}\n  - statement: s`;
     expect(applyOps(doc, [{ op: "append_entry", section: "## Current", entryMd: md }], rendered)).toMatchObject({ ok: false, refusal: { kind: "bad-title", reason: "too-long" } });
   });
 
   it("parses the handle off a title line and leaves other code spans in the title", () => {
     /** When any leading code span is stripped as a handle, a title can hide characters from the limit. */
-    expect(parseEntryTitleLine("`SAAS-D10` Adopt the pipe")).toEqual({ ok: true, handleId: "SAAS-D10", title: "Adopt the pipe" as Title });
+    expect(parseEntryTitleLine("`ACME-K10` Adopt the pipe")).toEqual({ ok: true, handleId: "ACME-K10", title: "Adopt the pipe" as Title });
     expect(parseEntryTitleLine("Adopt the pipe")).toEqual({ ok: true, handleId: null, title: "Adopt the pipe" as Title });
     expect(parseEntryTitleLine("`foo` bar")).toEqual({ ok: true, handleId: null, title: "`foo` bar" as Title });
     expect(parseEntryTitleLine(`\`foo\` ${"x".repeat(ENTRY_TITLE_MAX_LENGTH - 5)}`)).toMatchObject({ ok: false, refusal: { reason: "too-long" } });
