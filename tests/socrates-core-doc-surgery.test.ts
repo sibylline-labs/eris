@@ -15,8 +15,12 @@ import { describe, expect, it } from "bun:test";
 import {
   applyOps,
   canonicalizeLinear,
+  ENTRY_TITLE_MAX_LENGTH,
   ensureDoc,
+  parseEntryTitleLine,
   parseTitle,
+  renderDecision,
+  renderPractice,
   writeDoc,
   type DocParent,
   type EntryIdentity,
@@ -308,5 +312,58 @@ describe("ensureDoc", () => {
     const { port, created } = creatorPort(null);
     expect(await ensureDoc(port, parent, title("Test - Practices"), "# Test - Practices\n")).toMatchObject({ ok: true, status: "created" });
     expect(created).toEqual(["Test - Practices"]);
+  });
+});
+
+describe("an entry render accepts is an entry applyOps accepts (SKW-3348)", () => {
+  /** A rendered entry is named by its backticked handle, or by its `hash:` field. */
+  const rendered: EntryIdentity = {
+    entryId: (block) => /^- `([A-Z][A-Z0-9-]*\d)` /m.exec(block)?.[1] ?? /^ {2}- hash: ([0-9a-f]{8})$/m.exec(block)?.[1] ?? null,
+  };
+  const doc = "# Test - Load-Bearing Decisions\n\n## Current\n\n(no entries yet)\n\n## Superseded\n\n(no entries yet)\n";
+  const source = { label: "eris#42", url: "https://github.com/acme/app/pull/42" };
+  const date = { date: "2026-11-02" };
+  const longest = "x".repeat(ENTRY_TITLE_MAX_LENGTH);
+  const handles = [{ id: "SAAS-D10" }, { id: "ABCDEFGH-D999" }, { hash: "0c43" + "e7d3" }];
+
+  for (const handle of handles) {
+    for (const title of [longest, "y"]) {
+      it(`appends a ${title.length}-char title under ${JSON.stringify(handle)}`, () => {
+        /** When the handle counts against the title limit, a title render accepted is refused at resolve as too-long. */
+        for (const md of [
+          renderDecision({ handle, title, statement: "s", scope: "org", source, date }),
+          renderPractice({ handle, title, statement: "s", source, date }),
+        ]) {
+          const result = applyOps(doc, [{ op: "append_entry", section: "## Current", entryMd: md }], rendered);
+          expect(result).toMatchObject({ ok: true });
+          if (!result.ok) return;
+          expect(result.body).toContain(md.split("\n")[0]!);
+        }
+      });
+    }
+  }
+
+  it("supersedes with an 80-char title on both sides", () => {
+    /** When only append was fixed, a supersede whose new or re-rendered entry carries a full-length title is still refused. */
+    const old = renderDecision({ handle: { id: "SAAS-D1" }, title: longest, statement: "s", scope: "org", source, date });
+    const seeded = applyOps(doc, [{ op: "append_entry", section: "## Current", entryMd: old }], rendered);
+    if (!seeded.ok) throw new Error(JSON.stringify(seeded.refusal));
+    const next = renderDecision({ handle: { id: "SAAS-D10" }, title: longest, statement: "t", scope: "org", source, date });
+    const again = renderDecision({ handle: { id: "SAAS-D1" }, title: longest, statement: "s", scope: "org", source, date, supersededBy: "SAAS-D10" });
+    expect(applyOps(seeded.body, [{ op: "supersede_entry", targetId: "SAAS-D1", newEntryMd: next, supersededEntryMd: again }], rendered)).toMatchObject({ ok: true });
+  });
+
+  it("still refuses an 81-char title behind a handle", () => {
+    /** When stripping the handle also loosened the limit, an over-long hand-written entry reaches the doc. */
+    const md = `- \`SAAS-D10\` ${"x".repeat(ENTRY_TITLE_MAX_LENGTH + 1)}\n  - statement: s`;
+    expect(applyOps(doc, [{ op: "append_entry", section: "## Current", entryMd: md }], rendered)).toMatchObject({ ok: false, refusal: { kind: "bad-title", reason: "too-long" } });
+  });
+
+  it("parses the handle off a title line and leaves other code spans in the title", () => {
+    /** When any leading code span is stripped as a handle, a title can hide characters from the limit. */
+    expect(parseEntryTitleLine("`SAAS-D10` Adopt the pipe")).toEqual({ ok: true, handleId: "SAAS-D10", title: "Adopt the pipe" as Title });
+    expect(parseEntryTitleLine("Adopt the pipe")).toEqual({ ok: true, handleId: null, title: "Adopt the pipe" as Title });
+    expect(parseEntryTitleLine("`foo` bar")).toEqual({ ok: true, handleId: null, title: "`foo` bar" as Title });
+    expect(parseEntryTitleLine(`\`foo\` ${"x".repeat(ENTRY_TITLE_MAX_LENGTH - 5)}`)).toMatchObject({ ok: false, refusal: { reason: "too-long" } });
   });
 });

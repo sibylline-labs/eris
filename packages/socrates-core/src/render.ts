@@ -9,6 +9,8 @@
  * render as `{ title, description }`: `prd` and `conflict`.
  */
 
+import { ENTRY_HANDLE_ID, ENTRY_TITLE_MAX_LENGTH, entryTitleLine, parseTitle, type Title } from "./doc-surgery";
+
 /**
  * How a doc entry is identified. Either a readable ID, which goes in the title line (`` - `ACME-P3` Title ``), or
  * an 8-hex content hash, which goes in the last nested bullet (`hash: <8 hex>`). Both are supported so that the
@@ -65,6 +67,7 @@ export type IssueEntry = { title: string; description: string };
 export type EntryRenderReason =
   | "title-multiline"
   | "title-too-long"
+  | "title-autolinkable"
   | "field-multiline"
   | "bad-link"
   | "bad-date"
@@ -82,11 +85,12 @@ export class EntryRenderError extends Error {
   }
 }
 
-export const ENTRY_TITLE_MAX_LENGTH = 80;
+export { ENTRY_TITLE_MAX_LENGTH };
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"] as const;
 
 const LINE_BREAK = /[\r\n\u2028\u2029]/;
+const HANDLE_ID_EXACT = new RegExp(`^${ENTRY_HANDLE_ID}$`);
 
 /**
  * A register ID: an uppercase prefix of one or more segments, then a segment of letters and a number (`ACME-K11`,
@@ -113,7 +117,7 @@ export function renderPractice(entry: PracticeEntry): string {
 function renderDocEntry(entry: PracticeEntry, kindFields: readonly string[]): string {
   const title = checkTitle(entry.title);
   const handle = checkHandle(entry.handle);
-  const titleLine = "id" in handle ? `- \`${handle.id}\` ${title}` : `- ${title}`;
+  const titleLine = entryTitleLine("id" in handle ? handle.id : null, title);
   const fields = [
     singleLine("statement", entry.statement),
     ...kindFields,
@@ -191,21 +195,25 @@ function daysInMonth(year: number, month: number): number {
   return [4, 6, 9, 11].includes(month) ? 30 : 31;
 }
 
-function checkTitle(title: string): string {
+/** The entry-title rule `applyOps` and the submit server enforce (`parseTitle`), raised as an `EntryRenderError`. */
+function checkTitle(title: string): Title {
   if (LINE_BREAK.test(title)) throw new EntryRenderError("title-multiline", "an entry title is one line");
-  const trimmed = title.trim();
-  if (trimmed.length === 0 || trimmed.length > ENTRY_TITLE_MAX_LENGTH) {
-    throw new EntryRenderError(
-      "title-too-long",
-      `an entry title is 1 to ${ENTRY_TITLE_MAX_LENGTH} characters, got ${trimmed.length}`,
-    );
+  const parsed = parseTitle(title);
+  if (parsed.ok) return parsed.title;
+  const reason = parsed.refusal.kind === "bad-title" ? parsed.refusal.reason : "too-long";
+  if (reason === "multi-line") throw new EntryRenderError("title-multiline", "an entry title is one line");
+  if (reason === "autolinkable") {
+    throw new EntryRenderError("title-autolinkable", "an entry title names something Linear autolinks: put a dotted name in backticks");
   }
-  return trimmed;
+  throw new EntryRenderError(
+    "title-too-long",
+    `an entry title is 1 to ${ENTRY_TITLE_MAX_LENGTH} characters, got ${title.trim().length}`,
+  );
 }
 
 function checkHandle(handle: EntryHandle): EntryHandle {
   if ("id" in handle) {
-    if (!/^[A-Z][A-Z0-9]*-[A-Z]+[1-9][0-9]*$/.test(handle.id)) {
+    if (!HANDLE_ID_EXACT.test(handle.id)) {
       throw new EntryRenderError("bad-handle", `${JSON.stringify(handle.id)} is not an entry ID such as ACME-P3`);
     }
     return handle;
