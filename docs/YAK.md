@@ -122,7 +122,9 @@ halves are done, every yak from this machine warns and exits 0 rather than
 failing your task — see [Exit codes](#exit-codes).
 
 `ERIS_YAKS_TOKEN` / `ERIS_YAKS_URL` override the file's `token` / `url` fields
-independently. Nothing else is consulted: a per-source token *is* the ingest
+independently, with one exception: a token from `ERIS_YAKS_TOKEN` is never sent to
+the default URL. With no `ERIS_YAKS_URL` and no `url` in the file, eris refuses with
+[`yak-url-unresolved`](ERRORS.md#yak-url-unresolved) and sends nothing. Nothing else is consulted: a per-source token *is* the ingest
 identity, so it never comes from a file in a repository.
 
 The directory `~/.eris` itself is `0755`; the **file's** mode is the guard. A

@@ -75,11 +75,14 @@ export type IdentityOutcome<T, TSlug extends string = YakIdentitySlug> =
 export {
   DEFAULT_YAKS_URL,
   readYaksFileConfig,
-  resolveToken,
   resolveUrl,
+  resolveYaksBearer,
   writeYaksFileConfig,
   yaksConfigPath,
+  yaksTokenSource,
+  type YaksBearer,
   type YaksFileConfig,
+  type YaksTokenSource,
   type YaksUrlSource,
 } from "../../src/cli/plugin";
 

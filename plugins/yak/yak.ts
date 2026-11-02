@@ -35,8 +35,7 @@
 import { homedir } from "node:os";
 import {
   readYaksFileConfig,
-  resolveToken,
-  resolveUrl,
+  resolveYaksBearer,
   resolveDeviceId,
   resolveExecutionId,
 } from "./yak-identity";
@@ -398,12 +397,11 @@ export async function runYak(opts: RunYakOptions): Promise<RunYakResult> {
   }
   const fileConfig = fileConfigOutcome.value;
 
-  const tokenOutcome = resolveToken(fileConfig, env);
-  if ("reason" in tokenOutcome) {
-    return warnResult(verb, tokenOutcome.slug, tokenOutcome.reason, jsonOutput, noRedactWarning, flags.noRedact);
+  const bearerOutcome = resolveYaksBearer(fileConfig, env);
+  if ("reason" in bearerOutcome) {
+    return warnResult(verb, bearerOutcome.slug, bearerOutcome.reason, jsonOutput, noRedactWarning, flags.noRedact);
   }
-
-  const urlOutcome = resolveUrl(fileConfig, env);
+  const bearer = bearerOutcome.value;
 
   const deviceIdOutcome = await resolveDeviceId(home);
   if ("reason" in deviceIdOutcome) {
@@ -426,8 +424,8 @@ export async function runYak(opts: RunYakOptions): Promise<RunYakResult> {
     deviceId: deviceIdOutcome.value,
     executionId,
     provenance,
-    url: urlOutcome.value,
-    token: tokenOutcome.value,
+    url: bearer.url,
+    token: bearer.token,
     fetchImpl: opts.fetchImpl,
     timeoutMs: opts.timeoutMs,
   });
@@ -462,7 +460,7 @@ export async function runYak(opts: RunYakOptions): Promise<RunYakResult> {
   // vendor's tenant, so the caller's config is not its destination.
   const status = flags.vendor
     ? null
-    : await readStatus(urlOutcome.value, tokenOutcome.value, { fetchImpl: opts.fetchImpl, timeoutMs: Math.min(opts.timeoutMs ?? STATUS_TIMEOUT_MS, STATUS_TIMEOUT_MS) });
+    : await readStatus(bearer.url, bearer.token, { fetchImpl: opts.fetchImpl, timeoutMs: Math.min(opts.timeoutMs ?? STATUS_TIMEOUT_MS, STATUS_TIMEOUT_MS) });
   const configured = status?.configured;
   let stdout: string;
   if (jsonOutput) {

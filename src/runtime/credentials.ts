@@ -11,6 +11,10 @@
  *   - The URL resolves in one order, `--url` → `ERIS_YAKS_URL` → the file's
  *     `url` → `DEFAULT_YAKS_URL`, so every command sends the bearer to the same
  *     place (the `yaks-url-single-resolver` rule holds it).
+ *   - The bearer leaves only as a `YaksBearer`, which carries its URL: an
+ *     `ERIS_YAKS_TOKEN` bearer pairs with a URL someone named, never with
+ *     `DEFAULT_YAKS_URL`, which only the `eris login` file's bearer may use (the
+ *     type holds it; `yaks-token-single-resolver` holds the env read).
  *   - Every function returns a typed outcome, `{ value }` or `{ reason, slug }`,
  *     and never throws.
  */
@@ -121,22 +125,6 @@ export async function writeYaksFileConfig(
   }
 }
 
-/** `ERIS_YAKS_TOKEN` env → `yaks.json`'s `token`. Never includes
- *  the resolved token's own value in a failure message — there IS no token on
- *  the failure path, by construction. */
-export function resolveToken(
-  fileConfig: YaksFileConfig,
-  env: Record<string, string | undefined> = process.env,
-): CredentialOutcome<string, "yak-token-unresolved"> {
-  const fromEnv = env.ERIS_YAKS_TOKEN;
-  if (fromEnv && fromEnv.length > 0) return { value: fromEnv };
-  if (fileConfig.token && fileConfig.token.length > 0) return { value: fileConfig.token };
-  return {
-    reason: "no yaks token: run 'eris login', or set ERIS_YAKS_TOKEN",
-    slug: "yak-token-unresolved",
-  };
-}
-
 /** Where a Yaks endpoint lives when nothing names another one. */
 export const DEFAULT_YAKS_URL = "https://api.sibylline.group";
 
@@ -158,4 +146,57 @@ export function resolveUrl(
   if (fromEnv && fromEnv.length > 0) return { value: fromEnv, source: "env" };
   if (fileConfig.url && fileConfig.url.length > 0) return { value: fileConfig.url, source: "config" };
   return { value: DEFAULT_YAKS_URL, source: "default" };
+}
+
+/** Where the bearer came from: `ERIS_YAKS_TOKEN`, or the `token` in `yaks.json`. */
+export type YaksTokenSource = "env" | "config";
+
+/**
+ * The bearer and the URL it is sent to, resolved together. The `env` arm cannot
+ * hold `urlSource: "default"`, so a token set for one endpoint is never sent
+ * to the built-in host by omission.
+ */
+export type YaksBearer =
+  | { token: string; tokenSource: "config"; url: string; urlSource: YaksUrlSource }
+  | { token: string; tokenSource: "env"; url: string; urlSource: Exclude<YaksUrlSource, "default"> };
+
+/** Which source would supply the bearer, without the bearer: `null` when none does. */
+export function yaksTokenSource(
+  fileConfig: YaksFileConfig,
+  env: Record<string, string | undefined> = process.env,
+): YaksTokenSource | null {
+  if (env.ERIS_YAKS_TOKEN && env.ERIS_YAKS_TOKEN.length > 0) return "env";
+  if (fileConfig.token && fileConfig.token.length > 0) return "config";
+  return null;
+}
+
+/**
+ * The one bearer resolver for every client that sends it: `ERIS_YAKS_TOKEN` →
+ * `yaks.json`'s `token`, paired with `resolveUrl`'s URL. An env bearer with no
+ * named URL fails `yak-url-unresolved` before any request. Neither failure
+ * carries a token value; `fix` is the line a failure block prints.
+ */
+export function resolveYaksBearer(
+  fileConfig: YaksFileConfig,
+  env: Record<string, string | undefined> = process.env,
+  flag?: string,
+): { value: YaksBearer } | { reason: string; slug: "yak-token-unresolved" | "yak-url-unresolved"; fix: string } {
+  const source = yaksTokenSource(fileConfig, env);
+  if (source === null) {
+    return { reason: "no yaks token: run 'eris login', or set ERIS_YAKS_TOKEN", slug: "yak-token-unresolved", fix: "run 'eris login'" };
+  }
+  const url = resolveUrl(fileConfig, env, flag);
+  if (source === "config") {
+    return { value: { token: fileConfig.token as string, tokenSource: "config", url: url.value, urlSource: url.source } };
+  }
+  const token = env.ERIS_YAKS_TOKEN as string;
+  if (url.source === "default") {
+    const fix = "set ERIS_YAKS_URL to the endpoint that token belongs to, or unset ERIS_YAKS_TOKEN and run 'eris login'";
+    return {
+      reason: `ERIS_YAKS_TOKEN is set but no Yaks URL is, so the token is not sent to ${DEFAULT_YAKS_URL}: ${fix}`,
+      slug: "yak-url-unresolved",
+      fix,
+    };
+  }
+  return { value: { token, tokenSource: "env", url: url.value, urlSource: url.source } };
 }

@@ -34,12 +34,15 @@ export { readEnv } from "../runtime/env";
 export {
   DEFAULT_YAKS_URL,
   readYaksFileConfig,
-  resolveToken,
   resolveUrl,
+  resolveYaksBearer,
   writeYaksFileConfig,
   yaksConfigPath,
+  yaksTokenSource,
   type CredentialOutcome,
+  type YaksBearer,
   type YaksFileConfig,
+  type YaksTokenSource,
   type YaksUrlSource,
 } from "../runtime/credentials";
 export { CliExit } from "./args";

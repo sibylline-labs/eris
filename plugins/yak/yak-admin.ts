@@ -27,7 +27,7 @@
  */
 
 import { homedir } from "node:os";
-import { readArgs, readYaksFileConfig, renderFailureBlock, resolveToken, resolveUrl, type VerbContext } from "../../src/cli/plugin";
+import { readArgs, readYaksFileConfig, renderFailureBlock, resolveYaksBearer, type VerbContext } from "../../src/cli/plugin";
 import {
   LinearId,
   YakConfigRead,
@@ -80,9 +80,9 @@ interface Endpoint {
 async function resolveEndpoint(env: Record<string, string | undefined>, home: string): Promise<Outcome<Endpoint>> {
   const file = await readYaksFileConfig(home);
   if ("reason" in file) return failed({ slug: file.slug, what: file.reason });
-  const token = resolveToken(file.value, env);
-  if ("reason" in token) return failed({ slug: token.slug, what: token.reason, fix: "run: eris login" });
-  return { ok: true, value: { url: resolveUrl(file.value, env).value.replace(/\/+$/, ""), token: token.value } };
+  const bearer = resolveYaksBearer(file.value, env);
+  if ("reason" in bearer) return failed({ slug: bearer.slug, what: bearer.reason, fix: bearer.fix });
+  return { ok: true, value: { url: bearer.value.url.replace(/\/+$/, ""), token: bearer.value.token } };
 }
 
 /** The server's `{error: {code}}`, when the body carries one. */

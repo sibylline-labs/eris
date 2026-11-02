@@ -18,7 +18,7 @@
 
 import { homedir } from "node:os";
 import type { ZodType } from "zod";
-import { CliExit, readYaksFileConfig, renderFailureBlock, resolveToken, resolveUrl, type VerbContext } from "../../src/cli/plugin";
+import { CliExit, readYaksFileConfig, renderFailureBlock, resolveYaksBearer, type VerbContext } from "../../src/cli/plugin";
 import type { SocratesProblem } from "./socrates-contract.v1";
 
 /** The `docs/ERRORS.md` slugs the socrates plugin raises (`tests/errors-doc.test.ts`). */
@@ -51,7 +51,7 @@ export function printable(text: string): string {
   return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
 }
 
-export function fail(ctx: VerbContext, slug: SocratesSlug | "yak-config-permissive" | "yak-config-malformed" | "yak-token-unresolved", what: string, fix: string): never {
+export function fail(ctx: VerbContext, slug: SocratesSlug | "yak-config-permissive" | "yak-config-malformed" | "yak-token-unresolved" | "yak-url-unresolved", what: string, fix: string): never {
   ctx.stderr.write(renderFailureBlock({ slug, what, fix }, ctx.erisDir));
   throw new CliExit(1);
 }
@@ -91,9 +91,9 @@ export async function socratesEndpoint(ctx: VerbContext, deps: SocratesDeps): Pr
   const home = deps.home ?? ctx.env.HOME ?? homedir();
   const file = await readYaksFileConfig(home);
   if ("reason" in file) fail(ctx, file.slug, file.reason, "fix or remove the file, then run 'eris login'");
-  const token = resolveToken(file.value, ctx.env);
-  if ("reason" in token) fail(ctx, token.slug, token.reason, "run 'eris login'");
-  return { base: resolveUrl(file.value, ctx.env).value.replace(/\/+$/, ""), token: token.value };
+  const bearer = resolveYaksBearer(file.value, ctx.env);
+  if ("reason" in bearer) fail(ctx, bearer.slug, bearer.reason, bearer.fix);
+  return { base: bearer.value.url.replace(/\/+$/, ""), token: bearer.value.token };
 }
 
 /** Send `call.body` (POST unless the call says PUT) to the endpoint with its bearer and return the decoded reply. */

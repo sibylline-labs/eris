@@ -464,10 +464,19 @@ with stderr empty.
 
 ### yak-url-unresolved
 
-No longer raised. A Yaks base URL always resolves now: `ERIS_YAKS_URL`, then the
-`"url"` in `~/.eris/yaks.json`, then the default `https://api.sibylline.group`.
-An older eris warned with this slug (exit 0) when neither was set; with this
-one, set `ERIS_YAKS_URL` only to use another endpoint.
+`ERIS_YAKS_TOKEN` is set, but no Yaks URL is: no `ERIS_YAKS_URL` and no `"url"`
+in `~/.eris/yaks.json`. eris refuses to send that token to the default
+`https://api.sibylline.group`, because a token in the environment usually
+belongs to another endpoint (a self-hosted one, a CI service token for a
+named host), and sending it there by omission hands a bearer to a host nobody
+named for it. Nothing is sent. Only the token `eris login` writes to
+`~/.eris/yaks.json` falls back to the default URL.
+
+Fix: set `ERIS_YAKS_URL` to the endpoint that token belongs to, or unset
+`ERIS_YAKS_TOKEN` and run `eris login`. Like
+[`yak-token-unresolved`](#yak-token-unresolved), `eris yak issue|suggest|fatal`
+warns and exits 0, and `eris yak status`, `discover`, `config get|set` and
+`eris socrates` print the failure block and exit 1.
 
 ### yak-unreachable
 
