@@ -246,6 +246,38 @@
           {"rubric_version": "rubric@v1", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "pending_candidates": 0, "open_epics": [], "candidate": {"candidate_id": "cand_1", "state": "lost"}, "contract_version": "1.0.0"}
         ]
       }
+    },
+    "settings_team": {
+      "request": {
+        "accept": [
+          {"schema_version": "1.0.0", "team": "3f1c2a9e-5b7d-4e8f-9a01-2b3c4d5e6f70"},
+          {"schema_version": "1.0.0", "project": "platform", "team": null}
+        ],
+        "reject": [
+          {"schema_version": "1.0.0"},
+          {"schema_version": "1.0.0", "team": ""},
+          {"schema_version": "1.0.0", "team": 7},
+          {"team": "3f1c2a9e-5b7d-4e8f-9a01-2b3c4d5e6f70"}
+        ]
+      },
+      "response": {
+        "accept": [
+          {"project": "proj_1", "override": {"id": "3f1c2a9e-5b7d-4e8f-9a01-2b3c4d5e6f70", "key": "ENG"}, "filing_team": {"id": "3f1c2a9e-5b7d-4e8f-9a01-2b3c4d5e6f70", "key": "ENG", "source": "override"}, "contract_version": "1.0.0"},
+          {"project": "proj_1", "override": null, "filing_team": {"id": "7c35c8ec-0acb-456a-9e27-6b7cb7640db5", "key": "SKW", "source": "lead"}, "contract_version": "1.0.0"},
+          {"type": "urn:hera:error:unprocessable", "title": "Unprocessable", "status": 422, "detail": "That team is not on the project", "code": "unprocessable"},
+          {"type": "urn:hera:error:entitlement_lapsed", "title": "Organization entitlement has lapsed", "status": 402, "detail": "This organization is not entitled to socrates", "code": "entitlement_lapsed", "_links": {"subscribe": {"href": "https://example.com/billing/subscribe?product=socrates"}}}
+        ],
+        "reject": [
+          {},
+          {"ok": true},
+          {"ok": false, "error": "x", "code": "x", "status": 402, "message": "x"},
+          {"type": "urn:hera:error:x", "title": "t", "status": 402, "detail": "x", "code": "x", "_links": {"settings": {"href": "javascript:alert(1)"}}},
+          "<html>502 Bad Gateway</html>",
+          null,
+          {"project": "proj_1", "override": null, "filing_team": {"id": "7c35c8ec-0acb-456a-9e27-6b7cb7640db5", "key": "SKW", "source": "default"}, "contract_version": "1.0.0"},
+          {"project": "proj_1", "filing_team": {"id": "7c35c8ec-0acb-456a-9e27-6b7cb7640db5", "key": "SKW", "source": "lead"}, "contract_version": "1.0.0"}
+        ]
+      }
     }
   }
 }
