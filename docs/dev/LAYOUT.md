@@ -42,11 +42,12 @@ src/                    # The TS program the shim and the bin run
 ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN lines
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
-plugins/socrates/       # `eris socrates submit|classify|resolve|discover`: index.ts (the manifest), submit.ts
-                        #   (submit and the group dispatch), client.ts (the credentialed POST every endpoint
+plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consult`: index.ts (the manifest), submit.ts
+                        #   (submit and the group dispatch), client.ts (the credentialed GET, POST or PUT every endpoint
                         #   verb shares), classify.ts (local rubric scoring, HAL override links), resolve.ts
                         #   (a closed review Epic, resolved on the server), discover.ts (first-parent commits
-                        #   after the per-repo cursor in ~/.eris/socrates/cursors.json),
+                        #   after the per-repo cursor in ~/.eris/socrates/cursors.json), consult.ts (a living
+                        #   doc, or a brief of six, read whole over the consult route),
                         #   socrates-contract.v1.ts (the vendored submit contract) and
                         #   socrates-contract.v1.verbs.ts (classify, policy, evidence, consult, resolve,
                         #   status); their golden file is tests/fixtures/socrates-contract-v1.json

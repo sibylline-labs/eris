@@ -799,8 +799,21 @@ token was rejected. For `resolve`, a 404 means the endpoint holds no review
 Epic by that id and a 409 that the Epic is still open (or has more entries
 than one resolve reads); the `fix:` line says which. For `settings team`, a
 403 `admin_required` means only an org admin may change it, and a 422 that the
-team id is not one of the project's teams (the detail lists them). Fix: for a
-401 run `eris login`; otherwise correct what the detail names.
+team id is not one of the project's teams (the detail lists them). For
+`consult`, a 404 means the org has several enrolled projects and `--project`
+was not passed (the detail lists them) or the project has not created that doc,
+and a 409 means no Canon doc has been chosen; when the endpoint sent a settings
+link (`_links.settings`), the `fix:` line is that link. Fix: for a 401 run
+`eris login`; otherwise correct what the detail names.
+
+### socrates-doc-unavailable
+
+A `WARN`, not a failure. `eris socrates consult --brief` could not read one doc
+because the endpoint said the org does not have it (HTTP 404, or 409 for a
+Canon doc nobody has chosen), and went on with the others. The line names the
+doc and the refusal, and the settings link when the endpoint sent one. Fix:
+open the link or create the doc in Linear; a brief that read nothing fails with
+`socrates-refused` instead.
 
 ### socrates-bad-response
 
