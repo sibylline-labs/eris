@@ -24,20 +24,32 @@
  *     ./client.ts, which owns the exchange's own invariants.
  *   - A `prd` or `conflict` candidate is sent only when socrates-core's
  *     `issueEntryOf` files its (redacted) statement; the server runs the same
- *     check before it files the issue.
+ *     check before it files the issue. It is never scored, so it takes no
+ *     `--answer` or `--override`.
+ *   - With `--answer`, the body carries the classification stamp: the inputs
+ *     eris scored (answers, overrides, the repo's `eris.yaml` layer) and the
+ *     org policy hash it scored against, never a verdict. The answers and
+ *     overrides are checked as `classify` checks them, and a repo layer looser
+ *     than the org policy is refused, before anything is sent. The policy is
+ *     fetched (one GET) first when none is cached. Without `--answer`, the
+ *     body and the exchange are what they were without the stamp.
+ *   - A receipt that says the server reclassified the stamp prints a WARN and
+ *     refreshes the cached policy, so the next stamp carries the current hash.
  */
 
 import { isRedactionClass, prepareOutbound, REDACTION_CLASSES, redact, type Override, type RedactionClass, type SecretHit, scanSecrets, scanStrings } from "eris/outbound-scan";
-import { issueEntryOf } from "eris/socrates-core";
+import { CURRENT_RUBRIC, extractFeatures, issueEntryOf } from "eris/socrates-core";
 import { groupArgs, readArgs, renderWarnLines, runErisVerb, type VerbContext } from "../../src/cli/plugin";
-import { fail, postSocrates, printable, type SocratesDeps, socratesEndpoint } from "./client";
+import { ANSWER_FIX, answersOf, OVERRIDE_FIX, overridesOf, pairs } from "./answers";
+import { fail, postSocrates, printable, type SocratesDeps, type SocratesEndpoint, socratesEndpoint } from "./client";
 import plugin from "./index";
-import { SOCRATES_CONTRACT_VERSION, SOCRATES_SUBMIT_PATH, SocratesSubmitRequest, SocratesSubmitResponse } from "./socrates-contract.v1";
+import { localPolicy, readPolicyCache, readRepoPolicy, refreshPolicy, refreshPolicyAfterSubmit } from "./policy";
+import { SOCRATES_CONTRACT_VERSION, SOCRATES_SUBMIT_PATH, type SocratesClassificationStamp, SocratesSubmitRequest, SocratesSubmitResponse } from "./socrates-contract.v1";
 
 export { type SocratesDeps } from "./client";
 
 /** WARN lines this module prints; each has a docs/ERRORS.md heading. */
-export type SocratesWarnSlug = "socrates-redacted" | "socrates-override-unused" | "socrates-override-unreported";
+export type SocratesWarnSlug = "socrates-redacted" | "socrates-override-unused" | "socrates-override-unreported" | "socrates-reclassified";
 
 /** The vendor yak's own POST is bounded at 30s; this covers bun's start on top. */
 const YAK_TIMEOUT_MS = 40_000;
@@ -55,12 +67,15 @@ Run 'eris socrates <command> --help' for its flags.
 `;
 
 export const SUBMIT_USAGE = `Usage: eris socrates submit --title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--now]
+                            [--answer <question>=<answer>... [--override <gate>=<reason>]...]
                             [--allow-redaction <class> --override-reason <text>]
 
 Send one candidate to the Socrates endpoint and print its receipt:
 'submitted: <id>', or 'already submitted: <id>' when the endpoint already
-holds it. --output json prints {candidate_id, deduped, contract_version,
-redactions: {count, classes}, overrides: [class]}.
+holds it, then '  verdict: <verdict> (<rubric>, policy <hash>)' when the
+candidate was stamped. --output json prints {candidate_id, deduped,
+contract_version, classification?, redactions: {count, classes}, overrides:
+[class]}.
 
 Before anything is sent, every field is scanned. A secret (the gitleaks rules)
 refuses the candidate and cannot be overridden. Our redaction classes replace
@@ -75,6 +90,17 @@ what they match with «redacted:<class>» and print a WARN.
   --project <name>     optional project hint, <= 200 chars
   --now                file under today's review Epic straight away (every
                        submit already does; the flag says so explicitly)
+  --answer <question>=<answer>
+                       repeatable, a decision or practice only: stamp the
+                       submit with the rubric answers, as 'eris socrates
+                       classify' takes them. The stamp carries the org policy
+                       hash from ~/.eris/socrates-policy.json (fetched first
+                       when absent) and the eris.yaml socrates.policy layer;
+                       the server scores it under the org's current policy and
+                       a WARN says when that reclassified it
+  --override <gate>=<reason>
+                       repeatable, with --answer: bypass this rejecting gate,
+                       with a one-line reason (<= 200 chars)
   --allow-redaction <class>
                        repeatable: send what this redaction class matched as
                        written. Files one 'eris yak issue --vendor' naming the
@@ -134,14 +160,14 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
     return 0;
   }
   if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates command '${g.sub}'`, "use: classify, discover, resolve, settings, submit\nrun 'eris socrates --help' for the command list");
-  if (g.sub === "classify") return (await import("./classify")).runClassify(g.rest, ctx);
+  if (g.sub === "classify") return (await import("./classify")).runClassify(g.rest, ctx, deps);
   if (g.sub === "resolve") return (await import("./resolve")).runResolve(g.rest, ctx, deps);
   if (g.sub === "discover") return (await import("./discover")).runDiscover(g.rest, ctx, deps);
   if (g.sub === "settings") return (await import("./settings")).runSettings(g.rest, ctx, deps);
 
   const a = readArgs(plugin.rows, "socrates submit", g.rest, ctx, { help: SUBMIT_USAGE });
   if (a === null) return 0;
-  const { "--title": title, "--statement": statement, "--source": source, "--kind": kind, "--project": project, "--now": now, "--allow-redaction": allowArgs, "--override-reason": reason } = a.flags;
+  const { "--title": title, "--statement": statement, "--source": source, "--kind": kind, "--project": project, "--now": now, "--allow-redaction": allowArgs, "--override-reason": reason, "--answer": answerArgs, "--override": overrideArgs } = a.flags;
   const missing = (["--title", "--statement", "--source"] as const).filter((f) => a.flags[f] === undefined);
   if (missing.length > 0) fail(ctx, "socrates-flag-required", `missing ${missing.join(", ")}`, "eris socrates submit --title <text> --statement <text> --source <url>");
   if (allowArgs.length > 0 && reason === undefined) fail(ctx, "socrates-flag-required", "--allow-redaction needs --override-reason", "add --override-reason <why the match is not a secret>");
@@ -149,6 +175,13 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   const unknown = allowArgs.filter((c) => !isRedactionClass(c));
   if (unknown.length > 0) fail(ctx, "socrates-override-invalid", `not a redaction class: ${unknown.map(printable).join(", ")}`, `use one of: ${REDACTION_CLASSES.join(", ")}`);
   const allow = new Set(allowArgs as RedactionClass[]);
+  if (kind === "prd" || kind === "conflict") {
+    if (answerArgs.length > 0) fail(ctx, "socrates-answers-invalid", `a ${kind} entry is not scored, so it takes no rubric answers`, "drop --answer");
+    if (overrideArgs.length > 0) fail(ctx, "socrates-override-invalid", `a ${kind} entry has no gate to override`, "drop --override");
+  }
+  if (answerArgs.length === 0 && overrideArgs.length > 0) fail(ctx, "socrates-flag-required", "--override is only read with --answer", "add the rubric answers with --answer <question>=<answer>..., or drop --override");
+  const answerPairs = pairs(ctx, "--answer", answerArgs, "socrates-answers-invalid", ANSWER_FIX);
+  const overridePairs = Object.entries(pairs(ctx, "--override", overrideArgs, "socrates-override-invalid", OVERRIDE_FIX)).map(([gate, reason]) => ({ gate, reason }));
 
   // The reason travels in the vendor yak, so it is scanned like a field.
   const reasonHits = reason === undefined ? [] : scanSecrets({ "--override-reason": reason });
@@ -171,7 +204,16 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
     const entry = issueEntryOf({ ...candidate, kind: candidate.kind });
     if (!entry.ok) fail(ctx, "socrates-candidate-invalid", `the ${candidate.kind} statement cannot be filed (${printable(entry.reason)})`, "run 'eris socrates classify --help' for the statement grammar");
   }
-  const leaked = scanStrings(parsed.data);
+  let body = parsed.data;
+  let endpoint: SocratesEndpoint | undefined;
+  if (answerArgs.length > 0) {
+    endpoint = await socratesEndpoint(ctx, deps);
+    const classification = await stamp(ctx, deps, endpoint, candidate.statement, answerPairs, overridePairs);
+    const stamped = SocratesSubmitRequest.safeParse({ ...parsed.data, classification });
+    if (!stamped.success) fail(ctx, "socrates-answers-invalid", `the classification stamp does not match the contract (${printable(stamped.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "))})`, ANSWER_FIX);
+    body = stamped.data;
+  }
+  const leaked = scanStrings(body);
   if (leaked.length > 0) secretFound(ctx, leaked);
 
   if (outbound.redactions.count > 0) {
@@ -185,22 +227,54 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
     ctx.stderr.write(renderWarnLines(`--allow-redaction ${unused.join(", ")} matched nothing; no override was reported`, slug));
   }
 
-  const endpoint = await socratesEndpoint(ctx, deps);
+  endpoint ??= await socratesEndpoint(ctx, deps);
   if (outbound.overrides.length > 0) await fileOverrideYak(ctx, outbound.overrides, reason ?? "");
 
-  const reply = await postSocrates(ctx, deps, endpoint, { path: SOCRATES_SUBMIT_PATH, body: parsed.data, decoder: SocratesSubmitResponse, subject: "the candidate" });
+  const reply = await postSocrates(ctx, deps, endpoint, { path: SOCRATES_SUBMIT_PATH, body, decoder: SocratesSubmitResponse, subject: "the candidate" });
+  const classified = reply.classification;
+  if (classified?.reclassified) {
+    const refreshed = await refreshPolicyAfterSubmit(ctx, deps, endpoint);
+    const was = classified.stamped_policy_hash?.slice(0, 12) ?? "";
+    const slug: SocratesWarnSlug = "socrates-reclassified";
+    const cache = refreshed ? "the cached policy is refreshed" : "the cached policy could not be refreshed, so the next stamped submit fetches it";
+    ctx.stderr.write(renderWarnLines(`reclassified under ${classified.policy_hash.slice(0, 12)} (was ${was}): ${classified.verdict}; ${cache}`, slug));
+  }
 
   if (ctx.format === "json") {
     const record = {
       candidate_id: reply.candidate_id,
       deduped: reply.deduped,
       contract_version: reply.contract_version,
+      ...(classified !== undefined ? { classification: classified } : {}),
       redactions: outbound.redactions,
       overrides: [...overridden].sort(),
     };
     ctx.stdout.write(`${JSON.stringify(record)}\n`);
   } else {
     ctx.stdout.write(`${reply.deduped ? "already submitted" : "submitted"}: ${printable(reply.candidate_id)}\n`);
+    if (classified !== undefined) ctx.stdout.write(`  verdict: ${classified.verdict} (${classified.rubric_version}, policy ${classified.policy_hash.slice(0, 12)})\n`);
   }
   return 0;
+}
+
+/**
+ * The classification stamp for a decision or practice: its answers and overrides checked against
+ * the current rubric under the cached org policy (fetched first when none is cached) merged with
+ * the repo layer, which must not loosen it. Nothing of the candidate is sent to build it.
+ */
+async function stamp(ctx: VerbContext, deps: SocratesDeps, endpoint: SocratesEndpoint, statement: string, answerPairs: Record<string, string>, overridePairs: { gate: string; reason: string }[]): Promise<SocratesClassificationStamp> {
+  const rubric = CURRENT_RUBRIC;
+  const answers = answersOf(ctx, rubric, answerPairs);
+  const features = extractFeatures(rubric, statement, { recorded: [] });
+  const repo = await readRepoPolicy(ctx, deps.cwd ?? process.cwd());
+  const cache = (await readPolicyCache(ctx, deps)) ?? (await refreshPolicy(ctx, deps, endpoint));
+  const local = localPolicy(ctx, rubric, cache, repo);
+  const overrides = overridesOf(ctx, rubric, local.policy, overridePairs, answers, features);
+  return {
+    rubric_version: rubric.version,
+    policy_hash: cache.policy_hash,
+    answers: answers as Record<string, string>,
+    ...(overrides.length > 0 ? { overrides } : {}),
+    ...(local.repo_policy !== null ? { repo_policy: local.repo_policy } : {}),
+  };
 }

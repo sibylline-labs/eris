@@ -1,7 +1,7 @@
 /**
  * client.ts — the one exchange every `eris socrates` verb that calls the
  * endpoint makes: the `eris login` url and bearer from the SDK's credential
- * resolvers, one POST, and a body read only through the route's decoder.
+ * resolvers, one request, and a body read only through the route's decoder.
  *
  * Invariants:
  *   - The request body is whatever the caller parsed through the route's
@@ -35,7 +35,9 @@ export type SocratesSlug =
   | "socrates-bad-response"
   | "socrates-not-a-repo"
   | "socrates-cursor-invalid"
-  | "socrates-discover-invalid";
+  | "socrates-discover-invalid"
+  | "socrates-repo-policy-invalid"
+  | "socrates-repo-policy-looser";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -60,8 +62,9 @@ export function fail(ctx: VerbContext, slug: SocratesSlug | "yak-config-permissi
 export interface SocratesCall<T> {
   path: string;
   /** The route's method; `POST` when absent. */
-  method?: "POST" | "PUT";
-  body: unknown;
+  method?: "GET" | "POST" | "PUT";
+  /** The request body; a `GET` sends none. */
+  body?: unknown;
   /** The route's response union: its reply, or the gateway's problem+json. */
   decoder: ZodType<T | SocratesProblem>;
   /** What the endpoint refused, for the failure line: "the candidate". */
@@ -96,17 +99,18 @@ export async function socratesEndpoint(ctx: VerbContext, deps: SocratesDeps): Pr
   return { base: bearer.value.url.replace(/\/+$/, ""), token: bearer.value.token };
 }
 
-/** Send `call.body` (POST unless the call says PUT) to the endpoint with its bearer and return the decoded reply. */
+/** Send `call.body` (POST unless the call names its method; a GET sends no body) to the endpoint with its bearer and return the decoded reply. */
 export async function postSocrates<T extends object>(ctx: VerbContext, deps: SocratesDeps, endpoint: SocratesEndpoint, call: SocratesCall<T>): Promise<T> {
   const url = `${endpoint.base}${call.path}`;
 
   let status: number;
   let body: unknown;
   try {
+    const method = call.method ?? "POST";
     const res = await (deps.fetch ?? fetch)(url, {
-      method: call.method ?? "POST",
-      headers: { "content-type": "application/json", accept: "application/json, application/problem+json", authorization: `Bearer ${endpoint.token}` },
-      body: JSON.stringify(call.body),
+      method,
+      headers: { ...(method === "GET" ? {} : { "content-type": "application/json" }), accept: "application/json, application/problem+json", authorization: `Bearer ${endpoint.token}` },
+      ...(method === "GET" ? {} : { body: JSON.stringify(call.body) }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     status = res.status;

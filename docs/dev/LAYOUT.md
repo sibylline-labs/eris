@@ -43,8 +43,11 @@ ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN li
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
 plugins/socrates/       # `eris socrates submit|classify|resolve|discover`: index.ts (the manifest), submit.ts
-                        #   (submit and the group dispatch), client.ts (the credentialed POST every endpoint
-                        #   verb shares), classify.ts (local rubric scoring, HAL override links), resolve.ts
+                        #   (submit and the group dispatch), client.ts (the credentialed request every endpoint
+                        #   verb shares), classify.ts (local rubric scoring, HAL override links), answers.ts
+                        #   (the --answer/--override parsers classify and submit share), policy.ts (the cached
+                        #   org policy in ~/.eris/socrates-policy.json merged with eris.yaml's stricter-only
+                        #   socrates.policy layer), resolve.ts
                         #   (a closed review Epic, resolved on the server), discover.ts (first-parent commits
                         #   after the per-repo cursor in ~/.eris/socrates/cursors.json),
                         #   socrates-contract.v1.ts (the vendored submit contract) and

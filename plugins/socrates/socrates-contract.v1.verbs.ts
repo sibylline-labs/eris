@@ -17,7 +17,27 @@
  */
 
 import { z } from "zod";
-import { SocratesCandidate, SocratesProblem, SOCRATES_SOURCE_MAX_LENGTH, SOCRATES_SUBMIT_PATH, Url, Version, nonBlank } from "./socrates-contract.v1";
+import {
+  SocratesAnswer as Answer,
+  SocratesCandidate,
+  SocratesKey as Key,
+  SocratesNonNegativeNumber as NonNegativeNumber,
+  SocratesOverrides,
+  SocratesPolicyHash as PolicyHash,
+  SocratesProblem,
+  SocratesRepoPolicy,
+  SocratesRubricAnswers,
+  SocratesRubricVersion as RubricVersion,
+  SocratesVerdict,
+  SOCRATES_SOURCE_MAX_LENGTH,
+  SOCRATES_SUBMIT_PATH,
+  uniqueGates,
+  Url,
+  Version,
+  nonBlank,
+} from "./socrates-contract.v1";
+
+export { SOCRATES_KEY_MAX_LENGTH, SOCRATES_OVERRIDE_REASON_MAX_LENGTH, SocratesOverride, SocratesRepoPolicy, SocratesVerdict } from "./socrates-contract.v1";
 
 /** Every route, so a verb never spells a path or method by hand. */
 export const SOCRATES_ROUTES = {
@@ -32,8 +52,6 @@ export const SOCRATES_ROUTES = {
   settings_team: { method: "PUT", path: "/v1/socrates/settings/team" },
 } as const;
 
-export const SOCRATES_KEY_MAX_LENGTH = 64;
-export const SOCRATES_OVERRIDE_REASON_MAX_LENGTH = 200;
 export const SOCRATES_GATE_REASON_MAX_LENGTH = 500;
 export const SOCRATES_DOC_TITLE_MAX_LENGTH = 500;
 export const SOCRATES_EVIDENCE_MAX_LENGTH = 20_000;
@@ -41,7 +59,6 @@ export const SOCRATES_DOC_MAX_LENGTH = 1_000_000;
 export const SOCRATES_ID_MAX_LENGTH = 200;
 export const SOCRATES_PROJECT_MAX_LENGTH = 200;
 
-export const SocratesVerdict = z.enum(["pass", "fail", "escalate"]);
 export const SocratesGateKind = z.enum(["hard", "soft"]);
 export const SocratesGateOutcome = z.enum(["pass", "fail", "off", "overridden"]);
 export const SocratesVerbosity = z.enum(["spine", "load_bearing", "considered", "chatty", "everything"]);
@@ -52,27 +69,15 @@ export const SocratesDocKind = z.enum(["one_pager", "lbd", "ka", "retro", "canon
 export const SocratesCandidateState = z.enum(["pending", "filed", "needs_input", "resolved", "rejected"]);
 export const SocratesResolveOutcome = z.enum(["resolved", "queued"]);
 
-const Key = z.string().max(SOCRATES_KEY_MAX_LENGTH).regex(/^[a-z][a-z0-9_]*$/, "must be a snake_case key");
-/** Published answers are kebab-case; `_` stays legal so every value `Key` accepted still decodes. */
-const Answer = z.string().max(SOCRATES_KEY_MAX_LENGTH).regex(/^[a-z][a-z0-9_-]*$/, "must be a lowercase rubric answer");
-const RubricVersion = z.string().regex(/^rubric@v[1-9][0-9]*$/, "must be rubric@v<N>");
-const PolicyHash = z.string().regex(/^[0-9a-f]{64}$/, "must be a lowercase sha256 hex");
 const IsoDatetime = z
   .string()
   .regex(
     /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/,
     "must be an ISO 8601 datetime with an offset",
   );
-const OneLine = z
-  .string()
-  .min(1)
-  .max(SOCRATES_OVERRIDE_REASON_MAX_LENGTH)
-  .regex(/^[^\r\n]*$/, "must be a single line")
-  .refine((s) => s.trim().length > 0, "must not be blank");
 const Id = nonBlank(SOCRATES_ID_MAX_LENGTH);
 const ProjectHint = nonBlank(SOCRATES_PROJECT_MAX_LENGTH);
 const NonNegativeInt = z.number().int().min(0);
-const NonNegativeNumber = z.number().finite().min(0);
 const Provenance = z
   .string()
   .max(SOCRATES_SOURCE_MAX_LENGTH)
@@ -81,18 +86,15 @@ const Provenance = z
     "must be an http(s) URL or repo@sha:path#L<n>",
   );
 
-const uniqueGates = (items: readonly { gate: string }[]) => new Set(items.map((i) => i.gate)).size === items.length;
-
 // --- classify ---------------------------------------------------------------
-
-export const SocratesOverride = z.object({ gate: Key, reason: OneLine });
 
 export const SocratesClassifyRequest = z.object({
   schema_version: Version,
   rubric_version: RubricVersion,
   candidate: SocratesCandidate,
-  answers: z.record(Key, Answer).refine((a) => Object.keys(a).length > 0, "needs at least one rubric answer"),
-  overrides: z.array(SocratesOverride).min(1).refine(uniqueGates, "one override per gate").optional(),
+  answers: SocratesRubricAnswers,
+  overrides: SocratesOverrides.optional(),
+  repo_policy: SocratesRepoPolicy.optional(),
 });
 export type SocratesClassifyRequest = z.infer<typeof SocratesClassifyRequest>;
 

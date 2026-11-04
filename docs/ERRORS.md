@@ -699,7 +699,7 @@ A `WARN`, exit 0: `ERIS_YAKS_TOKEN` is set, and it wins over the token in
 ### socrates-unknown-verb
 
 `eris socrates` was given a command it does not have. Fix: use `classify`,
-`discover`, `resolve` or `submit`, or run `eris socrates --help`.
+`discover`, `resolve`, `settings` or `submit`, or run `eris socrates --help`.
 
 ### socrates-flag-required
 
@@ -708,7 +708,8 @@ A `WARN`, exit 0: `ERIS_YAKS_TOKEN` is set, and it wins over the token in
 pass all three. Also raised when `submit`'s `--allow-redaction` and
 `--override-reason` are not given together, and when `classify --request` is
 given with another flag: the request carries the whole candidate, so pass
-everything inside it or drop it. `eris socrates resolve` raises it when the
+everything inside it or drop it, and when `submit --override` is given without
+`--answer`. `eris socrates resolve` raises it when the
 Epic is missing or is not an identifier (blank, or over 200 characters);
 nothing was sent. Fix: pass the Epic's identifier, as the Epic's Socrates
 comment prints the command.
@@ -725,12 +726,14 @@ fields.
 
 ### socrates-answers-invalid
 
-`eris socrates classify` was given answers that do not fit the rubric: a
-question has no answer, an answer is not one of its question's enum values, a
-key is not one of the rubric's questions, a question is answered twice, or an
-`--answer` is not `<question>=<answer>`. Nothing was scored. The `fix:` lines
-list every question with its answers. Fix: answer every question once, with
-one of its answers.
+`eris socrates classify` (or `submit --answer`) was given answers that do not
+fit the rubric: a question has no answer, an answer is not one of its
+question's enum values, a key is not one of the rubric's questions, a question
+is answered twice, or an `--answer` is not `<question>=<answer>`. Nothing was
+scored or sent. The `fix:` lines list every question with its answers. Fix:
+answer every question once, with one of its answers. Also raised when a `prd`
+or `conflict` candidate is given `--answer`: it is never scored. Fix: drop
+`--answer`.
 
 ### socrates-secret-detected
 
@@ -748,12 +751,13 @@ Fix: remove the secret from the named field and run the command again.
 eris's redaction classes. Nothing was sent. Fix: use a class the `fix:` line
 lists, or drop the flag.
 
-For `eris socrates classify --override <gate>=<reason>`, it means the override
-cannot apply. The reason is missing, blank, multi-line or over 200
-characters. Or the gate is not one of the rubric's gates, routes the candidate
-(a practice, an inferred premise) rather than rejecting it, does not reject
-these answers, or is named twice. Nothing was scored. Fix: override only the
-gate a rejection named, once, with a one-line reason.
+For `eris socrates classify --override <gate>=<reason>` (or `submit
+--override`), it means the override cannot apply. The reason is missing,
+blank, multi-line or over 200 characters. Or the gate is not one of the
+rubric's gates, routes the candidate (a practice, an inferred premise) rather
+than rejecting it, is turned off by the policy, does not reject these answers,
+or is named twice. Nothing was scored or sent. Fix: override only the gate a
+rejection named, once, with a one-line reason.
 
 ### socrates-redacted
 
@@ -776,10 +780,52 @@ ended). The candidate was sent anyway: a yak never fails the task it reports
 on. Fix: see the named yak slug; a problem with eris itself is reported on the
 vendor route, the eris project's own tracker.
 
+### socrates-reclassified
+
+A `WARN`, not a failure. `eris socrates submit --answer` stamped the candidate
+with the org policy hash it had cached, and the server's policy has changed
+since: it scored the stamp under its current policy. The line names the
+current hash, the stamped one, and the server's verdict, which is the one that
+counts. eris refreshes `~/.eris/socrates-policy.json` (or, when that fails,
+removes it so the next stamped submit fetches it). Fix: none needed; run
+`eris socrates classify` again to see the verdict under the current policy.
+
+### socrates-repo-policy-invalid
+
+The nearest `eris.yaml` sets a `socrates` block that a repo may not set. A
+repo's layer can only make the org's policy stricter, so `socrates` holds only
+`policy`, and `policy` only these keys:
+
+```yaml
+socrates:
+  policy:
+    threshold: 5          # a number >= 0, at least the org's threshold
+    gates:
+      end_condition:
+        enabled: true     # turn a hard gate on (never off, never a weight)
+    auto_resolve: false   # pin auto-resolve off (never true)
+```
+
+Any other key (`verbosity`, `escalation`, `reporting`, a weight, `enabled:
+false`, YAML 1.1's `on`) is refused, not dropped. The `ERROR` line names the
+file and each offending key. Nothing was scored or sent. Fix: remove or
+correct the named keys.
+
+### socrates-repo-policy-looser
+
+The nearest `eris.yaml`'s `socrates.policy` parses, but would loosen the org's
+policy: its `threshold` is below the org's (as `eris socrates submit` cached it
+in `~/.eris/socrates-policy.json`, else the rubric's own threshold), or it
+names a question that is not a hard gate of the rubric being scored. The
+`ERROR` line names the file and each problem. Nothing was scored or sent.
+Fix: raise `threshold` to at least the org's or remove it; name only hard
+gates.
+
 ### socrates-unreachable
 
-The request to the endpoint (`<url>/v1/socrates/submit`, or
-`/v1/socrates/resolve`) did not complete: the host could
+The request to the endpoint (`<url>/v1/socrates/submit`,
+`/v1/socrates/resolve`, or the `/v1/socrates/policy` fetch `submit --answer`
+makes when no policy is cached) did not complete: the host could
 not be reached, or no answer arrived within 30 seconds. The url is the one
 `eris login` saved (or `ERIS_YAKS_URL`). Nothing is retried. Fix: check the
 url and the connection, then run the command again.

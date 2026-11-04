@@ -126,3 +126,39 @@ export async function runCommand(argv: readonly string[], opts: { env: Record<st
   const { nodeRunner } = await import("../runtime/process");
   return nodeRunner.run(argv, { timeoutMs: opts.timeoutMs, env: opts.env, ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}) });
 }
+
+/** A checkout never nests this deep; the bound keeps a symlink cycle from making the walk unbounded. */
+const ERIS_YAML_WALK_MAX_DEPTH = 64;
+
+/**
+ * The nearest `eris.yaml` at or above `startDir`, parsed but never merged
+ * (no root/leaf merge, no excludes or overrides): its path and its YAML value.
+ * The walk stops at the enclosing git checkout's root (a `.git` entry, file or
+ * directory), so it never reads a sibling repo's manifest above this one, and
+ * at a hard depth bound. The nearest manifest wins even when it is unreadable
+ * or not YAML: that is `undefined`, never a throw, and the walk does not go
+ * past it. The fs modules load on the first call, not at shell start.
+ */
+export async function nearestErisYaml(startDir: string): Promise<{ readonly path: string; readonly value: unknown } | undefined> {
+  const [{ promises: fs }, { dirname, join }] = await Promise.all([import("node:fs"), import("node:path")]);
+  let dir = startDir;
+  for (let i = 0; i < ERIS_YAML_WALK_MAX_DEPTH; i++) {
+    const path = join(dir, "eris.yaml");
+    try {
+      const raw = await fs.readFile(path, "utf8");
+      return { path, value: Bun.YAML.parse(raw) };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") return undefined;
+    }
+    try {
+      await fs.access(join(dir, ".git"));
+      return undefined;
+    } catch {
+      // not the checkout root: keep walking
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+  return undefined;
+}

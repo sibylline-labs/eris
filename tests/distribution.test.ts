@@ -93,6 +93,7 @@ describe("the package's exports", () => {
       "installRootIsUnwritten",
       "isCompiled",
       "main",
+      "nearestErisYaml",
       "nodeRunner",
       "ok",
       "onPath",
