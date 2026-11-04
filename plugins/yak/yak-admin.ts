@@ -213,6 +213,13 @@ export async function runStatus(args: string[], ctx: VerbContext, deps: AdminDep
     table([
       ["configured:", s.configured ? "yes" : "no"],
       ["observations:", String(s.observation_count)],
+      // A server that predates the pending fields answers neither: print the three rows it did.
+      ...(s.pending_count === undefined
+        ? []
+        : [
+            ["pending:", String(s.pending_count)],
+            ["oldest pending:", s.oldest_pending_received_at ?? "none"],
+          ]),
       ["last filed:", s.last_filed_issue_identifier ?? "none"],
     ]),
   );
