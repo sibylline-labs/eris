@@ -13,7 +13,8 @@
  *   - A consult is a read: a GET with a query and no body (./client.ts types the two apart), one
  *     attempt per doc, no retry, no state kept.
  *   - Doc text reaches stdout only through `renderSection`, which strips terminal controls
- *     (`printableMarkdown`). `--output json` carries the text as JSON, which escapes it.
+ *     (`printableMarkdown`). `--output json` carries the server's text unmodified, as JSON.
+ *   - A reply must be the doc that was asked for; one that names another doc is `socrates-bad-response`.
  *   - Output is held back until every doc is read: a refusal that aborts a brief prints no half-brief.
  *   - A brief skips a doc only when the endpoint says it is not there (404, 409) and says so on stderr
  *     with the refusal's settings link; any other refusal aborts it. A brief that read no doc fails
@@ -112,6 +113,7 @@ export async function runConsult(args: string[], ctx: VerbContext, deps: Socrate
     };
     const outcome = await sendSocrates(ctx, deps, endpoint, call);
     if (outcome.kind === "reply") {
+      if (outcome.reply.doc !== request.doc) fail(ctx, "socrates-bad-response", `asked for the ${request.doc} doc and the endpoint answered with the ${printable(outcome.reply.doc)} doc`, "check the url points at a Socrates endpoint");
       read.push(outcome.reply);
       continue;
     }

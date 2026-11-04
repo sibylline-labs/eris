@@ -104,6 +104,13 @@ describe("eris socrates consult: one doc", () => {
     expect(await drive(["consult", "--canon"])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-bad-response" });
   });
 
+  it("refuses a reply that is another doc than the one asked for", async () => {
+    /** When the reply's doc is trusted, a wrong or replayed answer is printed under the wrong marker as if it were Canon; observed as the slug and empty stdout. */
+    answer = () => Response.json(doc("canon"));
+    expect(await drive(["consult", "--practices", "--project", "P"])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-bad-response" });
+    expect(await drive(["consult", "--brief", "--project", "P"])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-bad-response" });
+  });
+
   it("strips terminal controls from the markdown and keeps newlines and tabs", async () => {
     /** When server text reaches the terminal with an ESC, C1 or BEL, the endpoint can drive the user's terminal; observed on stdout bytes. */
     answer = (d) => Response.json(doc(d, "a\u001b[31mred\u001b[0m\u009b\u0007 b\r\nc\rd\te\n"));
