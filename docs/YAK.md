@@ -404,6 +404,7 @@ receipt does not carry it). A vendor yak reads no status.
 | Verb | Endpoint | Who | stdout (text) | `--output json` |
 |---|---|---|---|---|
 | `eris yak status` | `GET /v1/yaks/status` | any token | `configured`, `observations`, `pending`, `oldest pending`, `last filed` | `{configured, observation_count, last_filed_issue_identifier, pending_count?, oldest_pending_received_at?}` (the last two are absent from an older server) |
+| `eris yak ready` | `GET /v1/yaks/status` | any token | one readiness line, then when to file (below) | `{ready, signed_in, endpoint, configured, last_filed_issue_identifier, fix}` |
 | `eris yak discover [kind]` | `GET /v1/yaks/discovery[?team_id=]` | org admin | the teams (the chosen one starred), and that team's projects, states (the Triage default marked) and labels, each with its id | `{teams, team_id, projects, workflow_states, labels, default_state_id}` |
 | `eris yak config get` | `GET /v1/yaks/config` | any token | `configured: no`, or the team, project, state, labels and last writer | `{configured: false}` or `{configured: true, config, updated_at, updated_by}` |
 | `eris yak config set …` | `PUT /v1/yaks/config` | org admin | the stored config | `{config, updated_at, updated_by}` |
@@ -455,8 +456,50 @@ destination at all, and names the last issue it filed.
 ## Discoverability
 
 `eris yak --help` and this doc only help someone who already went looking for
-the verb. Teaching an agent that `eris yak` exists is the agent harness's
-job (a skill, a rule, or the project's agent instructions), not this CLI's.
+the verb. Teaching an agent that `eris yak` exists is the agent harness's job:
+a skill, the project's agent instructions, or a session-start hook that runs
+`eris yak ready`.
+
+### `eris yak ready`: the session-start report
+
+`eris yak ready` says whether this machine can file yaks, and, when it can, how
+and when to file. It is built for a coding agent's session-start hook: it
+always exits `0`, writes nothing to stderr, and reads at most one
+`GET /v1/yaks/status`, bounded at 3 seconds. The first line is the state:
+
+| State | First line | Filing guide follows | json `endpoint` |
+|---|---|---|---|
+| ready | `yaks: ready (last filed <id>)` | yes | `ok` |
+| parked | `yaks: signed in, but no destination is set, so yaks are parked …` | yes | `ok` |
+| no token | `yaks: not signed in: run 'eris login' …` | no | `skipped` |
+| `ERIS_YAKS_TOKEN` without `ERIS_YAKS_URL` | names the variable to set | no | `skipped` |
+| a permissive or malformed `~/.eris/yaks.json` | names the file and the fix | no | `skipped` |
+| token refused (401) | `yaks: the yaks endpoint refused this machine's token: run 'eris login' …` | no | `refused` |
+| endpoint unreachable | `yaks: signed in, but <what failed> …` | yes | `unreachable` |
+
+The guide lists `issue`, `suggest` and `fatal` with their one-line meanings and
+the `--summary`, `--body` and `--repro` flags. Under `--output json` the record
+is `{ready, signed_in, endpoint, configured, last_filed_issue_identifier, fix}`;
+`configured` and `last_filed_issue_identifier` are `null` when the status was not
+read, and `fix` names the next command, `null` when ready. The host is the one
+`~/.eris/yaks.json` or `ERIS_YAKS_URL` names; the token is never printed.
+
+In Claude Code, a `SessionStart` hook puts the report into every session's
+context. Merge this into the project's `.claude/settings.json` (or the user's
+`~/.claude/settings.json`), keeping any hooks already there:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "eris yak ready", "timeout": 10 }] }
+    ]
+  }
+}
+```
+
+With no `matcher`, it runs on startup, resume, `/clear` and compaction, so the
+guide comes back after the context is compacted.
 
 ## Not built here
 

@@ -1,5 +1,5 @@
 /**
- * `eris yak status`, `discover`, `config get|set`, and the parked-yak WARN a
+ * `eris yak status`, `ready`, `discover`, `config get|set`, and the parked-yak WARN a
  * delivered `eris yak issue|suggest|fatal` raises when its org has no
  * destination.
  *
@@ -10,12 +10,13 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { YAKS_CONTRACT_VERSION } from "eris/yak-contract";
 import { runYakVerb } from "../plugins/yak/handlers";
-import { runStatus } from "../plugins/yak/yak-admin";
+import { runReady, runStatus } from "../plugins/yak/yak-admin";
 import { CliExit } from "../src/cli/ts-verb";
+import { DEFAULT_YAKS_URL } from "../src/runtime/credentials";
 
 const REPO = resolve(import.meta.dir, "..");
 
@@ -203,6 +204,110 @@ describe("eris yak status", () => {
     expect(stderr).toContain("slug: yak-url-unresolved");
     expect(stderr).toContain("ERIS_YAKS_URL");
     expect(fetched).toEqual([]);
+  });
+});
+
+describe("eris yak ready", () => {
+  const configured = () => (routes["GET /v1/yaks/status"] = () => Response.json({ configured: true, observation_count: 9, last_filed_issue_identifier: "ABC-123" }));
+  const bare = (env: Record<string, string | undefined>) => ({ PATH: process.env.PATH, HOME: home, ...env });
+
+  async function ready(env: Record<string, string | undefined>, format: "text" | "json" = "text", timeoutMs?: number): Promise<Captured> {
+    let stdout = "";
+    let stderr = "";
+    const rc = await runReady(
+      [],
+      { erisDir: REPO, env, format, stdout: { write: (s: string) => ((stdout += s), true) }, stderr: { write: (s: string) => ((stderr += s), true) } },
+      { home, ...(timeoutMs === undefined ? {} : { timeoutMs }) },
+    );
+    return { rc, stdout, stderr };
+  }
+  const loopback = () => bare({ ERIS_YAKS_URL: `http://127.0.0.1:${server.port}`, ERIS_YAKS_TOKEN: "tok" });
+
+  it("ready: one readiness line, then the filing guide naming all three verbs; exit 0, stderr empty", async () => {
+    /** When a ready machine's hook output omits the guide, the agent never learns when to file and the friction case goes unreported: observed on stdout. */
+    configured();
+    const r = await yak(["ready"]);
+    expect(r.rc).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout.split("\n")[0]).toBe("yaks: ready (last filed ABC-123)");
+    for (const verb of ["eris yak issue", "eris yak suggest", "eris yak fatal", "--summary", "--body"]) expect(r.stdout).toContain(verb);
+    expect(requests).toEqual([expect.objectContaining({ method: "GET", path: "/v1/yaks/status", auth: "Bearer tok" })]);
+  });
+
+  it("parked: says yaks are parked and names the config set fix, still with the guide", async () => {
+    /** When a parked org reads as ready, the agent files into a void no one triages: observed on stdout. */
+    const r = await yak(["ready"]);
+    expect(r.rc).toBe(0);
+    expect(r.stdout.split("\n")[0]).toContain("no destination is set");
+    expect(r.stdout).toContain("eris yak config set --team <key>");
+    expect(r.stdout).toContain("eris yak issue");
+  });
+
+  it("no token: the eris login nudge, no request, no guide; exit 0", async () => {
+    /** When the no-token case fails the hook (exit 1) or omits the nudge, a session start shows an error instead of the one command that fixes it: observed at the exit code, stdout and the request log. */
+    const r = await ready(bare({}));
+    expect(r).toEqual({ rc: 0, stdout: expect.stringContaining("run 'eris login'"), stderr: "" });
+    expect(r.stdout).not.toContain("eris yak issue");
+    expect(requests).toHaveLength(0);
+  });
+
+  it("ERIS_YAKS_TOKEN without a URL: names ERIS_YAKS_URL, sends nothing", async () => {
+    /** When an env bearer falls through to the built-in host, the hook would send this tenant's token to another: observed at the request log and the injected fetch. */
+    const r = await ready(bare({ ERIS_YAKS_TOKEN: "tok" }));
+    expect(r.rc).toBe(0);
+    expect(r.stdout).toContain("ERIS_YAKS_URL");
+    expect(requests).toHaveLength(0);
+  });
+
+  it("a group-readable yaks.json: names the file problem and the chmod fix, exit 0", async () => {
+    /** When a permissive token file fails the hook, every session start errors; when it reads as signed out, the user re-logs-in to no effect. */
+    mkdirSync(join(home, ".eris"), { recursive: true });
+    await Bun.write(join(home, ".eris", "yaks.json"), JSON.stringify({ url: "http://127.0.0.1:1", token: "tok" }));
+    chmodSync(join(home, ".eris", "yaks.json"), 0o644);
+    const r = await ready(bare({}));
+    expect(r.rc).toBe(0);
+    expect(r.stdout).toContain("chmod 600");
+    expect(requests).toHaveLength(0);
+  });
+
+  it("401: says the token was refused and nudges eris login", async () => {
+    /** When a revoked token reads as 'unreachable', the agent waits on the network instead of signing in again. */
+    routes["GET /v1/yaks/status"] = () => Response.json({ error: { code: "unauthorized", message: "x" } }, { status: 401 });
+    const r = await ready(loopback());
+    expect(r.rc).toBe(0);
+    expect(r.stdout.split("\n")[0]).toContain("refused");
+    expect(r.stdout).toContain("run 'eris login'");
+  });
+
+  it("an endpoint that never answers: bounded by the timeout, reported unreachable with the guide, exit 0", async () => {
+    /** When the status read is unbounded, a dead endpoint hangs every session start until Claude Code kills the hook. */
+    routes["GET /v1/yaks/status"] = () => new Promise<Response>(() => {}) as unknown as Response;
+    const t0 = performance.now();
+    const r = await ready(loopback(), "text", 50);
+    expect(performance.now() - t0).toBeLessThan(2000);
+    expect(r.rc).toBe(0);
+    expect(r.stdout.split("\n")[0]).toContain("did not answer");
+    expect(r.stdout).toContain("eris yak issue");
+  });
+
+  it("json: the typed record per state, stderr empty", async () => {
+    /** When json mode drops a field or prints prose, a harness that reads readiness breaks: observed on stdout for two states. */
+    configured();
+    expect(JSON.parse((await yak(["ready"], "json")).stdout)).toEqual({ ready: true, signed_in: true, endpoint: "ok", configured: true, last_filed_issue_identifier: "ABC-123", fix: null });
+    const none = await ready(bare({}), "json");
+    expect(none.stderr).toBe("");
+    expect(JSON.parse(none.stdout)).toEqual({ ready: false, signed_in: false, endpoint: "skipped", configured: null, last_filed_issue_identifier: null, fix: "eris login" });
+  });
+
+  it("never prints the bearer or a built-in host", async () => {
+    /** When the hook echoes the token or a vendor host, every session transcript carries a credential or another tenant's address: observed on both streams across states. */
+    configured();
+    const outs = [await yak(["ready"]), await ready(bare({})), await ready(loopback(), "json")];
+    for (const o of outs) {
+      expect(o.stdout + o.stderr).not.toContain("tok\n");
+      expect(o.stdout + o.stderr).not.toContain("Bearer");
+      expect(o.stdout + o.stderr).not.toContain(new URL(DEFAULT_YAKS_URL).host);
+    }
   });
 });
 
