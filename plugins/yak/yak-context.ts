@@ -201,7 +201,7 @@ async function gatherRepo(cwd: string): Promise<Record<string, unknown>> {
 /** The nearest `eris.yaml`'s top-level `service:`, read raw (`nearestErisYaml`, the SDK's bounded walk). */
 async function findNearestErisYamlService(startDir: string): Promise<string | undefined> {
   const found = await nearestErisYaml(startDir);
-  const value = found?.value;
+  const value = found?.ok === true ? found.value : undefined;
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
   const service = (value as Record<string, unknown>).service;
   return typeof service === "string" && service.length > 0 ? service : undefined;

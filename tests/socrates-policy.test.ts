@@ -113,6 +113,14 @@ describe("mergeRepoPolicy", () => {
     ]);
   });
 
+  // admits: a prototype key read as a question, or a NaN threshold slipping past "below the org's", merged as a layer.
+  it("refuses a prototype key as not a question, and a NaN threshold", () => {
+    const r = merge({ gates: { constructor: { enabled: true as const } }, threshold: Number.NaN });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.problems).toEqual([`constructor is not a question of ${rubric.version}`, "threshold NaN is below the org's 5"]);
+  });
+
   // admits: merging twice drifting the policy, so a reclassify differs from the first score.
   it("is idempotent", () => {
     const layer: RepoPolicy = { threshold: 7, gates: { [gate[0]]: { enabled: true } }, auto_resolve: false };

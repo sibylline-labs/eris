@@ -56,6 +56,8 @@ export function policyCachePath(ctx: VerbContext, deps: SocratesDeps): string {
 export async function readRepoPolicy(ctx: VerbContext, cwd: string): Promise<RepoLayer | undefined> {
   const found = await nearestErisYaml(cwd);
   if (found === undefined) return undefined;
+  // A manifest that cannot be read could carry a stricter layer: refuse it rather than score without it.
+  if (!found.ok) fail(ctx, "socrates-repo-policy-invalid", `${found.path}: ${printable(found.error)}`, "fix the eris.yaml so it parses, then run the command again");
   const { path, value } = found;
   if (value === null || typeof value !== "object" || Array.isArray(value) || !Object.hasOwn(value, "socrates")) return undefined;
   const parsed = ErisYamlSocrates.safeParse((value as Record<string, unknown>).socrates);

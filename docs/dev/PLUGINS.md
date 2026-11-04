@@ -107,8 +107,9 @@ export const runWidgets: VerbHandler = async (args, ctx) => {
   yourself.
 - Read the repo's own `eris.yaml` with **`nearestErisYaml(startDir)`**: the
   nearest one at or above `startDir`, stopping at the git checkout's root, as
-  `{path, value}` (parsed, never merged), or `undefined` when there is none or
-  it cannot be read. It never throws.
+  `{ok: true, path, value}` (parsed, never merged), `{ok: false, path, error}`
+  when the nearest one cannot be read or is not YAML (the walk does not go past
+  it), or `undefined` when there is none. It never throws.
 
 ## What a plugin may import
 

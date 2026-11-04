@@ -113,12 +113,13 @@ export function mergeRepoPolicy<P extends ScoringPolicy>(rubric: RubricDefinitio
   const problems: string[] = [];
   const gates: Record<string, PolicyGate> = { ...org.gates };
   for (const id of Object.keys(repo.gates ?? {})) {
-    const q = rubric.questions[id];
+    const q = Object.hasOwn(rubric.questions, id) ? rubric.questions[id] : undefined;
     if (q === undefined) problems.push(`${id} is not a question of ${rubric.version}`);
     else if (q.kind !== "gate") problems.push(`${id} is a soft question of ${rubric.version}; a repo can only turn a gate on`);
     else gates[id] = { enabled: true, weight: 0 };
   }
-  if (repo.threshold !== undefined && repo.threshold < org.threshold) {
+  // Written as "not at least" so a NaN threshold is refused too.
+  if (repo.threshold !== undefined && !(repo.threshold >= org.threshold)) {
     problems.push(`threshold ${repo.threshold} is below the org's ${org.threshold}`);
   }
   if (problems.length > 0) return { ok: false, problems };

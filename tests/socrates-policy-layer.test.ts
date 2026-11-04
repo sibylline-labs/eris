@@ -113,6 +113,15 @@ describe("eris socrates classify under the repo layer and the cached org policy"
     expect(await drive(["classify", ...CANDIDATE, ...answers()])).toMatchObject({ rc: 1, slug: "socrates-repo-policy-invalid" });
   });
 
+  // admits: an eris.yaml that does not parse dropping its repo layer, so a repo's raised threshold is silently ignored; observed at the slug naming the file.
+  it("refuses an eris.yaml that is not YAML instead of scoring without its layer", async () => {
+    erisYaml("socrates:\n  policy:\n    threshold: 99\n  [unclosed\n");
+    const r = await drive(["classify", ...CANDIDATE, ...answers()]);
+    expect({ rc: r.rc, slug: r.slug, stdout: r.stdout }).toEqual({ rc: 1, slug: "socrates-repo-policy-invalid", stdout: "" });
+    expect(r.stderr).toContain(join(cwd, "eris.yaml"));
+    expect(calls).toEqual([]);
+  });
+
   // admits: a threshold below the cached org's is clamped or applied, so a repo loosens the org policy; observed at the slug. Only the runtime org value can decide it.
   it("refuses a repo threshold below the cached org's", async () => {
     writeCache(policyResult(H1, ORG_V2));

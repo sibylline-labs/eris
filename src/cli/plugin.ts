@@ -136,19 +136,33 @@ const ERIS_YAML_WALK_MAX_DEPTH = 64;
  * The walk stops at the enclosing git checkout's root (a `.git` entry, file or
  * directory), so it never reads a sibling repo's manifest above this one, and
  * at a hard depth bound. The nearest manifest wins even when it is unreadable
- * or not YAML: that is `undefined`, never a throw, and the walk does not go
- * past it. The fs modules load on the first call, not at shell start.
+ * or not YAML: that is `{ok: false, path, error}`, never a throw, and the walk
+ * does not go past it, so a caller that must not ignore a broken manifest can
+ * refuse it. No manifest is `undefined`. The fs modules load on the first
+ * call, not at shell start.
  */
-export async function nearestErisYaml(startDir: string): Promise<{ readonly path: string; readonly value: unknown } | undefined> {
+export type NearestErisYaml =
+  | { readonly ok: true; readonly path: string; readonly value: unknown }
+  | { readonly ok: false; readonly path: string; readonly error: string };
+
+export async function nearestErisYaml(startDir: string): Promise<NearestErisYaml | undefined> {
   const [{ promises: fs }, { dirname, join }] = await Promise.all([import("node:fs"), import("node:path")]);
   let dir = startDir;
   for (let i = 0; i < ERIS_YAML_WALK_MAX_DEPTH; i++) {
     const path = join(dir, "eris.yaml");
+    let raw: string | undefined;
     try {
-      const raw = await fs.readFile(path, "utf8");
-      return { path, value: Bun.YAML.parse(raw) };
+      raw = await fs.readFile(path, "utf8");
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") return undefined;
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") return { ok: false, path, error: `unreadable (${code ?? "read failed"})` };
+    }
+    if (raw !== undefined) {
+      try {
+        return { ok: true, path, value: Bun.YAML.parse(raw) };
+      } catch (err) {
+        return { ok: false, path, error: `not YAML (${err instanceof Error ? err.message : "parse failed"})` };
+      }
     }
     try {
       await fs.access(join(dir, ".git"));
