@@ -92,6 +92,16 @@ describe("eris socrates settings team", () => {
     expect((await drive(["settings", "team", ENG])).stderr).toContain("fix: pass one of the team ids the detail lists, or --clear");
   });
 
+  it("an unenrolled org is told to follow the step the detail names", async () => {
+    /** When a 409 reads as a generic refusal, an admin whose org has no enrolled project is told to check the team id they passed. */
+    answer = () => problem(409, "conflict", 'No Linear project is enrolled in Socrates. Add the "Socrates › Enrolled" label to a Linear project, then run the command again.');
+    const r = await drive(["settings", "team", ENG]);
+    expect(r).toMatchObject({ rc: 1, stdout: "", slug: "socrates-refused" });
+    expect(r.stderr).toContain('Add the "Socrates › Enrolled" label to a Linear project');
+    expect(r.stderr).toContain("(conflict, HTTP 409)");
+    expect(r.stderr).toContain("fix: follow the step named above, then run the command again");
+  });
+
   it("sends nothing without a team or --clear, or with both", async () => {
     /** When an empty or contradictory change reaches the wire, the server's validation error hides the local fix. */
     expect(await drive(["settings", "team"])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-flag-required" });

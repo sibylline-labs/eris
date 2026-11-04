@@ -112,6 +112,9 @@ beforeEach(() => {
   answer = () => Response.json({ candidate_id: "cand_1", deduped: false, contract_version: "1.0.0" });
 });
 
+const problem = (status: number, code: string, detail: string) =>
+  Response.json({ type: `urn:hera:error:${code}`, title: code, status, detail, code }, { status, headers: { "content-type": "application/problem+json" } });
+
 const CANDIDATE = ["--title", "Errors use problem+json", "--statement", "Every 4xx/5xx is RFC 7807.", "--source", "https://example.com/pr/14"];
 
 async function drive(args: string[], opts: { format?: "text" | "json"; env?: Record<string, string> } = {}) {
@@ -191,6 +194,31 @@ describe("eris socrates submit", () => {
     const r = await drive(["submit", ...CANDIDATE]);
     expect(r).toMatchObject({ rc: 1, slug: "socrates-refused" });
     expect(r.stderr).toContain("eris login");
+  });
+
+  it("prints the reason and the next step of each unenrolled refusal, and a fix line that defers to it", async () => {
+    /** When a 409 prints only `Conflict`, a user with no enrolled project is told to check the candidate they sent. */
+    const details = [
+      'Linear is not installed for this org. An org admin installs it at https://dash.example/socrates, then add the "Socrates › Enrolled" label to a Linear project.',
+      'No Linear project is enrolled in Socrates. Add the "Socrates › Enrolled" label to a Linear project, then run the command again.',
+      'No Linear project is enrolled in Socrates. If Linear is not installed for this org, an org admin installs it at https://dash.example/socrates. Then add the "Socrates › Enrolled" label to a Linear project.',
+    ];
+    for (const detail of details) {
+      answer = () => problem(409, "conflict", detail);
+      const r = await drive(["submit", ...CANDIDATE]);
+      expect(r).toMatchObject({ rc: 1, stdout: "", slug: "socrates-refused" });
+      expect(r.stderr).toContain(`the endpoint refused the candidate: ${detail} (conflict, HTTP 409)`);
+      expect(r.stderr).toContain("fix: follow the step named above, then run the command again");
+      expect(r.stderr).not.toContain("check the candidate");
+    }
+  });
+
+  it("prints the detail and code of every other problem refusal", async () => {
+    /** When a 404 or 422 refusal loses its reason on the way to the terminal, the user is left with a status and no cause. */
+    answer = () => problem(404, "not_found", 'Project "Agentic Harness" is not enrolled in Socrates; enrolled projects: Eris Yaks');
+    expect((await drive(["submit", ...CANDIDATE, "--project", "Agentic Harness"])).stderr).toContain('refused the candidate: Project "Agentic Harness" is not enrolled in Socrates; enrolled projects: Eris Yaks (not_found, HTTP 404)');
+    answer = () => problem(422, "unprocessable_entity", "Entry title must be at most 80 characters (got 90)");
+    expect((await drive(["submit", ...CANDIDATE])).stderr).toContain("refused the candidate: Entry title must be at most 80 characters (got 90) (unprocessable_entity, HTTP 422)");
   });
 
   it("sends nothing when the candidate fails the contract or a required flag is missing", async () => {
