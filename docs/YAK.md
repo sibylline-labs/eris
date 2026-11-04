@@ -403,7 +403,7 @@ receipt does not carry it). A vendor yak reads no status.
 
 | Verb | Endpoint | Who | stdout (text) | `--output json` |
 |---|---|---|---|---|
-| `eris yak status` | `GET /v1/yaks/status` | any token | `configured`, `observations`, `last filed` | `{configured, observation_count, last_filed_issue_identifier}` |
+| `eris yak status` | `GET /v1/yaks/status` | any token | `configured`, `observations`, `pending`, `oldest pending`, `last filed` | `{configured, observation_count, last_filed_issue_identifier, pending_count?, oldest_pending_received_at?}` (the last two are absent from an older server) |
 | `eris yak discover [kind]` | `GET /v1/yaks/discovery[?team_id=]` | org admin | the teams (the chosen one starred), and that team's projects, states (the Triage default marked) and labels, each with its id | `{teams, team_id, projects, workflow_states, labels, default_state_id}` |
 | `eris yak config get` | `GET /v1/yaks/config` | any token | `configured: no`, or the team, project, state, labels and last writer | `{configured: false}` or `{configured: true, config, updated_at, updated_by}` |
 | `eris yak config set …` | `PUT /v1/yaks/config` | org admin | the stored config | `{config, updated_at, updated_by}` |

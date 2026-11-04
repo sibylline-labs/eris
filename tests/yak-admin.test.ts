@@ -147,6 +147,34 @@ describe("eris yak status", () => {
     expect(r).toEqual({ rc: 0, stdout: `${JSON.stringify({ configured: false, observation_count: 3, last_filed_issue_identifier: null })}\n`, stderr: "" });
   });
 
+  it("text: the pending count and the oldest pending when the server answers them", async () => {
+    /** When status drops the pending fields, an agent sees 'observations: 3' and cannot tell parked yaks from filed ones: observed on stdout. */
+    routes["GET /v1/yaks/status"] = () =>
+      Response.json({ configured: false, observation_count: 3, last_filed_issue_identifier: null, pending_count: 2, oldest_pending_received_at: "2026-11-03T10:00:00.000Z" });
+    const r = await yak(["status"]);
+    expect(r.rc).toBe(0);
+    expect(r.stdout).toBe(
+      "configured:      no\nobservations:    3\npending:         2\noldest pending:  2026-11-03T10:00:00.000Z\nlast filed:      none\n",
+    );
+  });
+
+  it("text: no pending yaks reads 'oldest pending: none'", async () => {
+    /** When a null oldest prints as 'null' or blank, a drained queue reads as a broken one: observed on stdout. */
+    routes["GET /v1/yaks/status"] = () =>
+      Response.json({ configured: true, observation_count: 3, last_filed_issue_identifier: "ENGINEERING-1", pending_count: 0, oldest_pending_received_at: null });
+    const r = await yak(["status"]);
+    expect(r.stdout).toContain("pending:         0\n");
+    expect(r.stdout).toContain("oldest pending:  none\n");
+  });
+
+  it("json: the pending fields pass through untouched", async () => {
+    /** When json mode strips fields the contract does not require, a machine caller never sees the pending count: observed on stdout. */
+    const body = { configured: false, observation_count: 3, last_filed_issue_identifier: null, pending_count: 2, oldest_pending_received_at: "2026-11-03T10:00:00.000Z" };
+    routes["GET /v1/yaks/status"] = () => Response.json(body);
+    const r = await yak(["status"], "json");
+    expect(r).toEqual({ rc: 0, stdout: `${JSON.stringify(body)}\n`, stderr: "" });
+  });
+
   it("no token: the yak-token-unresolved block, exit 1, nothing sent", async () => {
     /** When a missing token reads as success, an agent believes it checked the org: observed at the exit code and the request log. */
     let stderr = "";

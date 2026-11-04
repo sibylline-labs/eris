@@ -67,6 +67,10 @@ export const YakStatus = z
     configured: z.boolean(),
     observation_count: z.number().int().nonnegative(),
     last_filed_issue_identifier: z.string().nullable(),
+    /** Observations still waiting to be filed. Absent from a server that predates it. */
+    pending_count: z.number().int().nonnegative().optional(),
+    /** When the longest-waiting pending observation arrived; null when none is pending. */
+    oldest_pending_received_at: z.string().nullable().optional(),
   })
   .passthrough();
 export type YakStatus = z.infer<typeof YakStatus>;
