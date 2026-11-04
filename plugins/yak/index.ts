@@ -1,5 +1,5 @@
 /**
- * The yak plugin's manifest: `eris yak issue|suggest|fatal`; `eris yak status`,
+ * The yak plugin's manifest: `eris yak issue|suggest|fatal`; `eris yak status`, `ready`,
  * `discover` and `config get|set`, which read and set the org's destination; and
  * `eris login` / `eris logout`, which manage the bearer `eris yak` reads, as
  * registry rows plus handler thunks (docs/dev/PLUGINS.md).
@@ -31,6 +31,7 @@ export default definePlugin({
     "yak issue": { summary: "A harness/tooling defect, confirmed or suspected", json: true, flags: YAK_FLAGS },
     "yak suggest": { summary: "An improvement to the harness: a missing capability or a better way of working", json: true, flags: YAK_FLAGS },
     "yak status": { summary: "Whether this org has a destination for its yaks, and how many it holds", json: true },
+    "yak ready": { summary: "Whether this machine can file yaks, and when to file; always exits 0 (a SessionStart hook runs it)", json: true },
     "yak discover": {
       summary: "The Linear teams, projects, states and labels this org can file yaks into",
       json: true,
@@ -73,6 +74,8 @@ export default definePlugin({
                                             redactions, error?}
                                             (nothing on stderr, unlike every other surface here)
   eris yak status                          {configured, observation_count, last_filed_issue_identifier}
+  eris yak ready                           {ready, signed_in, endpoint, configured,
+                                            last_filed_issue_identifier, fix}
   eris yak discover                        {teams, team_id, projects, workflow_states, labels,
                                             default_state_id}
   eris yak config get                      {configured, config?, updated_at?, updated_by?}

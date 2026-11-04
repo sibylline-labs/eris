@@ -50,6 +50,7 @@ describe("router table", () => {
       "yak discover": "ts",
       "yak fatal": "ts",
       "yak issue": "ts",
+      "yak ready": "ts",
       "yak status": "ts",
       "yak suggest": "ts",
     });
@@ -158,7 +159,7 @@ describe("the --output json surfaces, from the registry", () => {
       "--version": true,
       socrates: ["submit", "classify", "resolve", "settings", "discover"],
       update: true,
-      yak: ["fatal", "issue", "suggest", "status", "discover", "config"],
+      yak: ["fatal", "issue", "suggest", "status", "ready", "discover", "config"],
     });
   });
 

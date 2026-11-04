@@ -57,6 +57,8 @@ Commands:
   fatal     The harness itself is broken
 
   status    Whether this org has a destination for its yaks
+  ready     Whether this machine can file yaks, with when to file (always exits 0;
+            a SessionStart hook runs it)
   discover  The Linear teams, projects, states and labels it can file into
   config    Read or set that destination (get, set)
 
@@ -69,10 +71,10 @@ ERIS_YAKS_TOKEN. Until an admin sets a destination ('eris yak config set
 Run 'eris yak <command> --help' for the full flag reference.
 `;
 
-/** The admin verbs (./yak-admin.ts): `status`, `discover`, `config get|set`.
+/** The admin verbs (./yak-admin.ts): `status`, `ready`, `discover`, `config get|set`.
  *  Null for a filing verb. A bare or unknown `config` word answers here. */
 async function adminHandler(verb: string, rest: string[], ctx: VerbContext): Promise<((deps: YakVerbDeps) => Promise<number>) | null> {
-  if (verb !== "status" && verb !== "discover" && verb !== "config") return null;
+  if (verb !== "status" && verb !== "ready" && verb !== "discover" && verb !== "config") return null;
   let admin: typeof import("./yak-admin");
   try {
     admin = await import("./yak-admin");
@@ -81,6 +83,7 @@ async function adminHandler(verb: string, rest: string[], ctx: VerbContext): Pro
     throw e;
   }
   if (verb === "status") return async () => admin.runStatus(rest, ctx);
+  if (verb === "ready") return async () => admin.runReady(rest, ctx);
   if (verb === "discover") return async () => admin.runDiscover(rest, ctx);
   const c = groupArgs(plugin.rows, "yak config", rest);
   if ((c.kind === "bare" || c.kind === "help") && ctx.format === "json") {
@@ -147,7 +150,7 @@ export async function runYakVerb(args: string[], ctx: VerbContext, deps: YakVerb
   if (g.kind === "unknown") {
     ctx.stderr.write(
       renderFailureBlock(
-        { slug: "yak-unknown-verb", what: `unknown yak command '${g.sub}'`, fix: "use one of: issue, suggest, fatal, status, discover, config\nrun 'eris yak --help' for the full command list" },
+        { slug: "yak-unknown-verb", what: `unknown yak command '${g.sub}'`, fix: "use one of: issue, suggest, fatal, status, ready, discover, config\nrun 'eris yak --help' for the full command list" },
         ctx.erisDir,
       ),
     );
