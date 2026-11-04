@@ -127,6 +127,9 @@ async function fileOverrideYak(ctx: VerbContext, overrides: readonly Override[],
   ctx.stderr.write(renderWarnLines(`the redaction override was not reported to the eris vendor tracker (${why}); the candidate is sent anyway`, slug));
 }
 
+/** A 409 from submit is the unenrolled refusal, and its detail names the step to take. */
+const refusalFix = (status: number): string | undefined => (status === 409 ? "follow the step named above, then run the command again" : undefined);
+
 export async function runSocrates(args: string[], ctx: VerbContext, deps: SocratesDeps = {}): Promise<number> {
   const g = groupArgs(plugin.rows, "socrates", args);
   if (g.kind === "bare" || g.kind === "help") {
@@ -188,7 +191,7 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   const endpoint = await socratesEndpoint(ctx, deps);
   if (outbound.overrides.length > 0) await fileOverrideYak(ctx, outbound.overrides, reason ?? "");
 
-  const reply = await postSocrates(ctx, deps, endpoint, { path: SOCRATES_SUBMIT_PATH, body: parsed.data, decoder: SocratesSubmitResponse, subject: "the candidate" });
+  const reply = await postSocrates(ctx, deps, endpoint, { path: SOCRATES_SUBMIT_PATH, body: parsed.data, decoder: SocratesSubmitResponse, subject: "the candidate", refusalFix });
 
   if (ctx.format === "json") {
     const record = {

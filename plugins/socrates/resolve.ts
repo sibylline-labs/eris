@@ -44,7 +44,7 @@ Sign in first with 'eris login'.
 
 const refusalFix = (status: number): string | undefined => {
   if (status === 404) return "check the Epic's identifier: the Epic's Socrates comment prints the command to run";
-  if (status === 409) return "resolve runs on a closed review Epic: close it in Linear, then run the command again";
+  if (status === 409) return "follow the step named above (resolve also needs the review Epic closed in Linear), then run the command again";
   return undefined;
 };
 

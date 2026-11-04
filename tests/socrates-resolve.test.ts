@@ -113,7 +113,7 @@ describe("eris socrates resolve", () => {
     answer = () => problem(409, "conflict", "Resolve runs only once the review Epic is closed");
     const open = await drive(["resolve", "epic_412"]);
     expect(open).toMatchObject({ rc: 1, stdout: "", slug: "socrates-refused" });
-    expect(open.stderr).toContain("fix: resolve runs on a closed review Epic: close it in Linear");
+    expect(open.stderr).toContain("fix: follow the step named above (resolve also needs the review Epic closed in Linear)");
     answer = () => problem(404, "not_found", "No Socrates review Epic has that id");
     expect((await drive(["resolve", "epic_499"])).stderr).toContain("fix: check the Epic's identifier");
   });

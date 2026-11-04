@@ -56,6 +56,7 @@ Sign in first with 'eris login'.
 const refusalFix = (status: number): string | undefined => {
   if (status === 403) return "ask an org admin to run this command";
   if (status === 404) return "pass --project <name> with one of the enrolled projects the detail lists";
+  if (status === 409) return "follow the step named above, then run the command again";
   if (status === 422) return "pass one of the team ids the detail lists, or --clear";
   return undefined;
 };
