@@ -141,6 +141,37 @@ When the tooling fights back, file a yak and keep working. A yak is a side chann
 Each takes `--summary "<one line>"` and `--body "<what happened, what you expected>"`; add `--repro "<command>"` when one shows it. Filing is deduplicated, so a repeat adds weight to an existing issue. File in the turn you notice.
 ```
 
+## 8. Brief every Claude Code session at start
+
+If you are Claude Code, add a `SessionStart` hook that runs `eris yak ready`. At every session
+start it puts one readiness line into the session's context. When the machine can file, the line
+is followed by when and how to file. When nothing resolves a token, it is instead a nudge to run
+`eris login`. The command always exits 0, so it never shows as a hook error.
+
+Merge this into the repo's `.claude/settings.json`, or your user's `~/.claude/settings.json` if
+they want it in every repo. Create the file if it is missing. Keep any hooks already there:
+append to an existing `SessionStart` list, never replace it. Show your user the diff.
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "eris yak ready", "timeout": 10 }] }
+    ]
+  }
+}
+```
+
+If step 2 left you running eris through `npx`, use
+`npx @sibylline-labs/eris@latest yak ready` as the command. Then check it:
+
+```sh
+eris yak ready
+```
+
+Expect: `yaks: ready (last filed <KEY>-<n>)`, followed by the filing guide. If you are another
+agent with a session-start hook, point it at the same command.
+
 ## Done
 
 Tell your user what you set up, and that friction you hit from now on will appear in their
