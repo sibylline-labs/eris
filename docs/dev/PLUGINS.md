@@ -105,6 +105,11 @@ export const runWidgets: VerbHandler = async (args, ctx) => {
   and another plugin's verb with **`runErisVerb`**: both go through the
   subprocess adapter, so the deadline kills the whole tree. Never spawn one
   yourself.
+- Read the repo's own `eris.yaml` with **`nearestErisYaml(startDir)`**: the
+  nearest one at or above `startDir`, stopping at the git checkout's root, as
+  `{ok: true, path, value}` (parsed, never merged), `{ok: false, path, error}`
+  when the nearest one cannot be read or is not YAML (the walk does not go past
+  it), or `undefined` when there is none. It never throws.
 
 ## What a plugin may import
 

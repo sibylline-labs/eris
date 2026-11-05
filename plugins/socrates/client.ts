@@ -37,7 +37,9 @@ export type SocratesSlug =
   | "socrates-bad-response"
   | "socrates-not-a-repo"
   | "socrates-cursor-invalid"
-  | "socrates-discover-invalid";
+  | "socrates-discover-invalid"
+  | "socrates-repo-policy-invalid"
+  | "socrates-repo-policy-looser";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 

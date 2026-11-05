@@ -26,10 +26,9 @@
  * key derivation. This module only gathers; it does not redact.
  */
 
-import { promises as fs } from "node:fs";
-import { dirname, join } from "node:path";
 import { hostname } from "node:os";
 import type { YakProvenance } from "eris/yak-contract";
+import { nearestErisYaml } from "../../src/cli/plugin";
 import { asText, runBounded, type Runner } from "./yak-identity";
 
 const GIT_PROBE_TIMEOUT_MS = 500;
@@ -40,10 +39,6 @@ const GIT_PROBE_TIMEOUT_MS = 500;
  *  mid-task CLI call. If this fires, every category still in flight is
  *  simply omitted — never awaited to completion, never thrown. */
 const OVERALL_GATHER_TIMEOUT_MS = 1_500;
-/** Filesystem-root backstop for the `repo.service` walk-up. A real checkout
- *  never nests this deep; this exists so a symlink cycle or an unexpectedly
- *  deep tree can't turn a "cheap peek" into an unbounded walk. */
-const REPO_WALK_MAX_DEPTH = 64;
 
 export type ProvenanceOptions = {
   env?: Record<string, string | undefined>;
@@ -203,48 +198,13 @@ async function gatherRepo(cwd: string): Promise<Record<string, unknown>> {
   return rec;
 }
 
-/**
- * Walk up from `startDir` looking for the nearest `eris.yaml` and read its
- * top-level `service:` field directly — no root/leaf merge, no
- * excludes/overrides. Bounded two ways: a hard iteration ceiling
- * (`REPO_WALK_MAX_DEPTH`) and stopping at the enclosing git checkout's root
- * (a `.git` entry, file or directory), so this cheap peek never wanders into
- * a sibling repo above the one it was invoked from.
- */
+/** The nearest `eris.yaml`'s top-level `service:`, read raw (`nearestErisYaml`, the SDK's bounded walk). */
 async function findNearestErisYamlService(startDir: string): Promise<string | undefined> {
-  let dir = startDir;
-  for (let i = 0; i < REPO_WALK_MAX_DEPTH; i++) {
-    const candidate = join(dir, "eris.yaml");
-    try {
-      const raw = await fs.readFile(candidate, "utf8");
-      const parsed = Bun.YAML.parse(raw);
-      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-        const service = (parsed as Record<string, unknown>).service;
-        if (typeof service === "string" && service.length > 0) return service;
-      }
-      // A manifest exists here but has no usable `service:` — it is still
-      // the NEAREST one, so stop rather than walking past it.
-      return undefined;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") return undefined; // unreadable — drop, never throw
-    }
-
-    if (await isGitCheckoutRoot(dir)) return undefined; // reached the repo root with no manifest
-
-    const parent = dirname(dir);
-    if (parent === dir) return undefined; // filesystem root
-    dir = parent;
-  }
-  return undefined;
-}
-
-async function isGitCheckoutRoot(dir: string): Promise<boolean> {
-  try {
-    await fs.access(join(dir, ".git"));
-    return true;
-  } catch {
-    return false;
-  }
+  const found = await nearestErisYaml(startDir);
+  const value = found?.ok === true ? found.value : undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const service = (value as Record<string, unknown>).service;
+  return typeof service === "string" && service.length > 0 ? service : undefined;
 }
 
 // --- git (five bounded, individually-reaped subprocesses) -------------------

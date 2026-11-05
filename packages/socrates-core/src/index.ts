@@ -27,6 +27,7 @@ export * from "./match";
 export * from "./render";
 
 export * from "./rubric/definition";
+export * from "./rubric/policy";
 export { RUBRIC_V1, type RubricV1 } from "./rubric/v1";
 export { RUBRIC_V2, type RubricV2 } from "./rubric/v2";
 

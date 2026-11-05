@@ -44,7 +44,10 @@ ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany us
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
 plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consult`: index.ts (the manifest), submit.ts
                         #   (submit and the group dispatch), client.ts (the credentialed GET, POST or PUT every endpoint
-                        #   verb shares), classify.ts (local rubric scoring, HAL override links), resolve.ts
+                        #   verb shares), classify.ts (local rubric scoring, HAL override links), answers.ts
+                        #   (the --answer/--override parsers classify and submit share), policy.ts (the cached
+                        #   org policy in ~/.eris/socrates-policy.json merged with eris.yaml's stricter-only
+                        #   socrates.policy layer), resolve.ts
                         #   (a closed review Epic, resolved on the server), discover.ts (first-parent commits
                         #   after the per-repo cursor in ~/.eris/socrates/cursors.json), consult.ts (a living
                         #   doc, or a brief of six, read whole over the consult route),

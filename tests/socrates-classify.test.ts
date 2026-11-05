@@ -77,9 +77,11 @@ describe("eris socrates classify", () => {
       threshold: 3,
       breakdown: { consequence: 3 },
       overrides: [],
+      policy_hash: null,
+      repo_policy: null,
       meta: { _links: {} },
     });
-    expect((await drive([...CANDIDATE, ...answers()])).stdout).toBe("load-bearing: score 3 of 3 (rubric@v2)\n");
+    expect((await drive([...CANDIDATE, ...answers()])).stdout).toBe("load-bearing: score 3 of 3 (rubric@v2)\n  policy: rubric defaults\n");
     expect(fetches).toEqual([]);
   });
 

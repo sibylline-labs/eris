@@ -16,7 +16,7 @@ export default definePlugin({
     "socrates submit": {
       summary: "Submit one candidate (a decision, practice, PRD or conflict) for review",
       json: true,
-      usage: "--title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--now] [--allow-redaction <class> --override-reason <text>]",
+      usage: "--title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--now] [--answer <question>=<answer>... [--override <gate>=<reason>]...] [--allow-redaction <class> --override-reason <text>]",
       flags: [
         { name: "--kind", takesValue: true },
         { name: "--title", takesValue: true },
@@ -24,6 +24,8 @@ export default definePlugin({
         { name: "--source", takesValue: true },
         { name: "--project", takesValue: true },
         { name: "--now", takesValue: false },
+        { name: "--answer", takesValue: true, repeatable: true },
+        { name: "--override", takesValue: true, repeatable: true },
         { name: "--allow-redaction", takesValue: true, repeatable: true },
         { name: "--override-reason", takesValue: true },
       ],
@@ -85,11 +87,11 @@ export default definePlugin({
   handlers: {
     socrates: async () => (await import("./submit")).runSocrates,
   },
-  jsonFix: `  eris socrates submit                     {candidate_id, deduped, contract_version, redactions,
-                                            overrides}
+  jsonFix: `  eris socrates submit                     {candidate_id, deduped, contract_version, classification?,
+                                            redactions, overrides}
   eris socrates classify                   {verdict, rubric_version, score?, threshold?, breakdown?,
                                             gate?, answer?, feature?, route?, reason?, overrides,
-                                            meta: {_links: {override?}}}
+                                            policy_hash?, repo_policy?, meta: {_links: {override?}}}
   eris socrates resolve                    {epic, outcome, applied, carried_over, carry_over_epic?,
                                             reporting, contract_version}
   eris socrates consult                    {docs: [{doc, title, url, markdown, fetched_at,
