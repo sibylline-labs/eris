@@ -196,6 +196,15 @@ describe("eris socrates submit --evidence", () => {
     expect(submitBody().unfit!.evidence[0]!.provenance).toBe(`acme/app@${sha}:src/retry.ts#L1`);
   });
 
+  // admits: from a subdirectory the dirty check reads the repo-relative path against the cwd, matches nothing and passes, so working-tree edits are dropped silently under a provenance that claims the file; observed as the refusal and no request.
+  it("refuses a file changed since HEAD when run from a subdirectory too", async () => {
+    writeFileSync(join(repo, "src/retry.ts"), "DIRTY WORKTREE TEXT\n");
+    const r = await drive(["submit", ...CANDIDATE, ...UNFIT, "--evidence", "retry.ts#L1"], { cwd: join(repo, "src") });
+    expect(r).toMatchObject({ rc: 1, stdout: "", slug: "socrates-evidence-invalid" });
+    expect(r.stderr).toContain("not in");
+    expect(calls).toEqual([]);
+  });
+
   // admits: the provenance carries the remote's credentials or host junk, or a remote with no owner/name path breaks the link; observed at the parsed repo.
   it.each([
     ["https://user:pw@example.com/acme/app.git", "acme/app"],
@@ -225,6 +234,8 @@ describe("eris socrates evidence", () => {
     await drive(["evidence", "../status"]);
     expect(calls[0]!.path).toBe("/v1/socrates/evidence/..%2Fstatus");
     calls = [];
+    // A bare dot segment survives percent-encoding, and fetch resolves it to another route.
+    for (const dots of [".", ".."]) expect(await drive(["evidence", dots])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-flag-required" });
     expect(await drive(["evidence", ""])).toMatchObject({ rc: 1, slug: "socrates-flag-required" });
     expect(await drive(["evidence"])).toMatchObject({ rc: 1, slug: "socrates-flag-required" });
     expect(calls).toEqual([]);

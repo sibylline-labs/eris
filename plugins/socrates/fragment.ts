@@ -10,6 +10,9 @@
  *     commit, is refused rather than sent under a provenance that does not hold it.
  *   - Nothing is scanned here, and nothing leaves the machine. The caller runs every entry's text
  *     through `eris/outbound-scan` with the candidate's fields before any request.
+ *   - A path the user gives is resolved against the working directory once (`ls-files`); every
+ *     later read takes the repo-relative path and runs at the repo root, so a run from a
+ *     subdirectory checks the same file it sends.
  *   - Every `git` call goes through the SDK's subprocess adapter with a deadline, one at a time.
  *   - A refusal is `socrates-evidence-invalid` and names the reference, never the file's text.
  *   - The repo part of the provenance carries no remote credentials.
@@ -105,6 +108,8 @@ export async function readFragments(ctx: VerbContext, deps: SocratesDeps, refs: 
     fail(ctx, "socrates-evidence-invalid", `${printable(root)} has no commits yet, so a fragment has no commit to name`, "commit the file, then run the command again");
   }
   const sha = head.out.trim();
+  // `ls-files --full-name` answers repo-relative paths, so every read that takes one runs at the root.
+  const atRoot = gitIn(ctx, root);
   const remote = await git(["config", "--get", "remote.origin.url"]);
   const base = root.split("/").filter((p) => p !== "").pop() ?? "";
   const repo = (remote.ok ? repoOfRemote(remote.out) : null) ?? base;
@@ -119,12 +124,12 @@ export async function readFragments(ctx: VerbContext, deps: SocratesDeps, refs: 
     }
     const full = listed.out.split("\n")[0]?.trim() ?? "";
     if (full === "" || listed.out.trim().includes("\n")) fail(ctx, "socrates-evidence-invalid", `${where}: names more than one file`, FIX);
-    const diff = await git(["diff", "--quiet", sha, "--", full]);
+    const diff = await atRoot(["diff", "--quiet", sha, "--", `:(top)${full}`]);
     if (!diff.ok) {
       if (diff.code !== 1) gitFailed(diff);
       fail(ctx, "socrates-evidence-invalid", `${where}: ${printable(full)} has changes that are not in ${sha.slice(0, 12)}, so the provenance would not name the text sent`, "commit the file (or discard the changes), then run the command again");
     }
-    const blob = await git(["show", `${sha}:${full}`]);
+    const blob = await atRoot(["show", `${sha}:${full}`]);
     if (!blob.ok) gitFailed(blob);
     if (blob.out.includes("\u0000")) fail(ctx, "socrates-evidence-invalid", `${where}: ${printable(full)} is a binary file`, "pass a line range of a text file");
     const lines = blob.out.split("\n");

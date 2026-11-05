@@ -8,7 +8,8 @@
  *
  * Invariants:
  *   - The id is the contract's parse of `{fragment_id}`, scanned by `eris/outbound-scan` before it
- *     is sent, and percent-encoded into the path, so it names one path segment and nothing else.
+ *     is sent, and percent-encoded into the path, so it names one path segment and nothing else;
+ *     `.` and `..`, which encoding leaves as dot segments fetch resolves, are refused.
  *   - The reply is read only through `SocratesEvidenceGetResponse`, and must be the fragment that
  *     was asked for: another id is `socrates-bad-response`.
  *   - `--output json` prints the decoded record; text has terminal control characters removed
@@ -51,7 +52,8 @@ export async function runEvidence(args: string[], ctx: VerbContext, deps: Socrat
   const [asked] = a.pos;
   if (asked === undefined) fail(ctx, "socrates-flag-required", "missing <fragment-id>", ID_FIX);
   const parsed = SocratesEvidenceGetRequest.safeParse({ fragment_id: asked });
-  if (!parsed.success) fail(ctx, "socrates-flag-required", `not a fragment id: '${printable(asked)}'`, ID_FIX);
+  // A bare dot segment survives percent-encoding, and fetch resolves it to another route.
+  if (!parsed.success || asked === "." || asked === "..") fail(ctx, "socrates-flag-required", `not a fragment id: '${printable(asked)}'`, ID_FIX);
   const leaked = scanStrings(parsed.data);
   if (leaked.length > 0) fail(ctx, "socrates-secret-detected", `a secret was found in <fragment-id> (${leaked.map((h) => h.rule).join(", ")}); nothing was sent`, "pass the fragment's id; this check cannot be overridden");
 
