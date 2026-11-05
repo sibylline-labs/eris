@@ -111,8 +111,8 @@ describe("eris socrates settings team", () => {
 
   it("the settings group prints its usage, and refuses an unknown sub-command", async () => {
     /** When the group swallows an unknown word, a typo reads as success. */
-    expect(await drive(["settings"])).toMatchObject({ rc: 0, stdout: expect.stringContaining("team  Set or clear the Linear team") });
-    expect(await drive(["settings", "canon"])).toMatchObject({ rc: 1, slug: "socrates-unknown-verb" });
+    expect(await drive(["settings"])).toMatchObject({ rc: 0, stdout: expect.stringContaining("team       Set or clear the Linear team") });
+    expect(await drive(["settings", "nope"])).toMatchObject({ rc: 1, slug: "socrates-unknown-verb" });
     expect((await drive(["settings", "team", "--help"])).stdout).toContain("<team-uuid>       the Linear team's id");
   });
 });

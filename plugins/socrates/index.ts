@@ -54,7 +54,7 @@ export default definePlugin({
       pos: ["epic?"],
       usage: "<epic>",
     },
-    "socrates settings": { summary: "Change where this org's Socrates reviews file (team)" },
+    "socrates settings": { summary: "Read and change the org's Socrates settings (policy, enrolment, health, usage, Canon, team)" },
     "socrates settings team": {
       summary: "Set or clear the Linear team a project's review Epics file on (an org admin's)",
       json: true,
@@ -62,6 +62,33 @@ export default definePlugin({
       usage: "<team-uuid> [--project <name>] | --clear [--project <name>]",
       flags: [
         { name: "--project", takesValue: true },
+        { name: "--clear", takesValue: false },
+      ],
+    },
+    "socrates settings policy": {
+      summary: "Show the org's scoring policy, or change it (an org admin's), with a preview",
+      json: true,
+      usage: "[--threshold <n>] [--verbosity <v>] [--escalation <e>] [--reporting <r>] [--auto-resolve on|off] [--gate <key>=on|off]... [--weight <key>=<n>]... [--preview]",
+      flags: [
+        { name: "--threshold", takesValue: true },
+        { name: "--verbosity", takesValue: true },
+        { name: "--escalation", takesValue: true },
+        { name: "--reporting", takesValue: true },
+        { name: "--auto-resolve", takesValue: true },
+        { name: "--gate", takesValue: true, repeatable: true },
+        { name: "--weight", takesValue: true, repeatable: true },
+        { name: "--preview", takesValue: false },
+      ],
+    },
+    "socrates settings enrolment": { summary: "List the enrolled projects and their Linear links", json: true, usage: "" },
+    "socrates settings health": { summary: "Print the install, webhook, reconcile and stuck-write health", json: true, usage: "" },
+    "socrates settings usage": { summary: "Print the no-credit usage figures: entries, accept and reject rates, overrides", json: true, usage: "" },
+    "socrates settings canon": {
+      summary: "Show or choose the org's Canon doc (an org admin's)",
+      json: true,
+      usage: "[--doc <id> | --clear]",
+      flags: [
+        { name: "--doc", takesValue: true },
         { name: "--clear", takesValue: false },
       ],
     },
@@ -114,6 +141,18 @@ export default definePlugin({
                                             detail, settings?}], contract_version}
   eris socrates settings team              {project, override: {id, key}?, filing_team: {id, key,
                                             source}, contract_version}
+  eris socrates settings policy            {policy: {rubric_version, version, source, policy_hash, policy,
+                                            updated_at}, contract_version}; with a change: the receipt
+                                            {rubric_version, policy_version, policy_hash, policy,
+                                            canon_doc_id, contract_version}; --preview: {preview, version,
+                                            policy_hash, policy, draft, changes: [{field, from, to}],
+                                            contract_version}
+  eris socrates settings enrolment         {projects: [{id, name, source, url}], contract_version}
+  eris socrates settings health            {health: {install, webhook, reconcile, stuck}, contract_version}
+  eris socrates settings usage             {usage: {window_days, entries, accept_rate, reject_rate,
+                                            classifications}, contract_version}
+  eris socrates settings canon             {canon: {doc_id}, contract_version}; with --doc or --clear:
+                                            the settings receipt
   eris socrates discover                   {repo, cursor, head, sources: [{kind, sha, committed_at,
                                             subject}], truncated}
   eris socrates discover --advance         {repo, cursor}

@@ -313,6 +313,84 @@
           {"project": "proj_1", "filing_team": {"id": "7c35c8ec-0acb-456a-9e27-6b7cb7640db5", "key": "SKW", "source": "lead"}, "contract_version": "1.0.0"}
         ]
       }
+    },
+    "settings": {
+      "response": {
+        "accept": [
+          {"policy": {"rubric_version": "rubric@v1", "version": 0, "source": "default", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "updated_at": null}, "canon": {"doc_id": null}, "enrolment": {"projects": [{"id": "proj_1", "name": "Platform", "source": "label", "url": "https://tracker.example.com/acme/project/platform-1a2b3c"}, {"id": "proj_2", "name": null, "source": "stub", "url": null}]}, "health": {"install": {"state": "needs_labels", "missing_labels": ["team_1/harmonize"], "checked_at": "2026-11-02T10:00:00.000Z"}, "webhook": {"last_delivery_at": null}, "reconcile": {"last_at": "2026-11-02T09:00:00.000Z", "watermark": "2026-11-02T08:59:00.000Z"}, "stuck": {"retrying_writes": 1, "oldest_retrying_at": "2026-11-02T08:00:00.000Z", "refused_entries": 0}}, "usage": {"window_days": 30, "entries": {"total": 4, "pending": 1, "filed": 1, "resolved": 1, "rejected": 1, "needs_input": 0}, "accept_rate": 0.5, "reject_rate": 0.5, "classifications": {"total": 3, "passed": 2, "failed": 1, "overridden": 1, "overrides": 1}}, "contract_version": "1.0.0"},
+          {"policy": {"rubric_version": "rubric@v1", "version": 0, "source": "org", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "updated_at": null}, "canon": {"doc_id": null}, "enrolment": {"projects": [{"id": "proj_1", "name": "Platform", "source": "label", "url": "https://tracker.example.com/acme/project/platform-1a2b3c"}, {"id": "proj_2", "name": null, "source": "stub", "url": null}]}, "health": {"install": {"state": "needs_labels", "missing_labels": ["team_1/harmonize"], "checked_at": "2026-11-02T10:00:00.000Z"}, "webhook": {"last_delivery_at": null}, "reconcile": {"last_at": "2026-11-02T09:00:00.000Z", "watermark": "2026-11-02T08:59:00.000Z"}, "stuck": {"retrying_writes": 1, "oldest_retrying_at": "2026-11-02T08:00:00.000Z", "refused_entries": 0}}, "usage": {"window_days": 30, "entries": {"total": 4, "pending": 1, "filed": 1, "resolved": 1, "rejected": 1, "needs_input": 0}, "accept_rate": 0.5, "reject_rate": 0.5, "classifications": {"total": 3, "passed": 2, "failed": 1, "overridden": 1, "overrides": 1}}, "contract_version": "1.0.0"},
+          {"type": "urn:hera:error:unprocessable", "title": "Unprocessable", "status": 422, "detail": "That team is not on the project", "code": "unprocessable"},
+          {"type": "urn:hera:error:entitlement_lapsed", "title": "Organization entitlement has lapsed", "status": 402, "detail": "This organization is not entitled to socrates", "code": "entitlement_lapsed", "_links": {"subscribe": {"href": "https://example.com/billing/subscribe?product=socrates"}}}
+        ],
+        "reject": [
+          {},
+          {"ok": true},
+          "<html>502 Bad Gateway</html>",
+          null,
+          {"policy": {"rubric_version": "rubric@v1", "version": 0, "source": "default", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "updated_at": null}, "canon": {"doc_id": null}, "enrolment": {"projects": [{"id": "proj_1", "name": "Platform", "source": "label", "url": "https://tracker.example.com/acme/project/platform-1a2b3c"}, {"id": "proj_2", "name": null, "source": "stub", "url": null}]}, "health": {"install": {"state": "needs_labels", "missing_labels": ["team_1/harmonize"], "checked_at": "2026-11-02T10:00:00.000Z"}, "webhook": {"last_delivery_at": null}, "reconcile": {"last_at": "2026-11-02T09:00:00.000Z", "watermark": "2026-11-02T08:59:00.000Z"}, "stuck": {"retrying_writes": 1, "oldest_retrying_at": "2026-11-02T08:00:00.000Z", "refused_entries": 0}}, "usage": {"window_days": 30, "entries": {"total": 4, "pending": 1, "filed": 1, "resolved": 1, "rejected": 1, "needs_input": 0}, "accept_rate": 1.5, "reject_rate": 0.5, "classifications": {"total": 3, "passed": 2, "failed": 1, "overridden": 1, "overrides": 1}}, "contract_version": "1.0.0"},
+          {"policy": {"rubric_version": "rubric@v1", "version": 0, "source": "default", "policy_hash": "x", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "updated_at": null}, "canon": {"doc_id": null}, "enrolment": {"projects": [{"id": "proj_1", "name": "Platform", "source": "label", "url": "https://tracker.example.com/acme/project/platform-1a2b3c"}, {"id": "proj_2", "name": null, "source": "stub", "url": null}]}, "health": {"install": {"state": "needs_labels", "missing_labels": ["team_1/harmonize"], "checked_at": "2026-11-02T10:00:00.000Z"}, "webhook": {"last_delivery_at": null}, "reconcile": {"last_at": "2026-11-02T09:00:00.000Z", "watermark": "2026-11-02T08:59:00.000Z"}, "stuck": {"retrying_writes": 1, "oldest_retrying_at": "2026-11-02T08:00:00.000Z", "refused_entries": 0}}, "usage": {"window_days": 30, "entries": {"total": 4, "pending": 1, "filed": 1, "resolved": 1, "rejected": 1, "needs_input": 0}, "accept_rate": 0.5, "reject_rate": 0.5, "classifications": {"total": 3, "passed": 2, "failed": 1, "overridden": 1, "overrides": 1}}, "contract_version": "1.0.0"},
+          {"policy": {"rubric_version": "rubric@v1", "version": 0, "source": "default", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "updated_at": null}, "canon": {"doc_id": null}, "enrolment": {"projects": [{"id": "proj_1", "name": "Platform", "source": "manual", "url": "https://tracker.example.com/acme/project/platform-1a2b3c"}, {"id": "proj_2", "name": null, "source": "stub", "url": null}]}, "health": {"install": {"state": "needs_labels", "missing_labels": ["team_1/harmonize"], "checked_at": "2026-11-02T10:00:00.000Z"}, "webhook": {"last_delivery_at": null}, "reconcile": {"last_at": "2026-11-02T09:00:00.000Z", "watermark": "2026-11-02T08:59:00.000Z"}, "stuck": {"retrying_writes": 1, "oldest_retrying_at": "2026-11-02T08:00:00.000Z", "refused_entries": 0}}, "usage": {"window_days": 30, "entries": {"total": 4, "pending": 1, "filed": 1, "resolved": 1, "rejected": 1, "needs_input": 0}, "accept_rate": 0.5, "reject_rate": 0.5, "classifications": {"total": 3, "passed": 2, "failed": 1, "overridden": 1, "overrides": 1}}, "contract_version": "1.0.0"},
+          {"policy": {"rubric_version": "rubric@v1", "version": 0, "source": "default", "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "updated_at": null}, "canon": {"doc_id": null}, "enrolment": {"projects": [{"id": "proj_1", "name": "Platform", "source": "label", "url": "https://tracker.example.com/acme/project/platform-1a2b3c"}, {"id": "proj_2", "name": null, "source": "stub", "url": null}]}, "health": {"install": {"state": "broken", "missing_labels": ["team_1/harmonize"], "checked_at": "2026-11-02T10:00:00.000Z"}, "webhook": {"last_delivery_at": null}, "reconcile": {"last_at": "2026-11-02T09:00:00.000Z", "watermark": "2026-11-02T08:59:00.000Z"}, "stuck": {"retrying_writes": 1, "oldest_retrying_at": "2026-11-02T08:00:00.000Z", "refused_entries": 0}}, "usage": {"window_days": 30, "entries": {"total": 4, "pending": 1, "filed": 1, "resolved": 1, "rejected": 1, "needs_input": 0}, "accept_rate": 0.5, "reject_rate": 0.5, "classifications": {"total": 3, "passed": 2, "failed": 1, "overridden": 1, "overrides": 1}}, "contract_version": "1.0.0"}
+        ]
+      }
+    },
+    "settings_policy": {
+      "request": {
+        "accept": [
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}},
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "expected_version": 3}
+        ],
+        "reject": [
+          {"schema_version": "1.0.0", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}},
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": -1}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}},
+          {"schema_version": "1.0.0", "rubric_version": "rubric@v1", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "expected_version": -1},
+          {"schema_version": "1.0.0", "rubric_version": "v1", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}}
+        ]
+      },
+      "response": {
+        "accept": [
+          {"rubric_version": "rubric@v1", "policy_version": 2, "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "canon_doc_id": "doc_1", "contract_version": "1.0.0"},
+          {"rubric_version": "rubric@v1", "policy_version": 2, "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "canon_doc_id": null, "contract_version": "1.0.0"},
+          {"type": "urn:hera:error:unprocessable", "title": "Unprocessable", "status": 422, "detail": "That team is not on the project", "code": "unprocessable"},
+          {"type": "urn:hera:error:entitlement_lapsed", "title": "Organization entitlement has lapsed", "status": 402, "detail": "This organization is not entitled to socrates", "code": "entitlement_lapsed", "_links": {"subscribe": {"href": "https://example.com/billing/subscribe?product=socrates"}}}
+        ],
+        "reject": [
+          {},
+          {"ok": true},
+          "<html>502 Bad Gateway</html>",
+          null,
+          {"rubric_version": "rubric@v1", "policy_version": 2, "policy_hash": "x", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "canon_doc_id": "doc_1", "contract_version": "1.0.0"},
+          {"rubric_version": "rubric@v1", "policy_version": -1, "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "canon_doc_id": "doc_1", "contract_version": "1.0.0"}
+        ]
+      }
+    },
+    "settings_canon": {
+      "request": {
+        "accept": [
+          {"schema_version": "1.0.0", "doc": "doc_1"},
+          {"schema_version": "1.0.0", "doc": null, "expected_version": 0}
+        ],
+        "reject": [
+          {"schema_version": "1.0.0"},
+          {"schema_version": "1.0.0", "doc": ""},
+          {"schema_version": "1.0.0", "doc": 7},
+          {"doc": "doc_1"}
+        ]
+      },
+      "response": {
+        "accept": [
+          {"rubric_version": "rubric@v1", "policy_version": 2, "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "canon_doc_id": "doc_1", "contract_version": "1.0.0"},
+          {"type": "urn:hera:error:unprocessable", "title": "Unprocessable", "status": 422, "detail": "That team is not on the project", "code": "unprocessable"},
+          {"type": "urn:hera:error:entitlement_lapsed", "title": "Organization entitlement has lapsed", "status": 402, "detail": "This organization is not entitled to socrates", "code": "entitlement_lapsed", "_links": {"subscribe": {"href": "https://example.com/billing/subscribe?product=socrates"}}}
+        ],
+        "reject": [
+          {},
+          {"ok": true},
+          "<html>502 Bad Gateway</html>",
+          null,
+          {"rubric_version": "rubric@v1", "policy_version": 2, "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "canon_doc_id": "", "contract_version": "1.0.0"}
+        ]
+      }
     }
   }
 }
