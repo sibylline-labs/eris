@@ -58,6 +58,7 @@ export const SOCRATES_USAGE = `Usage: eris socrates <command>
 
 Commands:
   classify  Score one candidate's rubric answers locally and print the verdict
+  consult   Print a living doc, or a brief of several, from the Socrates endpoint
   discover  List the commits in this repo since the processed-source cursor
   resolve   Resolve a closed review Epic on the server and print what it did
   settings  Change where this org's Socrates reviews file (team)
@@ -153,14 +154,18 @@ async function fileOverrideYak(ctx: VerbContext, overrides: readonly Override[],
   ctx.stderr.write(renderWarnLines(`the redaction override was not reported to the eris vendor tracker (${why}); the candidate is sent anyway`, slug));
 }
 
+/** A 409 from submit is the unenrolled refusal, and its detail names the step to take. */
+const refusalFix = (status: number): string | undefined => (status === 409 ? "follow the step named above, then run the command again" : undefined);
+
 export async function runSocrates(args: string[], ctx: VerbContext, deps: SocratesDeps = {}): Promise<number> {
   const g = groupArgs(plugin.rows, "socrates", args);
   if (g.kind === "bare" || g.kind === "help") {
     ctx.stdout.write(SOCRATES_USAGE);
     return 0;
   }
-  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates command '${g.sub}'`, "use: classify, discover, resolve, settings, submit\nrun 'eris socrates --help' for the command list");
+  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates command '${g.sub}'`, "use: classify, consult, discover, resolve, settings, submit\nrun 'eris socrates --help' for the command list");
   if (g.sub === "classify") return (await import("./classify")).runClassify(g.rest, ctx, deps);
+  if (g.sub === "consult") return (await import("./consult")).runConsult(g.rest, ctx, deps);
   if (g.sub === "resolve") return (await import("./resolve")).runResolve(g.rest, ctx, deps);
   if (g.sub === "discover") return (await import("./discover")).runDiscover(g.rest, ctx, deps);
   if (g.sub === "settings") return (await import("./settings")).runSettings(g.rest, ctx, deps);
@@ -230,7 +235,7 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   endpoint ??= await socratesEndpoint(ctx, deps);
   if (outbound.overrides.length > 0) await fileOverrideYak(ctx, outbound.overrides, reason ?? "");
 
-  const reply = await postSocrates(ctx, deps, endpoint, { path: SOCRATES_SUBMIT_PATH, body, decoder: SocratesSubmitResponse, subject: "the candidate" });
+  const reply = await postSocrates(ctx, deps, endpoint, { path: SOCRATES_SUBMIT_PATH, body, decoder: SocratesSubmitResponse, subject: "the candidate", refusalFix });
   const classified = reply.classification;
   if (classified?.reclassified) {
     const refreshed = await refreshPolicyAfterSubmit(ctx, deps, endpoint);

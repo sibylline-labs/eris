@@ -8,8 +8,12 @@
  * with no config accepts yaks and parks them, so these verbs are how an agent
  * gets from `eris login` to yaks that file.
  *
+ * `eris yak ready` is the exception to the failure rule below: it is what a
+ * coding agent's SessionStart hook runs, so it reports every state on stdout
+ * and exits 0 (`Promise<0>`), stderr empty.
+ *
  * Invariants:
- *   - Unlike `eris yak issue|suggest|fatal`, every failure here is the §4
+ *   - Unlike `eris yak issue|suggest|fatal`, every failure here (`ready` aside) is the §4
  *     block on stderr, nothing on stdout, exit 1: a config command that
  *     reported success it did not have leaves the org parked.
  *   - Under `--output json` stdout is the server's body, bare: the status, the
@@ -51,6 +55,8 @@ export type YakAdminSlug =
   | "yak-discover-unknown-kind";
 
 const ADMIN_TIMEOUT_MS = 15_000;
+/** `ready` runs at every session start, so a dead endpoint costs at most this. */
+const READY_TIMEOUT_MS = 3_000;
 
 /** Where an admin can set the destination without the CLI: the dashboard's
  *  page (the eris-yaks skill gives its full address). */
@@ -207,12 +213,115 @@ export async function runStatus(args: string[], ctx: VerbContext, deps: AdminDep
     table([
       ["configured:", s.configured ? "yes" : "no"],
       ["observations:", String(s.observation_count)],
+      // A server that predates the pending fields answers neither: print the three rows it did.
+      ...(s.pending_count === undefined
+        ? []
+        : [
+            ["pending:", String(s.pending_count)],
+            ["oldest pending:", s.oldest_pending_received_at ?? "none"],
+          ]),
       ["last filed:", s.last_filed_issue_identifier ?? "none"],
     ]),
   );
   if (!s.configured) {
     ctx.stderr.write(`INFO yaks are accepted and parked until a destination is set: eris yak discover teams, then eris yak config set --team <key> (or ${DASH_CONFIG_PAGE})\n`);
   }
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// ready
+// ---------------------------------------------------------------------------
+
+/** `eris --output json yak ready`. `configured` and `last_filed_issue_identifier`
+ *  are null when the status was not read; `fix` is null only when ready. */
+export interface YakReadiness {
+  ready: boolean;
+  signed_in: boolean;
+  endpoint: "ok" | "refused" | "unreachable" | "skipped";
+  configured: boolean | null;
+  last_filed_issue_identifier: string | null;
+  fix: string | null;
+}
+
+const FILING_VERBS = ["issue", "suggest", "fatal"] as const;
+
+/** When to file, for the agent whose session start this is. The verb lines are
+ *  the manifest rows' summaries, so `eris yak --help` and this cannot drift. */
+function filingGuide(): string {
+  const verbs = FILING_VERBS.map((v) => `- eris yak ${v}: ${plugin.rows[`yak ${v}`].summary}\n`).join("");
+  return (
+    "Yaks are on for this session. When your tooling fights back, file a yak in the same turn, before you report back, then carry on with the task. Tooling is any command, script, hook, skill or doc you work through, in this repo or your harness: it errors, blocks something legal, names a flag or file that doesn't exist, or fails silently. Filing is the expected response, not an escalation, and a yak never blocks the task.\n" +
+    verbs +
+    'Each takes --summary "<one line>" and --body "<what happened, what you expected>"; add --repro "<command>" when one shows it. Filing is deduplicated, so a repeat adds weight to an existing report.\n'
+  );
+}
+
+interface ReadyReport {
+  line: string;
+  guide: boolean;
+  record: YakReadiness;
+}
+
+const LOGIN_NUDGE = "run 'eris login' (a person approves a short code in the browser) so this session can file yaks";
+
+function notSignedIn(line: string, fix: string): ReadyReport {
+  return { line: `yaks: ${line}`, guide: false, record: { ready: false, signed_in: false, endpoint: "skipped", configured: null, last_filed_issue_identifier: null, fix } };
+}
+
+async function readiness(env: Record<string, string | undefined>, home: string, deps: AdminDeps): Promise<ReadyReport> {
+  const file = await readYaksFileConfig(home);
+  if ("reason" in file) {
+    const fix = file.slug === "yak-config-permissive" ? "chmod 600 ~/.eris/yaks.json" : "eris login";
+    return notSignedIn(`${file.reason}: ${fix === "eris login" ? "run 'eris login' to rewrite it" : `run '${fix}'`}`, fix);
+  }
+  const bearer = resolveYaksBearer(file.value, env);
+  if ("reason" in bearer) {
+    return bearer.slug === "yak-token-unresolved"
+      ? notSignedIn(`not signed in: ${LOGIN_NUDGE}`, "eris login")
+      : notSignedIn(`ERIS_YAKS_TOKEN is set but ERIS_YAKS_URL is not: ${bearer.fix}`, bearer.fix);
+  }
+  const ep = { url: bearer.value.url.replace(/\/+$/, ""), token: bearer.value.token };
+  const got = await request(ep, "GET", "/v1/yaks/status", YakStatus, { ...deps, timeoutMs: deps.timeoutMs ?? READY_TIMEOUT_MS });
+  if (!got.ok) {
+    if (got.failure.slug === "yak-unauthorized") {
+      return {
+        line: `yaks: the yaks endpoint refused this machine's token: ${LOGIN_NUDGE}`,
+        guide: false,
+        record: { ready: false, signed_in: true, endpoint: "refused", configured: null, last_filed_issue_identifier: null, fix: "eris login" },
+      };
+    }
+    return {
+      line: `yaks: signed in, but ${got.failure.what}; a yak filed now still exits 0 and says whether it was delivered`,
+      guide: true,
+      record: { ready: false, signed_in: true, endpoint: "unreachable", configured: null, last_filed_issue_identifier: null, fix: got.failure.fix ?? "eris yak status" },
+    };
+  }
+  const s = got.value;
+  const last = s.last_filed_issue_identifier;
+  if (!s.configured) {
+    const fix = "eris yak discover teams, then eris yak config set --team <key>";
+    return {
+      line: `yaks: signed in, but no destination is set, so yaks are parked until an admin runs '${fix}' (or uses ${DASH_CONFIG_PAGE})`,
+      guide: true,
+      record: { ready: false, signed_in: true, endpoint: "ok", configured: false, last_filed_issue_identifier: last, fix },
+    };
+  }
+  return {
+    line: `yaks: ready (last filed ${last ?? "none yet"})`,
+    guide: true,
+    record: { ready: true, signed_in: true, endpoint: "ok", configured: true, last_filed_issue_identifier: last, fix: null },
+  };
+}
+
+export async function runReady(args: string[], ctx: VerbContext, deps: AdminDeps = {}): Promise<0> {
+  if (readArgs(plugin.rows, "yak ready", args, ctx) === null) return 0;
+  const r = await readiness(ctx.env, home(ctx, deps), deps);
+  if (ctx.format === "json") {
+    ctx.stdout.write(`${JSON.stringify(r.record)}\n`);
+    return 0;
+  }
+  ctx.stdout.write(`${r.line}\n${r.guide ? filingGuide() : ""}`);
   return 0;
 }
 

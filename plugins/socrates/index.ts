@@ -1,6 +1,6 @@
 /**
  * The socrates plugin's manifest: `eris socrates submit`, `classify`,
- * `resolve` and `discover` as registry rows plus a handler thunk
+ * `resolve`, `discover` and `consult` as registry rows plus a handler thunk
  * (docs/dev/PLUGINS.md).
  *
  * No `product`: every install has the verbs, and the endpoint answers an
@@ -72,6 +72,17 @@ export default definePlugin({
         { name: "--advance", takesValue: true },
       ],
     },
+    "socrates consult": {
+      summary: "Print a living doc, or a brief of several, from the Socrates endpoint",
+      json: true,
+      usage: "[--canon | --practices | --brief] [--project <name>]",
+      flags: [
+        { name: "--canon", takesValue: false },
+        { name: "--practices", takesValue: false },
+        { name: "--brief", takesValue: false },
+        { name: "--project", takesValue: true },
+      ],
+    },
   },
   handlers: {
     socrates: async () => (await import("./submit")).runSocrates,
@@ -83,6 +94,9 @@ export default definePlugin({
                                             policy_hash?, repo_policy?, meta: {_links: {override?}}}
   eris socrates resolve                    {epic, outcome, applied, carried_over, carry_over_epic?,
                                             reporting, contract_version}
+  eris socrates consult                    {docs: [{doc, title, url, markdown, fetched_at,
+                                            contract_version}], unavailable: [{doc, status, code,
+                                            detail, settings?}], contract_version}
   eris socrates settings team              {project, override: {id, key}?, filing_team: {id, key,
                                             source}, contract_version}
   eris socrates discover                   {repo, cursor, head, sources: [{kind, sha, committed_at,

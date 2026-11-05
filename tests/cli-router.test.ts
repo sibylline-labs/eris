@@ -40,6 +40,7 @@ describe("router table", () => {
       logout: "ts",
       socrates: "ts",
       "socrates classify": "ts",
+      "socrates consult": "ts",
       "socrates discover": "ts",
       "socrates resolve": "ts",
       "socrates settings": "ts",
@@ -50,6 +51,7 @@ describe("router table", () => {
       "yak discover": "ts",
       "yak fatal": "ts",
       "yak issue": "ts",
+      "yak ready": "ts",
       "yak status": "ts",
       "yak suggest": "ts",
     });
@@ -156,9 +158,9 @@ describe("the --output json surfaces, from the registry", () => {
     /** When a json row is dropped or added by mistake, a machine caller is refused (or handed human text) on a surface that changed silently. */
     expect(JSON_SURFACES).toEqual({
       "--version": true,
-      socrates: ["submit", "classify", "resolve", "settings", "discover"],
+      socrates: ["submit", "classify", "resolve", "settings", "discover", "consult"],
       update: true,
-      yak: ["fatal", "issue", "suggest", "status", "discover", "config"],
+      yak: ["fatal", "issue", "suggest", "status", "ready", "discover", "config"],
     });
   });
 

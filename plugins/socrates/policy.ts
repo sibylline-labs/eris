@@ -82,7 +82,7 @@ export async function readPolicyCache(ctx: VerbContext, deps: SocratesDeps): Pro
 
 /** GET the org's current policy and cache it; the endpoint's refusals fail as every socrates call does. */
 export async function refreshPolicy(ctx: VerbContext, deps: SocratesDeps, endpoint: SocratesEndpoint): Promise<PolicyCache> {
-  const reply = await postSocrates(ctx, deps, endpoint, { path: SOCRATES_ROUTES.policy.path, method: "GET", decoder: SocratesPolicyResponse, subject: "the policy request" });
+  const reply = await postSocrates(ctx, deps, endpoint, { path: SOCRATES_ROUTES.policy.path, method: "GET", query: {}, decoder: SocratesPolicyResponse, subject: "the policy request" });
   const cache: PolicyCache = { ...reply, fetched_at: new Date().toISOString() };
   const file = policyCachePath(ctx, deps);
   const tmp = `${file}.${process.pid}.tmp`;
