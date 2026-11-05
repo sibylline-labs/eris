@@ -15,6 +15,9 @@
  *     or decoded is absent: reading it never fails a verb.
  *   - The cache is written whole (a temp file renamed over it), only from a
  *     reply decoded through the contract's `SocratesPolicyResponse`.
+ *   - A stamp carries a policy hash at most `POLICY_CACHE_TTL_MS` old: a cache
+ *     fetched longer ago (or in the future) is fetched again before it is read
+ *     (`readFreshPolicy`). Scoring locally (`classify`) reads whatever is cached.
  */
 
 import { homedir } from "node:os";
@@ -26,6 +29,9 @@ import { CliExit, nearestErisYaml, type VerbContext } from "../../src/cli/plugin
 import { fail, postSocrates, printable, type SocratesDeps, type SocratesEndpoint } from "./client";
 import { SocratesRepoPolicy } from "./socrates-contract.v1";
 import { SOCRATES_ROUTES, SocratesPolicyResponse, SocratesPolicyResult } from "./socrates-contract.v1.verbs";
+
+/** How long a cached policy is stamped as it stands; older is fetched again first. */
+export const POLICY_CACHE_TTL_MS = 60 * 60 * 1000;
 
 /** What `~/.eris/socrates-policy.json` holds: the endpoint's policy answer and when it was fetched. */
 export const PolicyCache = SocratesPolicyResult.extend({ fetched_at: z.string().datetime({ offset: true }) });
@@ -80,8 +86,15 @@ export async function readPolicyCache(ctx: VerbContext, deps: SocratesDeps): Pro
   return parsed.success ? parsed.data : undefined;
 }
 
+/** A fetched policy, and the hash the cache held before it replaced it (absent when it held none). */
+export interface RefreshedPolicy {
+  readonly cache: PolicyCache;
+  readonly previous_hash: string | undefined;
+}
+
 /** GET the org's current policy and cache it; the endpoint's refusals fail as every socrates call does. */
-export async function refreshPolicy(ctx: VerbContext, deps: SocratesDeps, endpoint: SocratesEndpoint): Promise<PolicyCache> {
+export async function refreshPolicy(ctx: VerbContext, deps: SocratesDeps, endpoint: SocratesEndpoint): Promise<RefreshedPolicy> {
+  const previous_hash = (await readPolicyCache(ctx, deps))?.policy_hash;
   const reply = await postSocrates(ctx, deps, endpoint, { path: SOCRATES_ROUTES.policy.path, method: "GET", query: {}, decoder: SocratesPolicyResponse, subject: "the policy request" });
   const cache: PolicyCache = { ...reply, fetched_at: new Date().toISOString() };
   const file = policyCachePath(ctx, deps);
@@ -94,7 +107,17 @@ export async function refreshPolicy(ctx: VerbContext, deps: SocratesDeps, endpoi
     // An unwritten cache is refetched by the next submit; the policy in hand is still current.
     await rm(tmp, { force: true }).catch(() => undefined);
   }
-  return cache;
+  return { cache, previous_hash };
+}
+
+/** The cached policy when it was fetched within `POLICY_CACHE_TTL_MS`, else the endpoint's current one (cached). */
+export async function readFreshPolicy(ctx: VerbContext, deps: SocratesDeps, endpoint: SocratesEndpoint): Promise<PolicyCache> {
+  const cache = await readPolicyCache(ctx, deps);
+  if (cache !== undefined) {
+    const age = Date.now() - Date.parse(cache.fetched_at);
+    if (age >= 0 && age < POLICY_CACHE_TTL_MS) return cache;
+  }
+  return (await refreshPolicy(ctx, deps, endpoint)).cache;
 }
 
 /**

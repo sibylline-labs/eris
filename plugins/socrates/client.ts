@@ -39,7 +39,12 @@ export type SocratesSlug =
   | "socrates-cursor-invalid"
   | "socrates-discover-invalid"
   | "socrates-repo-policy-invalid"
-  | "socrates-repo-policy-looser";
+  | "socrates-repo-policy-looser"
+  | "socrates-stamp-required"
+  | "socrates-unfit-invalid"
+  | "socrates-unfit-unsupported"
+  | "socrates-evidence-file-invalid"
+  | "socrates-policy-not-cached";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -48,6 +53,12 @@ export interface SocratesDeps {
   fetch?: typeof fetch;
   /** Where `discover` looks for the repo; the process's cwd when absent. */
   cwd?: string;
+  /** What `--evidence-file <path>` reads; a file's text, `Bun.file(path).text()` when absent. */
+  readFile?: (path: string) => Promise<string>;
+  /** What `--evidence-file -` reads; all of `process.stdin` as text when absent. */
+  readStdin?: () => Promise<string>;
+  /** Whether stdin is a terminal, checked before `--evidence-file -` reads it; `process.stdin.isTTY` when absent. */
+  isStdinTTY?: () => boolean;
 }
 
 /** Drop control characters, so text a server sent cannot drive the terminal. */

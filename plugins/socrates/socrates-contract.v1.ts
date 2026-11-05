@@ -18,6 +18,10 @@
  *    to the source contract.
  *  - Free text is bounded at the door: over-length is a validation failure,
  *    never a truncation.
+ *  - A submit carries `classification` or `unfit`, never both, and an `unfit`
+ *    holds at most `SOCRATES_UNFIT_EVIDENCE_MAX_ENTRIES` evidence entries. A
+ *    receipt echoes `unfit` exactly when the server read it, so a client can
+ *    tell a server that understood the field from one that stripped it.
  */
 
 import { z } from "zod";
@@ -32,6 +36,10 @@ export const SOCRATES_PROJECT_MAX_LENGTH = 200;
 export const SOCRATES_ID_MAX_LENGTH = 200;
 export const SOCRATES_KEY_MAX_LENGTH = 64;
 export const SOCRATES_OVERRIDE_REASON_MAX_LENGTH = 200;
+export const SOCRATES_HYPOTHESIS_MAX_LENGTH = 1_000;
+export const SOCRATES_EVIDENCE_MAX_LENGTH = 20_000;
+/** The evidence entries one unfit submit carries. */
+export const SOCRATES_UNFIT_EVIDENCE_MAX_ENTRIES = 5;
 
 export const SOCRATES_CANDIDATE_KINDS = ["decision", "practice", "prd", "conflict"] as const;
 export const SocratesCandidateKind = z.enum(SOCRATES_CANDIDATE_KINDS);
@@ -52,6 +60,18 @@ export const Url = z
   .regex(/^https?:\/\/[^\s/?#]+[^\s]*$/, "must be an absolute http(s) URL");
 
 export const Version = z.literal(SOCRATES_CONTRACT_VERSION);
+
+export const SocratesEvidenceKind = z.enum(["code", "doc", "session_utterance"]);
+export const SocratesCandidateState = z.enum(["pending", "filed", "needs_input", "resolved", "rejected"]);
+export const SocratesEvidenceContent = nonBlank(SOCRATES_EVIDENCE_MAX_LENGTH);
+/** Where a fragment came from: an absolute http(s) URL, or `repo@sha:path#L<n>[-L<m>]`. */
+export const SocratesProvenance = z
+  .string()
+  .max(SOCRATES_SOURCE_MAX_LENGTH)
+  .regex(
+    /^(?:https?:\/\/[^\s/?#]+[^\s]*|[A-Za-z0-9._/-]+@[0-9a-f]{7,40}:[^\s#]+#L[1-9][0-9]*(?:-L?[1-9][0-9]*)?)$/,
+    "must be an http(s) URL or repo@sha:path#L<n>",
+  );
 
 export const SocratesCandidate = z.object({
   kind: SocratesCandidateKind,
@@ -136,26 +156,56 @@ export const SocratesSubmitClassification = z
   );
 export type SocratesSubmitClassification = z.infer<typeof SocratesSubmitClassification>;
 
+/** One evidence fragment sent inline with an unfit submit: the fields of an evidence create request. */
+export const SocratesUnfitEvidence = z.object({
+  kind: SocratesEvidenceKind,
+  provenance: SocratesProvenance,
+  content: SocratesEvidenceContent,
+});
+export type SocratesUnfitEvidence = z.infer<typeof SocratesUnfitEvidence>;
+
+/** The evidence an unfit submit carries: at most five entries, possibly none. */
+export const SocratesUnfitEvidenceList = z.array(SocratesUnfitEvidence).max(SOCRATES_UNFIT_EVIDENCE_MAX_ENTRIES);
+
+/**
+ * The other stamp of a decision or practice: the rubric's answers cannot express it, so it goes up
+ * as a hypothesis plus evidence. It names the rubric version and the org policy hash eris measured
+ * against, and carries no answers.
+ */
+export const SocratesUnfit = z.object({
+  rubric_version: SocratesRubricVersion,
+  policy_hash: SocratesPolicyHash,
+  hypothesis: nonBlank(SOCRATES_HYPOTHESIS_MAX_LENGTH),
+  evidence: SocratesUnfitEvidenceList,
+});
+export type SocratesUnfit = z.infer<typeof SocratesUnfit>;
+
 /**
  * `now`: file under today's review Epic straight away, which the server does for every submit.
  * `classification`: the stamp of a scored candidate; a `prd` or `conflict` is never scored, so it carries none.
+ * `unfit`: the stamp of a candidate the rubric cannot express; `classification` and `unfit` are exclusive.
  */
-export const SocratesSubmitRequest = z.object({
-  schema_version: Version,
-  candidate: SocratesCandidate,
-  now: z.boolean().optional(),
-  classification: SocratesClassificationStamp.optional(),
-});
+export const SocratesSubmitRequest = z
+  .object({
+    schema_version: Version,
+    candidate: SocratesCandidate,
+    now: z.boolean().optional(),
+    classification: SocratesClassificationStamp.optional(),
+    unfit: SocratesUnfit.optional(),
+  })
+  .refine((r) => r.unfit === undefined || r.classification === undefined, "either unfit or classification, not both");
 export type SocratesSubmitRequest = z.infer<typeof SocratesSubmitRequest>;
 
 /**
  * `deduped` is true when the server already held this candidate and wrote nothing.
  * `classification` answers a stamped submit with the server's verdict under the current policy.
+ * `unfit` answers an unfit submit with the candidate's state; a receipt without it means the server did not read the field.
  */
 export const SocratesSubmitReceipt = z.object({
   candidate_id: nonBlank(SOCRATES_ID_MAX_LENGTH),
   deduped: z.boolean(),
   classification: SocratesSubmitClassification.optional(),
+  unfit: z.object({ state: SocratesCandidateState }).optional(),
   contract_version: Version,
 });
 export type SocratesSubmitReceipt = z.infer<typeof SocratesSubmitReceipt>;

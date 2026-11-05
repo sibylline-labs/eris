@@ -699,7 +699,8 @@ A `WARN`, exit 0: `ERIS_YAKS_TOKEN` is set, and it wins over the token in
 ### socrates-unknown-verb
 
 `eris socrates` was given a command it does not have. Fix: use `classify`,
-`discover`, `resolve`, `settings` or `submit`, or run `eris socrates --help`.
+`consult`, `discover`, `policy`, `resolve`, `settings`, `status` or `submit`, or
+run `eris socrates --help`.
 
 ### socrates-flag-required
 
@@ -709,7 +710,10 @@ pass all three. Also raised when `submit`'s `--allow-redaction` and
 `--override-reason` are not given together, and when `classify --request` is
 given with another flag: the request carries the whole candidate, so pass
 everything inside it or drop it, and when `submit --override` is given without
-`--answer`. `eris socrates resolve` raises it when the
+`--answer`. `submit` also raises it for the unfit flags: `--unfit` without
+`--hypothesis`, and `--hypothesis` or `--evidence-file` without `--unfit`.
+`eris socrates status` raises it when `--candidate` is blank or over 200
+characters. `eris socrates resolve` raises it when the
 Epic is missing or is not an identifier (blank, or over 200 characters);
 nothing was sent. Fix: pass the Epic's identifier, as the Epic's Socrates
 comment prints the command.
@@ -739,8 +743,10 @@ or `conflict` candidate is given `--answer`: it is never scored. Fix: drop
 
 A field holds a secret: a vendored gitleaks rule (gitleaks v8.30.1,
 `packages/outbound-scan`) matched the title, statement, source, project,
-`--override-reason`, or a string in the request body just before it was sent
-(for `resolve`, the Epic).
+`--override-reason`, the `--hypothesis` (named `hypothesis`), an evidence
+entry's content or provenance (named `evidence.<n>` and `evidence.<n>.provenance`),
+or a string in the request body just before it was sent (for `resolve`, the
+Epic; for `status`, `--candidate`).
 The `ERROR` line names the field and the rule id, never the text. Nothing was
 sent. This check cannot be overridden: `--allow-redaction` does not reach it.
 Fix: remove the secret from the named field and run the command again.
@@ -780,6 +786,54 @@ ended). The candidate was sent anyway: a yak never fails the task it reports
 on. Fix: see the named yak slug; a problem with eris itself is reported on the
 vendor route, the eris project's own tracker.
 
+### socrates-stamp-required
+
+`eris socrates submit` was given a `decision` or `practice` with neither
+`--answer` nor `--unfit`. Every such submit carries one stamp: the rubric
+answers eris scored it with, or, for a decision the answers cannot express,
+the hypothesis and evidence it is sent as. Nothing was sent. Fix: add
+`--answer <question>=<answer>...` (`eris socrates classify --help` lists the
+questions), or, for a decision, `--unfit --hypothesis <text>`; a practice takes
+`--answer` only. A `prd` or `conflict` takes neither and is not refused.
+
+### socrates-unfit-invalid
+
+`eris socrates submit --unfit` cannot send the unfit stamp. It was given with
+`--answer` or `--override` (an unfit candidate sends no answers), or with a
+`--kind` other than `decision`, or the `--hypothesis` is blank or over 1000
+characters. Only a decision can be unfit: a `practice` is written straight to
+the Practices doc and never becomes an item a person answers, so it takes
+`--answer`, and a `prd` or `conflict` is never scored. The `ERROR` line says
+which. Nothing was sent. Fix: drop the conflicting flag, send a practice with
+`--answer`, or correct the hypothesis.
+
+### socrates-evidence-file-invalid
+
+`eris socrates submit --evidence-file` could not read its evidence. The file
+(or stdin, for `-`) cannot be read, is not JSON, or is not an array of at most
+five `{kind, provenance, content}` entries: `kind` is `code`, `doc` or
+`session_utterance`, `provenance` an `http(s)` URL or `repo@sha:path#L<n>`,
+`content` non-blank and at most 20000 characters. `-` with stdin on a terminal
+is refused rather than waited on. The `ERROR` line names the entry and field
+(`evidence.1.kind`). Nothing was sent. Fix: correct the file, or pipe it in.
+
+### socrates-unfit-unsupported
+
+`eris socrates submit --unfit` was answered with a receipt that does not echo
+`unfit`. A server that does not know the field drops it and files the
+candidate as a plain one, so the hypothesis and evidence were not read. The
+`ERROR` line names the candidate the receipt carries. Exit 1, nothing on stdout.
+Fix: update the Socrates server to a version that supports unfit submits, or
+check the url points at the right endpoint.
+
+### socrates-policy-not-cached
+
+`eris socrates policy --cached` found no cached policy: `~/.eris/socrates-policy.json`
+is absent, unreadable or not a cached policy. `--cached` never fetches, and
+never prints the rubric's defaults as if they were the org's. Nothing was
+sent. Fix: run `eris socrates policy` without `--cached`, which fetches the
+policy and writes the cache.
+
 ### socrates-reclassified
 
 A `WARN`, not a failure. `eris socrates submit --answer` stamped the candidate
@@ -816,16 +870,18 @@ correct the named keys.
 The nearest `eris.yaml`'s `socrates.policy` parses, but would loosen the org's
 policy: its `threshold` is below the org's (as `eris socrates submit` cached it
 in `~/.eris/socrates-policy.json`, else the rubric's own threshold), or it
-names a question that is not a hard gate of the rubric being scored. The
-`ERROR` line names the file and each problem. Nothing was scored or sent.
+names a question that is not a hard gate of the rubric being scored. `eris
+socrates policy` refuses it too. The `ERROR` line names the file and each
+problem. Nothing was scored or sent.
 Fix: raise `threshold` to at least the org's or remove it; name only hard
 gates.
 
 ### socrates-unreachable
 
 The request to the endpoint (`<url>/v1/socrates/submit`,
-`/v1/socrates/resolve`, or the `/v1/socrates/policy` fetch `submit --answer`
-makes when no policy is cached) did not complete: the host could
+`/v1/socrates/resolve`, `/v1/socrates/status`, or the `/v1/socrates/policy`
+fetch that `submit` makes when no policy is cached or the cached one is over an
+hour old, and `policy` makes always) did not complete: the host could
 not be reached, or no answer arrived within 30 seconds. The url is the one
 `eris login` saved (or `ERIS_YAKS_URL`). Nothing is retried. Fix: check the
 url and the connection, then run the command again.
@@ -843,7 +899,8 @@ The endpoint answered with a problem+json error and no subscribe link. The
 `ERROR` line carries its `detail`, `code` and HTTP status; a 401 means the
 token was rejected. For `resolve`, a 404 means the endpoint holds no review
 Epic by that id and a 409 that the Epic is still open (or has more entries
-than one resolve reads); the `fix:` line says which. For `settings team`, a
+than one resolve reads); the `fix:` line says which. For `status`, a 404 means
+the org holds no candidate with that id. For `settings team`, a
 403 `admin_required` means only an org admin may change it, and a 422 that the
 team id is not one of the project's teams (the detail lists them). For
 `consult`, a 404 means the org has several enrolled projects and `--project`
@@ -867,7 +924,10 @@ The endpoint's answer was neither a receipt nor a problem+json error
 (a proxy page, an outage, a different service), or it was a receipt with a
 non-2xx status. Nothing in it is trusted. For `resolve`, such an answer with
 HTTP 404 means the endpoint does not serve `/v1/socrates/resolve`: the server
-predates the route. Fix: check the url points at a Socrates endpoint, or
+predates the route (likewise `status` and `/v1/socrates/status`). `status
+--candidate <id>` also raises it for an answer that holds no state for that
+candidate, or another candidate's: an older server ignores the query and
+answers for the org. Fix: check the url points at a Socrates endpoint, or
 update the server.
 
 ### socrates-not-a-repo
