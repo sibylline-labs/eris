@@ -51,10 +51,18 @@ describe("eris socrates submit --unfit", () => {
     expect(fake.calls.map((c) => c.method)).toEqual(["POST"]);
   });
 
-  // admits: a deduped unfit receipt reads as a fresh filing, or a state other than needs_input is hidden; observed at stdout.
-  it("says it is already submitted, and names the state the endpoint holds", async () => {
-    fake.answer.submit = () => Response.json({ ...RECEIPT_UNFIT, deduped: true, unfit: { state: "filed" } });
-    expect((await fake.drive(["submit", ...CANDIDATE, ...UNFIT])).stdout).toBe("already submitted: cand_1\n  filed for an answer: filed\n");
+  // admits: a deduped unfit submit onto a candidate that is no longer waiting prints "filed for an answer: filed", which says the hypothesis was kept when the server kept nothing; observed at stdout for each receipt state, and at the json record, which stays the bare echo.
+  it("says what the endpoint holds, and that nothing was kept, when an equal candidate is already held", async () => {
+    const run = async (deduped: boolean, state: string, format: "text" | "json" = "text") => {
+      fake.answer.submit = () => Response.json({ ...RECEIPT_UNFIT, deduped, unfit: { state } });
+      return fake.drive(["submit", ...CANDIDATE, ...UNFIT], { format });
+    };
+    expect((await run(false, "needs_input")).stdout).toBe("submitted: cand_1\n  filed for an answer: needs-input\n");
+    expect((await run(true, "needs_input")).stdout).toBe("already submitted: cand_1\n  filed for an answer: needs-input\n");
+    expect((await run(true, "filed")).stdout).toBe("already submitted: cand_1\n  not stored: an equal candidate is already filed; the hypothesis and evidence were not kept\n");
+    expect((await run(true, "resolved")).stdout).toBe("already submitted: cand_1\n  not stored: an equal candidate is already resolved; the hypothesis and evidence were not kept\n");
+    expect((await run(false, "filed")).stdout).toBe("submitted: cand_1\n  state: filed\n");
+    expect((await run(true, "filed", "json")).stdout).toBe('{"candidate_id":"cand_1","deduped":true,"contract_version":"1.0.0","unfit":{"state":"filed"},"redactions":{"count":0,"classes":[]},"overrides":[]}\n');
   });
 
   // admits: the unfit stamp reads the repo's eris.yaml like the answers stamp does, so a repo layer rides on a body the server does not score, or a looser layer blocks a submit that scores nothing; observed at the body, and at the answers form refusing under the same layer.
@@ -115,42 +123,61 @@ describe("eris socrates submit --unfit", () => {
     expect(fake.calls).toEqual([]);
   });
 
-  // admits: a decision or practice leaves unstamped (the server files it unjudged, with neither answers nor evidence); observed at the slug, with no request, for both kinds.
-  it("refuses a decision or practice that carries neither --answer nor --unfit, naming both ways to stamp it", async () => {
-    for (const kind of [[], ["--kind", "practice"]]) {
-      const r = await fake.drive(["submit", ...CANDIDATE, ...kind]);
+  // admits: a decision or practice leaves unstamped (the server files it unjudged, with neither answers nor evidence); observed at the slug, with no request, for both kinds, and at the fix line, which advises a practice --answer only because only a decision can be unfit.
+  it("refuses a decision or practice that carries neither --answer nor --unfit, advising a decision both ways and a practice --answer", async () => {
+    for (const [kind, flags] of [["decision", []], ["practice", ["--kind", "practice"]]] as const) {
+      const r = await fake.drive(["submit", ...CANDIDATE, ...flags]);
       expect({ kind, rc: r.rc, slug: r.slug, stdout: r.stdout }).toEqual({ kind, rc: 1, slug: "socrates-stamp-required", stdout: "" });
       const fix = fixOf(r.stderr);
       expect(fix).toContain("--answer <question>=<answer>...");
-      expect(fix).toContain("--unfit --hypothesis <text>");
+      expect({ kind, advisesUnfit: fix.includes("--unfit --hypothesis <text>") }).toEqual({ kind, advisesUnfit: kind === "decision" });
+      if (kind === "practice") expect(fix).not.toContain("--unfit");
     }
     expect(fake.calls).toEqual([]);
   });
 
-  // admits: the fix line of socrates-stamp-required advises a form the parser refuses, so the remedy loops; observed by taking each advised form from the printed fix line and running it.
+  // admits: the fix line of socrates-stamp-required advises a form the parser refuses, so the remedy loops; observed by taking each advised form from the printed fix line, for the kind it was printed for, and running it.
   it("accepts each form the stamp-required fix line advises", async () => {
-    const fix = fixOf((await fake.drive(["submit", ...CANDIDATE])).stderr);
-    const advised = [/--answer <question>=<answer>\.\.\./, /--unfit --hypothesis <text>/].map((re) => {
-      const form = fix.match(re)?.[0];
-      if (form === undefined) throw new Error(`the fix line names no ${re}: ${fix}`);
-      return form;
-    });
-    expect(advised).toHaveLength(2);
-    for (const form of advised) {
-      fake.calls.length = 0;
-      const args: string[] = [];
-      for (const word of form.split(" ")) {
-        if (word === "<question>=<answer>...") {
-          const pairs = Object.entries(PASSING).map(([q, a]) => `${q}=${a}`);
-          args.push(pairs[0]!, ...pairs.slice(1).flatMap((pair) => ["--answer", pair]));
-        } else {
-          args.push(word === "<text>" ? "a hypothesis" : word);
+    const advisedForms: [string, string[], RegExp[]][] = [
+      ["decision", [], [/--answer <question>=<answer>\.\.\./, /--unfit --hypothesis <text>/]],
+      ["practice", ["--kind", "practice"], [/--answer <question>=<answer>\.\.\./]],
+    ];
+    let ran = 0;
+    for (const [kind, kindFlags, forms] of advisedForms) {
+      const fix = fixOf((await fake.drive(["submit", ...CANDIDATE, ...kindFlags])).stderr);
+      for (const re of forms) {
+        const form = fix.match(re)?.[0];
+        if (form === undefined) throw new Error(`the ${kind} fix line names no ${re}: ${fix}`);
+        fake.calls.length = 0;
+        const args: string[] = [];
+        for (const word of form.split(" ")) {
+          if (word === "<question>=<answer>...") {
+            const pairs = Object.entries(PASSING).map(([q, a]) => `${q}=${a}`);
+            args.push(pairs[0]!, ...pairs.slice(1).flatMap((pair) => ["--answer", pair]));
+          } else {
+            args.push(word === "<text>" ? "a hypothesis" : word);
+          }
         }
+        const r = await fake.drive(["submit", ...CANDIDATE, ...kindFlags, ...args]);
+        expect({ kind, form, rc: r.rc, slug: r.slug }).toEqual({ kind, form, rc: 0, slug: undefined });
+        expect(posts()).toHaveLength(1);
+        ran += 1;
       }
-      const r = await fake.drive(["submit", ...CANDIDATE, ...args]);
-      expect({ form, rc: r.rc, slug: r.slug }).toEqual({ form, rc: 0, slug: undefined });
-      expect(posts()).toHaveLength(1);
     }
+    expect(ran).toBe(3);
+  });
+
+  // admits: a practice sent as unfit reaches the server, which refuses it (a practice is written to the Practices doc and never becomes an item a person answers); or a decision is refused with --kind decision; observed at the slug and fix line with no request for a practice, and at the body for an explicit decision.
+  it("refuses --unfit on anything but a decision, and says a practice takes --answer", async () => {
+    const practice = await fake.drive(["submit", ...CANDIDATE, "--kind", "practice", ...UNFIT]);
+    expect(practice).toMatchObject({ rc: 1, stdout: "", slug: "socrates-unfit-invalid" });
+    expect(fixOf(practice.stderr)).toContain("must be a decision (a practice takes --answer");
+    expect(fake.calls).toEqual([]);
+    expect(await fake.drive(["submit", ...CANDIDATE, "--kind", "decision", ...UNFIT])).toMatchObject({ rc: 0 });
+    expect((sent().unfit as { hypothesis: string }).hypothesis).toBe(HYPOTHESIS);
+    fake.calls.length = 0;
+    expect(await fake.drive(["submit", ...CANDIDATE, "--kind", "practice", ...answers()])).toMatchObject({ rc: 0 });
+    expect(sent().classification).toBeDefined();
   });
 
   // admits: a prd or conflict picks up the stamp rule (and is refused for lacking one), or takes --unfit; observed at the body sent for a prd with neither flag, and at the slug, with no request, for --unfit.

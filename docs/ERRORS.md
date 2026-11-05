@@ -790,19 +790,22 @@ vendor route, the eris project's own tracker.
 
 `eris socrates submit` was given a `decision` or `practice` with neither
 `--answer` nor `--unfit`. Every such submit carries one stamp: the rubric
-answers eris scored it with, or, when the answers cannot express it, the
-hypothesis and evidence it is sent as. Nothing was sent. Fix: add
+answers eris scored it with, or, for a decision the answers cannot express,
+the hypothesis and evidence it is sent as. Nothing was sent. Fix: add
 `--answer <question>=<answer>...` (`eris socrates classify --help` lists the
-questions), or `--unfit --hypothesis <text>`. A `prd` or `conflict` takes
-neither and is not refused.
+questions), or, for a decision, `--unfit --hypothesis <text>`; a practice takes
+`--answer` only. A `prd` or `conflict` takes neither and is not refused.
 
 ### socrates-unfit-invalid
 
 `eris socrates submit --unfit` cannot send the unfit stamp. It was given with
 `--answer` or `--override` (an unfit candidate sends no answers), or with a
-`prd` or `conflict` (those are never scored, so never unfit), or the
-`--hypothesis` is blank or over 1000 characters. The `ERROR` line says which.
-Nothing was sent. Fix: drop the conflicting flag, or correct the hypothesis.
+`--kind` other than `decision`, or the `--hypothesis` is blank or over 1000
+characters. Only a decision can be unfit: a `practice` is written straight to
+the Practices doc and never becomes an item a person answers, so it takes
+`--answer`, and a `prd` or `conflict` is never scored. The `ERROR` line says
+which. Nothing was sent. Fix: drop the conflicting flag, send a practice with
+`--answer`, or correct the hypothesis.
 
 ### socrates-evidence-file-invalid
 

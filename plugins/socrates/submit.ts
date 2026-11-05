@@ -35,9 +35,11 @@
  *     A `prd` or `conflict` takes no stamp: its body and exchange carry none.
  *   - A receipt that says the server reclassified the stamp prints a WARN and
  *     refreshes the cached policy, so the next stamp carries the current hash.
- *   - A decision or practice is stamped: it carries `--answer` or `--unfit`, and
- *     a submit with neither is refused (`socrates-stamp-required`) with nothing
- *     sent. A policy hash older than an hour is fetched again before it is
+ *   - A decision or practice is stamped: it carries `--answer` or, for a
+ *     decision only, `--unfit`, and a submit with neither is refused
+ *     (`socrates-stamp-required`) with nothing sent. A practice is written
+ *     straight to the Practices doc, so it is never an item a person answers
+ *     and is never unfit. A policy hash older than an hour is fetched again before it is
  *     stamped (`readFreshPolicy`).
  *   - With `--unfit`, the body carries the unfit stamp instead: the rubric
  *     version and fresh org policy hash, the hypothesis and up to five evidence
@@ -88,13 +90,15 @@ export const SUBMIT_USAGE = `Usage: eris socrates submit --title <text> --statem
 Send one candidate to the Socrates endpoint and print its receipt:
 'submitted: <id>', or 'already submitted: <id>' when the endpoint already
 holds it, then '  verdict: <verdict> (<rubric>, policy <hash>)' when the
-candidate was stamped with answers, or '  filed for an answer: needs-input'
-when it was sent as unfit. --output json prints {candidate_id, deduped,
+candidate was stamped with answers; when it was sent as unfit, '  filed for an
+answer: needs-input', or, when the endpoint already held an equal candidate that
+is no longer waiting, '  not stored: ...' (the hypothesis and evidence were not
+kept). --output json prints {candidate_id, deduped,
 contract_version, classification?, unfit?: {state}, redactions: {count,
 classes}, overrides: [class]}.
 
-A decision or practice carries one stamp, --answer or --unfit, and is refused
-with neither. A prd or conflict takes neither.
+A decision carries one stamp, --answer or --unfit, and is refused with neither.
+A practice carries --answer (it is never unfit). A prd or conflict takes neither.
 
 Before anything is sent, every field is scanned. A secret (the gitleaks rules)
 refuses the candidate and cannot be overridden. Our redaction classes replace
@@ -121,8 +125,8 @@ what they match with «redacted:<class>» and print a WARN.
   --override <gate>=<reason>
                        repeatable, with --answer: bypass this rejecting gate,
                        with a one-line reason (<= 200 chars)
-  --unfit              a decision or practice only, instead of --answer: the
-                       rubric's answers cannot express it, so send it as a
+  --unfit              a decision only (a practice takes --answer), instead of
+                       --answer: the rubric's answers cannot express it, so send it as a
                        hypothesis plus evidence. It is not scored; the endpoint
                        files it for a person to answer. Carries the rubric
                        version and the org policy hash from
@@ -191,8 +195,13 @@ async function fileOverrideYak(ctx: VerbContext, overrides: readonly Override[],
 /** A 409 from submit is the unenrolled refusal, and its detail names the step to take. */
 const refusalFix = (status: number): string | undefined => (status === 409 ? "follow the step named above, then run the command again" : undefined);
 
-/** The two ways to stamp a decision or practice; `tests/socrates-unfit.test.ts` runs each form it names through the parser. */
-const STAMP_FIX = "stamp it with the rubric's answers, --answer <question>=<answer>... (run 'eris socrates classify --help' for the questions), or, when the answers cannot express it, send it as unfit: --unfit --hypothesis <text> [--evidence-file <path|->]";
+/** The ways to stamp a decision, and a practice (which is never unfit); `tests/socrates-unfit.test.ts` runs each form it names through the parser. */
+const ANSWER_STAMP_FIX = "stamp it with the rubric's answers, --answer <question>=<answer>... (run 'eris socrates classify --help' for the questions)";
+const STAMP_FIX = {
+  decision: `${ANSWER_STAMP_FIX}, or, when the answers cannot express it, send it as unfit: --unfit --hypothesis <text> [--evidence-file <path|->]`,
+  practice: `${ANSWER_STAMP_FIX}; only a decision can be sent as unfit`,
+} as const;
+const UNFIT_KIND_FIX = "an unfit candidate must be a decision (a practice takes --answer <question>=<answer>...; a prd or conflict takes neither): drop --unfit, or change --kind";
 const UNFIT_FIX = "run 'eris socrates submit --help' for the bounds of --hypothesis and --evidence-file";
 
 export async function runSocrates(args: string[], ctx: VerbContext, deps: SocratesDeps = {}): Promise<number> {
@@ -223,9 +232,9 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   if (kind === "prd" || kind === "conflict") {
     if (answerArgs.length > 0) fail(ctx, "socrates-answers-invalid", `a ${kind} entry is not scored, so it takes no rubric answers`, "drop --answer");
     if (overrideArgs.length > 0) fail(ctx, "socrates-override-invalid", `a ${kind} entry has no gate to override`, "drop --override");
-    if (asUnfit) fail(ctx, "socrates-unfit-invalid", `a ${kind} entry is not scored, so it is never unfit`, "drop --unfit");
   }
   if (asUnfit) {
+    if (kind !== undefined && kind !== "decision") fail(ctx, "socrates-unfit-invalid", `--unfit is for a decision, and --kind is ${printable(kind)}`, UNFIT_KIND_FIX);
     if (answerArgs.length > 0 || overrideArgs.length > 0) fail(ctx, "socrates-unfit-invalid", "--unfit sends no rubric answers, so it cannot be given with --answer or --override", "drop --unfit, or drop --answer and --override");
     if (hypothesis === undefined) fail(ctx, "socrates-flag-required", "--unfit needs --hypothesis", "add --hypothesis <what you think it is>");
   } else {
@@ -262,7 +271,8 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
     if (!entry.ok) fail(ctx, "socrates-candidate-invalid", `the ${candidate.kind} statement cannot be filed (${printable(entry.reason)})`, "run 'eris socrates classify --help' for the statement grammar");
   }
   if (answerArgs.length === 0 && !asUnfit && (candidate.kind === "decision" || candidate.kind === "practice")) {
-    fail(ctx, "socrates-stamp-required", `a ${candidate.kind} carries --answer or --unfit, and this one carries neither; nothing was sent`, STAMP_FIX);
+    const stamps = candidate.kind === "decision" ? "--answer or --unfit, and this one carries neither" : "--answer, and this one does not";
+    fail(ctx, "socrates-stamp-required", `a ${candidate.kind} carries ${stamps}; nothing was sent`, STAMP_FIX[candidate.kind]);
   }
   let body = parsed.data;
   let endpoint: SocratesEndpoint | undefined;
@@ -329,9 +339,19 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   } else {
     ctx.stdout.write(`${reply.deduped ? "already submitted" : "submitted"}: ${printable(reply.candidate_id)}\n`);
     if (classified !== undefined) ctx.stdout.write(`  verdict: ${classified.verdict} (${classified.rubric_version}, policy ${classified.policy_hash.slice(0, 12)})\n`);
-    if (asUnfit && reply.unfit !== undefined) ctx.stdout.write(`  filed for an answer: ${reply.unfit.state === "needs_input" ? "needs-input" : reply.unfit.state}\n`);
+    if (asUnfit && reply.unfit !== undefined) ctx.stdout.write(`${unfitLine(reply.deduped, reply.unfit.state)}\n`);
   }
   return 0;
+}
+
+/**
+ * What an unfit receipt says about the candidate. Only `needs_input` means the hypothesis and evidence
+ * are waiting for a person; a deduped submit onto a candidate in any other state wrote nothing.
+ */
+function unfitLine(deduped: boolean, state: string): string {
+  if (state === "needs_input") return "  filed for an answer: needs-input";
+  if (deduped) return `  not stored: an equal candidate is already ${printable(state)}; the hypothesis and evidence were not kept`;
+  return `  state: ${printable(state)}`;
 }
 
 /**
