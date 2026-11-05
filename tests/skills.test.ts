@@ -45,6 +45,7 @@ type Row = { flags?: readonly { name: string }[] };
 const ROWS = socrates.rows as Record<string, Row>;
 
 describe("skills/", () => {
+  // admits: a skill the skills CLI cannot discover installs as nothing; no type or lint sees a markdown file's frontmatter.
   test.each(skillDirs)("%s is discoverable by the skills CLI", (dir) => {
     // When a skill's directory has no SKILL.md, or its frontmatter name differs from the directory or its
     // description is empty, `npx skills add sibylline-labs/eris --skill <dir>` finds nothing to install —
@@ -61,6 +62,7 @@ describe("skills/eris-socrates", () => {
   const file = join(SKILLS, "eris-socrates", "SKILL.md");
   const body = () => readFileSync(file, "utf8");
 
+  // admits: a verb or flag renamed in the registry leaves the skill naming a command that fails; no type reaches markdown code spans.
   test("names only verbs and flags the registry has", () => {
     // When a verb or flag is renamed in plugins/socrates/index.ts and this skill is not, an agent that follows
     // the skill runs a command that exits "unknown socrates command" — observed here as the unmatched command.
@@ -83,6 +85,7 @@ describe("skills/eris-socrates", () => {
     expect(bad).toEqual([]);
   });
 
+  // admits: scoring steps copied into the skill drift from the CLI's help; "logic in prose" is only checkable as a size and vocabulary bound.
   test("stays thin: verb calls, no scoring logic", () => {
     // When rubric, threshold or answer-stamping steps are copied into the skill, they go stale against the CLI's
     // own help and the endpoint's policy, and two copies of the steering disagree — observed here as the
