@@ -74,6 +74,8 @@ packages/socrates-core/ # Socrates living-doc surgery, `eris/socrates-core`: src
                         #   src/index.ts also serves RUBRICS / rubricFor(version)
 skills/eris-yaks/       # SKILL.md: the agent skill that sets up Yaks (`npx skills add sibylline-labs/eris
                         #   --skill eris-yaks`); the skills CLI discovers skills/<name>/SKILL.md
+skills/eris-socrates/   # SKILL.md: the agent skill that signs an agent in and names the `eris socrates` verbs
+                        #   (`--skill eris-socrates`); tests/skills.test.ts holds it to the registry's verbs and flags
 examples/plugins/widgets/  # the worked plugin example tests/plugins.test.ts composes
 examples/distribution/  # the worked distribution: an entry importing eris/sdk alone, a demo plugin with a
                         #   completion domain, a menu, and build.ts; tests/distribution.test.ts builds and runs it
