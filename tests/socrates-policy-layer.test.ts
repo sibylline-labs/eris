@@ -61,7 +61,8 @@ afterEach(() => {
 });
 
 const cacheFile = () => join(home, ".eris", "socrates-policy.json");
-const writeCache = (result: object) => writeFileSync(cacheFile(), JSON.stringify({ ...result, fetched_at: "2026-11-04T10:00:00.000Z" }));
+/** Fetched just now: a stamp refetches a policy over an hour old, which these tests do not mean to exercise. */
+const writeCache = (result: object) => writeFileSync(cacheFile(), JSON.stringify({ ...result, fetched_at: new Date().toISOString() }));
 const erisYaml = (text: string) => writeFileSync(join(cwd, "eris.yaml"), text);
 
 async function drive(args: string[], opts: { format?: "text" | "json" } = {}) {

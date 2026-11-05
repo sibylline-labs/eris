@@ -20,16 +20,19 @@ import { z } from "zod";
 import {
   SocratesAnswer as Answer,
   SocratesCandidate,
+  SocratesCandidateState,
+  SocratesEvidenceContent as EvidenceContent,
+  SocratesEvidenceKind,
   SocratesKey as Key,
   SocratesNonNegativeNumber as NonNegativeNumber,
   SocratesOverrides,
   SocratesPolicyHash as PolicyHash,
   SocratesProblem,
+  SocratesProvenance as Provenance,
   SocratesRepoPolicy,
   SocratesRubricAnswers,
   SocratesRubricVersion as RubricVersion,
   SocratesVerdict,
-  SOCRATES_SOURCE_MAX_LENGTH,
   SOCRATES_SUBMIT_PATH,
   uniqueGates,
   Url,
@@ -37,7 +40,16 @@ import {
   nonBlank,
 } from "./socrates-contract.v1";
 
-export { SOCRATES_KEY_MAX_LENGTH, SOCRATES_OVERRIDE_REASON_MAX_LENGTH, SocratesOverride, SocratesRepoPolicy, SocratesVerdict } from "./socrates-contract.v1";
+export {
+  SOCRATES_EVIDENCE_MAX_LENGTH,
+  SOCRATES_KEY_MAX_LENGTH,
+  SOCRATES_OVERRIDE_REASON_MAX_LENGTH,
+  SocratesCandidateState,
+  SocratesEvidenceKind,
+  SocratesOverride,
+  SocratesRepoPolicy,
+  SocratesVerdict,
+} from "./socrates-contract.v1";
 
 /** Every route, so a verb never spells a path or method by hand. */
 export const SOCRATES_ROUTES = {
@@ -54,7 +66,6 @@ export const SOCRATES_ROUTES = {
 
 export const SOCRATES_GATE_REASON_MAX_LENGTH = 500;
 export const SOCRATES_DOC_TITLE_MAX_LENGTH = 500;
-export const SOCRATES_EVIDENCE_MAX_LENGTH = 20_000;
 export const SOCRATES_DOC_MAX_LENGTH = 1_000_000;
 export const SOCRATES_ID_MAX_LENGTH = 200;
 export const SOCRATES_PROJECT_MAX_LENGTH = 200;
@@ -64,9 +75,7 @@ export const SocratesGateOutcome = z.enum(["pass", "fail", "off", "overridden"])
 export const SocratesVerbosity = z.enum(["spine", "load_bearing", "considered", "chatty", "everything"]);
 export const SocratesEscalation = z.enum(["off", "evidence", "connected_repos"]);
 export const SocratesReporting = z.enum(["pulse", "epic_comment", "none"]);
-export const SocratesEvidenceKind = z.enum(["code", "doc", "session_utterance"]);
 export const SocratesDocKind = z.enum(["one_pager", "lbd", "ka", "retro", "canon", "practices"]);
-export const SocratesCandidateState = z.enum(["pending", "filed", "needs_input", "resolved", "rejected"]);
 export const SocratesResolveOutcome = z.enum(["resolved", "queued"]);
 
 const IsoDatetime = z
@@ -78,13 +87,6 @@ const IsoDatetime = z
 const Id = nonBlank(SOCRATES_ID_MAX_LENGTH);
 const ProjectHint = nonBlank(SOCRATES_PROJECT_MAX_LENGTH);
 const NonNegativeInt = z.number().int().min(0);
-const Provenance = z
-  .string()
-  .max(SOCRATES_SOURCE_MAX_LENGTH)
-  .regex(
-    /^(?:https?:\/\/[^\s/?#]+[^\s]*|[A-Za-z0-9._/-]+@[0-9a-f]{7,40}:[^\s#]+#L[1-9][0-9]*(?:-L?[1-9][0-9]*)?)$/,
-    "must be an http(s) URL or repo@sha:path#L<n>",
-  );
 
 // --- classify ---------------------------------------------------------------
 
@@ -142,8 +144,6 @@ export type SocratesPolicyResult = z.infer<typeof SocratesPolicyResult>;
 export const SocratesPolicyResponse = z.union([SocratesPolicyResult, SocratesProblem]);
 
 // --- evidence ---------------------------------------------------------------
-
-const EvidenceContent = nonBlank(SOCRATES_EVIDENCE_MAX_LENGTH);
 
 export const SocratesEvidenceCreateRequest = z.object({
   schema_version: Version,

@@ -1,7 +1,7 @@
 /**
  * The socrates plugin's manifest: `eris socrates submit`, `classify`,
- * `resolve`, `discover` and `consult` as registry rows plus a handler thunk
- * (docs/dev/PLUGINS.md).
+ * `resolve`, `discover`, `consult`, `status` and `policy` as registry rows plus
+ * a handler thunk (docs/dev/PLUGINS.md).
  *
  * No `product`: every install has the verbs, and the endpoint answers an
  * unentitled workspace with a subscribe link, which the verb prints.
@@ -16,7 +16,7 @@ export default definePlugin({
     "socrates submit": {
       summary: "Submit one candidate (a decision, practice, PRD or conflict) for review",
       json: true,
-      usage: "--title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--now] [--answer <question>=<answer>... [--override <gate>=<reason>]...] [--allow-redaction <class> --override-reason <text>]",
+      usage: "--title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--now] (--answer <question>=<answer>... [--override <gate>=<reason>]... | --unfit --hypothesis <text> [--evidence-file <path|->]) [--allow-redaction <class> --override-reason <text>]",
       flags: [
         { name: "--kind", takesValue: true },
         { name: "--title", takesValue: true },
@@ -28,6 +28,9 @@ export default definePlugin({
         { name: "--override", takesValue: true, repeatable: true },
         { name: "--allow-redaction", takesValue: true, repeatable: true },
         { name: "--override-reason", takesValue: true },
+        { name: "--unfit", takesValue: false },
+        { name: "--hypothesis", takesValue: true },
+        { name: "--evidence-file", takesValue: true, file: true },
       ],
     },
     "socrates classify": {
@@ -83,12 +86,24 @@ export default definePlugin({
         { name: "--project", takesValue: true },
       ],
     },
+    "socrates status": {
+      summary: "Print the pending count, the open review Epics and one candidate's state",
+      json: true,
+      usage: "[--candidate <id>]",
+      flags: [{ name: "--candidate", takesValue: true }],
+    },
+    "socrates policy": {
+      summary: "Print the org's scoring policy, and refresh the cached copy",
+      json: true,
+      usage: "[--cached]",
+      flags: [{ name: "--cached", takesValue: false }],
+    },
   },
   handlers: {
     socrates: async () => (await import("./submit")).runSocrates,
   },
   jsonFix: `  eris socrates submit                     {candidate_id, deduped, contract_version, classification?,
-                                            redactions, overrides}
+                                            unfit?: {state}, redactions, overrides}
   eris socrates classify                   {verdict, rubric_version, score?, threshold?, breakdown?,
                                             gate?, answer?, feature?, route?, reason?, overrides,
                                             policy_hash?, repo_policy?, meta: {_links: {override?}}}
@@ -102,5 +117,12 @@ export default definePlugin({
   eris socrates discover                   {repo, cursor, head, sources: [{kind, sha, committed_at,
                                             subject}], truncated}
   eris socrates discover --advance         {repo, cursor}
+  eris socrates status                     {rubric_version, policy_hash, pending_candidates,
+                                            open_epics: [{epic, project, url, open_children}],
+                                            candidate?: {candidate_id, state, issue_url?},
+                                            contract_version}
+  eris socrates policy                     {rubric_version, policy_hash, cached, fetched_at,
+                                            org_policy, policy, repo_policy, repo_policy_path,
+                                            changed?: {from, to}, contract_version}
 `,
 });

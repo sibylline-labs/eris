@@ -8,8 +8,9 @@
  * HTTP. The token is assembled at runtime so no literal trips a secret scanner.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { SocratesProblem, SocratesSubmitReceipt, SocratesSubmitRequest, SocratesSubmitResponse } from "../plugins/socrates/socrates-contract.v1";
 import { runSocrates } from "../plugins/socrates/submit";
@@ -19,6 +20,7 @@ import { RUBRIC_V1, RUBRIC_V2 } from "../packages/socrates-core/src/index";
 import type { ZodTypeAny } from "zod";
 import { CliExit } from "../src/cli/ts-verb";
 import { expectFailBlock, type Sandbox, sandbox } from "./helpers/blackbox";
+import { answers, H1, ORG_V2, PASSING, policyResult } from "./helpers/socrates-fake";
 
 const REPO = resolve(import.meta.dir, "..");
 const TOKEN = ["sib", "01HZX3K5Q8W2N4R6T8V0Y2B4D6", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
@@ -95,6 +97,8 @@ describe("the contract v1 routes beyond submit, against the shared golden file",
 let server: ReturnType<typeof Bun.serve>;
 let answer: () => Response;
 const requests: { path: string; auth: string | null; body: unknown }[] = [];
+/** A throwaway HOME holding a policy fetched just now, so a stamped submit needs no policy GET. */
+let home: string;
 
 beforeAll(() => {
   server = Bun.serve({
@@ -110,19 +114,25 @@ afterAll(() => server.stop(true));
 beforeEach(() => {
   requests.length = 0;
   answer = () => Response.json({ candidate_id: "cand_1", deduped: false, contract_version: "1.0.0" });
+  home = realpathSync(mkdtempSync(join(tmpdir(), "eris-socrates-home-")));
+  mkdirSync(join(home, ".eris"));
+  writeFileSync(join(home, ".eris", "socrates-policy.json"), JSON.stringify({ ...policyResult(H1, ORG_V2), fetched_at: new Date().toISOString() }));
 });
+afterEach(() => rmSync(home, { recursive: true, force: true }));
 
 const problem = (status: number, code: string, detail: string) =>
   Response.json({ type: `urn:hera:error:${code}`, title: code, status, detail, code }, { status, headers: { "content-type": "application/problem+json" } });
 
 const CANDIDATE = ["--title", "Errors use problem+json", "--statement", "Every 4xx/5xx is RFC 7807.", "--source", "https://example.com/pr/14"];
+/** A decision carries a stamp; these tests are about the exchange, not the answers. */
+const STAMPED = [...CANDIDATE, ...answers()];
 
 async function drive(args: string[], opts: { format?: "text" | "json"; env?: Record<string, string> } = {}) {
   let stdout = "";
   let stderr = "";
   const ctx = {
     erisDir: REPO,
-    env: opts.env ?? { HOME: join(REPO, ".scratch", "no-such-home"), ERIS_YAKS_URL: `http://127.0.0.1:${server.port}`, ERIS_YAKS_TOKEN: TOKEN },
+    env: opts.env ?? { HOME: home, ERIS_YAKS_URL: `http://127.0.0.1:${server.port}`, ERIS_YAKS_TOKEN: TOKEN },
     format: opts.format ?? "text",
     stdout: { write: (s: string) => ((stdout += s), true) },
     stderr: { write: (s: string) => ((stderr += s), true) },
@@ -141,31 +151,35 @@ async function drive(args: string[], opts: { format?: "text" | "json"; env?: Rec
 describe("eris socrates submit", () => {
   it("posts one schema-checked candidate with the login bearer and prints the receipt", async () => {
     /** When the body, path or bearer drifts, the endpoint refuses every submission. */
-    expect(await drive(["submit", ...CANDIDATE, "--project", "platform"])).toMatchObject({ rc: 0, stdout: "submitted: cand_1\n", stderr: "" });
+    expect(await drive(["submit", ...STAMPED, "--project", "platform"])).toMatchObject({ rc: 0, stdout: "submitted: cand_1\n", stderr: "" });
     expect(requests).toEqual([
       {
         path: "/v1/socrates/submit",
         auth: `Bearer ${TOKEN}`,
-        body: { schema_version: "1.0.0", candidate: { kind: "decision", title: "Errors use problem+json", statement: "Every 4xx/5xx is RFC 7807.", source: "https://example.com/pr/14", project: "platform" } },
+        body: {
+          schema_version: "1.0.0",
+          candidate: { kind: "decision", title: "Errors use problem+json", statement: "Every 4xx/5xx is RFC 7807.", source: "https://example.com/pr/14", project: "platform" },
+          classification: { rubric_version: "rubric@v2", policy_hash: H1, answers: PASSING },
+        },
       },
     ]);
   });
 
   it("sends now: true under --now", async () => {
     /** When the flag is dropped from the body, `submit --now` silently asks for nothing. Without the flag, the exact body above carries no `now`. */
-    expect(await drive(["submit", ...CANDIDATE, "--now"])).toMatchObject({ rc: 0, stdout: "submitted: cand_1\n", stderr: "" });
+    expect(await drive(["submit", ...STAMPED, "--now"])).toMatchObject({ rc: 0, stdout: "submitted: cand_1\n", stderr: "" });
     expect(requests.map((r) => (r.body as { now?: unknown }).now)).toEqual([true]);
   });
 
   it("prints a deduped receipt as a bare JSON record under --output json", async () => {
     /** When a dedup reads as a failure or the record grows a wrapper, a script branching on `deduped` breaks. */
     answer = () => Response.json({ candidate_id: "cand_1", deduped: true, contract_version: "1.0.0" });
-    expect(await drive(["submit", ...CANDIDATE], { format: "json" })).toMatchObject({
+    expect(await drive(["submit", ...STAMPED], { format: "json" })).toMatchObject({
       rc: 0,
       stdout: '{"candidate_id":"cand_1","deduped":true,"contract_version":"1.0.0","redactions":{"count":0,"classes":[]},"overrides":[]}\n',
       stderr: "",
     });
-    expect((await drive(["submit", ...CANDIDATE])).stdout).toBe("already submitted: cand_1\n");
+    expect((await drive(["submit", ...STAMPED])).stdout).toBe("already submitted: cand_1\n");
   });
 
   it("prints the subscribe link when the endpoint says the workspace is not entitled", async () => {
@@ -175,7 +189,7 @@ describe("eris socrates submit", () => {
         { type: "urn:hera:error:entitlement_lapsed", title: "Organization entitlement has lapsed", status: 402, detail: "not entitled to socrates", code: "entitlement_lapsed", _links: { subscribe: { href: SUBSCRIBE } } },
         { status: 402, headers: { "content-type": "application/problem+json" } },
       );
-    const r = await drive(["submit", ...CANDIDATE], { format: "json" });
+    const r = await drive(["submit", ...STAMPED], { format: "json" });
     expect(r).toMatchObject({ rc: 1, stdout: "", slug: "socrates-not-entitled" });
     expect(r.stderr).toContain(`fix: subscribe: ${SUBSCRIBE}\n`);
   });
@@ -184,14 +198,14 @@ describe("eris socrates submit", () => {
     /** When an untyped body passes, a proxy page or another service's JSON prints as a receipt. */
     for (const body of [new Response("<html>502</html>", { status: 502 }), Response.json({ ok: true }), Response.json({ ok: false, code: "x", status: 402 }, { status: 402 })]) {
       answer = () => body.clone();
-      expect(await drive(["submit", ...CANDIDATE])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-bad-response" });
+      expect(await drive(["submit", ...STAMPED])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-bad-response" });
     }
   });
 
   it("names a problem without a subscribe link as a refusal", async () => {
     /** When every problem reads as not-entitled, a revoked token sends the user to a billing page. */
     answer = () => Response.json({ type: "urn:hera:error:unauthorized", title: "Unauthorized", status: 401, detail: "Unauthorized", code: "unauthorized" }, { status: 401 });
-    const r = await drive(["submit", ...CANDIDATE]);
+    const r = await drive(["submit", ...STAMPED]);
     expect(r).toMatchObject({ rc: 1, slug: "socrates-refused" });
     expect(r.stderr).toContain("eris login");
   });
@@ -205,7 +219,7 @@ describe("eris socrates submit", () => {
     ];
     for (const detail of details) {
       answer = () => problem(409, "conflict", detail);
-      const r = await drive(["submit", ...CANDIDATE]);
+      const r = await drive(["submit", ...STAMPED]);
       expect(r).toMatchObject({ rc: 1, stdout: "", slug: "socrates-refused" });
       expect(r.stderr).toContain(`the endpoint refused the candidate: ${detail} (conflict, HTTP 409)`);
       expect(r.stderr).toContain("fix: follow the step named above, then run the command again");
@@ -216,9 +230,9 @@ describe("eris socrates submit", () => {
   it("prints the detail and code of every other problem refusal", async () => {
     /** When a 404 or 422 refusal loses its reason on the way to the terminal, the user is left with a status and no cause. */
     answer = () => problem(404, "not_found", 'Project "Agentic Harness" is not enrolled in Socrates; enrolled projects: Eris Yaks');
-    expect((await drive(["submit", ...CANDIDATE, "--project", "Agentic Harness"])).stderr).toContain('refused the candidate: Project "Agentic Harness" is not enrolled in Socrates; enrolled projects: Eris Yaks (not_found, HTTP 404)');
+    expect((await drive(["submit", ...STAMPED, "--project", "Agentic Harness"])).stderr).toContain('refused the candidate: Project "Agentic Harness" is not enrolled in Socrates; enrolled projects: Eris Yaks (not_found, HTTP 404)');
     answer = () => problem(422, "unprocessable_entity", "Entry title must be at most 80 characters (got 90)");
-    expect((await drive(["submit", ...CANDIDATE])).stderr).toContain("refused the candidate: Entry title must be at most 80 characters (got 90) (unprocessable_entity, HTTP 422)");
+    expect((await drive(["submit", ...STAMPED])).stderr).toContain("refused the candidate: Entry title must be at most 80 characters (got 90) (unprocessable_entity, HTTP 422)");
   });
 
   it("sends nothing when the candidate fails the contract or a required flag is missing", async () => {
@@ -232,14 +246,14 @@ describe("eris socrates submit", () => {
 
   it("asks for eris login when no token resolves", async () => {
     /** When a missing token reaches the wire, the endpoint's 401 hides the local fix. */
-    const r = await drive(["submit", ...CANDIDATE], { env: { HOME: join(REPO, ".scratch", "no-such-home"), ERIS_YAKS_URL: `http://127.0.0.1:${server.port}` } });
+    const r = await drive(["submit", ...STAMPED], { env: { HOME: join(REPO, ".scratch", "no-such-home"), ERIS_YAKS_URL: `http://127.0.0.1:${server.port}` } });
     expect(r).toMatchObject({ rc: 1, slug: "yak-token-unresolved" });
     expect(requests).toEqual([]);
   });
 
   it("refuses an ERIS_YAKS_TOKEN with no URL rather than sending it to the default host", async () => {
     /** When an env bearer falls through to the built-in URL, a token set for one endpoint is posted to api.sibylline.group: observed at the slug and exit code, before any request. */
-    const r = await drive(["submit", ...CANDIDATE], { env: { HOME: join(REPO, ".scratch", "no-such-home"), ERIS_YAKS_TOKEN: TOKEN } });
+    const r = await drive(["submit", ...STAMPED], { env: { HOME: join(REPO, ".scratch", "no-such-home"), ERIS_YAKS_TOKEN: TOKEN } });
     expect(r).toMatchObject({ rc: 1, slug: "yak-url-unresolved" });
     expect(r.stderr).not.toContain(TOKEN);
     expect(requests).toEqual([]);
@@ -269,7 +283,7 @@ describe("eris socrates submit", () => {
   it("sends our redaction classes as markers, and says so on stderr", async () => {
     /** When a redaction class is skipped on the socrates path, a token the yak path would scrub reaches the endpoint; when the WARN is missing, the caller cannot tell their text changed. Observed at the body the endpoint received. */
     const sib = ["sib", "01HZX3K5Q8W2N4R6T8V0Y2B4D6", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
-    const r = await drive(["submit", "--title", "t", "--statement", `ERIS_TOKEN=${sib}`, "--source", "https://example.com/pr/14"], { format: "json" });
+    const r = await drive(["submit", "--title", "t", "--statement", `ERIS_TOKEN=${sib}`, "--source", "https://example.com/pr/14", ...answers()], { format: "json" });
     expect(r.rc).toBe(0);
     expect(r.stderr).toContain("socrates-redacted");
     expect(JSON.parse(r.stdout)).toMatchObject({ redactions: { count: 1, classes: ["sib-token"] }, overrides: [] });
@@ -289,7 +303,7 @@ describe("eris socrates submit", () => {
 describe("eris socrates submit --allow-redaction, through the eris entrypoint", () => {
   let sb: Sandbox;
   let both: ReturnType<typeof Bun.serve>;
-  const seen: { path: string; body: Record<string, unknown> }[] = [];
+  const seen: { path: string; body: Record<string, unknown> | undefined }[] = [];
   const sib = ["sib", "01HZX3K5Q8W2N4R6T8V0Y2B4D6", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
 
   beforeAll(() => {
@@ -299,8 +313,9 @@ describe("eris socrates submit --allow-redaction, through the eris entrypoint", 
       hostname: "127.0.0.1",
       async fetch(req) {
         const path = new URL(req.url).pathname;
-        seen.push({ path, body: (await req.json()) as Record<string, unknown> });
+        seen.push({ path, body: req.method === "GET" ? undefined : ((await req.json()) as Record<string, unknown>) });
         if (path === "/v1/yaks") return Response.json({ id: "yak_1", idempotency_key: "k", replay: false, contract_version: "2.0.0" });
+        if (path === "/v1/socrates/policy") return Response.json(policyResult(H1, ORG_V2));
         return Response.json({ candidate_id: "cand_1", deduped: false, contract_version: "1.0.0" });
       },
     });
@@ -313,16 +328,16 @@ describe("eris socrates submit --allow-redaction, through the eris entrypoint", 
   it("files exactly one vendor yak naming the class, never the text, then sends the text as written", async () => {
     /** When an override files no yak (or one per field, or into the caller's own workspace), the vendor never learns its pattern over-matched; when the yak carries the text, the override leaks what it let through to a second tracker. Observed at one loopback server standing in for both endpoints, across the child `eris yak` process. */
     const env = { ERIS_YAKS_URL: `http://127.0.0.1:${both.port}`, ERIS_YAKS_TOKEN: TOKEN };
-    const args = ["socrates", "submit", "--title", `about ${sib}`, "--statement", `the fixture ${sib} is not live`, "--source", "https://example.com/pr/14", "--allow-redaction", "sib-token", "--override-reason", "a test fixture, not a credential"];
+    const args = ["socrates", "submit", "--title", `about ${sib}`, "--statement", `the fixture ${sib} is not live`, "--source", "https://example.com/pr/14", "--allow-redaction", "sib-token", "--override-reason", "a test fixture, not a credential", ...answers()];
     const r = await sb.run(args, { env });
     expect({ status: r.status, stdout: r.stdout }).toEqual({ status: 0, stdout: "submitted: cand_1\n" });
-    expect(seen.map((s) => s.path)).toEqual(["/v1/yaks", "/v1/socrates/submit"]);
-    const yak = seen[0]!.body;
+    expect(seen.map((s) => s.path)).toEqual(["/v1/socrates/policy", "/v1/yaks", "/v1/socrates/submit"]);
+    const yak = seen[1]!.body!;
     expect(yak).toMatchObject({ verb: "issue", route: "vendor" });
     expect(JSON.stringify(yak)).not.toContain(sib.slice(4, 30));
     expect(String(yak.body)).toContain("sib-token in statement (1)");
     expect(String(yak.body)).toContain("sib-token in title (1)");
-    expect((seen[1]!.body as { candidate: { statement: string } }).candidate.statement).toBe(`the fixture ${sib} is not live`);
+    expect((seen[2]!.body as { candidate: { statement: string } }).candidate.statement).toBe(`the fixture ${sib} is not live`);
   });
 
   it("sends nothing, and files no yak, when a secret sits beside the override", async () => {
