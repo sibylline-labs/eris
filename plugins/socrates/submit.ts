@@ -47,16 +47,25 @@
  *     through `prepareOutbound` with the other fields, and the stamp does not
  *     read the repo's `eris.yaml`. A receipt without the `unfit` echo means the
  *     server did not read the field: that is a failure, never a success.
+ *   - `--evidence <path>#L<x>-L<y>` reads a line range of a committed file (./fragment.ts) into
+ *     a fragment. Its content and provenance join the fields `prepareOutbound` scans before any
+ *     request, so a fragment holding a secret never leaves the machine. With `--unfit` the
+ *     fragments go inline with the stamp, the way the server files their provenance on the review
+ *     issue; otherwise each is posted as its own fragment object linked to the receipt's
+ *     candidate, after the submit, its body scanned again first. Only the provenance of a
+ *     fragment ever reaches the candidate's review issue; its content goes only to the fragment.
  */
 
 import { isRedactionClass, prepareOutbound, REDACTION_CLASSES, redact, type Override, type RedactionClass, type SecretHit, scanSecrets, scanStrings } from "eris/outbound-scan";
 import { CURRENT_RUBRIC, extractFeatures, issueEntryOf } from "eris/socrates-core";
 import { groupArgs, readArgs, renderWarnLines, runErisVerb, type VerbContext } from "../../src/cli/plugin";
 import { ANSWER_FIX, answersOf, issues, OVERRIDE_FIX, overridesOf, pairs } from "./answers";
-import { fail, postSocrates, printable, type SocratesDeps, type SocratesEndpoint, socratesEndpoint } from "./client";
+import { fail, postSocrates, printable, refuse, sendSocrates, type SocratesDeps, type SocratesEndpoint, socratesEndpoint } from "./client";
 import plugin from "./index";
 import { localPolicy, readFreshPolicy, readRepoPolicy, refreshPolicyAfterSubmit } from "./policy";
-import { SOCRATES_CONTRACT_VERSION, SOCRATES_SUBMIT_PATH, type SocratesClassificationStamp, SocratesSubmitRequest, SocratesSubmitResponse, SocratesUnfit } from "./socrates-contract.v1";
+import { readFragments } from "./fragment";
+import { SOCRATES_CONTRACT_VERSION, SOCRATES_SUBMIT_PATH, SOCRATES_UNFIT_EVIDENCE_MAX_ENTRIES, type SocratesClassificationStamp, SocratesSubmitRequest, SocratesSubmitResponse, SocratesUnfit, type SocratesUnfitEvidence } from "./socrates-contract.v1";
+import { SOCRATES_ROUTES, SocratesEvidenceCreateRequest, SocratesEvidenceCreateResponse } from "./socrates-contract.v1.verbs";
 import { readEvidenceFile } from "./unfit";
 
 export { type SocratesDeps } from "./client";
@@ -73,6 +82,7 @@ Commands:
   classify  Score one candidate's rubric answers locally and print the verdict
   consult   Print a living doc, or a brief of several, from the Socrates endpoint
   discover  List the commits in this repo since the processed-source cursor
+  evidence  Print one stored evidence fragment, by the id submit printed
   policy    Print the org's scoring policy, and refresh the cached copy
   resolve   Resolve a closed review Epic on the server and print what it did
   settings  Change where this org's Socrates reviews file (team)
@@ -85,6 +95,7 @@ Run 'eris socrates <command> --help' for its flags.
 export const SUBMIT_USAGE = `Usage: eris socrates submit --title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--now]
                             (--answer <question>=<answer>... [--override <gate>=<reason>]...
                              | --unfit --hypothesis <text> [--evidence-file <path|->])
+                            [--evidence <path>#L<x>[-L<y>]]...
                             [--allow-redaction <class> --override-reason <text>]
 
 Send one candidate to the Socrates endpoint and print its receipt:
@@ -93,9 +104,10 @@ holds it, then '  verdict: <verdict> (<rubric>, policy <hash>)' when the
 candidate was stamped with answers; when it was sent as unfit, '  filed for an
 answer: needs-input', or, when the endpoint already held an equal candidate that
 is no longer waiting, '  not stored: ...' (the hypothesis and evidence were not
-kept). --output json prints {candidate_id, deduped,
-contract_version, classification?, unfit?: {state}, redactions: {count,
-classes}, overrides: [class]}.
+kept). Without --unfit, one '  evidence: <fragment id> <provenance>' line per
+--evidence. --output json prints {candidate_id, deduped,
+contract_version, classification?, unfit?: {state}, evidence?: [{fragment_id,
+provenance, expires_at}], redactions: {count, classes}, overrides: [class]}.
 
 A decision carries one stamp, --answer or --unfit, and is refused with neither.
 A practice carries --answer (it is never unfit). A prd or conflict takes neither.
@@ -140,6 +152,16 @@ what they match with «redacted:<class>» and print a WARN.
                        repo@sha:path#L<n>; content <= 20000 chars. '-' reads
                        stdin. Each entry is stored as an evidence fragment;
                        only its provenance reaches the review issue
+  --evidence <path>#L<x>[-L<y>]
+                       repeatable, at most ${SOCRATES_UNFIT_EVIDENCE_MAX_ENTRIES}: send lines x..y of a file committed in
+                       this repo as an evidence fragment, under the provenance
+                       <repo>@<HEAD sha>:<path>#L<x>-L<y>. The file must match
+                       HEAD; it is scanned with every other field first. With
+                       --unfit it joins the hypothesis's evidence (at most ${SOCRATES_UNFIT_EVIDENCE_MAX_ENTRIES} in
+                       all) and its provenance is listed on the review issue;
+                       otherwise it is stored linked to the candidate, and
+                       'eris socrates evidence <fragment id>' reads it back.
+                       Its content never reaches Linear
   --allow-redaction <class>
                        repeatable: send what this redaction class matched as
                        written. Files one 'eris yak issue --vendor' naming the
@@ -210,7 +232,7 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
     ctx.stdout.write(SOCRATES_USAGE);
     return 0;
   }
-  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates command '${g.sub}'`, "use: classify, consult, discover, policy, resolve, settings, status, submit\nrun 'eris socrates --help' for the command list");
+  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates command '${g.sub}'`, "use: classify, consult, discover, evidence, policy, resolve, settings, status, submit\nrun 'eris socrates --help' for the command list");
   if (g.sub === "classify") return (await import("./classify")).runClassify(g.rest, ctx, deps);
   if (g.sub === "consult") return (await import("./consult")).runConsult(g.rest, ctx, deps);
   if (g.sub === "resolve") return (await import("./resolve")).runResolve(g.rest, ctx, deps);
@@ -218,10 +240,11 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   if (g.sub === "settings") return (await import("./settings")).runSettings(g.rest, ctx, deps);
   if (g.sub === "status") return (await import("./status")).runStatus(g.rest, ctx, deps);
   if (g.sub === "policy") return (await import("./policy-verb")).runPolicy(g.rest, ctx, deps);
+  if (g.sub === "evidence") return (await import("./evidence")).runEvidence(g.rest, ctx, deps);
 
   const a = readArgs(plugin.rows, "socrates submit", g.rest, ctx, { help: SUBMIT_USAGE });
   if (a === null) return 0;
-  const { "--title": title, "--statement": statement, "--source": source, "--kind": kind, "--project": project, "--now": now, "--allow-redaction": allowArgs, "--override-reason": reason, "--answer": answerArgs, "--override": overrideArgs, "--unfit": asUnfit, "--hypothesis": hypothesis, "--evidence-file": evidenceFile } = a.flags;
+  const { "--title": title, "--statement": statement, "--source": source, "--kind": kind, "--project": project, "--now": now, "--allow-redaction": allowArgs, "--override-reason": reason, "--answer": answerArgs, "--override": overrideArgs, "--unfit": asUnfit, "--hypothesis": hypothesis, "--evidence-file": evidenceFile, "--evidence": evidenceRefs } = a.flags;
   const missing = (["--title", "--statement", "--source"] as const).filter((f) => a.flags[f] === undefined);
   if (missing.length > 0) fail(ctx, "socrates-flag-required", `missing ${missing.join(", ")}`, "eris socrates submit --title <text> --statement <text> --source <url>");
   if (allowArgs.length > 0 && reason === undefined) fail(ctx, "socrates-flag-required", "--allow-redaction needs --override-reason", "add --override-reason <why the match is not a secret>");
@@ -244,14 +267,21 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   if (answerArgs.length === 0 && overrideArgs.length > 0) fail(ctx, "socrates-flag-required", "--override is only read with --answer", "add the rubric answers with --answer <question>=<answer>..., or drop --override");
   const answerPairs = pairs(ctx, "--answer", answerArgs, "socrates-answers-invalid", ANSWER_FIX);
   const overridePairs = Object.entries(pairs(ctx, "--override", overrideArgs, "socrates-override-invalid", OVERRIDE_FIX)).map(([gate, reason]) => ({ gate, reason }));
-  const entries = asUnfit && evidenceFile !== undefined ? await readEvidenceFile(ctx, deps, evidenceFile) : [];
+  if (evidenceRefs.length > SOCRATES_UNFIT_EVIDENCE_MAX_ENTRIES) fail(ctx, "socrates-evidence-invalid", `--evidence was given ${evidenceRefs.length} times; a submit carries at most ${SOCRATES_UNFIT_EVIDENCE_MAX_ENTRIES} fragments`, "keep the fragments that carry the evidence");
+  const fileEntries = asUnfit && evidenceFile !== undefined ? await readEvidenceFile(ctx, deps, evidenceFile) : [];
+  const fragments = await readFragments(ctx, deps, evidenceRefs);
+  // With --unfit the fragments go inline with the stamp; otherwise each is its own fragment object, posted after the receipt.
+  // The two are exclusive, so both name their text `evidence.<i>` in the scanned fields.
+  const entries = asUnfit ? [...fileEntries, ...fragments] : fileEntries;
+  const linked = asUnfit ? [] : fragments;
 
   // The reason travels in the vendor yak, so it is scanned like a field.
   const reasonHits = reason === undefined ? [] : scanSecrets({ "--override-reason": reason });
   if (reasonHits.length > 0) secretFound(ctx, reasonHits);
   // The unfit stamp's text is scanned and redacted with the candidate's: a field the stamp adds is not exempt.
   const unfitText: Record<string, string> = asUnfit ? { hypothesis: hypothesis ?? "", ...Object.fromEntries(entries.flatMap((e, i) => [[`evidence.${i}`, e.content], [`evidence.${i}.provenance`, e.provenance]])) } : {};
-  const fields: Record<string, string | undefined> = { title, statement, source, project, ...unfitText };
+  const linkedText: Record<string, string> = Object.fromEntries(linked.flatMap((e, i) => [[`evidence.${i}`, e.content], [`evidence.${i}.provenance`, e.provenance]]));
+  const fields: Record<string, string | undefined> = { title, statement, source, project, ...unfitText, ...linkedText };
   const outbound = prepareOutbound(fields, allow);
   if (outbound.kind === "secret") secretFound(ctx, outbound.hits);
   const clean = outbound.fields;
@@ -296,6 +326,12 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   }
   const leaked = scanStrings(body);
   if (leaked.length > 0) secretFound(ctx, leaked);
+  // Each linked fragment as the evidence route takes it, scanned and checked before anything is sent.
+  const linkedClean: SocratesUnfitEvidence[] = linked.map((e, i) => ({ kind: e.kind, provenance: clean[`evidence.${i}.provenance`] ?? "", content: clean[`evidence.${i}`] ?? "" }));
+  for (const [i, e] of linkedClean.entries()) {
+    const checked = SocratesEvidenceCreateRequest.safeParse({ schema_version: SOCRATES_CONTRACT_VERSION, ...e });
+    if (!checked.success) fail(ctx, "socrates-evidence-invalid", `--evidence '${printable(linked[i]!.provenance)}' does not match the contract (${printable(issues(checked.error, "evidence"))})`, "run 'eris socrates submit --help' for the bounds of --evidence");
+  }
 
   if (outbound.redactions.count > 0) {
     const slug: SocratesWarnSlug = "socrates-redacted";
@@ -324,6 +360,7 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
     const cache = refreshed ? "the cached policy is refreshed" : "the cached policy could not be refreshed, so the next stamped submit fetches it";
     ctx.stderr.write(renderWarnLines(`reclassified under ${classified.policy_hash.slice(0, 12)} (was ${was}): ${classified.verdict}; ${cache}`, slug));
   }
+  const stored = await postFragments(ctx, deps, endpoint, reply.candidate_id, linkedClean);
 
   if (ctx.format === "json") {
     const record = {
@@ -332,6 +369,7 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
       contract_version: reply.contract_version,
       ...(classified !== undefined ? { classification: classified } : {}),
       ...(asUnfit && reply.unfit !== undefined ? { unfit: reply.unfit } : {}),
+      ...(stored.length > 0 ? { evidence: stored } : {}),
       redactions: outbound.redactions,
       overrides: [...overridden].sort(),
     };
@@ -340,8 +378,32 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
     ctx.stdout.write(`${reply.deduped ? "already submitted" : "submitted"}: ${printable(reply.candidate_id)}\n`);
     if (classified !== undefined) ctx.stdout.write(`  verdict: ${classified.verdict} (${classified.rubric_version}, policy ${classified.policy_hash.slice(0, 12)})\n`);
     if (asUnfit && reply.unfit !== undefined) ctx.stdout.write(`${unfitLine(reply.deduped, reply.unfit.state)}\n`);
+    for (const f of stored) ctx.stdout.write(`  evidence: ${printable(f.fragment_id)} ${printable(f.provenance)}\n`);
   }
   return 0;
+}
+
+/** A linked fragment's 404 names a candidate the endpoint no longer holds; its 409 a resolved one, whose evidence is not kept. */
+const fragmentRefusalFix = (status: number): string | undefined =>
+  status === 404 || status === 409 ? "the candidate is gone or resolved, so its evidence is not kept: submit the candidate again to attach evidence" : undefined;
+
+/**
+ * Post each linked fragment as its own evidence object under `candidateId`, in order, its body
+ * scanned once more right before the request. A refusal names the candidate already submitted, so
+ * a re-run knows it dedupes onto it.
+ */
+async function postFragments(ctx: VerbContext, deps: SocratesDeps, endpoint: SocratesEndpoint, candidateId: string, fragments: readonly SocratesUnfitEvidence[]): Promise<{ fragment_id: string; provenance: string; expires_at: string }[]> {
+  const stored: { fragment_id: string; provenance: string; expires_at: string }[] = [];
+  for (const f of fragments) {
+    const body = SocratesEvidenceCreateRequest.parse({ schema_version: SOCRATES_CONTRACT_VERSION, candidate_id: candidateId, ...f });
+    const leaked = scanStrings(body);
+    if (leaked.length > 0) secretFound(ctx, leaked);
+    const outcome = await sendSocrates(ctx, deps, endpoint, { path: SOCRATES_ROUTES.evidence_create.path, body, decoder: SocratesEvidenceCreateResponse, subject: "the evidence" });
+    const done = stored.length === 0 ? "" : `, after storing ${stored.map((s) => printable(s.fragment_id)).join(", ")}`;
+    if (outcome.kind === "problem") refuse(ctx, outcome.problem, { subject: `the evidence ${printable(f.provenance)} for candidate ${printable(candidateId)}, which was submitted${done}`, refusalFix: fragmentRefusalFix });
+    stored.push({ fragment_id: outcome.reply.fragment_id, provenance: f.provenance, expires_at: outcome.reply.expires_at });
+  }
+  return stored;
 }
 
 /**

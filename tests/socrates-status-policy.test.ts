@@ -228,6 +228,6 @@ describe("eris socrates, the command list", () => {
     expect(help.stdout).toContain("  policy    ");
     const unknown = await fake.drive(["bogus"]);
     expect(unknown).toMatchObject({ rc: 1, slug: "socrates-unknown-verb" });
-    expect(unknown.stderr).toContain("use: classify, consult, discover, policy, resolve, settings, status, submit");
+    expect(unknown.stderr).toContain("use: classify, consult, discover, evidence, policy, resolve, settings, status, submit");
   });
 });
