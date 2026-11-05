@@ -29,7 +29,14 @@ import { SOCRATES_ROUTES, SocratesSettingsTeamRequest, SocratesSettingsTeamRespo
 export const SETTINGS_USAGE = `Usage: eris socrates settings <command>
 
 Commands:
-  team  Set or clear the Linear team a project's review Epics file on (an org admin's)
+  policy     Show the org's scoring policy, or change it (an org admin's); --preview shows a change first
+  enrolment  List the enrolled projects and their Linear links
+  health     Print the install, webhook, reconcile and stuck-write health
+  usage      Print the no-credit usage figures
+  canon      Show or choose the org's Canon doc (an org admin's)
+  team       Set or clear the Linear team a project's review Epics file on (an org admin's)
+
+--output json prints each command's JSON form.
 
 Run 'eris socrates settings <command> --help' for its flags.
 `;
@@ -71,14 +78,19 @@ export async function runSettings(args: string[], ctx: VerbContext, deps: Socrat
   const g = groupArgs(plugin.rows, "socrates settings", args);
   if ((g.kind === "bare" || g.kind === "help") && ctx.format === "json") {
     // The allow-list admits `settings` for its json sub; the group itself has no rendering.
-    ctx.stderr.write(renderFailureBlock({ slug: "output-json-unsupported", what: "eris socrates settings has no JSON rendering", fix: "use: eris --output json socrates settings team ..." }, ctx.erisDir));
+    ctx.stderr.write(renderFailureBlock({ slug: "output-json-unsupported", what: "eris socrates settings has no JSON rendering", fix: "use: eris --output json socrates settings <command> ..." }, ctx.erisDir));
     throw new CliExit(1);
   }
   if (g.kind === "bare" || g.kind === "help") {
     ctx.stdout.write(SETTINGS_USAGE);
     return 0;
   }
-  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates settings command '${g.sub}'`, "use: team\nrun 'eris socrates settings --help' for the command list");
+  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates settings command '${g.sub}'`, "use: policy, enrolment, health, usage, canon, team\nrun 'eris socrates settings --help' for the command list");
+  if (g.sub === "policy") return (await import("./settings-panels")).runPolicy(g.rest, ctx, deps);
+  if (g.sub === "enrolment") return (await import("./settings-panels")).runEnrolment(g.rest, ctx, deps);
+  if (g.sub === "health") return (await import("./settings-panels")).runHealth(g.rest, ctx, deps);
+  if (g.sub === "usage") return (await import("./settings-panels")).runUsage(g.rest, ctx, deps);
+  if (g.sub === "canon") return (await import("./settings-panels")).runCanon(g.rest, ctx, deps);
   return runTeam(g.rest, ctx, deps);
 }
 

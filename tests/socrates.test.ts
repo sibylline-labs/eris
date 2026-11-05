@@ -58,6 +58,9 @@ const MESSAGES: Record<string, { request?: ZodTypeAny; response: ZodTypeAny }> =
   resolve: { request: Verbs.SocratesResolveRequest, response: Verbs.SocratesResolveResponse },
   status: { request: Verbs.SocratesStatusRequest, response: Verbs.SocratesStatusResponse },
   settings_team: { request: Verbs.SocratesSettingsTeamRequest, response: Verbs.SocratesSettingsTeamResponse },
+  settings: { response: Verbs.SocratesSettingsResponse },
+  settings_policy: { request: Verbs.SocratesSettingsPolicyRequest, response: Verbs.SocratesSettingsWriteResponse },
+  settings_canon: { request: Verbs.SocratesSettingsCanonRequest, response: Verbs.SocratesSettingsWriteResponse },
 };
 
 describe("the contract v1 routes beyond submit, against the shared golden file", () => {
