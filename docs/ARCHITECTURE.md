@@ -69,7 +69,7 @@ its own repository, after checking it ([`UPDATE.md`](UPDATE.md)). The release is
    └─ src/main.ts             settings fill → route → handler (lazy import) | unknown
        ├─ src/sdk.ts          eris/sdk: what a distribution imports · src/build.ts: build()
        ├─ src/cli/            registry.ts (core's verbs) · compose.ts (core + plugins) · plugin.ts
-       │                      (the SDK) · router.ts · args.ts (argv + the global --output pre-pass)
+       │                      (the SDK) · router.ts · args.ts (argv + the global --output/--json pre-pass)
        │                      · output.ts (the json allow-list) · ts-verb.ts
        ├─ src/cli/commands/   completion/ · usage.ts · version.ts · update.ts + update/
        ├─ src/runtime/        logging · process · settings · env · home
@@ -126,7 +126,7 @@ non-`ts` row and a json group with subs refused, and a group whose product the w
 bought locked per command line. [`dev/PLUGINS.md`](dev/PLUGINS.md).
 
 A `ts` route runs the composed handler for the verb (`HANDLERS` in `src/main.ts`, plus each
-plugin's), imported lazily, behind the global `--output` pre-pass. A command line whose verb is not in the table is refused by the router as an unknown
+plugin's), imported lazily, behind the global `--output` / `--json` pre-pass. A command line whose verb is not in the table is refused by the router as an unknown
 command. Adding or flipping a verb is a registry edit; `tests/cli-registry.test.ts` and
 `tests/cli-router.test.ts` hold the rows against `HANDLERS`.
 

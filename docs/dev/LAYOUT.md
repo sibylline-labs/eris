@@ -23,7 +23,7 @@ src/                    # The TS program the shim and the bin run
 │                       #   collision and completion-slot refusals; the menu option; entitlement locks
 ├── cli/plugin.ts       #   the plugin SDK: the one core module a plugin imports
 ├── cli/router.ts       #   the per-verb route, from the derived table
-├── cli/args.ts         #   the registry-driven argv parser and the global --output pre-pass
+├── cli/args.ts         #   the registry-driven argv parser and the global --output/--json pre-pass
 ├── cli/output.ts       #   the --output json allow-list and its refusal block
 ├── cli/ts-verb.ts      #   runTsVerb: pre-pass → allow-list → lock → handler; eris-deps-not-installed
 ├── cli/commands/       #   completion.ts + completion/ (emit.ts generates the bash/zsh script from the

@@ -65,17 +65,31 @@ one shape whatever the terminal and whatever is installed.
 ## 2. The flag
 
 ```
-eris [--output text|json] <command> [args…]
+eris [--output text|json | --json] <command> [args…]
 ```
 
 `--output` is **global**: it is parsed once before dispatch and stripped from
 the argv (`src/cli/args.ts`), for every command line: every verb runs behind it
-in-process. It may appear anywhere in the command line. `--`
-terminates global parsing and is itself consumed, so a positional that begins
-with `--output` is still reachable.
+in-process. It may appear anywhere in the command line: before the command,
+between a group and its verb, or after the verb. `--` terminates global parsing
+and is itself consumed, so a positional that begins with `--output` is still
+reachable.
 
 - `text` (default) — the human rendering.
 - `json` — the machine rendering.
+
+`--json` is the same flag spelled shorter: `eris --json yak status`, `eris yak
+--json status`, `eris yak status --json` and `eris --output json yak status`
+are one command line. It is read at the same positions and stops at the same
+`--`. Two cases differ:
+
+- A verb whose own row declares a `--json` flag keeps it: the pre-pass leaves
+  `--json` in the argv for that verb's parse, and the format stays `text`.
+- `--json` together with `--output text` asks for two formats and is refused
+  ([`output-format-conflict`](ERRORS.md#output-format-conflict)).
+
+`--json=<x>` is not the global flag; a verb that does not declare it refuses it
+as an unknown flag.
 
 There is deliberately **no `ERIS_OUTPUT` environment variable**. An exported
 format would silently change what every script in a shell gets, including
@@ -205,7 +219,7 @@ failure has a `slug:` line.
 
 Known gap, deliberately not fixed here: shell tab-completion
 ([COMPLETION.md](COMPLETION.md)) offers each command path's own flags from the
-composed registry and does not yet offer the global `--output`.
+composed registry and does not yet offer the global `--output` or `--json`.
 
 ---
 

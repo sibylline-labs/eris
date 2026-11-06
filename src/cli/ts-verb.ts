@@ -2,7 +2,7 @@
  * ts-verb.ts — the steps between argv and a verb's dispatcher, for a verb the
  * router runs in TypeScript:
  *
- *   1. the global `--output` parse
+ *   1. the global `--output` / `--json` parse
  *   2. the machine-surface allow-list
  *   3. the entitlement lock, for a plugin group whose product is not bought
  *   4. the verb, with the flag stripped
@@ -10,9 +10,9 @@
  * A verb stops early by throwing `CliExit` after writing its diagnostic, the
  * TS counterpart of `eris::die` / `eris::fail` exiting the shell.
  *
- * A `session` (src/cli/compose.ts) supplies the composed allow-list, its fix
- * text and the locks, and is handed on to the verb; without one, steps 2 and 3
- * read core's registry alone.
+ * A `session` (src/cli/compose.ts) supplies the composed rows, allow-list, its
+ * fix text and the locks, and is handed on to the verb; without one, steps 1
+ * to 3 read core's registry alone.
  *
  * Everything past step 3 is imported lazily, so a package the checkout's
  * node_modules cannot resolve surfaces from inside step 4. It ends the command
@@ -28,6 +28,7 @@ import type { CliContext, VerbHandler } from "../main";
 import { asksForHelp, CliExit, GlobalFlagError, parseGlobal } from "./args";
 import { lockedOutcome, lockedProduct, type Session } from "./compose";
 import { sanitizeDisplay, unsupportedJsonBlock } from "./output";
+import { REGISTRY } from "./registry";
 
 export { CliExit };
 
@@ -89,9 +90,10 @@ export async function runTsVerb(
   session?: Session,
 ): Promise<number> {
   try {
+    const rows = session?.cli.registry ?? REGISTRY;
     let parsed: ReturnType<typeof parseGlobal>;
     try {
-      parsed = parseGlobal(argv, ctx.erisDir, { keepTerminator: true });
+      parsed = parseGlobal(argv, ctx.erisDir, { keepTerminator: true, rows });
     } catch (e) {
       if (e instanceof GlobalFlagError) {
         ctx.stderr.write(e.block);
