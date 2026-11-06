@@ -47,7 +47,7 @@ suite against it ([TESTING.md](TESTING.md#the-binary-oracle)).
   (`plugins/index.ts`). The router table, the `--output json` allow-list, the
   shell completion tree and the top-level usage are derived from the composed rows.
 - **`src/main.ts`** routes each command line. A `ts` verb runs in-process behind
-  the global `--output` pre-pass; its handler is a lazily imported entry in
+  the global `--output` / `--json` pre-pass; its handler is a lazily imported entry in
   `HANDLERS` (core's, or a plugin's). Anything else is refused as an unknown
   command.
 

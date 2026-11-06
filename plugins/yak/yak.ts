@@ -119,7 +119,8 @@ export interface ParsedFlags {
 }
 
 export type ArgvOutcome =
-  | { kind: "help" }
+  // `verb` is set when the help asked for is one verb's (`yak issue --help`).
+  | { kind: "help"; verb?: YakVerb }
   // `verb` is OPTIONAL, not absent-by-design —
   // it's populated on every misuse this parser can produce AFTER `verbArg`
   // has already been matched against the registry's yak subs (an unknown flag, a flag missing its
@@ -180,7 +181,7 @@ export function parseArgv(argv: string[]): ArgvOutcome {
     if (e instanceof Refused) return e.outcome;
     throw e;
   }
-  if (p === null) return { kind: "help" };
+  if (p === null) return { kind: "help", verb: verbArg };
   const f = p.flags;
   const flags: ParsedFlags = { noRedact: f["--no-redact"], vendor: f["--vendor"] };
   if (f["--summary"] !== undefined) flags.summary = f["--summary"];
@@ -193,17 +194,17 @@ export function parseArgv(argv: string[]): ArgvOutcome {
   return { kind: "ok", verb: verbArg, flags };
 }
 
-const USAGE = `usage: eris yak <issue|suggest|fatal> [flags]
-
-Land a durable, deduplicated observation with the Yaks endpoint. For a
+const ABOUT = `Land a durable, deduplicated observation with the Yaks endpoint. For a
 harness/tooling problem hit mid-task — never for the task's own outcome.
+`;
 
-verbs:
+const VERB_LIST = `verbs:
   issue     a harness/tooling defect, confirmed or suspected
   suggest   an improvement to the harness: a missing capability or a better way of working
   fatal     the harness itself is broken
+`;
 
-flags:
+const FLAGS = `flags:
   --summary <text>             required, <= 200 chars
   --body <text>                required (mutually exclusive with --body-file)
   --body-file <path|->         required (mutually exclusive with --body); - reads stdin
@@ -218,11 +219,21 @@ flags:
   --vendor                     file a report about eris itself into the vendor's tracker,
                                not your workspace
   --help, -h                   show this message
+`;
 
-Setup: 'eris login' writes ~/.eris/yaks.json ({"url", "token"}, mode 0600;
+const SETUP = `Setup: 'eris login' writes ~/.eris/yaks.json ({"url", "token"}, mode 0600;
 the url defaults to https://api.sibylline.group); or export ERIS_YAKS_URL /
 ERIS_YAKS_TOKEN.
 `;
+
+/** The three verbs' shared usage, for an argv that names no verb. */
+const USAGE = `usage: eris yak <issue|suggest|fatal> [flags]\n\n${ABOUT}\n${VERB_LIST}\n${FLAGS}\n${SETUP}`;
+
+/** One verb's usage: its own line, its row's summary and example, and the flags the three share. */
+function verbUsage(verb: YakVerb): string {
+  const row = plugin.rows[`yak ${verb}`];
+  return `usage: eris yak ${verb} [flags]\n\n${row.summary}.\n\n${ABOUT}\n${FLAGS}\nexample:\n  ${row.example}\n\n${SETUP}`;
+}
 
 // ---------------------------------------------------------------------------
 // Orchestration
@@ -349,7 +360,7 @@ export async function runYak(opts: RunYakOptions): Promise<RunYakResult> {
   const parsed = parseArgv(opts.argv);
 
   if (parsed.kind === "help") {
-    return { stdout: USAGE, stderr: "", exitCode: 0 };
+    return { stdout: parsed.verb === undefined ? USAGE : verbUsage(parsed.verb), stderr: "", exitCode: 0 };
   }
   if (parsed.kind === "misuse") {
     return misuseResult(parsed.slug, parsed.reason, erisHomeDir, "", jsonOutput, parsed.verb, undefined, false, parsed.fix);

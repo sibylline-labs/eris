@@ -27,9 +27,24 @@ export default definePlugin({
   name: "yak",
   rows: {
     yak: { impl: "ts", summary: "Land a durable observation with a Yaks endpoint (issue, suggest, fatal)" },
-    "yak fatal": { summary: "The harness itself is broken", json: true, flags: YAK_FLAGS },
-    "yak issue": { summary: "A harness/tooling defect, confirmed or suspected", json: true, flags: YAK_FLAGS },
-    "yak suggest": { summary: "An improvement to the harness: a missing capability or a better way of working", json: true, flags: YAK_FLAGS },
+    "yak fatal": {
+      summary: "The harness itself is broken",
+      json: true,
+      flags: YAK_FLAGS,
+      example: `eris yak fatal --summary "every eris command exits 1 before it runs" --body "eris --version prints a stack trace on this machine"`,
+    },
+    "yak issue": {
+      summary: "A harness/tooling defect, confirmed or suspected",
+      json: true,
+      flags: YAK_FLAGS,
+      example: `eris yak issue --summary "a hook blocks a legal edit" --body "the pre-edit hook refused a change the rule allows" --repro "<the command>"`,
+    },
+    "yak suggest": {
+      summary: "An improvement to the harness: a missing capability or a better way of working",
+      json: true,
+      flags: YAK_FLAGS,
+      example: `eris yak suggest --summary "a --dry-run flag for eris yak" --body "I wanted to see the payload before it was sent"`,
+    },
     "yak status": { summary: "Whether this org has a destination for its yaks, and how many it holds", json: true },
     "yak ready": { summary: "Whether this machine can file yaks, and when to file; always exits 0 (a SessionStart hook runs it)", json: true },
     "yak discover": {

@@ -56,6 +56,10 @@ export interface Row {
   readonly usage?: string;
   /** Said in the extra-word refusal, e.g. "quote the statement". */
   readonly extraHint?: string;
+  /** One full command line, `eris <path> ...`, printed under `Example:` in the generated help. */
+  readonly example?: string;
+  /** Where the verb's `--output json` shape is documented: the help document's `output_schema`. */
+  readonly outputSchema?: string;
   /** Tab completion for the positional operands, one entry per slot, in
    *  order: the words a slot offers. A word is a literal, `@file` (file
    *  names: the slot offers nothing else), or a `CompletionDomain`. A slot
