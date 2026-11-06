@@ -405,12 +405,102 @@ export function argErrorText(path: string, e: ArgError, home: string, row: Row =
   }
 }
 
-/** The help a row generates: its usage line, summary, and flags. */
+/** The help a row generates: its usage line, summary, flags, and its example when it has one. */
 export function helpText(path: string, row: Row = rowOf(path)): string {
   const flags = (row.flags ?? []).map(
     (f) => `  ${f.name}${f.takesValue ? " <value>" : ""}${f.alias !== undefined ? `, ${f.alias}` : ""}${f.repeatable === true ? "   (repeatable)" : ""}\n`,
   );
-  return `Usage: ${usageLine(path, row)}\n\n${row.summary}\n\nFlags:\n${flags.join("")}  --help, -h   Print this usage text\n`;
+  const example = row.example !== undefined ? `\nExample:\n  ${row.example}\n` : "";
+  return `Usage: ${usageLine(path, row)}\n\n${row.summary}\n\nFlags:\n${flags.join("")}  --help, -h   Print this usage text\n${example}`;
+}
+
+// --- help as JSON (docs/OUTPUT-CONTRACT.md#32-help-as-json) ----------------------------------
+
+/** One flag of a help document. `arg` names a value flag's value. */
+export interface HelpJsonFlag {
+  readonly name: FlagName;
+  readonly arg?: string;
+  readonly summary?: string;
+  readonly repeatable?: true;
+  readonly alias?: string;
+}
+
+/** The help document every path prints under `--help --json`: one schema across the tree. */
+export interface HelpJson {
+  readonly schema: "eris-help/1";
+  /** The command path, `""` for the top level. */
+  readonly path: string;
+  readonly usage: string;
+  readonly summary: string;
+  /** The path's direct subs; the composed groups at the top level. */
+  readonly commands: readonly { readonly name: string; readonly summary: string }[];
+  readonly flags: readonly HelpJsonFlag[];
+  /** Present only when the row names one (`Row.outputSchema`). */
+  readonly output_schema?: string;
+}
+
+const HELP_FLAG: HelpJsonFlag = { name: "--help", alias: "-h", summary: "Print this usage text" };
+
+const TOP_FLAGS: readonly HelpJsonFlag[] = [
+  { name: "--output", arg: "text|json", summary: "Output format; json is the machine rendering" },
+  { name: JSON_FLAG, summary: "The same as --output json" },
+  { name: "--version", summary: "Print this build's version and release repository" },
+  HELP_FLAG,
+];
+
+/**
+ * The help document of `path` (`""`, the top level, has no row) over the
+ * composed `rows`. A group with subs and no usage of its own reads
+ * `eris <path> <command>`.
+ */
+export function helpJson(path: string, row: Row | undefined, rows: Readonly<Record<string, Row>>): HelpJson {
+  if (path === "" || row === undefined) {
+    const groups = Object.keys(rows).filter((k) => !k.includes(" "));
+    return {
+      schema: "eris-help/1",
+      path: "",
+      usage: "eris <command> [args]",
+      summary: "The commands this build composes; each answers --help",
+      commands: groups.map((name) => ({ name, summary: rows[name]!.summary })),
+      flags: TOP_FLAGS,
+    };
+  }
+  const subs = subsOf(path, rows);
+  const bareGroup = subs.length > 0 && row.usage === undefined && (row.pos ?? []).length === 0 && (row.flags ?? []).length === 0;
+  const flags = (row.flags ?? []).map(
+    (f): HelpJsonFlag => ({
+      name: f.name,
+      ...(f.takesValue ? { arg: "value" } : {}),
+      ...(f.repeatable === true ? { repeatable: true as const } : {}),
+      ...(f.alias !== undefined ? { alias: f.alias } : {}),
+    }),
+  );
+  return {
+    schema: "eris-help/1",
+    path,
+    usage: bareGroup ? `eris ${path} <command>` : usageLine(path, row),
+    summary: row.summary,
+    commands: subs.map((name) => ({ name, summary: rows[`${path} ${name}`]!.summary })),
+    flags: [...flags, HELP_FLAG],
+    ...(row.outputSchema !== undefined ? { output_schema: row.outputSchema } : {}),
+  };
+}
+
+/**
+ * The path whose help document a JSON-format command line asks for, or null
+ * when it asks for none: a help token before `--`, a group named with nothing
+ * after it, or no command at all. A word that names no command (an unknown
+ * group, or an unknown sub of a group) asks for none, so it is refused as
+ * it is without `--json`.
+ */
+export function jsonHelpPath(argv: readonly string[], rows: Readonly<Record<string, Row>>): string | null {
+  const path = resolveHelpPath(argv, rows);
+  const depth = path === "" ? 0 : path.split(" ").length;
+  const words = commandWords(argv);
+  const group = path === "" || subsOf(path, rows).length > 0;
+  if (words.length > depth && group) return null;
+  if (asksForHelp(argv)) return path;
+  return group && argv.filter((a) => a !== "--").length === depth ? path : null;
 }
 
 // --- the verb-facing entry -----------------------------------------------------------------

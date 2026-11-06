@@ -113,7 +113,7 @@ describe("§2 the global --output flag", () => {
     expect(r.stderr).toMatch(/^fix: .*eris yak issue/m);
   });
 
-  test.each([[["yak"]], [["yak", "frobnicate"]], [["completion", "zsh"]], [["completion"]]])(
+  test.each([[["yak", "frobnicate"]], [["completion", "zsh"]]])(
     "a group whose subs render JSON did NOT open the group: %p refuses --output json",
     async (argv) => {
       /** When a group is registered wholesale, a verb with no machine rendering starts printing text to a parser. */
@@ -121,6 +121,13 @@ describe("§2 the global --output flag", () => {
       expectFailBlock(r, "output-json-unsupported");
     },
   );
+
+  test.each([[["yak"]], [["completion"]]])("a bare group under --output json prints its help document, not its usage text: %p", async (argv) => {
+    /** When a bare group answers --output json with its usage text, a parser is handed prose; observed at the parsed stdout of the real entry. */
+    const r = await sb.run(["--output", "json", ...argv]);
+    expectStatus(r, 0);
+    expect(JSON.parse(r.stdout)).toMatchObject({ schema: "eris-help/1", path: argv.join(" ") });
+  });
 
   test("an unknown --output value fails with its own slug", async () => {
     /** When an unknown format silently falls back to text, `--output yaml` callers parse text. */

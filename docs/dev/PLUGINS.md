@@ -269,7 +269,8 @@ and runs. Copy its shape.
 2. **Import core only as `eris/sdk`** (`src/sdk.ts`): the plugin SDK, core's
    rows and handlers, this build's plugin list, `composeCli`, `runProgram`,
    `main`, the argv and output helpers (`parseGlobal` and `GlobalFlagError`
-   included, for an entry that runs outside the router), the runtime
+   included, for an entry that runs outside the router, and the help renderers
+   `helpText`, `helpJson`, `resolveHelpPath` and `asksForHelp`), the runtime
    (subprocesses, the bounded pool `runPool`, logging, the install root,
    `BUILD_ID`, `releaseRepo()`, the `DistributionIdentity` type) and `build`. The package's
    `exports` map refuses any deeper path (`eris/src/...`), so a core refactor

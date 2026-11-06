@@ -3,18 +3,21 @@
  * router runs in TypeScript:
  *
  *   1. the global `--output` / `--json` parse
- *   2. the machine-surface allow-list
- *   3. the entitlement lock, for a plugin group whose product is not bought
- *   4. the verb, with the flag stripped
+ *   2. help as JSON: under the json format, a help request, a bare group or
+ *      the bare program prints the path's help document from the rows, before
+ *      the allow-list, so a verb with no JSON rendering still describes itself
+ *   3. the machine-surface allow-list
+ *   4. the entitlement lock, for a plugin group whose product is not bought
+ *   5. the verb, with the flag stripped
  *
  * A verb stops early by throwing `CliExit` after writing its diagnostic, the
  * TS counterpart of `eris::die` / `eris::fail` exiting the shell.
  *
  * A `session` (src/cli/compose.ts) supplies the composed rows, allow-list, its
  * fix text and the locks, and is handed on to the verb; without one, steps 1
- * to 3 read core's registry alone.
+ * to 4 read core's registry alone.
  *
- * Everything past step 3 is imported lazily, so a package the checkout's
+ * Everything past step 4 is imported lazily, so a package the checkout's
  * node_modules cannot resolve surfaces from inside step 4. It ends the command
  * as the `eris-deps-not-installed` block, never a bare resolution
  * error. Nothing on this path or above it may import a third-party package, or
@@ -25,7 +28,7 @@ import { accessSync, constants } from "node:fs";
 import { delimiter, join, relative, sep } from "node:path";
 import { renderFailureBlock } from "../../ts/lib/eris-fail";
 import type { CliContext, VerbHandler } from "../main";
-import { asksForHelp, CliExit, GlobalFlagError, parseGlobal } from "./args";
+import { asksForHelp, CliExit, GlobalFlagError, helpJson, jsonHelpPath, parseGlobal } from "./args";
 import { lockedOutcome, lockedProduct, type Session } from "./compose";
 import { sanitizeDisplay, unsupportedJsonBlock } from "./output";
 import { REGISTRY } from "./registry";
@@ -100,6 +103,11 @@ export async function runTsVerb(
         return 1;
       }
       throw e;
+    }
+    const helpPath = parsed.format === "json" ? jsonHelpPath(parsed.argv, rows) : null;
+    if (helpPath !== null) {
+      ctx.stdout.write(`${JSON.stringify(helpJson(helpPath, rows[helpPath], rows))}\n`);
+      return 0;
     }
     const refusal = unsupportedJsonBlock(parsed.argv[0], parsed.argv[1], parsed.format, ctx.erisDir, session?.cli.jsonSurfaces, session?.cli.jsonFix);
     if (refusal !== null) {

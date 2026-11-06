@@ -21,7 +21,9 @@
  *   - the program: `runProgram({ cli })`, a distribution's process entry, and
  *     `main`, the seam a test drives;
  *   - argv and output helpers a handler shares with core's verbs, the global
- *     `--output` pre-pass (`parseGlobal`, `GlobalFlagError`) included;
+ *     `--output` / `--json` pre-pass (`parseGlobal`, `GlobalFlagError`) and the
+ *     help renderers (`helpText`, `helpJson`, `resolveHelpPath`, `asksForHelp`)
+ *     included;
  *   - the outbound secret scan's rules and string scan (`secretRules`,
  *     `scanStrings`, the vendored gitleaks set eris/outbound-scan owns), so a
  *     distribution scans what it sends with the rules core sends under;
@@ -41,8 +43,8 @@ import type { BuildOptions, BuildResult } from "./build";
 export * from "./cli/plugin";
 export type { VerbPath } from "./cli/registry";
 export { flagsOf, REGISTRY, rowsOfGroup } from "./cli/registry";
-export type { ArgError, SubOf } from "./cli/args";
-export { argErrorWhat, GlobalFlagError, parseGlobal, readVerbArgs, refuseArg, usageLine } from "./cli/args";
+export type { ArgError, HelpJson, HelpJsonFlag, SubOf } from "./cli/args";
+export { argErrorWhat, asksForHelp, GlobalFlagError, helpJson, helpText, parseGlobal, readVerbArgs, refuseArg, resolveHelpPath, usageLine } from "./cli/args";
 export { sanitizeDisplay } from "./cli/output";
 export type { SecretHit } from "eris/outbound-scan";
 export { scanStrings, secretRules } from "eris/outbound-scan";

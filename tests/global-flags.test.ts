@@ -87,4 +87,10 @@ describe("a row that declares --json keeps it", () => {
   it.each([[["own", "lint", "--json"]], [["own", "--json", "lint"]], [["--json", "own", "lint"]]])("%p reaches the verb's own flag", async (argv) => {
     expect(await run(argv)).toEqual({ rc: 0, stdout: "format=text json=true\n", stderr: "" });
   });
+
+  // admits: help for a declared-`--json` row read as the verb's flag prints prose where JSON was asked for; observed at the parsed document.
+  it("--help --json on such a row is still help as JSON", async () => {
+    const r = await run(["own", "lint", "--help", "--json"]);
+    expect({ rc: r.rc, stderr: r.stderr, path: (JSON.parse(r.stdout) as { path: string }).path }).toEqual({ rc: 0, stderr: "", path: "own lint" });
+  });
 });
