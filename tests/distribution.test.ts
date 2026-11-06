@@ -225,7 +225,7 @@ describe("the example distribution, composed", () => {
     for (const line of ["\n  completion ", "\n  yak ", "\n  demo ", "\nRun 'eris' without arguments for interactive mode.\n"]) expect(help.stdout).toContain(line);
     expect((await run(["completion", "--help"])).stdout).toContain("never touches the network.\nAlso completes the names 'eris demo hello' greets (see the demo plugin).\nSee docs/COMPLETION.md.\n");
     expect(await run(["demo", "hello", "loud", "ada"])).toEqual({ rc: 0, stdout: "HELLO ADA\n", stderr: "" });
-    expect((await run(["yak", "issue", "--help"])).stdout).toStartWith("usage: eris yak <issue|suggest|fatal>");
+    expect((await run(["yak", "issue", "--help"])).stdout).toStartWith("usage: eris yak issue [flags]\n");
   });
 
   const mine = (rows: ErisPlugin["rows"]): ErisPlugin => ({ name: "mine", rows, handlers: Object.fromEntries(Object.keys(rows).map((g) => [g, HANDLERS.completion!])) });
@@ -397,7 +397,7 @@ describe.skipIf(checkoutOnly("builds its own binary from this checkout's source"
     expect(await sb.run([], { program: outfile })).toMatchObject({ status: 0, stdout: "example distribution: yak, login, logout, socrates, demo (eris --help for usage)\n", stderr: "" });
     expect(await sb.run(["demo", "hello", "quiet", "grace"], { program: outfile })).toMatchObject({ status: 0, stdout: "hello grace\n", stderr: "" });
     const yakHelp = await sb.run(["yak", "issue", "--help"], { program: outfile });
-    expect({ status: yakHelp.status, head: yakHelp.stdout.split("\n")[0] }).toEqual({ status: 0, head: "usage: eris yak <issue|suggest|fatal> [flags]" });
+    expect({ status: yakHelp.status, head: yakHelp.stdout.split("\n")[0] }).toEqual({ status: 0, head: "usage: eris yak issue [flags]" });
   });
 
   it("carries its asset roots, its release repository and its stubs", async () => {

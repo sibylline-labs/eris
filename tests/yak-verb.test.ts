@@ -116,17 +116,20 @@ describe("eris yak — the group dispatcher", () => {
     });
   });
 
-  it("each verb reaches the core, and `<verb> --help` is the core's usage, not the group's", async () => {
+  it("each verb reaches the core, and `<verb> --help` is that verb's usage, not the group's", async () => {
     /** When a verb stops reaching yak.ts, its misuse checks and its own usage silently vanish. */
     for (const verb of ["issue", "suggest", "fatal"]) {
       const r = await call([verb]);
       expect({ verb, rc: r.rc, stdout: r.stdout }).toEqual({ verb, rc: 1, stdout: "" });
       expect(r.stderr).toContain("slug: yak-summary-required");
     }
-    const help = await call(["issue", "--help"]);
-    expect(help.rc).toBe(0);
-    expect(help.stdout).toContain("usage: eris yak <issue|suggest|fatal> [flags]");
-    expect(help.stdout).not.toContain("Usage: eris yak <command>");
+    for (const verb of ["issue", "suggest", "fatal"]) {
+      const help = await call([verb, "--help"]);
+      expect({ verb, rc: help.rc, head: help.stdout.split("\n")[0] }).toEqual({ verb, rc: 0, head: `usage: eris yak ${verb} [flags]` });
+      expect(help.stdout).toContain("\n  --body-file <path|->");
+      expect(help.stdout).toContain(`\nexample:\n  eris yak ${verb} --summary `);
+      expect(help.stdout).not.toContain("Usage: eris yak <command>");
+    }
   });
 
   it("--output json reaches the core: one record on stdout, nothing on stderr", async () => {
