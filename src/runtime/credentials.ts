@@ -34,9 +34,9 @@
  *     and never throws.
  */
 
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 /** `{ value }` on success, `{ reason, slug }` on failure: `"reason" in outcome` tells them apart. */
 export type CredentialOutcome<T, TSlug extends string> = { value: T } | { reason: string; slug: TSlug };
@@ -96,14 +96,8 @@ export async function readYaksFileConfig(
 
   // Group-read (0o040) or other-read (0o004) — same two bits a `chmod 0644`
   // sets. ~/.eris is 0755 (observed) so this is the only guard.
-  const groupOrWorldReadable = (stat.mode & 0o044) !== 0;
-  if (groupOrWorldReadable) {
-    const mode = (stat.mode & 0o777).toString(8).padStart(3, "0");
-    return {
-      reason: `${path} is group- or world-readable (mode ${mode}) — refusing to read a bearer-token file with permissive bits`,
-      slug: "yak-config-permissive",
-    };
-  }
+  const refused = permissive(path, stat.mode);
+  if (refused !== null) return refused;
 
   let raw: string;
   try {
@@ -115,6 +109,46 @@ export async function readYaksFileConfig(
     };
   }
 
+  return parseYaksFile(path, raw);
+}
+
+/** The bits `chmod 0644` sets: a token file with either is refused unread. */
+function permissive(path: string, mode: number): { reason: string; slug: "yak-config-permissive" } | null {
+  if ((mode & 0o044) === 0) return null;
+  return {
+    reason: `${path} is group- or world-readable (mode ${(mode & 0o777).toString(8).padStart(3, "0")}) — refusing to read a bearer-token file with permissive bits`,
+    slug: "yak-config-permissive",
+  };
+}
+
+/**
+ * `readYaksFileConfig` for a caller that cannot await (a synchronous resolver
+ * deep in a command): the same mode check before any byte is read, the same
+ * parse, the same outcomes.
+ */
+export function readYaksFileConfigSync(
+  home: string = homedir(),
+): CredentialOutcome<YaksFileConfig, "yak-config-permissive" | "yak-config-malformed"> {
+  const path = yaksConfigPath(home);
+  let mode: number;
+  try {
+    mode = statSync(path).mode;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { value: {} };
+    return { reason: `cannot stat ${path}: ${(err as Error).message}`, slug: "yak-config-malformed" };
+  }
+  const refused = permissive(path, mode);
+  if (refused !== null) return refused;
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (err) {
+    return { reason: `cannot read ${path}: ${(err as Error).message}`, slug: "yak-config-malformed" };
+  }
+  return parseYaksFile(path, raw);
+}
+
+function parseYaksFile(path: string, raw: string): CredentialOutcome<YaksFileConfig, "yak-config-malformed"> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -124,7 +158,6 @@ export async function readYaksFileConfig(
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return { reason: `${path} must be a JSON object`, slug: "yak-config-malformed" };
   }
-
   const obj = parsed as Record<string, unknown>;
   const config: YaksFileConfig = {};
   if (typeof obj.url === "string" && obj.url.length > 0) config.url = obj.url;
@@ -290,6 +323,11 @@ export async function resolveOrgSelection(
   env: Record<string, string | undefined>,
   cwd: string,
 ): Promise<{ value: OrgSelection } | OrgFailure> {
+  return resolveOrgSelectionSync(env, cwd);
+}
+
+/** `resolveOrgSelection` for a synchronous caller: the same walk, the same outcomes. */
+export function resolveOrgSelectionSync(env: Record<string, string | undefined>, cwd: string): { value: OrgSelection } | OrgFailure {
   const fromEnv = env.ERIS_ORG;
   if (fromEnv !== undefined && fromEnv.length > 0) {
     if (isOrgId(fromEnv)) return { value: { org: fromEnv, source: "env" } };
@@ -299,13 +337,12 @@ export async function resolveOrgSelection(
       fix: "set ERIS_ORG to the org id 'eris whoami' prints, or unset it",
     };
   }
-  const { dirname } = await import("node:path");
   let dir = cwd;
   for (let i = 0; i < ORG_WALK_MAX_DEPTH; i++) {
     const path = join(dir, "eris.yaml");
     let raw: string | undefined;
     try {
-      raw = await fs.readFile(path, "utf8");
+      raw = readFileSync(path, "utf8");
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== "ENOENT" && code !== "ENOTDIR") {
@@ -325,12 +362,7 @@ export async function resolveOrgSelection(
         return { reason: `repo.org in ${path} is not an org id (26 uppercase Crockford base32 characters)`, slug: "org-selector-invalid", fix: `set repo.org in ${path} to the org id 'eris whoami' prints, or remove it` };
       }
     }
-    try {
-      await fs.access(join(dir, ".git"));
-      break;
-    } catch {
-      // not the checkout root: keep walking
-    }
+    if (existsSync(join(dir, ".git"))) break;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;

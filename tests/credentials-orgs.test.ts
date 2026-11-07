@@ -9,14 +9,16 @@
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   addOrgLogin,
   readYaksFileConfig,
+  readYaksFileConfigSync,
   removeOrgLogin,
   resolveOrgBearer,
   resolveOrgSelection,
+  resolveOrgSelectionSync,
   selectOrgConfig,
   tokenOrg,
   writeYaksFileConfig,
@@ -198,6 +200,19 @@ describe("the store on disk", () => {
     await writeYaksFileConfig({ url: URL_A, token: TOKEN_A, orgs: { [ORG_B]: { url: URL_B, token: TOKEN_B } } }, home);
     expect(statSync(join(home, ".eris", "yaks.json")).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(join(home, ".eris", "yaks.json"), "utf8"))).toEqual({ url: URL_A, token: TOKEN_A, orgs: { [ORG_B]: { url: URL_B, token: TOKEN_B } } });
+  });
+
+  // admits: the synchronous twins drifting from the async reader (a sync resolver sending another org's bearer); same fs facts
+  it("reads the same file and selection synchronously, and refuses a permissive file unread", async () => {
+    const home = join(root, "home");
+    writeStore(home, { url: URL_A, token: TOKEN_A, orgs: { [ORG_B]: { url: URL_B, token: TOKEN_B } } });
+    expect(readYaksFileConfigSync(home)).toEqual(await readYaksFileConfig(home));
+    const b = checkout("repo-b", `service: b\nrepo:\n  org: ${ORG_B}\n`);
+    expect(resolveOrgSelectionSync({}, b)).toEqual(await resolveOrgSelection({}, b));
+    chmodSync(join(home, ".eris", "yaks.json"), 0o644);
+    const r = readYaksFileConfigSync(home);
+    expect("slug" in r && r.slug).toBe("yak-config-permissive");
+    expect(JSON.stringify(r)).not.toContain(B64);
   });
 
   // admits: end to end through one call: repo A acting as B or an unknown org lending A; fs + data
