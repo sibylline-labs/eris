@@ -33,7 +33,7 @@
 import { homedir } from "node:os";
 import { CURRENT_RUBRIC, extractFeatures, issueEntryOf, type RejectGateId, rubricFor, scoreUnderPolicy, type Verdict } from "eris/socrates-core";
 import { z } from "zod";
-import { readArgs, readYaksFileConfig, resolveUrl, type VerbContext } from "../../src/cli/plugin";
+import { readArgs, readYaksFileConfig, resolveOrgSelection, resolveUrl, selectOrgConfig, type VerbContext } from "../../src/cli/plugin";
 import { ANSWER_FIX, answersOf, issues, OVERRIDE_FIX, type Override, overridesOf, pairs, type Rubric } from "./answers";
 import plugin from "./index";
 import { type LocalPolicy, localPolicy, policyLine, readPolicyCache, readRepoPolicy } from "./policy";
@@ -250,7 +250,11 @@ export async function runClassify(args: string[], ctx: VerbContext, deps: Socrat
   const home = deps.home ?? ctx.env.HOME ?? homedir();
   const file = await readYaksFileConfig(home);
   if ("reason" in file) fail(ctx, file.slug, file.reason, "fix or remove the file, then run 'eris login'");
-  const href = `${resolveUrl(file.value, ctx.env).value.replace(/\/+$/, "")}${SOCRATES_ROUTES.classify.path}`;
+  const selection = await resolveOrgSelection(ctx.env, deps.cwd ?? process.cwd());
+  if ("reason" in selection) fail(ctx, selection.slug, selection.reason, selection.fix);
+  const view = selectOrgConfig(file.value, selection.value, ctx.env);
+  if ("reason" in view) fail(ctx, view.slug, view.reason, view.fix);
+  const href = `${resolveUrl(view.value.config, ctx.env).value.replace(/\/+$/, "")}${SOCRATES_ROUTES.classify.path}`;
 
   const verdict = scoreUnderPolicy(rubric, local.policy, answers, features, overrides.map((o) => o.gate)) as Verdict<Rubric>;
   const out = ClassifyReport.parse(report(rubric, verdict, overrides, local, href));

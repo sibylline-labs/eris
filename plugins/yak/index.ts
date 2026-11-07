@@ -1,7 +1,8 @@
 /**
  * The yak plugin's manifest: `eris yak issue|suggest|fatal`; `eris yak status`, `ready`,
  * `discover` and `config get|set`, which read and set the org's destination; and
- * `eris login` / `eris logout`, which manage the bearer `eris yak` reads, as
+ * `eris login` / `eris logout`, which manage the bearer `eris yak` reads, and
+ * `eris whoami`, which says which org's bearer a directory uses, as
  * registry rows plus handler thunks (docs/dev/PLUGINS.md).
  *
  * Read on every command line, `eris completion` included: rows are inline
@@ -77,12 +78,14 @@ export default definePlugin({
         { name: "--no-browser", takesValue: false },
       ],
     },
-    logout: { impl: "ts", summary: "Remove this machine's token from ~/.eris/yaks.json" },
+    logout: { impl: "ts", summary: "Remove this directory's org's token from ~/.eris/yaks.json" },
+    whoami: { impl: "ts", summary: "Show the org this directory acts as, why, and where its token comes from (never the token)", json: true },
   },
   handlers: {
     yak: async () => (await import("./handlers")).runYakVerb,
     login: async () => (await import("./login")).runLogin,
     logout: async () => (await import("./login")).runLogout,
+    whoami: async () => (await import("./whoami")).runWhoami,
   },
   jsonFix: `  eris yak issue|suggest|fatal             {verb, delivered, id?, idempotency_key?, replay?,
                                             contract_version?, key_mismatch?, configured?,
@@ -95,5 +98,7 @@ export default definePlugin({
                                             default_state_id}
   eris yak config get                      {configured, config?, updated_at?, updated_by?}
   eris yak config set                      {config, updated_at, updated_by}
+  eris whoami                              {org, source, path?, default, token_source, url,
+                                            signed_in, default_org, file}
 `,
 });
