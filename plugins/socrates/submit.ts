@@ -82,7 +82,8 @@ Commands:
 Run 'eris socrates <command> --help' for its flags.
 `;
 
-export const SUBMIT_USAGE = `Usage: eris socrates submit --title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--now]
+export const SUBMIT_USAGE = `Usage: eris socrates submit --title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>]
+                            [--scope <text>] [--section <text>] [--evidence <text>] [--target <doc>] [--now]
                             (--answer <question>=<answer>... [--override <gate>=<reason>]...
                              | --unfit --hypothesis <text> [--evidence-file <path|->])
                             [--allow-redaction <class> --override-reason <text>]
@@ -111,6 +112,10 @@ what they match with «redacted:<class>» and print a WARN.
                        conflict statement follows the grammar in
                        'eris socrates classify --help' and files as one issue
   --project <name>     optional project hint, <= 200 chars
+  --scope <text>       optional single-line scope (e.g. repo, org), <= 200 chars
+  --section <text>     optional single-line target section heading (e.g. '## Current'), <= 200 chars
+  --evidence <text>    optional single-line evidence summary or fragment provenance, <= 2048 chars
+  --target <doc>       optional target living doc kind (one_pager, lbd, ka, retro, canon, practices)
   --now                file under today's review Epic straight away (every
                        submit already does; the flag says so explicitly)
   --answer <question>=<answer>
@@ -221,7 +226,7 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
 
   const a = readArgs(plugin.rows, "socrates submit", g.rest, ctx, { help: SUBMIT_USAGE });
   if (a === null) return 0;
-  const { "--title": title, "--statement": statement, "--source": source, "--kind": kind, "--project": project, "--now": now, "--allow-redaction": allowArgs, "--override-reason": reason, "--answer": answerArgs, "--override": overrideArgs, "--unfit": asUnfit, "--hypothesis": hypothesis, "--evidence-file": evidenceFile } = a.flags;
+  const { "--title": title, "--statement": statement, "--source": source, "--kind": kind, "--project": project, "--scope": scope, "--section": section, "--evidence": evidence, "--target": target, "--now": now, "--allow-redaction": allowArgs, "--override-reason": reason, "--answer": answerArgs, "--override": overrideArgs, "--unfit": asUnfit, "--hypothesis": hypothesis, "--evidence-file": evidenceFile } = a.flags;
   const missing = (["--title", "--statement", "--source"] as const).filter((f) => a.flags[f] === undefined);
   if (missing.length > 0) fail(ctx, "socrates-flag-required", `missing ${missing.join(", ")}`, "eris socrates submit --title <text> --statement <text> --source <url>");
   if (allowArgs.length > 0 && reason === undefined) fail(ctx, "socrates-flag-required", "--allow-redaction needs --override-reason", "add --override-reason <why the match is not a secret>");
@@ -251,14 +256,24 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   if (reasonHits.length > 0) secretFound(ctx, reasonHits);
   // The unfit stamp's text is scanned and redacted with the candidate's: a field the stamp adds is not exempt.
   const unfitText: Record<string, string> = asUnfit ? { hypothesis: hypothesis ?? "", ...Object.fromEntries(entries.flatMap((e, i) => [[`evidence.${i}`, e.content], [`evidence.${i}.provenance`, e.provenance]])) } : {};
-  const fields: Record<string, string | undefined> = { title, statement, source, project, ...unfitText };
+  const fields: Record<string, string | undefined> = { title, statement, source, project, scope, section, evidence, ...unfitText };
   const outbound = prepareOutbound(fields, allow);
   if (outbound.kind === "secret") secretFound(ctx, outbound.hits);
   const clean = outbound.fields;
 
   const parsed = SocratesSubmitRequest.safeParse({
     schema_version: SOCRATES_CONTRACT_VERSION,
-    candidate: { kind: kind ?? "decision", title: clean.title, statement: clean.statement, source: clean.source, ...(clean.project !== undefined ? { project: clean.project } : {}) },
+    candidate: {
+      kind: kind ?? "decision",
+      title: clean.title,
+      statement: clean.statement,
+      source: clean.source,
+      ...(clean.project !== undefined ? { project: clean.project } : {}),
+      ...(clean.scope !== undefined ? { scope: clean.scope } : {}),
+      ...(clean.section !== undefined ? { section: clean.section } : {}),
+      ...(clean.evidence !== undefined ? { evidence: clean.evidence } : {}),
+      ...(target !== undefined ? { target } : {}),
+    },
     ...(now ? { now: true } : {}),
   });
   if (!parsed.success) {
