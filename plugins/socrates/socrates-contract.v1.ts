@@ -33,6 +33,9 @@ export const SOCRATES_TITLE_MAX_LENGTH = 200;
 export const SOCRATES_STATEMENT_MAX_LENGTH = 4_000;
 export const SOCRATES_SOURCE_MAX_LENGTH = 2_048;
 export const SOCRATES_PROJECT_MAX_LENGTH = 200;
+export const SOCRATES_SCOPE_MAX_LENGTH = 200;
+export const SOCRATES_SECTION_MAX_LENGTH = 200;
+export const SOCRATES_EVIDENCE_SUMMARY_MAX_LENGTH = 2_048;
 export const SOCRATES_ID_MAX_LENGTH = 200;
 export const SOCRATES_KEY_MAX_LENGTH = 64;
 export const SOCRATES_OVERRIDE_REASON_MAX_LENGTH = 200;
@@ -44,6 +47,10 @@ export const SOCRATES_UNFIT_EVIDENCE_MAX_ENTRIES = 5;
 export const SOCRATES_CANDIDATE_KINDS = ["decision", "practice", "prd", "conflict"] as const;
 export const SocratesCandidateKind = z.enum(SOCRATES_CANDIDATE_KINDS);
 
+export const SOCRATES_DOC_KINDS = ["one_pager", "lbd", "ka", "retro", "canon", "practices"] as const;
+export const SocratesDocKind = z.enum(SOCRATES_DOC_KINDS);
+export type SocratesDocKind = z.infer<typeof SocratesDocKind>;
+
 /** The problem+json `type` prefix the gateway's errors carry. */
 export const PROBLEM_TYPE_PREFIX = "urn:hera:error:";
 
@@ -52,6 +59,14 @@ export const nonBlank = (max: number) =>
     .string()
     .min(1)
     .max(max)
+    .refine((s) => s.trim().length > 0, "must not be blank");
+
+export const oneLine = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .max(max)
+    .regex(/^[^\r\n]*$/, "must be a single line")
     .refine((s) => s.trim().length > 0, "must not be blank");
 
 export const Url = z
@@ -79,6 +94,10 @@ export const SocratesCandidate = z.object({
   statement: nonBlank(SOCRATES_STATEMENT_MAX_LENGTH),
   source: Url,
   project: nonBlank(SOCRATES_PROJECT_MAX_LENGTH).optional(),
+  scope: oneLine(SOCRATES_SCOPE_MAX_LENGTH).optional(),
+  section: oneLine(SOCRATES_SECTION_MAX_LENGTH).optional(),
+  evidence: oneLine(SOCRATES_EVIDENCE_SUMMARY_MAX_LENGTH).optional(),
+  target: SocratesDocKind.optional(),
 });
 export type SocratesCandidate = z.infer<typeof SocratesCandidate>;
 

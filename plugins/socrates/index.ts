@@ -16,13 +16,17 @@ export default definePlugin({
     "socrates submit": {
       summary: "Submit one candidate (a decision, practice, PRD or conflict) for review",
       json: true,
-      usage: "--title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--now] (--answer <question>=<answer>... [--override <gate>=<reason>]... | --unfit --hypothesis <text> [--evidence-file <path|->]) [--allow-redaction <class> --override-reason <text>]",
+      usage: "--title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--scope <text>] [--section <text>] [--evidence <text>] [--target <doc>] [--now] (--answer <question>=<answer>... [--override <gate>=<reason>]... | --unfit --hypothesis <text> [--evidence-file <path|->]) [--allow-redaction <class> --override-reason <text>]",
       flags: [
         { name: "--kind", takesValue: true },
         { name: "--title", takesValue: true },
         { name: "--statement", takesValue: true },
         { name: "--source", takesValue: true },
         { name: "--project", takesValue: true },
+        { name: "--scope", takesValue: true },
+        { name: "--section", takesValue: true },
+        { name: "--evidence", takesValue: true },
+        { name: "--target", takesValue: true },
         { name: "--now", takesValue: false },
         { name: "--answer", takesValue: true, repeatable: true },
         { name: "--override", takesValue: true, repeatable: true },
