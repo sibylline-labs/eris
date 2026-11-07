@@ -74,6 +74,18 @@ describe("plugins/yak/yak-setup.ts", () => {
     expect(JSON.parse(readFileSync(dest(), "utf8")).token).not.toBe("old");
   });
 
+  // admits: --force dropping other orgs' sign-ins when it rewrites the default slot; file contents at runtime
+  it("--force keeps other orgs' sign-ins", () => {
+    const org = "01J0AAAAAAAAAAAAAAAAAAAAAB";
+    const other = ["sib", org, "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
+    mkdirSync(join(home, ".eris"), { recursive: true });
+    writeFileSync(dest(), JSON.stringify({ url: "u", token: "old", orgs: { [org]: { url: "u", token: other } } }), { mode: 0o600 });
+    expect(setup(["--force", "--url", "http://127.0.0.1:9"]).rc).toBe(0);
+    const after = JSON.parse(readFileSync(dest(), "utf8")) as { token: string; orgs: Record<string, { token: string }> };
+    expect(after.token).not.toBe("old");
+    expect(after.orgs[org]?.token).toBe(other);
+  });
+
   it("refuses a slug outside the registry grammar, an unknown flag and a missing value, writing nothing", () => {
     /** When a bad slug is accepted, the bearer maps to a source the registry rejects and every yak 401s. */
     expect(setup(["--slug", "Bad Slug", "--url", "http://127.0.0.1:9"])).toEqual({ rc: 1, stdout: "", stderr: "slug 'Bad Slug' fails the registry grammar ^[a-z0-9][a-z0-9._-]*$\n" });

@@ -24,7 +24,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
-import { readArgs } from "../../src/cli/plugin";
+import { readArgs, readYaksFileConfigSync } from "../../src/cli/plugin";
 import { resolveUrl } from "./yak-identity";
 
 const USAGE_LINE = "plugins/yak/yak-setup.ts [--slug <slug>] [--url <url>] [--force]";
@@ -46,8 +46,9 @@ Mint this machine's Yaks bearer and write ~/.eris/yaks.json at mode 0600.
   --slug <slug>   the source slug the bearer maps to (default: yak-<hostname>)
   --url <url>     the Yaks endpoint base URL (default: $ERIS_YAKS_URL; one
                   of the two is required)
-  --force         overwrite an existing ~/.eris/yaks.json (mints a NEW bearer;
-                  the old one stays live until the operator removes it)
+  --force         replace the default bearer in an existing ~/.eris/yaks.json
+                  (mints a NEW bearer; the old one stays live until the operator
+                  removes it). Other orgs' sign-ins in the file are kept.
 
 The bearer works only once the endpoint's operator has registered it; the
 entry to send them is printed after the file is written.
@@ -108,9 +109,12 @@ export function main(
   // never sees a half-written file.
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const token = randomBytes(32).toString("hex");
+  // --force replaces the default slot only: other orgs' sign-ins (`orgs`) survive the rewrite.
+  const existing = force ? readYaksFileConfigSync(home) : { value: {} };
+  const orgs = "value" in existing ? existing.value.orgs : undefined;
   const tmp = `${dest}.tmp.${process.pid}`;
   try {
-    writeFileSync(tmp, `{\n  "url": "${url}",\n  "token": "${token}"\n}\n`, { mode: 0o600, flag: "wx" });
+    writeFileSync(tmp, `${JSON.stringify(orgs !== undefined ? { url, token, orgs } : { url, token }, null, 2)}\n`, { mode: 0o600, flag: "wx" });
     renameSync(tmp, dest);
   } finally {
     rmSync(tmp, { force: true });

@@ -31,7 +31,7 @@
  */
 
 import { homedir } from "node:os";
-import { readArgs, readYaksFileConfig, renderFailureBlock, resolveYaksBearer, type VerbContext } from "../../src/cli/plugin";
+import { readArgs, renderFailureBlock, resolveOrgBearer, type VerbContext } from "../../src/cli/plugin";
 import {
   LinearId,
   YakConfigRead,
@@ -84,9 +84,7 @@ interface Endpoint {
 }
 
 async function resolveEndpoint(env: Record<string, string | undefined>, home: string): Promise<Outcome<Endpoint>> {
-  const file = await readYaksFileConfig(home);
-  if ("reason" in file) return failed({ slug: file.slug, what: file.reason });
-  const bearer = resolveYaksBearer(file.value, env);
+  const bearer = await resolveOrgBearer({ home, env, cwd: process.cwd() });
   if ("reason" in bearer) return failed({ slug: bearer.slug, what: bearer.reason, fix: bearer.fix });
   return { ok: true, value: { url: bearer.value.url.replace(/\/+$/, ""), token: bearer.value.token } };
 }
@@ -270,16 +268,15 @@ function notSignedIn(line: string, fix: string): ReadyReport {
 }
 
 async function readiness(env: Record<string, string | undefined>, home: string, deps: AdminDeps): Promise<ReadyReport> {
-  const file = await readYaksFileConfig(home);
-  if ("reason" in file) {
-    const fix = file.slug === "yak-config-permissive" ? "chmod 600 ~/.eris/yaks.json" : "eris login";
-    return notSignedIn(`${file.reason}: ${fix === "eris login" ? "run 'eris login' to rewrite it" : `run '${fix}'`}`, fix);
-  }
-  const bearer = resolveYaksBearer(file.value, env);
+  const bearer = await resolveOrgBearer({ home, env, cwd: process.cwd() });
   if ("reason" in bearer) {
-    return bearer.slug === "yak-token-unresolved"
-      ? notSignedIn(`not signed in: ${LOGIN_NUDGE}`, "eris login")
-      : notSignedIn(`ERIS_YAKS_TOKEN is set but ERIS_YAKS_URL is not: ${bearer.fix}`, bearer.fix);
+    if (bearer.slug === "yak-config-permissive" || bearer.slug === "yak-config-malformed") {
+      const fix = bearer.slug === "yak-config-permissive" ? "chmod 600 ~/.eris/yaks.json" : "eris login";
+      return notSignedIn(`${bearer.reason}: ${fix === "eris login" ? "run 'eris login' to rewrite it" : `run '${fix}'`}`, fix);
+    }
+    if (bearer.slug === "yak-token-unresolved") return notSignedIn(`not signed in: ${LOGIN_NUDGE}`, "eris login");
+    if (bearer.slug === "yak-url-unresolved") return notSignedIn(`ERIS_YAKS_TOKEN is set but ERIS_YAKS_URL is not: ${bearer.fix}`, bearer.fix);
+    return notSignedIn(`${bearer.reason}: ${bearer.fix}`, bearer.fix);
   }
   const ep = { url: bearer.value.url.replace(/\/+$/, ""), token: bearer.value.token };
   const got = await request(ep, "GET", "/v1/yaks/status", YakStatus, { ...deps, timeoutMs: deps.timeoutMs ?? READY_TIMEOUT_MS });

@@ -1,0 +1,19 @@
+id: yaks-bearer-via-org-resolver
+valid:
+  - const b = await resolveOrgBearer({ home, env, cwd });
+  - import { resolveOrgBearer } from "../../src/cli/plugin";
+  - "// resolveYaksBearer is called by resolveOrgBearer"
+  - const help = "resolveYaksBearer";
+  - const s = resolveYaksBearerSource(file);
+  - const b = sdk["resolveYaksBearer"](file, env);
+invalid:
+  - const b = resolveYaksBearer(file, env);
+  - import { resolveYaksBearer } from "../../src/cli/plugin";
+  - import { resolveYaksBearer as rb } from "../../src/cli/plugin";
+  - export { resolveYaksBearer } from "./credentials";
+  - const b = sdk.resolveYaksBearer(file, env);
+  - const { resolveYaksBearer } = await import("../../src/cli/plugin");
+  - const fns = [resolveYaksBearer];
+  - const b = sdk?.resolveYaksBearer?.(file);
+  - const o = { resolveYaksBearer };
+  - wrap<typeof resolveYaksBearer>(resolveYaksBearer);

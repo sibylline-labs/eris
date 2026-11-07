@@ -704,6 +704,38 @@ A `WARN`, exit 0: `ERIS_YAKS_TOKEN` is set, and it wins over the token in
 `eris login` (or still has one after `eris logout`). Fix: unset
 `ERIS_YAKS_TOKEN` to use the file's token.
 
+### login-org-differs
+
+A `WARN`, exit 0. The token `eris login` just wrote is for a different org
+from the one this directory acts as (`ERIS_ORG`, or `repo.org` in the repo's
+`eris.yaml`). The token was still stored, under its own org. The device code
+was approved while the browser was signed in to the other org. Fix: sign the
+browser in to the org this directory selects, then run `eris login` again.
+
+### org-not-signed-in
+
+This directory selects an org (`ERIS_ORG`, or `repo.org` in the nearest
+`eris.yaml` that names one), but `~/.eris/yaks.json` holds no token for it.
+Nothing was sent: the default org's token is never used in its place. Fix:
+run `eris login`, and approve the code while the browser is signed in to that
+org. `eris whoami` shows which org is selected and why.
+
+### org-selector-invalid
+
+The org this directory acts as cannot be determined, so nothing was sent.
+Either `ERIS_ORG`, or `repo.org` in an `eris.yaml`, is not an org id (26
+uppercase Crockford base32 characters, the id `eris whoami` prints), or an
+`eris.yaml` between this directory and the checkout root cannot be read or
+parsed. A broken manifest might be the one that selects an org, so it is never
+skipped. Fix: correct the id or the manifest, or remove the selector.
+
+### org-token-mismatch
+
+`ERIS_YAKS_TOKEN` is set while this directory selects an org, and the token is
+not a token for that org: its org id names another org, or cannot be read.
+Nothing was sent. Fix: unset `ERIS_YAKS_TOKEN` so the machine's stored token
+for the selected org is used, or set it to a token for that org.
+
 ### socrates-unknown-verb
 
 `eris socrates` was given a command it does not have. Fix: use `classify`,
