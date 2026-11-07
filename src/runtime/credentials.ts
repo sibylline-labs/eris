@@ -36,7 +36,7 @@
 
 import { existsSync, promises as fs, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 
 /** `{ value }` on success, `{ reason, slug }` on failure: `"reason" in outcome` tells them apart. */
 export type CredentialOutcome<T, TSlug extends string> = { value: T } | { reason: string; slug: TSlug };
@@ -315,7 +315,8 @@ function manifestOrg(value: unknown): { kind: "absent" } | { kind: "org"; org: s
  * The org this directory acts as: `ERIS_ORG` when set, else `repo.org` in the
  * nearest `eris.yaml` at or above `cwd` that names one, stopping at the
  * enclosing checkout's root (a `.git` entry) and a hard depth bound, else the
- * default org. A malformed id, or a manifest on the walk that cannot be read
+ * default org. A manifest inside a `node_modules` tree is a dependency's, never
+ * the repo's, so it is not read. A malformed id, or a manifest on the walk that cannot be read
  * or parsed, fails `org-selector-invalid`: a broken manifest might be the one
  * selecting an org, so it is never skipped.
  */
@@ -341,12 +342,14 @@ export function resolveOrgSelectionSync(env: Record<string, string | undefined>,
   for (let i = 0; i < ORG_WALK_MAX_DEPTH; i++) {
     const path = join(dir, "eris.yaml");
     let raw: string | undefined;
-    try {
-      raw = readFileSync(path, "utf8");
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT" && code !== "ENOTDIR") {
-        return { reason: `${path} is unreadable (${code ?? "read failed"}), so the org it may select is unknown`, slug: "org-selector-invalid", fix: `make ${path} readable, then run the command again` };
+    if (!dir.split(sep).includes("node_modules")) {
+      try {
+        raw = readFileSync(path, "utf8");
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT" && code !== "ENOTDIR") {
+          return { reason: `${path} is unreadable (${code ?? "read failed"}), so the org it may select is unknown`, slug: "org-selector-invalid", fix: `make ${path} readable, then run the command again` };
+        }
       }
     }
     if (raw !== undefined) {

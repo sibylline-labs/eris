@@ -107,6 +107,15 @@ describe("resolveOrgSelection", () => {
     expect("value" in found && found.value.org).toBe(ORG_B);
   });
 
+  // admits: a dependency's eris.yaml under node_modules selecting the org the repo acts as; walk results depend on files on disk
+  it("ignores a manifest inside node_modules and keeps walking to the repo's", async () => {
+    const repo = checkout("nm", `service: nm\nrepo:\n  org: ${ORG_B}\n`);
+    const dep = join(repo, "node_modules", "dep");
+    mkdirSync(dep, { recursive: true });
+    writeFileSync(join(dep, "eris.yaml"), `service: dep\nrepo:\n  org: ${ORG_C}\n`);
+    expect(await resolveOrgSelection({}, dep)).toEqual({ value: { org: ORG_B, source: "eris.yaml", path: join(repo, "eris.yaml") } });
+  });
+
   // admits: repo.org overriding an explicit ERIS_ORG; precedence is runtime
   it("puts ERIS_ORG ahead of repo.org", async () => {
     const repo = checkout("d", `service: d\nrepo:\n  org: ${ORG_B}\n`);
