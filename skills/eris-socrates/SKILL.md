@@ -1,14 +1,26 @@
 ---
 name: eris-socrates
-description: Set up Socrates so this coding agent reads the team's living docs and Canon before it decides, and records the decisions it makes as reviewable candidates in the user's Linear. Use when the user asks to set up, install, connect or use Socrates or `eris socrates`, to check a plan against Canon or the project's living docs, or to record a decision, practice or PRD for review.
+description: Set up Socrates so this coding agent can read the team's living docs and Canon and file its decisions as reviewable candidates in the user's Linear. Use when the user asks to set up, install, connect or sign in to Socrates or `eris socrates`, or when an `eris socrates` command fails because eris is missing or signed out. Reading before a decision and filing after one are the socrates-consult and socrates-capture skills.
 ---
 
-# Use Socrates
+# Set up Socrates
 
 Socrates keeps a project's living docs and the org's Canon current in your user's Linear.
 `eris socrates` is the client. This skill gets you signed in and names the verbs. Each verb's
 `--help` is the source for how to use it, so run it and follow what it prints instead of
 relying on this file.
+
+## 0. Install the skills globally
+
+Install with `-g`, so every project's sessions load them. Without `-g` the skills CLI installs at
+project scope, which writes `.agents/`, `.claude/skills/` and `skills-lock.json` into the repo you
+are standing in. Run this from any directory:
+
+```sh
+npx skills add sibylline-labs/eris -g --skill eris-socrates
+npx skills add sibylline-labs/eris -g --skill socrates-consult
+npx skills add sibylline-labs/eris -g --skill socrates-capture
+```
 
 ## 1. Check for bun
 
@@ -46,18 +58,12 @@ eris login
 
 Expect: `logged in: token "…" written to …`
 
-## 4. Read before you decide
+## 4. Use it
 
-Read the org's rules and the project's living docs before planning or deciding anything
-they might cover.
-
-```sh
-eris socrates consult --brief
-eris socrates consult --canon
-```
-
-A refusal that prints a settings link means the org has not chosen that doc yet. Show your
-user the link and carry on without it; never invent a house rule.
+Two sibling skills carry the day-to-day work: `socrates-consult` reads the living docs and Canon
+before you plan or decide, and `socrates-capture` offers to file what a session decided when the
+stint ends. A refusal that prints a settings link means the org has not chosen that doc yet. Show
+your user the link and carry on without it; never invent a house rule.
 
 ## 5. The verbs
 
@@ -77,6 +83,6 @@ For a failure, the printed `fix:` line says what to do next.
 
 ## Done
 
-Tell your user that you can now read Socrates before deciding and record what you decide.
+Tell your user that Socrates is set up and that you will read it before you decide and offer to file what you decide.
 
 Reference: `eris socrates --help` · https://github.com/sibylline-labs/eris
