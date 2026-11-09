@@ -105,12 +105,17 @@ it with the [skills](https://github.com/vercel-labs/skills) CLI:
 npx skills add sibylline-labs/eris --skill eris-yaks
 ```
 
-[`skills/eris-socrates`](skills/eris-socrates/SKILL.md) is the matching skill for Socrates: it gets a
-coding agent signed in, then names the `eris socrates` verbs (read the living docs and Canon before
-deciding, record a decision for review) and leaves the details to each verb's `--help`:
+Socrates has three skills. [`skills/eris-socrates`](skills/eris-socrates/SKILL.md) gets a coding agent
+signed in; [`skills/socrates-consult`](skills/socrates-consult/SKILL.md) reads the living docs and Canon
+before the agent plans or decides; [`skills/socrates-capture`](skills/socrates-capture/SKILL.md) offers to
+file what a session decided when the stint ends. Install them globally with `-g`; without it the skills
+CLI installs at project scope and writes `.agents/`, `.claude/skills/` and `skills-lock.json` into the
+repository you run it from:
 
 ```bash
-npx skills add sibylline-labs/eris --skill eris-socrates
+npx skills add sibylline-labs/eris -g --skill eris-socrates
+npx skills add sibylline-labs/eris -g --skill socrates-consult
+npx skills add sibylline-labs/eris -g --skill socrates-capture
 ```
 
 ## Writing a plugin
