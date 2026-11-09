@@ -38,6 +38,8 @@ describe("router table", () => {
       "completion zsh": "ts",
       login: "ts",
       logout: "ts",
+      org: "ts",
+      "org members": "ts",
       whoami: "ts",
       socrates: "ts",
       "socrates classify": "ts",
@@ -163,6 +165,7 @@ describe("the --output json surfaces, from the registry", () => {
     expect(JSON_SURFACES).toEqual({
       "--version": true,
       socrates: ["submit", "classify", "resolve", "settings", "discover", "consult", "status", "evidence", "policy"],
+      org: ["members"],
       update: true,
       whoami: true,
       yak: ["fatal", "issue", "suggest", "status", "ready", "discover", "config"],

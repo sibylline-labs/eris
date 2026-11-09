@@ -2,7 +2,7 @@
  * Where a bearer is sent: a repo whose `eris.yaml` names org B sends org B's
  * bearer to org B's url, never the default org's, from every site that
  * resolves one (`eris yak` submit, `eris yak status` and `ready`, the
- * socrates client).
+ * socrates client, `eris org members` and `eris org members deactivate`).
  *
  * The seam is each verb's entry point with an injected `fetch` and `cwd` over a
  * sandbox HOME holding two orgs. The resolver itself is covered by
@@ -16,6 +16,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { join, resolve } from "node:path";
 import { CliExit } from "../src/cli/ts-verb";
 import { runSocrates } from "../plugins/socrates/submit";
+import { runOrg } from "../plugins/yak/org";
 import { runYak } from "../plugins/yak/yak";
 import { runReady, runStatus } from "../plugins/yak/yak-admin";
 
@@ -119,6 +120,23 @@ describe("a repo that selects org B sends org B's bearer and url", () => {
       await swallow(() => runSocrates(["status"], ctx().ctx, { cwd, home, fetch }));
       expect(seen[0]?.authorization).toBe(`Bearer ${token}`);
       expect(seen[0]?.url.startsWith(url)).toBe(true);
+    }
+  });
+
+  // admits: another org verb resolving from the process cwd; both org verbs share runOrg's request, each is driven
+  it("eris org members and eris org members deactivate", async () => {
+    /** When org.ts resolves from process.cwd() instead of the caller's, an org-B repo lists or deactivates the default org's members with the default bearer: observed in the request the injected fetch receives, from an org-B repo, a default repo and a directory (`/`) with no eris.yaml at all. */
+    const members = { members: [] };
+    const deactivated = { memberId: "m1", status: "deactivated" };
+    for (const [args, body, path] of [
+      [["members"], members, "/v1/org/members"],
+      [["members", "deactivate", "m1"], deactivated, "/v1/org/members/m1/deactivate"],
+    ] as const) {
+      for (const [cwd, token, url] of [[repoB, TOKEN_B, URL_B], [repoDefault, TOKEN_A, URL_A], ["/", TOKEN_A, URL_A]] as const) {
+        const { seen, fetch } = recorder(() => body);
+        await swallow(() => runOrg([...args], ctx().ctx, { cwd, home, fetchImpl: fetch }));
+        expect(seen[0]).toEqual({ url: `${url}${path}`, authorization: `Bearer ${token}` });
+      }
     }
   });
 });

@@ -1,0 +1,211 @@
+/**
+ * org.ts — `eris org members` and `eris org members deactivate <id>`: the org's
+ * members, listed and (by an admin) deactivated, over the gateway's bearer
+ * routes `GET /v1/org/members` and `POST /v1/org/members/:id/deactivate`.
+ * Loaded only when `eris org` dispatches (the manifest is ./index.ts).
+ *
+ * The routes answer success as plain JSON and every refusal as problem+json
+ * with a top-level `code` (`admin_required`, `member_not_found`,
+ * `cannot_deactivate_self`, `invalid_token`).
+ *
+ * Invariants:
+ *   - The bearer and url come from `resolveOrgBearer` with the caller's `cwd`, the
+ *     resolver every org-bound command uses, so a repo that selects org B acts
+ *     on org B. The bearer is never written to either stream.
+ *   - Authorisation is the server's. The role is not pre-checked here: a 403
+ *     `admin_required` is rendered as the `org-admin-required` refusal, and a
+ *     stale role cannot make the CLI refuse or allow wrongly.
+ *   - Every failure is the slugged block on stderr, nothing on stdout, exit 1.
+ *     Under `--output json` a success prints the server's body, bare.
+ *   - One request, bounded by `ORG_TIMEOUT_MS` over the whole exchange.
+ */
+
+import { homedir } from "node:os";
+import { CliExit, groupArgs, readArgs, renderFailureBlock, resolveOrgBearer, type VerbContext } from "../../src/cli/plugin";
+import { z } from "zod";
+import plugin from "./index";
+
+// A `…Slug`-named union: `tests/errors-doc.test.ts` harvests its members.
+export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing";
+
+const ORG_TIMEOUT_MS = 15_000;
+
+const Member = z.object({
+  memberId: z.string(),
+  name: z.string().nullable(),
+  email: z.string().nullable(),
+  role: z.string(),
+  status: z.string(),
+  seats: z.array(z.string()),
+});
+const Members = z.object({ members: z.array(Member) });
+const Deactivated = z.object({ memberId: z.string(), status: z.string() });
+
+/** The dash Members page's names for a seat (`PRODUCT_NAMES`); an id it does not know prints as itself. */
+const SEAT_NAMES: Readonly<Record<string, string>> = { accounts: "Accounts", yak: "Yaks", graph: "Graph", socrates: "Socrates", "linear-proxy": "Linear proxy" };
+
+export const ORG_USAGE = `Usage: eris org <command>
+
+Commands:
+  members                        List this org's members: name, email, role, status, seats
+  members deactivate <member-id> Deactivate a member (an org admin's)
+
+The org is the one this directory acts as ('eris whoami').
+`;
+
+export const MEMBERS_USAGE = `Usage: eris org members
+
+List the members of the org this directory acts as: name (else the email's
+local part), email, role, status and seats. 'eris --output json org members'
+prints the server's body.
+
+  eris org members deactivate <member-id>   deactivate a member: their sessions,
+  CLI tokens and seats end now. Only an org admin may; anyone else is refused
+  (org-admin-required). The id is the memberId in 'eris org members'. You
+  cannot deactivate yourself.
+`;
+
+export interface OrgDeps {
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+  home?: string;
+  /** The directory whose `eris.yaml` selects the org; the process's cwd when absent. */
+  cwd?: string;
+}
+
+interface Failure {
+  slug: OrgSlug | string;
+  what: string;
+  fix?: string;
+}
+
+type Outcome<T> = { ok: true; value: T } | { ok: false; failure: Failure };
+
+/** The problem body's `code`: top level, else the `{error:{code}}` shape. */
+function problemCode(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const top = (body as { code?: unknown }).code;
+  if (typeof top === "string") return top;
+  const error = (body as { error?: unknown }).error;
+  if (typeof error === "object" && error !== null && typeof (error as { code?: unknown }).code === "string") return (error as { code: string }).code;
+  return undefined;
+}
+
+function refusal(status: number, code: string | undefined, target: string): Failure {
+  const answered = `the org endpoint answered ${status}${code ? ` ${code}` : ""} for ${target}`;
+  if (status === 401) return { slug: "org-unauthorized", what: `${answered}: it rejected the bearer token`, fix: "run: eris login\n(or check ERIS_YAKS_TOKEN when it is set)" };
+  if (status === 403 && code === "admin_required") {
+    return {
+      slug: "org-admin-required",
+      what: `${answered}: only an admin of this org can deactivate a member`,
+      fix: "ask an org admin to run it, or to deactivate the member in the dashboard's Members page",
+    };
+  }
+  if (status === 404 && code === "member_not_found") return { slug: "org-member-not-found", what: `${answered}: this org has no such member`, fix: "list the ids: eris org members" };
+  if (status === 400 && code === "cannot_deactivate_self") return { slug: "org-cannot-deactivate-self", what: `${answered}: you cannot deactivate your own member`, fix: "have another admin deactivate it" };
+  return { slug: "org-unavailable", what: answered, fix: "retry; 'eris whoami' shows which org and url this directory uses" };
+}
+
+/** One bounded request with the org's bearer; the body parsed against `schema`. */
+async function request<S extends z.ZodTypeAny>(method: "GET" | "POST", path: string, schema: S, ctx: VerbContext, deps: OrgDeps): Promise<Outcome<z.infer<S>>> {
+  const bearer = await resolveOrgBearer({ home: deps.home ?? ctx.env.HOME ?? homedir(), env: ctx.env, cwd: deps.cwd ?? process.cwd() });
+  if ("reason" in bearer) return { ok: false, failure: { slug: bearer.slug, what: bearer.reason, fix: bearer.fix } };
+  const base = bearer.value.url.replace(/\/+$/, "");
+  const target = `${method} ${base}${path}`;
+  const timeoutMs = deps.timeoutMs ?? ORG_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    let response: Response;
+    let parsed: unknown;
+    try {
+      response = await (deps.fetchImpl ?? fetch)(`${base}${path}`, { method, headers: { authorization: `Bearer ${bearer.value.token}` }, signal: controller.signal });
+      const text = await response.text();
+      try {
+        parsed = text.length > 0 ? JSON.parse(text) : undefined;
+      } catch {
+        parsed = undefined;
+      }
+    } catch (err) {
+      const name = (err as { name?: string }).name;
+      const what = name === "AbortError" || name === "TimeoutError" ? `the org endpoint did not answer within ${timeoutMs}ms (${target})` : `cannot reach the org endpoint (${target}): ${(err as Error).message}`;
+      return { ok: false, failure: { slug: "org-unavailable", what, fix: "check the network, and ERIS_YAKS_URL or the url in ~/.eris/yaks.json" } };
+    }
+    if (!response.ok) return { ok: false, failure: refusal(response.status, problemCode(parsed), target) };
+    const shaped = schema.safeParse(parsed);
+    if (!shaped.success) {
+      return { ok: false, failure: { slug: "org-unavailable", what: `the org endpoint answered ${response.status} with a body that does not match the contract (${target})`, fix: "update eris: eris update" } };
+    }
+    return { ok: true, value: shaped.data };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function fail(ctx: VerbContext, failure: Failure): number {
+  ctx.stderr.write(renderFailureBlock({ slug: failure.slug, what: failure.what, ...(failure.fix ? { fix: failure.fix } : {}) }, ctx.erisDir));
+  return 1;
+}
+
+/** Columns, two spaces apart, the last unpadded. */
+function table(rows: readonly (readonly string[])[]): string {
+  const widths = rows[0]!.map((_, i) => Math.max(...rows.map((r) => r[i]!.length)));
+  return rows.map((r) => r.map((cell, i) => (i === r.length - 1 ? cell : cell.padEnd(widths[i]!))).join("  ").trimEnd()).join("\n") + "\n";
+}
+
+/** What a person is called: their name, else the part of their email before the `@` (the dash's rule). */
+function displayName(m: z.infer<typeof Member>): string {
+  if (m.name !== null && m.name.trim() !== "") return m.name;
+  const local = m.email?.split("@")[0];
+  return local === undefined || local === "" ? "Unnamed member" : local;
+}
+
+async function runList(ctx: VerbContext, deps: OrgDeps): Promise<number> {
+  const got = await request("GET", "/v1/org/members", Members, ctx, deps);
+  if (!got.ok) return fail(ctx, got.failure);
+  if (ctx.format === "json") {
+    ctx.stdout.write(`${JSON.stringify(got.value)}\n`);
+    return 0;
+  }
+  const rows = got.value.members.map((m) => [displayName(m), m.email ?? "", m.role, m.status, m.seats.length === 0 ? "none" : m.seats.map((s) => SEAT_NAMES[s] ?? s).join(", ")]);
+  ctx.stdout.write(table([["NAME", "EMAIL", "ROLE", "STATUS", "SEATS"], ...rows]));
+  return 0;
+}
+
+async function runDeactivate(id: string | undefined, ctx: VerbContext, deps: OrgDeps): Promise<number> {
+  if (id === undefined || id === "") {
+    return fail(ctx, { slug: "org-member-id-missing", what: "eris org members deactivate was given no member id", fix: "eris org members deactivate <member-id>   (the ids: eris org members)" });
+  }
+  const got = await request("POST", `/v1/org/members/${encodeURIComponent(id)}/deactivate`, Deactivated, ctx, deps);
+  if (!got.ok) return fail(ctx, got.failure);
+  if (ctx.format === "json") {
+    ctx.stdout.write(`${JSON.stringify(got.value)}\n`);
+    return 0;
+  }
+  ctx.stdout.write(`deactivated ${got.value.memberId}\n`);
+  return 0;
+}
+
+function unknown(ctx: VerbContext, sub: string, use: string): never {
+  ctx.stderr.write(renderFailureBlock({ slug: "org-unknown-verb", what: `unknown org command '${sub}'`, fix: `use: ${use}\nrun 'eris org --help' for the full command list` }, ctx.erisDir));
+  throw new CliExit(1);
+}
+
+export async function runOrg(args: string[], ctx: VerbContext, deps: OrgDeps = {}): Promise<number> {
+  const g = groupArgs(plugin.rows, "org", args);
+  if (g.kind === "bare" || g.kind === "help") {
+    if (ctx.format === "json") {
+      ctx.stderr.write(renderFailureBlock({ slug: "output-json-unsupported", what: "eris org has no JSON rendering", fix: "use: eris --output json org members" }, ctx.erisDir));
+      throw new CliExit(1);
+    }
+    ctx.stdout.write(ORG_USAGE);
+    return 0;
+  }
+  if (g.kind === "unknown") return unknown(ctx, g.sub, "members");
+  const a = readArgs(plugin.rows, "org members", g.rest, ctx, { help: MEMBERS_USAGE });
+  if (a === null) return 0;
+  const [action, id] = a.pos;
+  if (action === undefined) return runList(ctx, deps);
+  if (action !== "deactivate") return unknown(ctx, `members ${action}`, "members, members deactivate <member-id>");
+  return runDeactivate(id, ctx, deps);
+}

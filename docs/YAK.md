@@ -162,6 +162,16 @@ current directory acts as. `eris login` warns
 ([`login-org-differs`](ERRORS.md#login-org-differs)) when the browser approved a
 different org from the one the directory selects.
 
+### `eris org members`: the org's members
+
+`eris org members` lists the members of the org the current directory acts as
+(`GET /v1/org/members`, with that org's bearer): name (else the email's local
+part), email, role, status and seats, the columns of the dashboard's Members
+page. `--output json` prints the server's body. `eris org members deactivate
+<member-id>` ends a member's sessions, CLI tokens and seats; only an org admin
+may, and a member's `403` is the [`org-admin-required`](ERRORS.md#org-admin-required)
+refusal. The member list carries no last-active time.
+
 ### `yak-setup.ts`: a hand-registered bearer
 
 For a self-hosted endpoint, mint the file with
