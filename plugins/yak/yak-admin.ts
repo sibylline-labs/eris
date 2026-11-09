@@ -66,6 +66,8 @@ export interface AdminDeps {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
   home?: string;
+  /** The directory whose `eris.yaml` selects the org; the process's cwd when absent. */
+  cwd?: string;
 }
 
 interface Failure {
@@ -83,8 +85,8 @@ interface Endpoint {
   token: string;
 }
 
-async function resolveEndpoint(env: Record<string, string | undefined>, home: string): Promise<Outcome<Endpoint>> {
-  const bearer = await resolveOrgBearer({ home, env, cwd: process.cwd() });
+async function resolveEndpoint(env: Record<string, string | undefined>, home: string, cwd: string): Promise<Outcome<Endpoint>> {
+  const bearer = await resolveOrgBearer({ home, env, cwd });
   if ("reason" in bearer) return failed({ slug: bearer.slug, what: bearer.reason, fix: bearer.fix });
   return { ok: true, value: { url: bearer.value.url.replace(/\/+$/, ""), token: bearer.value.token } };
 }
@@ -201,7 +203,7 @@ export async function readStatus(url: string, token: string, deps: AdminDeps): P
 
 export async function runStatus(args: string[], ctx: VerbContext, deps: AdminDeps = {}): Promise<number> {
   if (readArgs(plugin.rows, "yak status", args, ctx) === null) return 0;
-  const ep = await resolveEndpoint(ctx.env, home(ctx, deps));
+  const ep = await resolveEndpoint(ctx.env, home(ctx, deps), deps.cwd ?? process.cwd());
   if (!ep.ok) return fail(ctx, ep.failure);
   const got = await request(ep.value, "GET", "/v1/yaks/status", YakStatus, deps);
   if (!got.ok) return fail(ctx, got.failure);
@@ -268,7 +270,7 @@ function notSignedIn(line: string, fix: string): ReadyReport {
 }
 
 async function readiness(env: Record<string, string | undefined>, home: string, deps: AdminDeps): Promise<ReadyReport> {
-  const bearer = await resolveOrgBearer({ home, env, cwd: process.cwd() });
+  const bearer = await resolveOrgBearer({ home, env, cwd: deps.cwd ?? process.cwd() });
   if ("reason" in bearer) {
     if (bearer.slug === "yak-config-permissive" || bearer.slug === "yak-config-malformed") {
       const fix = bearer.slug === "yak-config-permissive" ? "chmod 600 ~/.eris/yaks.json" : "eris login";
@@ -386,7 +388,7 @@ export async function runDiscover(args: string[], ctx: VerbContext, deps: AdminD
   if (kindArg !== undefined && !isKind(kindArg)) {
     return fail(ctx, { slug: "yak-discover-unknown-kind", what: `unknown discover kind '${kindArg}'`, fix: `use one of: ${DISCOVER_KINDS.join(", ")}` });
   }
-  const ep = await resolveEndpoint(ctx.env, home(ctx, deps));
+  const ep = await resolveEndpoint(ctx.env, home(ctx, deps), deps.cwd ?? process.cwd());
   if (!ep.ok) return fail(ctx, ep.failure);
   const got = await discoverFor(ep.value, p.flags["--team"], deps);
   if (!got.ok) return fail(ctx, got.failure);
@@ -412,7 +414,7 @@ function renderConfig(c: YakStoredConfig): string {
 
 export async function runConfigGet(args: string[], ctx: VerbContext, deps: AdminDeps = {}): Promise<number> {
   if (readArgs(plugin.rows, "yak config get", args, ctx) === null) return 0;
-  const ep = await resolveEndpoint(ctx.env, home(ctx, deps));
+  const ep = await resolveEndpoint(ctx.env, home(ctx, deps), deps.cwd ?? process.cwd());
   if (!ep.ok) return fail(ctx, ep.failure);
   const got = await request(ep.value, "GET", "/v1/yaks/config", YakConfigRead, deps);
   if (!got.ok) return fail(ctx, got.failure);
@@ -440,7 +442,7 @@ export async function runConfigSet(args: string[], ctx: VerbContext, deps: Admin
     return fail(ctx, { slug: "yak-config-set-empty", what: "eris yak config set was given nothing to set", fix: "eris yak config set --team <id|key|name> [--project <id|name|none>] [--state <id|name|none>] [--labels <id|name,...>]" });
   }
 
-  const ep = await resolveEndpoint(ctx.env, home(ctx, deps));
+  const ep = await resolveEndpoint(ctx.env, home(ctx, deps), deps.cwd ?? process.cwd());
   if (!ep.ok) return fail(ctx, ep.failure);
 
   const needsLookup = team !== undefined || (project !== undefined && project !== NONE) || (state !== undefined && state !== NONE) || labels.length > 0;

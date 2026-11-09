@@ -151,6 +151,12 @@ describe("selectOrgConfig", () => {
     expect(selectOrgConfig(file, sel(ORG_A), {})).toEqual({ value: { config: { url: URL_A, token: TOKEN_A }, org: ORG_A, isDefault: true } });
   });
 
+  // admits: an orgs entry written by hand without a url; the file is data
+  it("sends an orgs entry that holds no url to the default org's url, with the entry's own bearer", () => {
+    const hand: YaksFileConfig = { url: URL_A, token: TOKEN_A, orgs: { [ORG_B]: { token: TOKEN_B } } };
+    expect(selectOrgConfig(hand, sel(ORG_B), {})).toEqual({ value: { config: { url: URL_A, token: TOKEN_B }, org: ORG_B, isDefault: false } });
+  });
+
   // admits: a selected org silently borrowing the default org's bearer; the store's contents are data
   it("refuses an org this machine is not signed in to, never lending the default's bearer", () => {
     const r = selectOrgConfig(file, sel(ORG_C), {});

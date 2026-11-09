@@ -380,7 +380,8 @@ export type OrgView = { readonly config: YaksFileConfig; readonly org: string | 
  * Narrow the file to the selected org. The default selection is the file's
  * top-level `{ url, token }`, exactly as a single-org file reads. A selected org
  * is the top-level entry when the default token is that org's, else its `orgs`
- * entry, else `org-not-signed-in`: never the default org's bearer. With
+ * entry (taking the default's `url` when it holds none), else
+ * `org-not-signed-in`: never the default org's bearer. With
  * `ERIS_YAKS_TOKEN` set, a selected org must be that token's own org
  * (`org-token-mismatch` otherwise, including a token whose org cannot be read).
  */
@@ -420,7 +421,8 @@ export function selectOrgConfig(
       fix: `run 'eris login' and approve the code while signed in to org ${org} in the dashboard`,
     };
   }
-  return { value: { config: entry, org, isDefault } };
+  const config: YaksFileConfig = entry.url === undefined && file.url !== undefined ? { ...entry, url: file.url } : entry;
+  return { value: { config, org, isDefault } };
 }
 
 /**

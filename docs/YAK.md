@@ -128,6 +128,11 @@ beside it, under `orgs`, keyed by that org's id, and leaves the default alone:
 }
 ```
 
+An `orgs` entry with no `url` uses the default org's `url`. A binary from before
+multi-org support ignores `orgs`, and its `eris login`, `eris logout` or
+`yak-setup` rewrites the file as `{ url, token }`, dropping every `orgs` entry:
+upgrade every copy of `eris` on the machine before signing in to a second org.
+
 Each command acts as one org, chosen in this order:
 
 1. `ERIS_ORG=<org id>`, when set;
