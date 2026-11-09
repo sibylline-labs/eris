@@ -94,9 +94,10 @@ const HANDLE_ID_EXACT = new RegExp(`^${ENTRY_HANDLE_ID}$`);
 
 /**
  * A register ID: an uppercase prefix of one or more segments, then a segment of letters and a number (`ACME-K11`,
- * `ACME-BILL-K4`, `SAAS-P3`). The resolver matches register rows and Plan bullets by exactly this shape.
+ * `ACME-BILL-K4`, `SAAS-P3`), or a dash between the letters segment and the number (`NFR-FAILCLOSED-1`). The
+ * resolver matches register rows and Plan bullets by this shape.
  */
-export const DECISION_ID = "[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[A-Z]+[1-9][0-9]*";
+export const DECISION_ID = "[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[A-Z]+-?[1-9][0-9]*";
 const DECISION_ID_EXACT = new RegExp(`^${DECISION_ID}$`);
 
 /** Single-line review footer for issue entries: the reply lands on this issue, never on a linked one. */
