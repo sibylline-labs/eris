@@ -826,6 +826,19 @@ five `{kind, provenance, content}` entries: `kind` is `code`, `doc` or
 is refused rather than waited on. The `ERROR` line names the entry and field
 (`evidence.1.kind`). Nothing was sent. Fix: correct the file, or pipe it in.
 
+### socrates-evidence-invalid
+
+`eris socrates submit --fragment <path>#L<x>[-L<y>]` could not build a fragment
+from the reference. It is not `<path>#L<x>` or `<path>#L<x>-L<y>`, the range
+ends before it starts, the path holds whitespace or `#`, or more than five
+`--fragment` were given. Or the file cannot be sent under an honest
+provenance: the directory is not in a git repo, the repo has no commits, the
+file is untracked, it differs from HEAD (the provenance names HEAD's sha, so
+uncommitted text is never sent under it), it is binary, the range runs past its
+end or holds only blank lines, or it is over 20000 characters. The `ERROR` line
+names the reference and never the file's text. Nothing was sent. Fix: pass a
+line range of a file committed in this repo, committing it first if needed.
+
 ### socrates-unfit-unsupported
 
 `eris socrates submit --unfit` was answered with a receipt that does not echo

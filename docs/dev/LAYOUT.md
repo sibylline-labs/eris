@@ -42,7 +42,7 @@ src/                    # The TS program the shim and the bin run
 ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN lines
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
-plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consult|status|policy|settings`: index.ts (the manifest), submit.ts
+plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consult|status|policy|evidence|settings`: index.ts (the manifest), submit.ts
                         #   (submit, its unfit and stamp rules, and the group dispatch), client.ts (the credentialed GET,
                         #   POST or PUT every endpoint verb shares), classify.ts (local rubric scoring, HAL override
                         #   links), answers.ts (the --answer/--override parsers classify and submit share), policy.ts
@@ -50,7 +50,9 @@ plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consul
                         #   merged with eris.yaml's stricter-only socrates.policy layer), policy-verb.ts (`policy`:
                         #   the effective policy, and the change a refresh made), status.ts (`status`: pending count,
                         #   open review Epics, one candidate's state), unfit.ts (the --evidence-file a submit --unfit
-                        #   sends), resolve.ts (a closed review Epic, resolved on the server), discover.ts (first-parent
+                        #   sends), fragment.ts (the committed line range a submit --fragment reads, under its
+                        #   repo@sha:path#L provenance), evidence.ts (`evidence`: one stored fragment, read back),
+                        #   resolve.ts (a closed review Epic, resolved on the server), discover.ts (first-parent
                         #   commits after the per-repo cursor in ~/.eris/socrates/cursors.json), consult.ts (a living
                         #   doc, or a brief of six, read whole over the consult route), settings.ts (`settings team`, and the group's routing) and
                         #   settings-panels.ts (`settings policy|enrolment|health|usage|canon` over the settings read model),
@@ -75,8 +77,12 @@ packages/socrates-core/ # Socrates living-doc surgery, `eris/socrates-core`: src
                         #   src/index.ts also serves RUBRICS / rubricFor(version)
 skills/eris-yaks/       # SKILL.md: the agent skill that sets up Yaks (`npx skills add sibylline-labs/eris
                         #   --skill eris-yaks`); the skills CLI discovers skills/<name>/SKILL.md
-skills/eris-socrates/   # SKILL.md: the agent skill that signs an agent in and names the `eris socrates` verbs
-                        #   (`--skill eris-socrates`); tests/skills.test.ts holds it to the registry's verbs and flags
+skills/eris-socrates/   # SKILL.md: the agent skill that installs (`-g`) and signs an agent in to Socrates
+                        #   (`--skill eris-socrates`); setup only
+skills/socrates-consult/  # SKILL.md: read the living docs and Canon before planning or deciding
+skills/socrates-capture/  # SKILL.md: offer to file a session's decisions when a stint ends
+                        #   tests/skills.test.ts holds all three to the registry's verbs and flags, their triggers
+                        #   and the global install
 examples/plugins/widgets/  # the worked plugin example tests/plugins.test.ts composes
 examples/distribution/  # the worked distribution: an entry importing eris/sdk alone, a demo plugin with a
                         #   completion domain, a menu, and build.ts; tests/distribution.test.ts builds and runs it

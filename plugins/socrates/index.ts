@@ -1,6 +1,6 @@
 /**
  * The socrates plugin's manifest: `eris socrates submit`, `classify`,
- * `resolve`, `discover`, `consult`, `status` and `policy` as registry rows plus
+ * `resolve`, `discover`, `consult`, `status`, `policy` and `evidence` as registry rows plus
  * a handler thunk (docs/dev/PLUGINS.md).
  *
  * No `product`: every install has the verbs, and the endpoint answers an
@@ -16,7 +16,7 @@ export default definePlugin({
     "socrates submit": {
       summary: "Submit one candidate (a decision, practice, PRD or conflict) for review",
       json: true,
-      usage: "--title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--scope <text>] [--section <text>] [--evidence <text>] [--target <doc>] [--now] (--answer <question>=<answer>... [--override <gate>=<reason>]... | --unfit --hypothesis <text> [--evidence-file <path|->]) [--allow-redaction <class> --override-reason <text>]",
+      usage: "--title <text> --statement <text> --source <url> [--kind <kind>] [--project <name>] [--scope <text>] [--section <text>] [--evidence <text>] [--target <doc>] [--now] (--answer <question>=<answer>... [--override <gate>=<reason>]... | --unfit --hypothesis <text> [--evidence-file <path|->]) [--fragment <path>#L<x>[-L<y>]]... [--allow-redaction <class> --override-reason <text>]",
       flags: [
         { name: "--kind", takesValue: true },
         { name: "--title", takesValue: true },
@@ -35,6 +35,7 @@ export default definePlugin({
         { name: "--unfit", takesValue: false },
         { name: "--hypothesis", takesValue: true },
         { name: "--evidence-file", takesValue: true, file: true },
+        { name: "--fragment", takesValue: true, repeatable: true, file: true },
       ],
     },
     "socrates classify": {
@@ -123,6 +124,12 @@ export default definePlugin({
       usage: "[--candidate <id>]",
       flags: [{ name: "--candidate", takesValue: true }],
     },
+    "socrates evidence": {
+      summary: "Print one stored evidence fragment, by the id submit printed",
+      json: true,
+      pos: ["id?"],
+      usage: "<fragment-id>",
+    },
     "socrates policy": {
       summary: "Print the org's scoring policy, and refresh the cached copy",
       json: true,
@@ -134,7 +141,8 @@ export default definePlugin({
     socrates: async () => (await import("./submit")).runSocrates,
   },
   jsonFix: `  eris socrates submit                     {candidate_id, deduped, contract_version, classification?,
-                                            unfit?: {state}, redactions, overrides}
+                                            unfit?: {state}, evidence?: [{fragment_id, provenance,
+                                            expires_at}], redactions, overrides}
   eris socrates classify                   {verdict, rubric_version, score?, threshold?, breakdown?,
                                             gate?, answer?, feature?, route?, reason?, overrides,
                                             policy_hash?, repo_policy?, meta: {_links: {override?}}}
@@ -167,5 +175,7 @@ export default definePlugin({
   eris socrates policy                     {rubric_version, policy_hash, cached, fetched_at,
                                             org_policy, policy, repo_policy, repo_policy_path,
                                             changed?: {from, to}, contract_version}
+  eris socrates evidence                   {fragment_id, candidate_id?, kind, provenance, content,
+                                            created_at, expires_at, contract_version}
 `,
 });
