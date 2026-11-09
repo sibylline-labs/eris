@@ -278,7 +278,7 @@ export async function runLogin(args: string[], ctx: VerbContext, deps: LoginDeps
       if (added.replaced) {
         ctx.stderr.write("replaced the token that was in the file; revoke it under Settings > API Tokens if nothing else uses it\n");
       }
-      const selected = await resolveOrgSelection(ctx.env, deps.cwd ?? process.cwd());
+      const selected = await resolveOrgSelection(ctx.env, deps.cwd ?? process.cwd(), home);
       if ("value" in selected && selected.value.org !== null && added.org !== null && selected.value.org !== added.org) {
         ctx.stderr.write(
           renderWarnLines(
@@ -321,7 +321,7 @@ export async function runLogout(args: string[], ctx: VerbContext, deps: Pick<Log
 
   const file = await readYaksFileConfig(home);
   if ("reason" in file) return fail(ctx, file.slug, file.reason, `fix or remove ${path}`);
-  const selection = await resolveOrgSelection(ctx.env, deps.cwd ?? process.cwd());
+  const selection = await resolveOrgSelection(ctx.env, deps.cwd ?? process.cwd(), home);
   if ("reason" in selection) return fail(ctx, selection.slug, selection.reason, selection.fix);
   const removal = removeOrgLogin(file.value, selection.value);
   const org = selection.value.org;

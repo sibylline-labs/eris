@@ -107,6 +107,23 @@ describe("resolveOrgSelection", () => {
     expect("value" in found && found.value.org).toBe(ORG_B);
   });
 
+  // admits: a manifest above or at home selecting the org; walk results depend on files on disk
+  it("stops at the home directory: a manifest at or above it is never read", async () => {
+    writeFileSync(join(root, "eris.yaml"), `service: shared\nrepo:\n  org: ${ORG_B}\n`);
+    const home = join(root, "home");
+    mkdirSync(join(home, "work", "plain"), { recursive: true });
+    writeFileSync(join(home, "eris.yaml"), "service: [unclosed\n");
+    const cwd = join(home, "work", "plain");
+    expect(await resolveOrgSelection({}, cwd, home)).toEqual({ value: { org: null, source: "default" } });
+    expect(resolveOrgSelectionSync({}, cwd, home)).toEqual({ value: { org: null, source: "default" } });
+    // Control: with no home bound the same walk reaches the broken manifest at home.
+    const unbounded = await resolveOrgSelection({}, cwd, "");
+    expect("slug" in unbounded && unbounded.slug).toBe("org-selector-invalid");
+    // A manifest below home still selects.
+    writeFileSync(join(home, "work", "eris.yaml"), `service: w\nrepo:\n  org: ${ORG_C}\n`);
+    expect(await resolveOrgSelection({}, cwd, home)).toEqual({ value: { org: ORG_C, source: "eris.yaml", path: join(home, "work", "eris.yaml") } });
+  });
+
   // admits: a dependency's eris.yaml under node_modules selecting the org the repo acts as; walk results depend on files on disk
   it("ignores a manifest inside node_modules and keeps walking to the repo's", async () => {
     const repo = checkout("nm", `service: nm\nrepo:\n  org: ${ORG_B}\n`);
