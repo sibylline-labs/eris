@@ -1,0 +1,33 @@
+# A command sends the `eris login` bearer of the org its directory acts as
+# (`ERIS_ORG`, else `repo.org` in the nearest eris.yaml, else the default).
+# resolveOrgBearer (src/runtime/credentials.ts) chooses that org and then calls
+# resolveYaksBearer on the org's own slot. A direct call to resolveYaksBearer
+# on the raw file skips the choice and sends the default org's bearer from
+# every repo. A use is recognised by the identifier: imported, aliased,
+# re-exported, called, passed as a value, read as a member or destructured.
+# Comments and strings are not identifiers.
+#
+# Known escape: bracket access by string (`sdk["resolveYaksBearer"]`).
+id: yaks-bearer-via-org-resolver
+language: typescript
+severity: error
+message: resolveYaksBearer outside src/runtime/credentials.ts. Call resolveOrgBearer, which chooses the org this directory acts as first.
+note: |
+  resolveOrgBearer({ home, env, cwd, flag }) returns the bearer, its url, the
+  org and why that org was chosen.
+files:
+  - src/**/*.ts
+  - ts/**/*.ts
+  - plugins/**/*.ts
+ignores:
+  # The resolver itself.
+  - src/runtime/credentials.ts
+  # The SDK barrel re-exports it for distributions that still call it.
+  - src/cli/plugin.ts
+rule:
+  any:
+    - kind: identifier
+    - kind: property_identifier
+    - kind: shorthand_property_identifier
+    - kind: shorthand_property_identifier_pattern
+  regex: ^resolveYaksBearer$

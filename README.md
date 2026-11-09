@@ -71,6 +71,11 @@ export ERIS_YAKS_URL=https://yaks.example.com     # your Yaks endpoint
 export ERIS_YAKS_TOKEN=<bearer token>
 ```
 
+Signed in to more than one org? Each `eris login` to another org is added
+beside the first, a repo picks its org with `repo: {org: <org id>}` in its
+`eris.yaml` (or `ERIS_ORG`), and `eris whoami` shows which org the current
+directory acts as ([docs/YAK.md](docs/YAK.md#more-than-one-org-repoorg-and-eris-whoami)).
+
 Or, for a self-hosted endpoint without device login, mint a bearer into
 `~/.eris/yaks.json` from a checkout. The script prints the entry your endpoint's
 operator needs to register:

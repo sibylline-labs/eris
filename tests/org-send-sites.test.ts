@@ -1,0 +1,124 @@
+/**
+ * Where a bearer is sent: a repo whose `eris.yaml` names org B sends org B's
+ * bearer to org B's url, never the default org's, from every site that
+ * resolves one (`eris yak` submit, `eris yak status` and `ready`, the
+ * socrates client).
+ *
+ * The seam is each verb's entry point with an injected `fetch` and `cwd` over a
+ * sandbox HOME holding two orgs. The resolver itself is covered by
+ * credentials-orgs.test.ts; these tests catch a call site that hands it the
+ * wrong directory. Bearers are assembled at runtime so no literal trips a
+ * secret scanner.
+ */
+
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { CliExit } from "../src/cli/ts-verb";
+import { runSocrates } from "../plugins/socrates/submit";
+import { runYak } from "../plugins/yak/yak";
+import { runReady, runStatus } from "../plugins/yak/yak-admin";
+
+const REPO = resolve(import.meta.dir, "..");
+const B64 = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE";
+const ORG_A = "01HZX3K5Q8W2N4R6T8V0Y2B4D6";
+const ORG_B = "01J0AAAAAAAAAAAAAAAAAAAAAB";
+const bearer = (org: string) => ["sib", org, B64].join("_");
+const TOKEN_A = bearer(ORG_A);
+const TOKEN_B = bearer(ORG_B);
+const URL_A = "https://a.example.test";
+const URL_B = "https://b.example.test";
+
+let sandbox: string;
+let home: string;
+let repoB: string;
+let repoDefault: string;
+
+beforeAll(() => {
+  mkdirSync(join(REPO, ".scratch"), { recursive: true });
+  sandbox = realpathSync(mkdtempSync(join(REPO, ".scratch", "send-sites-")));
+  home = join(sandbox, "home");
+  mkdirSync(join(home, ".eris"), { recursive: true, mode: 0o700 });
+  writeFileSync(join(home, ".eris", "yaks.json"), JSON.stringify({ url: URL_A, token: TOKEN_A, orgs: { [ORG_B]: { url: URL_B, token: TOKEN_B } } }), { mode: 0o600 });
+  repoB = join(sandbox, "repo-b");
+  mkdirSync(join(repoB, ".git"), { recursive: true });
+  writeFileSync(join(repoB, "eris.yaml"), `service: b\nrepo:\n  org: ${ORG_B}\n`);
+  repoDefault = join(sandbox, "repo-default");
+  mkdirSync(join(repoDefault, ".git"), { recursive: true });
+  writeFileSync(join(repoDefault, "eris.yaml"), "service: a\n");
+});
+afterAll(() => rmSync(sandbox, { recursive: true, force: true }));
+
+interface Seen {
+  url: string;
+  authorization: string | null;
+}
+
+/** A fetch that records where each request went and with which bearer, and answers `reply`. */
+function recorder(reply: () => unknown): { seen: Seen[]; fetch: typeof fetch } {
+  const seen: Seen[] = [];
+  const f = (async (input: string | URL | Request, init?: RequestInit) => {
+    seen.push({ url: String(input), authorization: new Headers(init?.headers).get("authorization") });
+    return Response.json(reply());
+  }) as unknown as typeof fetch;
+  return { seen, fetch: f };
+}
+
+const STATUS_BODY = () => ({ configured: true, observation_count: 1, last_filed_issue_identifier: null });
+const env = () => ({ PATH: process.env.PATH, HOME: home });
+const ctx = () => {
+  const out = { stdout: "", stderr: "" };
+  return {
+    out,
+    ctx: {
+      erisDir: REPO,
+      env: env(),
+      format: "text" as const,
+      stdout: { write: (s: string) => ((out.stdout += s), true) },
+      stderr: { write: (s: string) => ((out.stderr += s), true) },
+    },
+  };
+};
+const swallow = async (run: () => Promise<unknown>) => {
+  try {
+    await run();
+  } catch (e) {
+    if (!(e instanceof CliExit)) throw e;
+  }
+};
+
+describe("a repo that selects org B sends org B's bearer and url", () => {
+  // admits: another send site resolving from the process cwd; only the sites listed here are driven
+  it("eris yak submit", async () => {
+    /** When yak.ts hands the resolver the wrong cwd, an org-B repo files its yak into the default org with the default bearer: observed in the request the injected fetch receives. */
+    for (const [cwd, token, url] of [[repoB, TOKEN_B, URL_B], [repoDefault, TOKEN_A, URL_A]] as const) {
+      const { seen, fetch } = recorder(() => ({}));
+      await runYak({ argv: ["issue", "--summary", "s", "--body", "b"], env: env(), cwd, home, ppid: 1, fetchImpl: fetch, isStdinTTY: () => true });
+      const post = seen.find((r) => r.url.endsWith("/v1/yaks"));
+      expect(post).toEqual({ url: `${url}/v1/yaks`, authorization: `Bearer ${token}` });
+    }
+  });
+
+  // admits: another admin verb resolving from the process cwd; status and ready are the two resolution paths
+  it("eris yak status and eris yak ready", async () => {
+    /** When yak-admin.ts resolves from process.cwd() instead of the caller's, status and ready read the default org's yaks from an org-B repo: observed in the request the injected fetch receives. */
+    for (const run of [runStatus, runReady]) {
+      for (const [cwd, token, url] of [[repoB, TOKEN_B, URL_B], [repoDefault, TOKEN_A, URL_A]] as const) {
+        const { seen, fetch } = recorder(STATUS_BODY);
+        await swallow(() => run([], ctx().ctx, { cwd, home, fetchImpl: fetch }));
+        expect(seen[0]).toEqual({ url: `${url}/v1/yaks/status`, authorization: `Bearer ${token}` });
+      }
+    }
+  });
+
+  // admits: another socrates verb resolving elsewhere; every verb shares socratesEndpoint, status is the one driven
+  it("eris socrates", async () => {
+    /** When socrates/client.ts hands the resolver the wrong cwd, an org-B repo calls the default org's Socrates with the default bearer: observed in the request the injected fetch receives. */
+    for (const [cwd, token, url] of [[repoB, TOKEN_B, URL_B], [repoDefault, TOKEN_A, URL_A]] as const) {
+      const { seen, fetch } = recorder(() => ({ rubric_version: "rubric@v2", policy_hash: "h", pending_candidates: 0, open_epics: [], contract_version: 1 }));
+      await swallow(() => runSocrates(["status"], ctx().ctx, { cwd, home, fetch }));
+      expect(seen[0]?.authorization).toBe(`Bearer ${token}`);
+      expect(seen[0]?.url.startsWith(url)).toBe(true);
+    }
+  });
+});

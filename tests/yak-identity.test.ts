@@ -16,7 +16,6 @@ import {
   deviceIdPath,
   readYaksFileConfig,
   resolveUrl,
-  resolveYaksBearer,
   yaksTokenSource,
   type YaksBearer,
   resolveDeviceId,
@@ -24,6 +23,7 @@ import {
   runBounded,
   asText,
 } from "../plugins/yak/yak-identity";
+import { resolveYaksBearer } from "../src/cli/plugin";
 
 let home: string;
 

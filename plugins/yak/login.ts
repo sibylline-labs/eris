@@ -12,7 +12,16 @@
  * else `DEFAULT_YAKS_URL`, so there is always an endpoint (the parser refuses
  * an empty `--url`).
  *
- * `eris logout` removes the token from that file and keeps the url. No route
+ * The file holds one bearer per org (src/runtime/credentials.ts). A login to
+ * the org already in the default slot, or a first login, fills the default
+ * slot as it always has; a login to another org (the org inside the minted
+ * `sib_<org>_…` bearer) is added beside it under `orgs`, and the default is
+ * left alone. The file is read again after approval, just before the write,
+ * so another login that finished while this one waited is merged, not lost.
+ *
+ * `eris logout` removes the token of the org this directory acts as (the
+ * default unless `ERIS_ORG` or an `eris.yaml` `repo.org` selects another) and
+ * keeps the default's url. No route
  * lets a bearer revoke itself, so the token stays valid server-side until it is
  * revoked from the dashboard's API tokens settings; the command says so.
  *
@@ -38,7 +47,19 @@
 import { hostname as osHostname } from "node:os";
 import { renderFailureBlock, renderWarnLines, readArgs, type VerbContext } from "../../src/cli/plugin";
 import plugin from "./index";
-import { DEFAULT_YAKS_URL, readYaksFileConfig, resolveUrl, runBounded, writeYaksFileConfig, yaksConfigPath, yaksTokenSource } from "./yak-identity";
+import {
+  addOrgLogin,
+  DEFAULT_YAKS_URL,
+  readYaksFileConfig,
+  removeOrgLogin,
+  resolveOrgSelection,
+  resolveUrl,
+  runBounded,
+  writeYaksFileConfig,
+  yaksConfigPath,
+  yaksTokenSource,
+} from "./yak-identity";
+import type { OrgSlug } from "../../src/cli/plugin";
 import { promises as fs } from "node:fs";
 
 /** The `docs/ERRORS.md` slugs this module raises (`tests/errors-doc.test.ts`). */
@@ -47,7 +68,8 @@ export type LoginSlug =
   | "login-refused"
   | "login-denied"
   | "login-expired"
-  | "login-env-token-overrides";
+  | "login-env-token-overrides"
+  | "login-org-differs";
 
 const DEVICE_AUTHORIZATION_PATH = "/v1/device/code";
 const DEVICE_TOKEN_PATH = "/v1/device/token";
@@ -67,6 +89,12 @@ Sign this machine in with a device code: approve the code shown here in your
 browser, and the token is written to ~/.eris/yaks.json (mode 0600), where
 'eris yak' reads it. ERIS_YAKS_TOKEN, when set, still wins over the file.
 
+One machine can be signed in to several orgs. The token belongs to the org
+you are signed in to in the browser when you approve. The first login, or a
+login to the same org, is this machine's default org; a login to another org
+is added beside it. A repo acts as another org when its eris.yaml names it
+(repo: {org: <org id>}) or ERIS_ORG is set; 'eris whoami' shows which.
+
   --url <url>    the endpoint (default: $ERIS_YAKS_URL, then the url
                  already in ~/.eris/yaks.json, then ${DEFAULT_YAKS_URL})
   --no-browser   print the link without trying to open a browser
@@ -74,12 +102,16 @@ browser, and the token is written to ~/.eris/yaks.json (mode 0600), where
 
 export const LOGOUT_USAGE = `Usage: eris logout
 
-Remove this machine's token from ~/.eris/yaks.json, keeping the url. The token
-stays valid until it is revoked under Settings > API Tokens.
+Remove the token of the org this directory acts as from ~/.eris/yaks.json
+(the default org, unless ERIS_ORG or the repo's eris.yaml selects another),
+keeping the default org's url. The token stays valid until it is revoked under
+Settings > API Tokens.
 `;
 
 export interface LoginDeps {
   home?: string;
+  /** The directory whose org selection applies; the process's cwd when absent. */
+  cwd?: string;
   hostname?: () => string;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -166,7 +198,7 @@ async function defaultOpenBrowser(url: string): Promise<void> {
   if (cmd !== null) await runBounded(cmd, process.cwd(), 5_000);
 }
 
-function fail(ctx: VerbContext, slug: LoginSlug | "yak-config-permissive" | "yak-config-malformed" | "yak-config-unwritable", what: string, fix: string): number {
+function fail(ctx: VerbContext, slug: LoginSlug | OrgSlug | "yak-config-permissive" | "yak-config-malformed" | "yak-config-unwritable", what: string, fix: string): number {
   ctx.stderr.write(renderFailureBlock({ slug, what, fix }, ctx.erisDir));
   return 1;
 }
@@ -237,16 +269,29 @@ export async function runLogin(args: string[], ctx: VerbContext, deps: LoginDeps
       if (typeof token !== "string" || token === "" || String(body?.token_type).toLowerCase() !== "bearer") {
         return fail(ctx, "login-refused", "the endpoint approved the code but sent no bearer token", "run 'eris login' again");
       }
-      const written = await writeYaksFileConfig({ url, token }, home);
+      // Read again: another login may have written the file while this one waited for approval.
+      const latest = await readYaksFileConfig(home);
+      if ("reason" in latest) return fail(ctx, latest.slug, latest.reason, `fix or remove ${yaksConfigPath(home)}, then run 'eris login' again`);
+      const added = addOrgLogin(latest.value, url, token);
+      const written = await writeYaksFileConfig(added.config, home);
       if ("reason" in written) return fail(ctx, written.slug, written.reason, `make ${yaksConfigPath(home)} writable, then run 'eris login' again`);
-      if (file.value.token !== undefined && file.value.token !== token) {
+      if (added.replaced) {
         ctx.stderr.write("replaced the token that was in the file; revoke it under Settings > API Tokens if nothing else uses it\n");
+      }
+      const selected = await resolveOrgSelection(ctx.env, deps.cwd ?? process.cwd());
+      if ("value" in selected && selected.value.org !== null && added.org !== null && selected.value.org !== added.org) {
+        ctx.stderr.write(
+          renderWarnLines(
+            `this directory acts as org ${selected.value.org}, but the token just written is for org ${added.org}; sign in to org ${selected.value.org} in the browser and run 'eris login' again`,
+            "login-org-differs",
+          ),
+        );
       }
       if (yaksTokenSource({}, ctx.env) === "env") {
         ctx.stderr.write(renderWarnLines("ERIS_YAKS_TOKEN is set and overrides the token just written; unset it to use this login", "login-env-token-overrides"));
       }
       const name = typeof body?.name === "string" ? printable(body.name) : "eris";
-      ctx.stdout.write(`logged in: token "${name}" written to ${written.value}\n`);
+      ctx.stdout.write(added.asDefault ? `logged in: token "${name}" written to ${written.value}\n` : `logged in to org ${added.org}: token "${name}" written to ${written.value}\n`);
       return 0;
     }
 
@@ -268,7 +313,7 @@ export async function runLogin(args: string[], ctx: VerbContext, deps: LoginDeps
   }
 }
 
-export async function runLogout(args: string[], ctx: VerbContext, deps: Pick<LoginDeps, "home"> = {}): Promise<number> {
+export async function runLogout(args: string[], ctx: VerbContext, deps: Pick<LoginDeps, "home" | "cwd"> = {}): Promise<number> {
   const a = readArgs(plugin.rows, "logout", args, ctx, { help: LOGOUT_USAGE });
   if (a === null) return 0;
   const home = deps.home ?? ctx.env.HOME ?? "";
@@ -276,18 +321,27 @@ export async function runLogout(args: string[], ctx: VerbContext, deps: Pick<Log
 
   const file = await readYaksFileConfig(home);
   if ("reason" in file) return fail(ctx, file.slug, file.reason, `fix or remove ${path}`);
+  const selection = await resolveOrgSelection(ctx.env, deps.cwd ?? process.cwd());
+  if ("reason" in selection) return fail(ctx, selection.slug, selection.reason, selection.fix);
+  const removal = removeOrgLogin(file.value, selection.value);
+  const org = selection.value.org;
 
-  if (file.value.token === undefined) {
-    ctx.stdout.write(`not logged in: no token in ${path}\n`);
+  if (!removal.removed) {
+    ctx.stdout.write(org === null ? `not logged in: no token in ${path}\n` : `not logged in to org ${org}: no token for it in ${path}\n`);
+  } else if (removal.config.token === file.value.token) {
+    const written = await writeYaksFileConfig(removal.config, home);
+    if ("reason" in written) return fail(ctx, written.slug, written.reason, `make ${path} writable, then run 'eris logout' again`);
+    ctx.stdout.write(`logged out of org ${org}: removed its token from ${path}\n`);
+    ctx.stderr.write("the token stays valid until it is revoked under Settings > API Tokens\n");
   } else {
-    if (file.value.url === undefined) {
+    if (removal.config.url === undefined && removal.config.orgs === undefined) {
       try {
         await fs.rm(path, { force: true });
       } catch (err) {
         return fail(ctx, "yak-config-unwritable", `cannot remove ${path}: ${(err as NodeJS.ErrnoException).code ?? "error"}`, `remove ${path} by hand`);
       }
     } else {
-      const written = await writeYaksFileConfig({ url: file.value.url }, home);
+      const written = await writeYaksFileConfig(removal.config, home);
       if ("reason" in written) return fail(ctx, written.slug, written.reason, `make ${path} writable, then run 'eris logout' again`);
     }
     ctx.stdout.write(`logged out: removed the token from ${path}\n`);

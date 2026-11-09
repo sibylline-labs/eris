@@ -110,6 +110,58 @@ polls `/v1/device/token` at the advertised interval and slows down when told to.
 a token revoke itself, so it stays valid until you revoke it from the
 endpoint's dashboard (Settings > API Tokens).
 
+### More than one org: `repo.org` and `eris whoami`
+
+One machine can be signed in to several orgs. A token belongs to the org the
+browser was signed in to when you approved the code, and the org id is part
+of the token (`sib_<org id>_…`). The first login fills the machine's
+**default org**: the top-level `url` and `token` in `~/.eris/yaks.json`, which
+is all a single-org file holds, so an existing file keeps working unchanged.
+Another login to the same org replaces it. A login to a different org is added
+beside it, under `orgs`, keyed by that org's id, and leaves the default alone:
+
+```json
+{
+  "url": "https://api.sibylline.group",
+  "token": "sib_<default org id>_…",
+  "orgs": { "<other org id>": { "url": "https://api.sibylline.group", "token": "sib_<other org id>_…" } }
+}
+```
+
+An `orgs` entry with no `url` uses the default org's `url`. A binary from before
+multi-org support ignores `orgs`, and its `eris login`, `eris logout` or
+`yak-setup` rewrites the file as `{ url, token }`, dropping every `orgs` entry:
+upgrade every copy of `eris` on the machine before signing in to a second org.
+
+Each command acts as one org, chosen in this order:
+
+1. `ERIS_ORG=<org id>`, when set;
+2. `repo.org` in the nearest `eris.yaml` that names one, from the current
+   directory up to the checkout root (the directory holding `.git`);
+3. the default org.
+
+```yaml
+# eris.yaml at a repo's root
+repo:
+  org: 01HZX3K5Q8W2N4R6T8V0Y2B4D6
+```
+
+A repo that selects an org this machine is not signed in to fails with
+[`org-not-signed-in`](ERRORS.md#org-not-signed-in) before anything is sent. The
+default org's token is never used in its place. A malformed id, or an
+`eris.yaml` on the walk that cannot be parsed, fails with
+[`org-selector-invalid`](ERRORS.md#org-selector-invalid). With
+`ERIS_YAKS_TOKEN` set, a repo that selects an org accepts the variable only
+when it is a token for that org ([`org-token-mismatch`](ERRORS.md#org-token-mismatch)).
+
+`eris whoami` prints the org the current directory acts as, why that org was
+chosen, where its token comes from (the file or `ERIS_YAKS_TOKEN`), the url, and
+every org the machine is signed in to. It never prints a token, and
+`--output json` gives the same record. `eris logout` signs out only the org the
+current directory acts as. `eris login` warns
+([`login-org-differs`](ERRORS.md#login-org-differs)) when the browser approved a
+different org from the one the directory selects.
+
 ### `yak-setup.ts`: a hand-registered bearer
 
 For a self-hosted endpoint, mint the file with

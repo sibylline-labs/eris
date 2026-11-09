@@ -34,8 +34,7 @@
 
 import { homedir } from "node:os";
 import {
-  readYaksFileConfig,
-  resolveYaksBearer,
+  resolveOrgBearer,
   resolveDeviceId,
   resolveExecutionId,
 } from "./yak-identity";
@@ -402,13 +401,7 @@ export async function runYak(opts: RunYakOptions): Promise<RunYakResult> {
   const { summary, body, evidence } = inputsOutcome.value;
 
   // --- identity: config file, token, url, device id ------------------------
-  const fileConfigOutcome = await readYaksFileConfig(home);
-  if ("reason" in fileConfigOutcome) {
-    return warnResult(verb, fileConfigOutcome.slug, fileConfigOutcome.reason, jsonOutput, noRedactWarning, flags.noRedact);
-  }
-  const fileConfig = fileConfigOutcome.value;
-
-  const bearerOutcome = resolveYaksBearer(fileConfig, env);
+  const bearerOutcome = await resolveOrgBearer({ home, env, cwd: opts.cwd ?? process.cwd() });
   if ("reason" in bearerOutcome) {
     return warnResult(verb, bearerOutcome.slug, bearerOutcome.reason, jsonOutput, noRedactWarning, flags.noRedact);
   }

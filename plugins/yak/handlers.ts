@@ -82,9 +82,10 @@ async function adminHandler(verb: string, rest: string[], ctx: VerbContext): Pro
     if (isMissingPackage(e)) return async () => depsMissing(verb, ctx);
     throw e;
   }
-  if (verb === "status") return async () => admin.runStatus(rest, ctx);
-  if (verb === "ready") return async () => admin.runReady(rest, ctx);
-  if (verb === "discover") return async () => admin.runDiscover(rest, ctx);
+  const adminDeps = (deps: YakVerbDeps) => (deps.cwd === undefined ? {} : { cwd: deps.cwd });
+  if (verb === "status") return async (deps) => admin.runStatus(rest, ctx, adminDeps(deps));
+  if (verb === "ready") return async (deps) => admin.runReady(rest, ctx, adminDeps(deps));
+  if (verb === "discover") return async (deps) => admin.runDiscover(rest, ctx, adminDeps(deps));
   const c = groupArgs(plugin.rows, "yak config", rest);
   if ((c.kind === "bare" || c.kind === "help") && ctx.format === "json") {
     // The allow-list admits `config` for its json subs; the group itself has no rendering.
@@ -105,7 +106,7 @@ async function adminHandler(verb: string, rest: string[], ctx: VerbContext): Pro
       throw new CliExit(1);
     };
   }
-  return async () => (c.sub === "get" ? admin.runConfigGet(c.rest, ctx) : admin.runConfigSet(c.rest, ctx));
+  return async (deps) => (c.sub === "get" ? admin.runConfigGet(c.rest, ctx, adminDeps(deps)) : admin.runConfigSet(c.rest, ctx, adminDeps(deps)));
 }
 
 const CONFIG_USAGE = `Usage: eris yak config <command>

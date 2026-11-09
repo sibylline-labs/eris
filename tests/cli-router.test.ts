@@ -38,6 +38,7 @@ describe("router table", () => {
       "completion zsh": "ts",
       login: "ts",
       logout: "ts",
+      whoami: "ts",
       socrates: "ts",
       "socrates classify": "ts",
       "socrates consult": "ts",
@@ -163,6 +164,7 @@ describe("the --output json surfaces, from the registry", () => {
       "--version": true,
       socrates: ["submit", "classify", "resolve", "settings", "discover", "consult", "status", "evidence", "policy"],
       update: true,
+      whoami: true,
       yak: ["fatal", "issue", "suggest", "status", "ready", "discover", "config"],
     });
   });
