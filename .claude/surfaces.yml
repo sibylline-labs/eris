@@ -10,6 +10,7 @@ surfaces:
       - src/runtime/credentials.ts
       - plugins/yak/yak.ts
       - plugins/yak/yak-admin.ts
+      - plugins/yak/org.ts
       - plugins/yak/yak-submit.ts
       - plugins/socrates/submit.ts
       - plugins/socrates/client.ts
@@ -19,6 +20,8 @@ surfaces:
       - scripts/vendor-gitleaks.ts
       - tests/yak-redact.test.ts
       - tests/outbound-scan.test.ts
+      - tests/org.test.ts
+      - tests/org-send-sites.test.ts
     class_taxonomy: docs/dev/surfaces/secrets.md
     description: |
       Client-side secret scanning and redaction for `eris yak` and `eris
@@ -29,6 +32,6 @@ surfaces:
       vendored gitleaks rules and the scan that refuses on them (scan.ts);
       yak-submit.ts and socrates/submit.ts, resolve.ts and consult.ts are the call sites,
       credentials.ts resolves the bearer and the URL it may go to, and
-      yak.ts, yak-admin.ts and client.ts carry it, discover.ts strips a remote url's
+      yak.ts, yak-admin.ts, org.ts and client.ts carry it, discover.ts strips a remote url's
       credentials before keeping it; the test files
       pin each class and each secret shape.
