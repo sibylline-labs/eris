@@ -51,6 +51,14 @@ the flag is the only selector. Fix: `eris --output json <command>` for the
 machine rendering, `--output text` (the default) for the human one. See
 [OUTPUT-CONTRACT.md](OUTPUT-CONTRACT.md#2-the-flag).
 
+### output-format-conflict
+
+`--json` (the alias of `--output json`) and `--output text` were both given, so
+the command line asks for two formats. eris refuses rather than picking one: the
+caller would get the rendering it did not ask for. Fix: keep one of them, `--json`
+(or `--output json`) for the machine rendering, `--output text` for the human
+one. See [OUTPUT-CONTRACT.md](OUTPUT-CONTRACT.md#2-the-flag).
+
 ### output-json-unsupported
 
 `--output json` was asked of a command that has no JSON rendering. eris refuses

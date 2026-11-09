@@ -21,6 +21,7 @@ import {
   SocratesAnswer as Answer,
   SocratesCandidate,
   SocratesCandidateState,
+  SocratesDocKind,
   SocratesEvidenceContent as EvidenceContent,
   SocratesEvidenceKind,
   SocratesKey as Key,
@@ -41,10 +42,12 @@ import {
 } from "./socrates-contract.v1";
 
 export {
+  SOCRATES_DOC_KINDS,
   SOCRATES_EVIDENCE_MAX_LENGTH,
   SOCRATES_KEY_MAX_LENGTH,
   SOCRATES_OVERRIDE_REASON_MAX_LENGTH,
   SocratesCandidateState,
+  SocratesDocKind,
   SocratesEvidenceKind,
   SocratesOverride,
   SocratesRepoPolicy,
@@ -78,7 +81,6 @@ export const SocratesGateOutcome = z.enum(["pass", "fail", "off", "overridden"])
 export const SocratesVerbosity = z.enum(["spine", "load_bearing", "considered", "chatty", "everything"]);
 export const SocratesEscalation = z.enum(["off", "evidence", "connected_repos"]);
 export const SocratesReporting = z.enum(["pulse", "epic_comment", "none"]);
-export const SocratesDocKind = z.enum(["one_pager", "lbd", "ka", "retro", "canon", "practices"]);
 export const SocratesResolveOutcome = z.enum(["resolved", "queued"]);
 
 const IsoDatetime = z

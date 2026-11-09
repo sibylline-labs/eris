@@ -105,6 +105,14 @@ it with the [skills](https://github.com/vercel-labs/skills) CLI:
 npx skills add sibylline-labs/eris --skill eris-yaks
 ```
 
+[`skills/eris-socrates`](skills/eris-socrates/SKILL.md) is the matching skill for Socrates: it gets a
+coding agent signed in, then names the `eris socrates` verbs (read the living docs and Canon before
+deciding, record a decision for review) and leaves the details to each verb's `--help`:
+
+```bash
+npx skills add sibylline-labs/eris --skill eris-socrates
+```
+
 ## Writing a plugin
 
 A plugin is registry rows plus lazily loaded handlers, written against the SDK

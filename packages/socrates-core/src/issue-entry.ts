@@ -20,6 +20,7 @@
  *     Authoritative sites:
  *     - [Label](https://…)
  *     - `ACME-K11`, `ACME-K12` in [PRD — Acme](https://…)
+ *     - `NFR-FAILCLOSED-1` in [Canon](https://…)
  *
  *     Proposed resolution:                         (optional)
  *

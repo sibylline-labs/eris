@@ -141,7 +141,8 @@ describe.skipIf(binaryOnly("a compiled binary's own startup and refusals"))("a c
 
     it.skipIf(isRoot && byMode)("a refusal printed on a help path names no unwritten docs file", async () => {
       /** When the help path adopts the unwritten home, any other block's local docs: line names a file under a directory that was never written — observed at the json refusal's first docs line. */
-      const r = await sb.run([...REFUSED, "--help"], { env: { ERIS_CACHE_DIR: cache } });
+      // A help token on a word that names no command is still refused (a known verb's `--help` under json is its help document).
+      const r = await sb.run(["--output", "json", "completion", "no-such-shell", "--help"], { env: { ERIS_CACHE_DIR: cache } });
       expectFailBlock(r, "output-json-unsupported");
       expect(r.stderr).toContain("\ndocs: docs/OUTPUT-CONTRACT.md#3-machine-surfaces\n");
       expect(r.stderr).not.toContain(cache);

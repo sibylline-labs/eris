@@ -75,6 +75,37 @@ describe("a conflict links every site, on one thread", () => {
       { label: "writer.ts", url: "https://code.example.com/acme/blob/abc123/src/writer.ts" },
     ]);
   });
+
+  // admits: When DECISION_ID requires letters and digits in one final segment, parseConflictStatement and issueEntryOf refuse NFR-<CAT>-<n> site IDs so Canon NFR Conflicts cannot link their register IDs for resolve — regex matching on runtime strings is not visible to tsc or ast-grep.
+  test("a Canon NFR conflict links NFR-<CAT>-<n> IDs on its site line and round-trips", () => {
+    /** When the site-line grammar rejects NFR-<CAT>-<n> IDs, a Canon Conflict cannot carry its register ID outside the link and resolve cannot patch the row. */
+    const nfrAuthz = ["NFR", "AUTHZ", "1"].join("-");
+    const canonConflict = [
+      `A candidate cites Canon entry \`${nfrAuthz}\` and states something else.`,
+      "",
+      "Authoritative sites:",
+      `- \`${nfrAuthz}\`, \`NFR-FAILCLOSED-1\` in [Socrates Canon, Current](https://docs.example.com/acme/document/canon)`,
+      "- [Candidate](https://docs.example.com/acme/issue/99)",
+    ].join("\n");
+    const filed = issueEntryOf({ kind: "conflict", title: `Conflict: ${nfrAuthz} restated differently`, statement: canonConflict, source: PRD_URL });
+    expect(filed).toEqual({
+      ok: true,
+      value: {
+        title: `Conflict: ${nfrAuthz} restated differently`,
+        description: `${canonConflict}\n\n${ANSWER_HERE}`,
+      },
+    });
+    const reparsed = parseConflictStatement(canonConflict, "t");
+    expect(reparsed.ok && reparsed.value.sites).toEqual([
+      { label: "Socrates Canon, Current", url: "https://docs.example.com/acme/document/canon", decisions: [nfrAuthz, "NFR-FAILCLOSED-1"] },
+      { label: "Candidate", url: "https://docs.example.com/acme/issue/99" },
+    ]);
+    const nfrPrd = parsePrdStatement("Decisions: `NFR-FAILCLOSED-1`–`NFR-FAILCLOSED-6`\nConfirmed by: dana", { label: "NFR", url: PRD_URL });
+    expect(nfrPrd).toEqual({
+      ok: true,
+      value: { prd: { label: "NFR", url: PRD_URL }, decisions: { first: "NFR-FAILCLOSED-1", last: "NFR-FAILCLOSED-6" }, confirmedBy: "dana", crossProject: [] },
+    });
+  });
 });
 
 describe("a statement the grammar cannot place is refused with the reason", () => {
@@ -85,6 +116,7 @@ describe("a statement the grammar cannot place is refused with the reason", () =
     ["a PRD with no range", () => prd("Confirmed by: dana"), /no Decisions: line/],
     ["a PRD with no confirmer", () => prd("Decisions: `ACME-K1`–`ACME-K2`"), /no Confirmed by:/],
     ["a range across two registers", () => prd("Decisions: `ACME-K1`–`ACME-P2`\nConfirmed by: dana"), /different registers/],
+    ["a range across two NFR categories", () => prd("Decisions: `NFR-FAILCLOSED-1`–`NFR-LOGGING-2`\nConfirmed by: dana"), /different registers/],
     ["a range that runs backwards", () => prd("Decisions: `ACME-K9`–`ACME-K2`\nConfirmed by: dana"), /before it starts/],
     ["a lowercase ID", () => prd("Decisions: `acme-k1`\nConfirmed by: dana"), /not part of a PRD statement/],
     ["a cross-project decision outside the range", () => prd(`${prdStatement.replace("`ACME-K4`:", "`ACME-K58`:")}`), /outside/],
@@ -97,6 +129,8 @@ describe("a statement the grammar cannot place is refused with the reason", () =
     ["a site that is not a link", () => conflict(`S.\n\n${sites}\n- the writer module`), /is not a site/],
     ["a site listed twice", () => conflict(`S.\n\n${sites}\n- [A](https://a.example.com/x)`), /listed twice/],
     ["a site ID that is not a register ID", () => conflict(`S.\n\n${sites}\n- \`acme\` in [C](https://c.example.com/z)`), /is not a site/],
+    ["a two-segment tracker key as a site ID", () => conflict(`S.\n\n${sites}\n- \`ABC-1\` in [C](https://c.example.com/z)`), /is not a site/],
+    ["a zero-numbered NFR site ID", () => conflict(`S.\n\n${sites}\n- \`NFR-FAILCLOSED-0\` in [C](https://c.example.com/z)`), /is not a site/],
     ["an empty proposal", () => conflict(`S.\n\n${sites}\n\nProposed resolution:\n\n`), /is empty/],
     ["a conflict that carries the footer", () => conflict(`S.\n\n${sites}\n\n${ANSWER_HERE}`), /footer/],
     ["a site url with a parenthesis", () => conflict(`S.\n\n${sites}\n- [C](https://c.example.com/a)b)`), /bad-link/],

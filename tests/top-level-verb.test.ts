@@ -47,10 +47,10 @@ describe("eris -h / --help / bare, through the shim", () => {
     expect(new Set(columns).size).toBe(1);
   });
 
-  it("--output json on the bare program is refused by the allow-list", async () => {
-    /** When the bare program accepts json, a machine caller is handed human text it would parse as JSON. */
+  it("--output json on the bare program prints the top-level help document, never the human usage", async () => {
+    /** When the bare program answers json with its human usage, a machine caller is handed text it would parse as JSON. */
     const r = await eris(["--output", "json"], process.env.PATH ?? "");
-    expect({ rc: r.rc, stdout: r.stdout }).toEqual({ rc: 1, stdout: "" });
-    expect(r.stderr).toContain("slug: output-json-unsupported");
+    expect({ rc: r.rc, stderr: r.stderr }).toEqual({ rc: 0, stderr: "" });
+    expect(JSON.parse(r.stdout)).toMatchObject({ schema: "eris-help/1", path: "", usage: "eris <command> [args]" });
   });
 });

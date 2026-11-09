@@ -23,9 +23,9 @@ src/                    # The TS program the shim and the bin run
 │                       #   collision and completion-slot refusals; the menu option; entitlement locks
 ├── cli/plugin.ts       #   the plugin SDK: the one core module a plugin imports
 ├── cli/router.ts       #   the per-verb route, from the derived table
-├── cli/args.ts         #   the registry-driven argv parser and the global --output pre-pass
+├── cli/args.ts         #   the registry-driven argv parser, the global --output/--json pre-pass, help as JSON
 ├── cli/output.ts       #   the --output json allow-list and its refusal block
-├── cli/ts-verb.ts      #   runTsVerb: pre-pass → allow-list → lock → handler; eris-deps-not-installed
+├── cli/ts-verb.ts      #   runTsVerb: pre-pass → help JSON → allow-list → lock → handler; eris-deps-not-installed
 ├── cli/commands/       #   completion.ts + completion/ (emit.ts generates the bash/zsh script from the
 │                       #   composed registry; it imports the registry only, because every shell start
 │                       #   runs it; domain.ts checks a row's completion domains), usage.ts (the
@@ -75,6 +75,8 @@ packages/socrates-core/ # Socrates living-doc surgery, `eris/socrates-core`: src
                         #   src/index.ts also serves RUBRICS / rubricFor(version)
 skills/eris-yaks/       # SKILL.md: the agent skill that sets up Yaks (`npx skills add sibylline-labs/eris
                         #   --skill eris-yaks`); the skills CLI discovers skills/<name>/SKILL.md
+skills/eris-socrates/   # SKILL.md: the agent skill that signs an agent in and names the `eris socrates` verbs
+                        #   (`--skill eris-socrates`); tests/skills.test.ts holds it to the registry's verbs and flags
 examples/plugins/widgets/  # the worked plugin example tests/plugins.test.ts composes
 examples/distribution/  # the worked distribution: an entry importing eris/sdk alone, a demo plugin with a
                         #   completion domain, a menu, and build.ts; tests/distribution.test.ts builds and runs it

@@ -174,6 +174,32 @@ describe("eris socrates submit", () => {
     expect(requests.map((r) => (r.body as { now?: unknown }).now)).toEqual([true]);
   });
 
+  it("sends scope, section, evidence and target when supplied, and refuses invalid values locally", async () => {
+    /** When the entry-anatomy flags are dropped or not validated before sending, the server receives a bare candidate or rejects at the door. */
+    expect(
+      await drive([
+        "submit",
+        ...STAMPED,
+        "--scope",
+        "repo",
+        "--section",
+        "## Current",
+        "--evidence",
+        "decided in pull request",
+        "--target",
+        "lbd",
+      ]),
+    ).toMatchObject({ rc: 0, stdout: "submitted: cand_1\n", stderr: "" });
+    expect((requests[0]?.body as { candidate: Record<string, unknown> }).candidate).toMatchObject({
+      scope: "repo",
+      section: "## Current",
+      evidence: "decided in pull request",
+      target: "lbd",
+    });
+    expect(await drive(["submit", ...STAMPED, "--target", "unknown_doc"])).toMatchObject({ rc: 1, slug: "socrates-candidate-invalid" });
+    expect(await drive(["submit", ...STAMPED, "--scope", "repo\norg"])).toMatchObject({ rc: 1, slug: "socrates-candidate-invalid" });
+  });
+
   it("prints a deduped receipt as a bare JSON record under --output json", async () => {
     /** When a dedup reads as a failure or the record grows a wrapper, a script branching on `deduped` breaks. */
     answer = () => Response.json({ candidate_id: "cand_1", deduped: true, contract_version: "1.0.0" });
@@ -270,6 +296,9 @@ describe("eris socrates submit", () => {
       ["--title", "t", "--statement", `we pasted ${GHP} here`, "--source", "https://example.com/pr/14"],
       ["--title", "t", "--statement", "s", "--source", `https://example.com/pr/14?t=${GHP}`],
       [...CANDIDATE, "--project", GHP],
+      [...CANDIDATE, "--scope", GHP],
+      [...CANDIDATE, "--section", GHP],
+      [...CANDIDATE, "--evidence", GHP],
     ];
     for (const shape of shapes) {
       for (const extra of [[], ["--allow-redaction", "github-token", "--override-reason", "x"], [...allowAll, "--override-reason", "x"]]) {
