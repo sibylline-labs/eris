@@ -44,6 +44,7 @@ export type SocratesSlug =
   | "socrates-unfit-invalid"
   | "socrates-unfit-unsupported"
   | "socrates-evidence-file-invalid"
+  | "socrates-evidence-invalid"
   | "socrates-policy-not-cached";
 
 const REQUEST_TIMEOUT_MS = 30_000;

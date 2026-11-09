@@ -42,6 +42,7 @@ describe("router table", () => {
       "socrates classify": "ts",
       "socrates consult": "ts",
       "socrates discover": "ts",
+      "socrates evidence": "ts",
       "socrates policy": "ts",
       "socrates resolve": "ts",
       "socrates settings": "ts",
@@ -160,7 +161,7 @@ describe("the --output json surfaces, from the registry", () => {
     /** When a json row is dropped or added by mistake, a machine caller is refused (or handed human text) on a surface that changed silently. */
     expect(JSON_SURFACES).toEqual({
       "--version": true,
-      socrates: ["submit", "classify", "resolve", "settings", "discover", "consult", "status", "policy"],
+      socrates: ["submit", "classify", "resolve", "settings", "discover", "consult", "status", "evidence", "policy"],
       update: true,
       yak: ["fatal", "issue", "suggest", "status", "ready", "discover", "config"],
     });

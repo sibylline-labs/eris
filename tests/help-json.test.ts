@@ -29,7 +29,7 @@ async function helpDoc(argv: string[]): Promise<Record<string, unknown>> {
 
 const names = (doc: Record<string, unknown>, key: "commands" | "flags"): string[] => (doc[key] as { name: string }[]).map((c) => c.name);
 
-const SOCRATES_SUBS = ["submit", "classify", "resolve", "settings", "discover", "consult", "status", "policy"].sort();
+const SOCRATES_SUBS = ["submit", "classify", "resolve", "settings", "discover", "consult", "status", "policy", "evidence"].sort();
 
 describe("the four journeys", () => {
   // admits: `eris --json socrates`, `eris socrates --json` and `eris socrates --help --json` answering with prose, a refusal or an unknown-command error leave an agent unable to discover a group's verbs by machine; observed at the parsed stdout of each spelling.

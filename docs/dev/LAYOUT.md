@@ -42,7 +42,7 @@ src/                    # The TS program the shim and the bin run
 ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN lines
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
-plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consult|status|policy`: index.ts (the manifest), submit.ts
+plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consult|status|policy|evidence`: index.ts (the manifest), submit.ts
                         #   (submit, its unfit and stamp rules, and the group dispatch), client.ts (the credentialed GET,
                         #   POST or PUT every endpoint verb shares), classify.ts (local rubric scoring, HAL override
                         #   links), answers.ts (the --answer/--override parsers classify and submit share), policy.ts
@@ -50,7 +50,9 @@ plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consul
                         #   merged with eris.yaml's stricter-only socrates.policy layer), policy-verb.ts (`policy`:
                         #   the effective policy, and the change a refresh made), status.ts (`status`: pending count,
                         #   open review Epics, one candidate's state), unfit.ts (the --evidence-file a submit --unfit
-                        #   sends), resolve.ts (a closed review Epic, resolved on the server), discover.ts (first-parent
+                        #   sends), fragment.ts (the committed line range a submit --fragment reads, under its
+                        #   repo@sha:path#L provenance), evidence.ts (`evidence`: one stored fragment, read back),
+                        #   resolve.ts (a closed review Epic, resolved on the server), discover.ts (first-parent
                         #   commits after the per-repo cursor in ~/.eris/socrates/cursors.json), consult.ts (a living
                         #   doc, or a brief of six, read whole over the consult route),
                         #   socrates-contract.v1.ts (the vendored submit contract, unfit included) and
