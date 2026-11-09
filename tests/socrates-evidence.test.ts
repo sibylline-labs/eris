@@ -1,5 +1,5 @@
 /**
- * `eris socrates submit --evidence <path>#L<x>-L<y>` and `eris socrates evidence <id>`.
+ * `eris socrates submit --fragment <path>#L<x>-L<y>` and `eris socrates evidence <id>`.
  *
  * Drives the group handler in-process against a real `git` repo made in a sandbox, with a fake
  * endpoint on the `SocratesDeps.fetch` seam that records every request, so a test observes what
@@ -99,13 +99,13 @@ async function drive(args: string[], opts: { format?: "text" | "json"; cwd?: str
 const UNFIT = ["--unfit", "--hypothesis", HYPOTHESIS];
 const submitBody = () => calls.find((c) => c.path === "/v1/socrates/submit")!.body as { candidate: Record<string, string>; unfit?: { evidence: { kind: string; provenance: string; content: string }[] } };
 
-describe("eris socrates submit --evidence", () => {
+describe("eris socrates submit --fragment", () => {
   // admits: a fragment holding a secret is sent (inline with the stamp, or as its own object) because the fragment text skips the local scan; observed as no request at all and the refusal slug.
   it("a fragment holding a secret never leaves the machine, inline or linked", async () => {
     commitFile("src/config.ts", `export const token = "${GHP}";\n`);
     for (const stamp of [UNFIT, answers()]) {
       calls = [];
-      const r = await drive(["submit", ...CANDIDATE, ...stamp, "--evidence", "src/config.ts#L1"]);
+      const r = await drive(["submit", ...CANDIDATE, ...stamp, "--fragment", "src/config.ts#L1"]);
       expect(r).toMatchObject({ rc: 1, stdout: "", slug: "socrates-secret-detected" });
       expect(r.stderr).toContain("evidence.0");
       expect(r.stderr).not.toContain(GHP);
@@ -116,7 +116,7 @@ describe("eris socrates submit --evidence", () => {
   // admits: our redaction classes skip a fragment, so a token the other fields would have scrubbed reaches the endpoint; observed at the fragment body the endpoint received and the WARN.
   it("redacts a fragment the way it redacts the other fields", async () => {
     commitFile("deploy.sh", `ERIS_TOKEN=${TOKEN}\n`);
-    const r = await drive(["submit", ...CANDIDATE, ...answers(), "--evidence", "deploy.sh#L1"]);
+    const r = await drive(["submit", ...CANDIDATE, ...answers(), "--fragment", "deploy.sh#L1"]);
     expect(r.rc).toBe(0);
     expect(r.stderr).toContain("socrates-redacted");
     const posted = calls.find((c) => c.path === "/v1/socrates/evidence")!.body as { content: string };
@@ -125,7 +125,7 @@ describe("eris socrates submit --evidence", () => {
 
   // admits: the unfit path drops the fragment, slices the wrong lines, names a provenance that is not the commit the text came from, or posts it separately where the filing cannot list it; observed at the exact body sent and the requests made.
   it("with --unfit, sends the line range inline under <repo>@<sha>:<path>#L<x>-L<y> and posts nothing else", async () => {
-    const r = await drive(["submit", ...CANDIDATE, ...UNFIT, "--evidence", "src/retry.ts#L2-L4", "--evidence", "src/retry.ts#L5"]);
+    const r = await drive(["submit", ...CANDIDATE, ...UNFIT, "--fragment", "src/retry.ts#L2-L4", "--fragment", "src/retry.ts#L5"]);
     expect(r).toMatchObject({ rc: 0, stderr: "", stdout: "submitted: cand_1\n  filed for an answer: needs-input\n" });
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /v1/socrates/policy", "POST /v1/socrates/submit"]);
     expect(submitBody().unfit!.evidence).toEqual([
@@ -136,13 +136,13 @@ describe("eris socrates submit --evidence", () => {
     expect(JSON.stringify(submitBody().candidate)).not.toContain("attempt");
   });
 
-  // admits: --evidence and --evidence-file together exceed the five entries the contract allows and one is dropped silently; observed as a refusal with no request.
+  // admits: --fragment and --evidence-file together exceed the five entries the contract allows and one is dropped silently; observed as a refusal with no request.
   it("refuses more than five fragments in all, before any request", async () => {
-    const six = Array.from({ length: 6 }, (_, i) => ["--evidence", `src/retry.ts#L${i % 5 + 1}`]).flat();
+    const six = Array.from({ length: 6 }, (_, i) => ["--fragment", `src/retry.ts#L${i % 5 + 1}`]).flat();
     expect(await drive(["submit", ...CANDIDATE, ...UNFIT, ...six])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-evidence-invalid" });
     const file = join(sb.dir, "evidence.json");
     writeFileSync(file, JSON.stringify(Array.from({ length: 4 }, (_, i) => ({ kind: "doc", provenance: `https://example.com/d#${i}`, content: `doc ${i}` }))));
-    const r = await drive(["submit", ...CANDIDATE, ...UNFIT, "--evidence-file", file, "--evidence", "src/retry.ts#L1", "--evidence", "src/retry.ts#L2"]);
+    const r = await drive(["submit", ...CANDIDATE, ...UNFIT, "--evidence-file", file, "--fragment", "src/retry.ts#L1", "--fragment", "src/retry.ts#L2"]);
     expect(r).toMatchObject({ rc: 1, stdout: "", slug: "socrates-unfit-invalid" });
     expect(calls).toEqual([]);
   });
@@ -150,7 +150,7 @@ describe("eris socrates submit --evidence", () => {
   // admits: a linked fragment is never posted, is posted before the candidate exists, lacks the candidate id, or its id is not printed for 'eris socrates evidence'; observed at the request order, each body, stdout and the JSON record.
   it("without --unfit, posts each fragment linked to the receipt's candidate and prints its id", async () => {
     commitFile("docs/notes.md", "# Retry\n\nThree attempts, then give up.\n");
-    const r = await drive(["submit", ...CANDIDATE, ...answers(), "--evidence", "src/retry.ts#L1-L2", "--evidence", "docs/notes.md#L3"]);
+    const r = await drive(["submit", ...CANDIDATE, ...answers(), "--fragment", "src/retry.ts#L1-L2", "--fragment", "docs/notes.md#L3"]);
     expect(r.rc).toBe(0);
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /v1/socrates/policy", "POST /v1/socrates/submit", "POST /v1/socrates/evidence", "POST /v1/socrates/evidence"]);
     expect(calls[2]!.body).toEqual({ schema_version: "1.0.0", candidate_id: "cand_1", kind: "code", provenance: `acme/app@${sha}:src/retry.ts#L1-L2`, content: "export function retry() {\n  for (let i = 0; i < 3; i++) {" });
@@ -159,14 +159,14 @@ describe("eris socrates submit --evidence", () => {
     expect(r.stdout).toContain(`  evidence: frag_1 acme/app@${sha}:src/retry.ts#L1-L2\n  evidence: frag_2 acme/app@${sha}:docs/notes.md#L3\n`);
 
     calls = [];
-    const j = await drive(["submit", ...CANDIDATE, ...answers(), "--evidence", "src/retry.ts#L1"], { format: "json" });
+    const j = await drive(["submit", ...CANDIDATE, ...answers(), "--fragment", "src/retry.ts#L1"], { format: "json" });
     expect(JSON.parse(j.stdout).evidence).toEqual([{ fragment_id: "frag_3", provenance: `acme/app@${sha}:src/retry.ts#L1`, expires_at: "2026-12-05T00:00:00.000Z" }]);
   });
 
   // admits: a refused fragment after the receipt reads as a plain failure, so the caller does not know the candidate was already submitted (or prints success); observed at the ERROR line, the exit code and an empty stdout.
   it("names the submitted candidate when the endpoint refuses a linked fragment", async () => {
     answer.evidence = () => Response.json({ type: "urn:hera:error:forbidden", title: "Forbidden", status: 403, detail: "Evidence is off for this org", code: "socrates_evidence_disabled", _links: { settings: { href: "https://dash.example/socrates" } } }, { status: 403 });
-    const r = await drive(["submit", ...CANDIDATE, ...answers(), "--evidence", "src/retry.ts#L1"]);
+    const r = await drive(["submit", ...CANDIDATE, ...answers(), "--fragment", "src/retry.ts#L1"]);
     expect(r).toMatchObject({ rc: 1, stdout: "", slug: "socrates-refused" });
     expect(r.stderr).toContain("for candidate cand_1, which was submitted");
     expect(r.stderr).toContain("open https://dash.example/socrates");
@@ -183,7 +183,7 @@ describe("eris socrates submit --evidence", () => {
     ["a path with whitespace", () => undefined, "src/a b.ts#L1", "whitespace"],
   ])("refuses %s with nothing sent", async (_name, arrange, ref, says) => {
     arrange();
-    const r = await drive(["submit", ...CANDIDATE, ...UNFIT, "--evidence", ref]);
+    const r = await drive(["submit", ...CANDIDATE, ...UNFIT, "--fragment", ref]);
     expect(r).toMatchObject({ rc: 1, stdout: "", slug: "socrates-evidence-invalid" });
     expect(r.stderr).toContain(says);
     expect(calls).toEqual([]);
@@ -191,7 +191,7 @@ describe("eris socrates submit --evidence", () => {
 
   // admits: a path given from a subdirectory is sent under a cwd-relative path, so the provenance names a file the commit does not hold at that path; observed at the provenance sent.
   it("names the repo-relative path when run from a subdirectory", async () => {
-    const r = await drive(["submit", ...CANDIDATE, ...UNFIT, "--evidence", "retry.ts#L1"], { cwd: join(repo, "src") });
+    const r = await drive(["submit", ...CANDIDATE, ...UNFIT, "--fragment", "retry.ts#L1"], { cwd: join(repo, "src") });
     expect(r.rc).toBe(0);
     expect(submitBody().unfit!.evidence[0]!.provenance).toBe(`acme/app@${sha}:src/retry.ts#L1`);
   });
@@ -199,7 +199,7 @@ describe("eris socrates submit --evidence", () => {
   // admits: from a subdirectory the dirty check reads the repo-relative path against the cwd, matches nothing and passes, so working-tree edits are dropped silently under a provenance that claims the file; observed as the refusal and no request.
   it("refuses a file changed since HEAD when run from a subdirectory too", async () => {
     writeFileSync(join(repo, "src/retry.ts"), "DIRTY WORKTREE TEXT\n");
-    const r = await drive(["submit", ...CANDIDATE, ...UNFIT, "--evidence", "retry.ts#L1"], { cwd: join(repo, "src") });
+    const r = await drive(["submit", ...CANDIDATE, ...UNFIT, "--fragment", "retry.ts#L1"], { cwd: join(repo, "src") });
     expect(r).toMatchObject({ rc: 1, stdout: "", slug: "socrates-evidence-invalid" });
     expect(r.stderr).toContain("not in");
     expect(calls).toEqual([]);

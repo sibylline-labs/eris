@@ -34,8 +34,8 @@ describe("parseArgv", () => {
     expect(parseArgv(["-h"])).toEqual({ kind: "help" });
   });
 
-  it("--help anywhere after a valid verb -> help, not ok", () => {
-    expect(parseArgv(["issue", "--summary", "s", "--help"])).toEqual({ kind: "help" });
+  it("--help anywhere after a valid verb -> that verb's help, not ok", () => {
+    expect(parseArgv(["issue", "--summary", "s", "--help"])).toEqual({ kind: "help", verb: "issue" });
   });
 
   it("an unknown verb is a misuse with slug yak-unknown-verb", () => {

@@ -51,6 +51,14 @@ the flag is the only selector. Fix: `eris --output json <command>` for the
 machine rendering, `--output text` (the default) for the human one. See
 [OUTPUT-CONTRACT.md](OUTPUT-CONTRACT.md#2-the-flag).
 
+### output-format-conflict
+
+`--json` (the alias of `--output json`) and `--output text` were both given, so
+the command line asks for two formats. eris refuses rather than picking one: the
+caller would get the rendering it did not ask for. Fix: keep one of them, `--json`
+(or `--output json`) for the machine rendering, `--output text` for the human
+one. See [OUTPUT-CONTRACT.md](OUTPUT-CONTRACT.md#2-the-flag).
+
 ### output-json-unsupported
 
 `--output json` was asked of a command that has no JSON rendering. eris refuses
@@ -819,10 +827,10 @@ is refused rather than waited on. The `ERROR` line names the entry and field
 
 ### socrates-evidence-invalid
 
-`eris socrates submit --evidence <path>#L<x>[-L<y>]` could not build a fragment
+`eris socrates submit --fragment <path>#L<x>[-L<y>]` could not build a fragment
 from the reference. It is not `<path>#L<x>` or `<path>#L<x>-L<y>`, the range
 ends before it starts, the path holds whitespace or `#`, or more than five
-`--evidence` were given. Or the file cannot be sent under an honest
+`--fragment` were given. Or the file cannot be sent under an honest
 provenance: the directory is not in a git repo, the repo has no commits, the
 file is untracked, it differs from HEAD (the provenance names HEAD's sha, so
 uncommitted text is never sent under it), it is binary, the range runs past its

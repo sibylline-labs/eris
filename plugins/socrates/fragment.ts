@@ -1,5 +1,5 @@
 /**
- * fragment.ts — the evidence `eris socrates submit --evidence <path>#L<x>[-L<y>]` reads: a line
+ * fragment.ts — the evidence `eris socrates submit --fragment <path>#L<x>[-L<y>]` reads: a line
  * range of a file committed in the git repo holding the working directory, as one
  * `{kind, provenance, content}` entry.
  *
@@ -88,18 +88,18 @@ export async function readFragments(ctx: VerbContext, deps: SocratesDeps, refs: 
   if (refs.length === 0) return [];
   const parsed = refs.map((ref) => {
     const r = parseEvidenceRef(ref);
-    if ("reason" in r) fail(ctx, "socrates-evidence-invalid", `--evidence '${printable(ref)}': ${r.reason}`, FIX);
+    if ("reason" in r) fail(ctx, "socrates-evidence-invalid", `--fragment '${printable(ref)}': ${r.reason}`, FIX);
     return { ref, ...r };
   });
 
   const git = gitIn(ctx, deps.cwd ?? process.cwd());
   function gitFailed(o: { why: string }): never {
-    fail(ctx, "socrates-evidence-invalid", `--evidence needs git, and ${o.why}`, "check that git runs here, then run the command again");
+    fail(ctx, "socrates-evidence-invalid", `--fragment needs git, and ${o.why}`, "check that git runs here, then run the command again");
   }
   const top = await git(["rev-parse", "--show-toplevel"]);
   if (!top.ok) {
     if (top.code === null) gitFailed(top);
-    fail(ctx, "socrates-evidence-invalid", "--evidence reads a committed file, and this directory is not inside a git repo", "run the command from inside the repo the evidence comes from");
+    fail(ctx, "socrates-evidence-invalid", "--fragment reads a committed file, and this directory is not inside a git repo", "run the command from inside the repo the evidence comes from");
   }
   const root = top.out.trim();
   const head = await git(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
@@ -116,7 +116,7 @@ export async function readFragments(ctx: VerbContext, deps: SocratesDeps, refs: 
 
   const out: SocratesUnfitEvidence[] = [];
   for (const { ref, path, from, to } of parsed) {
-    const where = `--evidence '${printable(ref)}'`;
+    const where = `--fragment '${printable(ref)}'`;
     const listed = await git(["ls-files", "--full-name", "--error-unmatch", "--", path]);
     if (!listed.ok) {
       if (listed.code === null) gitFailed(listed);

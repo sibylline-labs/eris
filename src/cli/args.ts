@@ -24,8 +24,8 @@
  *
  * Every refusal carries the row's usage line. The ast-grep rule
  * `adhoc-argv-parse` (rules/) keeps flag parsing in this file. Ahead of the
- * verb's parse, every command line passes the global `--output` pre-pass
- * (`parseGlobal`, below).
+ * verb's parse, every command line passes the global `--output` / `--json`
+ * pre-pass (`parseGlobal`, below).
  */
 
 import { renderFailureBlock } from "../../ts/lib/eris-fail";
@@ -40,7 +40,7 @@ export class CliExit extends Error {
   }
 }
 
-// --- the global `--output text|json` pre-pass ----------------------------------------------
+// --- the global `--output text|json` / `--json` pre-pass ----------------------------------
 
 export class GlobalFlagError extends Error {
   constructor(readonly block: string) {
@@ -48,8 +48,11 @@ export class GlobalFlagError extends Error {
   }
 }
 
+/** `--json`, the global spelling of `--output json`. `--json=x` is not it. */
+const JSON_FLAG = "--json";
+
 /**
- * Where the argv's verb and sub-verb sit once the global flag is stripped —
+ * Where the argv's verb and sub-verb sit once the global flags are stripped —
  * the same walk as `output::parse_global`, but it never fails: a malformed
  * `--output` is reported by whichever implementation the verb routes to.
  */
@@ -61,9 +64,32 @@ export function locateVerb(argv: readonly string[]): string[] {
     if (terminated) out.push(a);
     else if (a === "--") terminated = true;
     else if (a === "--output") i++;
-    else if (!a.startsWith("--output=")) out.push(a);
+    else if (!a.startsWith("--output=") && a !== JSON_FLAG) out.push(a);
   }
   return out;
+}
+
+/** The words of `argv` that can name a command: dash-led words skipped, none past `--`. */
+function commandWords(argv: readonly string[]): string[] {
+  const end = argv.indexOf("--");
+  return (end === -1 ? argv : argv.slice(0, end)).filter((a) => !a.startsWith("-"));
+}
+
+/** The longest registered path the non-flag words of `words` start with; `""` (the top level) for none. */
+export function resolveHelpPath(words: readonly string[], rows: Readonly<Record<string, Row>> = REGISTRY): string {
+  let path = "";
+  for (const w of commandWords(words)) {
+    const next = path === "" ? w : `${path} ${w}`;
+    if (!Object.hasOwn(rows, next)) break;
+    path = next;
+  }
+  return path;
+}
+
+/** Whether the row `argv` names declares `--json` itself, so the pre-pass leaves it for the row's parse. */
+function rowDeclaresJson(argv: readonly string[], rows: Readonly<Record<string, Row>>): boolean {
+  const path = resolveHelpPath(locateVerb(argv), rows);
+  return path !== "" && (rows[path]!.flags ?? []).some((f) => f.name === JSON_FLAG);
 }
 
 function formatError(got: string, home: string): GlobalFlagError {
@@ -83,8 +109,29 @@ function formatError(got: string, home: string): GlobalFlagError {
   );
 }
 
+function conflictError(home: string): GlobalFlagError {
+  return new GlobalFlagError(
+    renderFailureBlock(
+      {
+        slug: "output-format-conflict",
+        what: "--json asks for --output json, and --output text was given too",
+        fix: "eris --json <command>            machine rendering (JSON on stdout), the same as --output json\n" + "eris --output text <command>     human rendering (the default)",
+        docs: "docs/OUTPUT-CONTRACT.md#2-the-flag",
+      },
+      home,
+    ),
+  );
+}
+
 /**
  * `output::parse_global`. Throws `GlobalFlagError` carrying the exact block.
+ *
+ * `--output text|json` and `--json` (an alias of `--output json`) are read
+ * anywhere before `--`. `--json` with `--output text` is refused. Given the
+ * composed `rows`, a `--json` is left in the argv when the row the command
+ * line names declares `--json` itself, unless the line asks for help: it is
+ * then the row's flag, moved to the end of the flags so a group dispatcher
+ * still sees its sub first.
  *
  * `--` ends the global flags. Bash dropped it; a TS verb asks to keep it
  * (`keepTerminator`) so its own parse still sees where the flags end. A `--`
@@ -93,19 +140,22 @@ function formatError(got: string, home: string): GlobalFlagError {
 export function parseGlobal(
   argv: readonly string[],
   home: string,
-  opts: { keepTerminator?: boolean } = {},
+  opts: { keepTerminator?: boolean; rows?: Readonly<Record<string, Row>> } = {},
 ): { format: OutputFormat; argv: string[] } {
+  const rowOwnsJson = opts.rows !== undefined && !asksForHelp(argv) && rowDeclaresJson(argv, opts.rows);
   const rest: string[] = [];
+  const ownJson: string[] = [];
+  let flagsEnd: number | null = null;
   let fmt = "";
-  let terminated = false;
+  let json = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (terminated) {
+    if (flagsEnd !== null) {
       rest.push(a);
       continue;
     }
     if (a === "--") {
-      terminated = true;
+      flagsEnd = rest.length;
       if (opts.keepTerminator === true && rest.length > 0) rest.push(a);
     } else if (a === "--output") {
       const v = argv[i + 1] ?? "";
@@ -113,11 +163,15 @@ export function parseGlobal(
       fmt = v;
       i++;
     } else if (a.startsWith("--output=")) fmt = a.slice("--output=".length);
-    else rest.push(a);
+    else if (a === JSON_FLAG) {
+      if (rowOwnsJson) ownJson.push(a);
+      else json = true;
+    } else rest.push(a);
   }
-  if (fmt === "") return { format: "text", argv: rest };
-  if (fmt === "text" || fmt === "json") return { format: fmt, argv: rest };
-  throw formatError(fmt, home);
+  rest.splice(flagsEnd ?? rest.length, 0, ...ownJson);
+  if (fmt !== "" && fmt !== "text" && fmt !== "json") throw formatError(fmt, home);
+  if (json && fmt === "text") throw conflictError(home);
+  return { format: json || fmt === "json" ? "json" : "text", argv: rest };
 }
 
 // --- types derived from the declaration ----------------------------------------------
@@ -351,12 +405,102 @@ export function argErrorText(path: string, e: ArgError, home: string, row: Row =
   }
 }
 
-/** The help a row generates: its usage line, summary, and flags. */
+/** The help a row generates: its usage line, summary, flags, and its example when it has one. */
 export function helpText(path: string, row: Row = rowOf(path)): string {
   const flags = (row.flags ?? []).map(
     (f) => `  ${f.name}${f.takesValue ? " <value>" : ""}${f.alias !== undefined ? `, ${f.alias}` : ""}${f.repeatable === true ? "   (repeatable)" : ""}\n`,
   );
-  return `Usage: ${usageLine(path, row)}\n\n${row.summary}\n\nFlags:\n${flags.join("")}  --help, -h   Print this usage text\n`;
+  const example = row.example !== undefined ? `\nExample:\n  ${row.example}\n` : "";
+  return `Usage: ${usageLine(path, row)}\n\n${row.summary}\n\nFlags:\n${flags.join("")}  --help, -h   Print this usage text\n${example}`;
+}
+
+// --- help as JSON (docs/OUTPUT-CONTRACT.md#32-help-as-json) ----------------------------------
+
+/** One flag of a help document. `arg` names a value flag's value. */
+export interface HelpJsonFlag {
+  readonly name: FlagName;
+  readonly arg?: string;
+  readonly summary?: string;
+  readonly repeatable?: true;
+  readonly alias?: string;
+}
+
+/** The help document every path prints under `--help --json`: one schema across the tree. */
+export interface HelpJson {
+  readonly schema: "eris-help/1";
+  /** The command path, `""` for the top level. */
+  readonly path: string;
+  readonly usage: string;
+  readonly summary: string;
+  /** The path's direct subs; the composed groups at the top level. */
+  readonly commands: readonly { readonly name: string; readonly summary: string }[];
+  readonly flags: readonly HelpJsonFlag[];
+  /** Present only when the row names one (`Row.outputSchema`). */
+  readonly output_schema?: string;
+}
+
+const HELP_FLAG: HelpJsonFlag = { name: "--help", alias: "-h", summary: "Print this usage text" };
+
+const TOP_FLAGS: readonly HelpJsonFlag[] = [
+  { name: "--output", arg: "text|json", summary: "Output format; json is the machine rendering" },
+  { name: JSON_FLAG, summary: "The same as --output json" },
+  { name: "--version", summary: "Print this build's version and release repository" },
+  HELP_FLAG,
+];
+
+/**
+ * The help document of `path` (`""`, the top level, has no row) over the
+ * composed `rows`. A group with subs and no usage of its own reads
+ * `eris <path> <command>`.
+ */
+export function helpJson(path: string, row: Row | undefined, rows: Readonly<Record<string, Row>>): HelpJson {
+  if (path === "" || row === undefined) {
+    const groups = Object.keys(rows).filter((k) => !k.includes(" "));
+    return {
+      schema: "eris-help/1",
+      path: "",
+      usage: "eris <command> [args]",
+      summary: "The commands this build composes; each answers --help",
+      commands: groups.map((name) => ({ name, summary: rows[name]!.summary })),
+      flags: TOP_FLAGS,
+    };
+  }
+  const subs = subsOf(path, rows);
+  const bareGroup = subs.length > 0 && row.usage === undefined && (row.pos ?? []).length === 0 && (row.flags ?? []).length === 0;
+  const flags = (row.flags ?? []).map(
+    (f): HelpJsonFlag => ({
+      name: f.name,
+      ...(f.takesValue ? { arg: "value" } : {}),
+      ...(f.repeatable === true ? { repeatable: true as const } : {}),
+      ...(f.alias !== undefined ? { alias: f.alias } : {}),
+    }),
+  );
+  return {
+    schema: "eris-help/1",
+    path,
+    usage: bareGroup ? `eris ${path} <command>` : usageLine(path, row),
+    summary: row.summary,
+    commands: subs.map((name) => ({ name, summary: rows[`${path} ${name}`]!.summary })),
+    flags: [...flags, HELP_FLAG],
+    ...(row.outputSchema !== undefined ? { output_schema: row.outputSchema } : {}),
+  };
+}
+
+/**
+ * The path whose help document a JSON-format command line asks for, or null
+ * when it asks for none: a help token before `--`, a group named with nothing
+ * after it, or no command at all. A word that names no command (an unknown
+ * group, or an unknown sub of a group) asks for none, so it is refused as
+ * it is without `--json`.
+ */
+export function jsonHelpPath(argv: readonly string[], rows: Readonly<Record<string, Row>>): string | null {
+  const path = resolveHelpPath(argv, rows);
+  const depth = path === "" ? 0 : path.split(" ").length;
+  const words = commandWords(argv);
+  const group = path === "" || subsOf(path, rows).length > 0;
+  if (words.length > depth && group) return null;
+  if (asksForHelp(argv)) return path;
+  return group && argv.filter((a) => a !== "--").length === depth ? path : null;
 }
 
 // --- the verb-facing entry -----------------------------------------------------------------

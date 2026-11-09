@@ -30,7 +30,7 @@ and 'candidate: <id>' when it is linked to one, then a blank line and the
 fragment's content. --output json prints {fragment_id, candidate_id?, kind,
 provenance, content, created_at, expires_at, contract_version}.
 
-  <fragment-id>  a fragment id, as 'eris socrates submit --evidence' prints it
+  <fragment-id>  a fragment id, as 'eris socrates submit --fragment' prints it
 
 A fragment is deleted when its candidate resolves, after 30 days at most, and
 when the org cancels.
@@ -38,10 +38,10 @@ when the org cancels.
 Sign in first with 'eris login'.
 `;
 
-const ID_FIX = "eris socrates evidence <fragment-id>: 'eris socrates submit --evidence' prints the id";
+const ID_FIX = "eris socrates evidence <fragment-id>: 'eris socrates submit --fragment' prints the id";
 
 const refusalFix = (status: number): string | undefined =>
-  status === 404 ? "check the fragment id: 'eris socrates submit --evidence' prints it, and a fragment is deleted when its candidate resolves or after 30 days" : undefined;
+  status === 404 ? "check the fragment id: 'eris socrates submit --fragment' prints it, and a fragment is deleted when its candidate resolves or after 30 days" : undefined;
 
 const badResponseFix = (status: number): string | undefined =>
   status === 405 ? `this endpoint does not serve ${SOCRATES_ROUTES.evidence_get.path}: update the server, or check the url points at a Socrates endpoint` : undefined;

@@ -155,11 +155,13 @@ describe("issue-entry shape", () => {
     });
   });
 
+  // admits: When renderSite rejects NFR-<CAT>-<n> IDs or renders them inside the link label, Linear's chip rewrite drops them or renderConflictEntry throws bad-decision — runtime string rendering is not visible to tsc or ast-grep.
   test("a conflict site's register IDs sit before its link, outside the label", () => {
     /** When a site's register IDs render inside the link label, Linear's chip rewrite drops them from the line the resolver reads. */
-    const sites = [{ ...conflict.sites[0]!, decisions: ["ACME-K11", "ACME-BILL-K4"] }, conflict.sites[1]!];
+    const nfrAuthz = ["NFR", "AUTHZ", "1"].join("-");
+    const sites = [{ ...conflict.sites[0]!, decisions: ["ACME-K11", "ACME-BILL-K4", nfrAuthz, "NFR-FAILCLOSED-1"] }, conflict.sites[1]!];
     expect(renderConflictEntry({ ...conflict, sites }).description.split("\n").slice(3, 5)).toEqual([
-      "- `ACME-K11`, `ACME-BILL-K4` in [Practices](https://docs.example.com/acme/document/practices)",
+      `- \`ACME-K11\`, \`ACME-BILL-K4\`, \`${nfrAuthz}\`, \`NFR-FAILCLOSED-1\` in [Practices](https://docs.example.com/acme/document/practices)`,
       "- [LBD](https://docs.example.com/acme/document/lbd)",
     ]);
   });
@@ -199,6 +201,8 @@ describe("inputs that would break an entry's shape are refused, not rewritten", 
     ["a 7-hex hash", () => renderPractice({ ...practice, handle: { hash: HASH.slice(1) } }), "bad-handle"],
     ["a conflict with one site", () => renderConflictEntry({ ...conflict, sites: conflict.sites.slice(0, 1) }), "too-few-sites"],
     ["a conflict site ID that is not a register ID", () => renderConflictEntry({ ...conflict, sites: [{ ...conflict.sites[0]!, decisions: ["acme-k1"] }, conflict.sites[1]!] }), "bad-decision"],
+    ["a two-segment tracker key as a conflict site ID", () => renderConflictEntry({ ...conflict, sites: [{ ...conflict.sites[0]!, decisions: ["ABC-1"] }, conflict.sites[1]!] }), "bad-decision"],
+    ["a zero-numbered NFR conflict site ID", () => renderConflictEntry({ ...conflict, sites: [{ ...conflict.sites[0]!, decisions: ["NFR-FAILCLOSED-0"] }, conflict.sites[1]!] }), "bad-decision"],
     ["a PRD whose title would exceed 80 characters", () => renderPrdEntry({ ...prd, prd: { ...prd.prd, label: "x".repeat(70) } }), "title-too-long"],
   ];
   for (const [name, render, reason] of cases) {
