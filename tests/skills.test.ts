@@ -58,9 +58,12 @@ describe("skills/", () => {
   });
 });
 
-describe("skills/eris-socrates", () => {
-  const file = join(SKILLS, "eris-socrates", "SKILL.md");
-  const body = () => readFileSync(file, "utf8");
+const SOCRATES_SKILLS = ["eris-socrates", "socrates-capture", "socrates-consult"] as const;
+const skillText = (dir: string) => readFileSync(join(SKILLS, dir, "SKILL.md"), "utf8");
+const README = readFileSync(join(import.meta.dir, "..", "README.md"), "utf8");
+
+describe.each(SOCRATES_SKILLS)("skills/%s", (dir) => {
+  const body = () => skillText(dir);
 
   // admits: a verb or flag renamed in the registry leaves the skill naming a command that fails; no type reaches markdown code spans.
   test("names only verbs and flags the registry has", () => {
@@ -93,5 +96,67 @@ describe("skills/eris-socrates", () => {
     const text = body();
     expect(text.split("\n").length).toBeLessThanOrEqual(90);
     expect(text).not.toMatch(/rubric|threshold|scor(e|ing)|--answer|--override|load-bearing/i);
+  });
+});
+
+describe("the Socrates skills' triggers", () => {
+  const fm = (dir: string) => frontmatterOf(skillText(dir));
+
+  // admits: a skill that cannot fire is never offered; only the description decides, and no type or lint reads it.
+  test("socrates-capture fires when a stint ends and when a session decided something", () => {
+    // When the capture skill is gated off the model, or its description loses the end-of-stint or decision
+    // trigger, no session offers capture and decisions go unrecorded — observed here as the missing file,
+    // the disable-model-invocation key or the missing trigger phrase.
+    const file = join(SKILLS, "socrates-capture", "SKILL.md");
+    expect(existsSync(file)).toBe(true);
+    const f = fm("socrates-capture");
+    expect(f["disable-model-invocation"]).toBeUndefined();
+    expect(f.description).toMatch(/\b(stint|wrap(s|ping)? up|ends?)\b/i);
+    expect(f.description).toMatch(/\bdecision/i);
+  });
+
+  // admits: same as above for the read side.
+  test("socrates-consult fires before planning or deciding", () => {
+    // When the consult skill is missing, gated off the model or loses its before-planning trigger, sessions
+    // plan on an enrolled project without reading its docs — observed as the missing file, the key or the phrase.
+    const file = join(SKILLS, "socrates-consult", "SKILL.md");
+    expect(existsSync(file)).toBe(true);
+    const f = fm("socrates-consult");
+    expect(f["disable-model-invocation"]).toBeUndefined();
+    expect(f.description).toMatch(/before[^.]*\b(plan|decid)/i);
+  });
+
+  // admits: the capture workflow is prose; only its verbs can be checked.
+  test("the capture body walks discover, classify and submit; the consult body reads the brief and Canon", () => {
+    // When the capture skill drops a verb of the discover -> classify -> submit chain, or consult drops the
+    // brief or Canon read, the workflow the description promises cannot run — observed as the missing verb.
+    const cap = socratesInvocations(skillText("socrates-capture")).join("\n");
+    for (const v of ["status", "discover", "classify", "submit"]) expect(cap).toMatch(new RegExp(`eris socrates ${v}\\b`));
+    const con = socratesInvocations(skillText("socrates-consult")).join("\n");
+    expect(con).toMatch(/consult --brief/);
+    expect(con).toMatch(/consult --canon/);
+  });
+
+  // admits: the setup skill keeps firing on capture and consult phrases if its description still names them.
+  test("eris-socrates fires on setup only", () => {
+    // When the setup skill's description still claims "record a decision" or "check a plan", it competes with
+    // the two workflow skills and drowns their triggers in install steps — observed as the matched phrase.
+    expect(fm("eris-socrates").description).not.toMatch(/record a decision|check a plan|before it decides/i);
+  });
+});
+
+describe("the install path", () => {
+  const SKILL_ADD = /npx skills add[^\n]*/g;
+
+  // admits: a project-scope install writes .agents/, .claude/skills and skills-lock.json into the current repo; no type sees a docs line.
+  test("every documented `npx skills add` of a Socrates skill is global, and the setup skill warns about project scope", () => {
+    // When a doc line installs a Socrates skill without -g, an agent run from inside a repo writes the skill
+    // into that repo's working tree — observed here as the line without -g or the missing warning.
+    const lines = [README, ...SOCRATES_SKILLS.map(skillText)]
+      .flatMap((t) => t.match(SKILL_ADD) ?? [])
+      .filter((l) => /--skill (eris-socrates|socrates-)/.test(l));
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.filter((l) => !/\s-g\b/.test(l))).toEqual([]);
+    expect(skillText("eris-socrates")).toMatch(/project scope[^\n]*(writes|repo)/i);
   });
 });
