@@ -631,6 +631,12 @@ endpoint rejected the bearer token of the org this directory acts as (revoked,
 expired, or a session cookie instead of a CLI token). Run `eris login`, or check
 `ERIS_YAKS_TOKEN` when it is set. Exit 1.
 
+### org-scope-denied
+
+`eris org members` or `deactivate` was refused with `403 scope_denied`: the token
+does not carry the accounts scope (a service token minted without it). Run `eris
+login`: a CLI login carries it. Exit 1.
+
 ### org-admin-required
 
 `eris org members deactivate` was refused with `403 admin_required`: only an
@@ -642,7 +648,8 @@ Members page. The role is never checked by the CLI; the server decides. Exit 1.
 
 `eris org members deactivate <id>` named an id the org does not list (`404
 member_not_found`; another org's member is the same answer). Run `eris org
-members` and use a `memberId` from it. Exit 1.
+members` and use an id from its ID column. An id that is not a 26-character ULID
+is refused with this slug before anything is sent. Exit 1.
 
 ### org-cannot-deactivate-self
 

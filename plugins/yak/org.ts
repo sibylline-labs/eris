@@ -26,20 +26,26 @@ import { z } from "zod";
 import plugin from "./index";
 
 // A `…Slug`-named union: `tests/errors-doc.test.ts` harvests its members.
-export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing";
+export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied";
 
 const ORG_TIMEOUT_MS = 15_000;
 
-const Member = z.object({
+const Member = z
+  .object({
   memberId: z.string(),
   name: z.string().nullable(),
   email: z.string().nullable(),
   role: z.string(),
   status: z.string(),
   seats: z.array(z.string()),
-});
-const Members = z.object({ members: z.array(Member) });
-const Deactivated = z.object({ memberId: z.string(), status: z.string() });
+  })
+  .passthrough();
+// passthrough: --output json prints the server's body, fields this build does not know included.
+const Members = z.object({ members: z.array(Member) }).passthrough();
+const Deactivated = z.object({ memberId: z.string(), status: z.string() }).passthrough();
+
+/** A member id is a ULID; anything else never leaves the machine (`.` and `..` would otherwise rewrite the path). */
+const MEMBER_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
 
 /** The dash Members page's names for a seat (`PRODUCT_NAMES`); an id it does not know prints as itself. */
 const SEAT_NAMES: Readonly<Record<string, string>> = { accounts: "Accounts", yak: "Yaks", graph: "Graph", socrates: "Socrates", "linear-proxy": "Linear proxy" };
@@ -47,16 +53,16 @@ const SEAT_NAMES: Readonly<Record<string, string>> = { accounts: "Accounts", yak
 export const ORG_USAGE = `Usage: eris org <command>
 
 Commands:
-  members                        List this org's members: name, email, role, status, seats
+  members                        List this org's members: name, email, role, status, seats, id
   members deactivate <member-id> Deactivate a member (an org admin's)
 
 The org is the one this directory acts as ('eris whoami').
 `;
 
-export const MEMBERS_USAGE = `Usage: eris org members
+export const MEMBERS_USAGE = `Usage: eris org members [deactivate <member-id>]
 
 List the members of the org this directory acts as: name (else the email's
-local part), email, role, status and seats. 'eris --output json org members'
+local part), email, role, status, seats and the member id. 'eris --output json org members'
 prints the server's body.
 
   eris org members deactivate <member-id>   deactivate a member: their sessions,
@@ -100,6 +106,9 @@ function refusal(status: number, code: string | undefined, target: string): Fail
       what: `${answered}: only an admin of this org can deactivate a member`,
       fix: "ask an org admin to run it, or to deactivate the member in the dashboard's Members page",
     };
+  }
+  if (status === 403 && code === "scope_denied") {
+    return { slug: "org-scope-denied", what: `${answered}: this token does not carry the accounts scope`, fix: "run: eris login   (a CLI login carries it; a service token without the accounts scope does not)" };
   }
   if (status === 404 && code === "member_not_found") return { slug: "org-member-not-found", what: `${answered}: this org has no such member`, fix: "list the ids: eris org members" };
   if (status === 400 && code === "cannot_deactivate_self") return { slug: "org-cannot-deactivate-self", what: `${answered}: you cannot deactivate your own member`, fix: "have another admin deactivate it" };
@@ -167,8 +176,8 @@ async function runList(ctx: VerbContext, deps: OrgDeps): Promise<number> {
     ctx.stdout.write(`${JSON.stringify(got.value)}\n`);
     return 0;
   }
-  const rows = got.value.members.map((m) => [displayName(m), m.email ?? "", m.role, m.status, m.seats.length === 0 ? "none" : m.seats.map((s) => SEAT_NAMES[s] ?? s).join(", ")]);
-  ctx.stdout.write(table([["NAME", "EMAIL", "ROLE", "STATUS", "SEATS"], ...rows]));
+  const rows = got.value.members.map((m) => [displayName(m), m.email ?? "", m.role, m.status, m.seats.length === 0 ? "none" : m.seats.map((s) => SEAT_NAMES[s] ?? s).join(", "), m.memberId]);
+  ctx.stdout.write(table([["NAME", "EMAIL", "ROLE", "STATUS", "SEATS", "ID"], ...rows]));
   return 0;
 }
 
@@ -176,7 +185,10 @@ async function runDeactivate(id: string | undefined, ctx: VerbContext, deps: Org
   if (id === undefined || id === "") {
     return fail(ctx, { slug: "org-member-id-missing", what: "eris org members deactivate was given no member id", fix: "eris org members deactivate <member-id>   (the ids: eris org members)" });
   }
-  const got = await request("POST", `/v1/org/members/${encodeURIComponent(id)}/deactivate`, Deactivated, ctx, deps);
+  if (!MEMBER_ID.test(id)) {
+    return fail(ctx, { slug: "org-member-not-found", what: `'${id}' is not a member id (a member id is a 26-character ULID); nothing was sent`, fix: "list the ids: eris org members" });
+  }
+  const got = await request("POST", `/v1/org/members/${id}/deactivate`, Deactivated, ctx, deps);
   if (!got.ok) return fail(ctx, got.failure);
   if (ctx.format === "json") {
     ctx.stdout.write(`${JSON.stringify(got.value)}\n`);

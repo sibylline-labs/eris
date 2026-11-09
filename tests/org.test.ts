@@ -85,9 +85,9 @@ describe("eris org members", () => {
     expect(r.code).toBe(0);
     expect(seen).toEqual([{ method: "GET", path: "/v1/org/members", auth: `Bearer ${TOKEN}` }]);
     const lines = r.stdout.trimEnd().split("\n");
-    expect(lines[0]).toMatch(/^NAME\s+EMAIL\s+ROLE\s+STATUS\s+SEATS$/);
-    expect(lines[1]).toMatch(/^Ada Admin\s+ada@example\.test\s+admin\s+active\s+Yaks, Linear proxy$/);
-    expect(lines[2]).toMatch(/^mia\s+mia@example\.test\s+member\s+deactivated\s+none$/);
+    expect(lines[0]).toMatch(/^NAME\s+EMAIL\s+ROLE\s+STATUS\s+SEATS\s+ID$/);
+    expect(lines[1]).toMatch(/^Ada Admin\s+ada@example\.test\s+admin\s+active\s+Yaks, Linear proxy\s+01J0A+$/);
+    expect(lines[2]).toMatch(/^mia\s+mia@example\.test\s+member\s+deactivated\s+none\s+01J0B+$/);
     expect(lines).toHaveLength(3);
     expect(r.stderr).toBe("");
   });
@@ -173,16 +173,32 @@ describe("eris org members deactivate", () => {
     expect((await run(["members", "deactivate", ADA])).stderr).toContain("slug: org-cannot-deactivate-self");
   });
 
-  it("percent-encodes the id operand and needs exactly one", async () => {
-    /** When an id with a slash is spliced raw, the request reaches another route: observed in the recorded path, and in the missing-operand failure. */
-    reply = () => problem(404, "member_not_found");
-    await run(["members", "deactivate", "a/b"]);
-    expect(seen[0]?.path).toBe("/v1/org/members/a%2Fb/deactivate");
-    seen.length = 0;
+  it("refuses a non-ULID id before sending, and needs exactly one", async () => {
+    /** When an id like `..` is sent, fetch rewrites the path and the authenticated POST reaches another route: observed in the recorded requests (none) and in the slug. */
+    for (const bad of ["a/b", "..", ".", "not-a-ulid"]) {
+      const r = await run(["members", "deactivate", bad]);
+      expect(r.code).toBe(1);
+      expect(r.stderr).toContain("slug: org-member-not-found");
+    }
     const none = await run(["members", "deactivate"]);
     expect(none.code).toBe(1);
     expect(none.stderr).toContain("slug: org-member-id-missing");
     expect(seen).toEqual([]);
+  });
+
+  it("tells a token without the accounts scope to log in, not to retry", async () => {
+    /** When 403 scope_denied falls through to 'unavailable: retry', the operator retries a refusal that only a new login fixes: observed in the slug and fix. */
+    reply = () => problem(403, "scope_denied");
+    const r = await run(["members"]);
+    expect(r.stderr).toContain("slug: org-scope-denied");
+    expect(r.stderr).toContain("eris login");
+  });
+
+  it("prints fields this build does not know under --output json", async () => {
+    /** When the parsed value is printed, a field the server adds is dropped and a script cannot read it: observed in the parsed stdout. */
+    reply = () => Response.json({ memberId: MIA, status: "deactivated", extra: 1 });
+    const r = await run(["members", "deactivate", MIA], "json");
+    expect(JSON.parse(r.stdout)).toEqual({ memberId: MIA, status: "deactivated", extra: 1 });
   });
 });
 

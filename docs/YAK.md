@@ -166,7 +166,7 @@ different org from the one the directory selects.
 
 `eris org members` lists the members of the org the current directory acts as
 (`GET /v1/org/members`, with that org's bearer): name (else the email's local
-part), email, role, status and seats, the columns of the dashboard's Members
+part), email, role, status, seats and the member id `deactivate` takes, the columns of the dashboard's Members
 page. `--output json` prints the server's body. `eris org members deactivate
 <member-id>` ends a member's sessions, CLI tokens and seats; only an org admin
 may, and a member's `403` is the [`org-admin-required`](ERRORS.md#org-admin-required)

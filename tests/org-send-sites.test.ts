@@ -127,10 +127,10 @@ describe("a repo that selects org B sends org B's bearer and url", () => {
   it("eris org members and eris org members deactivate", async () => {
     /** When org.ts resolves from process.cwd() instead of the caller's, an org-B repo lists or deactivates the default org's members with the default bearer: observed in the request the injected fetch receives, from an org-B repo, a default repo and a directory (`/`) with no eris.yaml at all. */
     const members = { members: [] };
-    const deactivated = { memberId: "m1", status: "deactivated" };
+    const deactivated = { memberId: "01J0CCCCCCCCCCCCCCCCCCCCCC", status: "deactivated" };
     for (const [args, body, path] of [
       [["members"], members, "/v1/org/members"],
-      [["members", "deactivate", "m1"], deactivated, "/v1/org/members/m1/deactivate"],
+      [["members", "deactivate", "01J0CCCCCCCCCCCCCCCCCCCCCC"], deactivated, "/v1/org/members/01J0CCCCCCCCCCCCCCCCCCCCCC/deactivate"],
     ] as const) {
       for (const [cwd, token, url] of [[repoB, TOKEN_B, URL_B], [repoDefault, TOKEN_A, URL_A], ["/", TOKEN_A, URL_A]] as const) {
         const { seen, fetch } = recorder(() => body);
