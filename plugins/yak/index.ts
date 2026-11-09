@@ -2,7 +2,8 @@
  * The yak plugin's manifest: `eris yak issue|suggest|fatal`; `eris yak status`, `ready`,
  * `discover` and `config get|set`, which read and set the org's destination; and
  * `eris login` / `eris logout`, which manage the bearer `eris yak` reads, and
- * `eris whoami`, which says which org's bearer a directory uses, as
+ * `eris whoami`, which says which org's bearer a directory uses, and
+ * `eris tokens ls|create|revoke`, which manage the org's API tokens, as
  * registry rows plus handler thunks (docs/dev/PLUGINS.md).
  *
  * Read on every command line, `eris completion` included: rows are inline
@@ -80,12 +81,26 @@ export default definePlugin({
     },
     logout: { impl: "ts", summary: "Remove this directory's org's token from ~/.eris/yaks.json" },
     whoami: { impl: "ts", summary: "Show the org this directory acts as, why, and where its token comes from (never the token)", json: true },
+    tokens: { impl: "ts", summary: "List, create and revoke this org's API tokens (ls, create, revoke)" },
+    "tokens ls": { summary: "List this org's tokens: name, kind, scope, created, last used (never a secret)", json: true },
+    "tokens create": {
+      summary: "Mint a service token; its sib_ secret is printed once, on stdout only",
+      json: true,
+      usage: "--name <name> --scope <product:access> [--scope <product:access>...]",
+      flags: [
+        { name: "--name", takesValue: true },
+        { name: "--scope", takesValue: true, repeatable: true },
+      ],
+      example: "eris tokens create --name ci --scope yak:write",
+    },
+    "tokens revoke": { summary: "Revoke a token by id", json: true, pos: ["id?"], usage: "<id>" },
   },
   handlers: {
     yak: async () => (await import("./handlers")).runYakVerb,
     login: async () => (await import("./login")).runLogin,
     logout: async () => (await import("./login")).runLogout,
     whoami: async () => (await import("./whoami")).runWhoami,
+    tokens: async () => (await import("./tokens")).runTokens,
   },
   jsonFix: `  eris yak issue|suggest|fatal             {verb, delivered, id?, idempotency_key?, replay?,
                                             contract_version?, key_mismatch?, configured?,
@@ -98,6 +113,12 @@ export default definePlugin({
                                             default_state_id}
   eris yak config get                      {configured, config?, updated_at?, updated_by?}
   eris yak config set                      {config, updated_at, updated_by}
+  eris tokens ls                           {tokens: [{id, name, kind, scopes, memberId?, device?,
+                                            createdAt, lastUsedAt, expiresAt?}], entitled,
+                                            serviceTokens: {live, limit}}
+  eris tokens create                       {token, tokenId, name, scopes, expiresAt?}
+                                            (the one place the sib_ secret is printed)
+  eris tokens revoke                       {tokenId}
   eris whoami                              {org, source, path?, default, token_source, url,
                                             signed_in, default_org, file}
 `,

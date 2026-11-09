@@ -18,6 +18,7 @@ import { CliExit } from "../src/cli/ts-verb";
 import { runSocrates } from "../plugins/socrates/submit";
 import { runYak } from "../plugins/yak/yak";
 import { runReady, runStatus } from "../plugins/yak/yak-admin";
+import { runTokens } from "../plugins/yak/tokens";
 
 const REPO = resolve(import.meta.dir, "..");
 const B64 = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE";
@@ -107,6 +108,29 @@ describe("a repo that selects org B sends org B's bearer and url", () => {
         const { seen, fetch } = recorder(STATUS_BODY);
         await swallow(() => run([], ctx().ctx, { cwd, home, fetchImpl: fetch }));
         expect(seen[0]).toEqual({ url: `${url}/v1/yaks/status`, authorization: `Bearer ${token}` });
+      }
+    }
+  });
+
+  // admits: another tokens verb resolving from the process cwd; ls, create and revoke are the three sends
+  it("eris tokens ls, create and revoke", async () => {
+    /** When tokens.ts resolves from process.cwd() instead of the caller's, an org-B repo lists, mints or revokes tokens in the default org with the default bearer: observed in the request the injected fetch receives. */
+    const minted = { token: bearer(B64.replace("A", "Z")), tokenId: "01K0000000000000000000000A", name: "n", scopes: [] };
+    const verbs: [string[], string, string][] = [
+      [["ls"], "GET", "/v1/org/tokens"],
+      [["create", "--name", "n", "--scope", "yak:write"], "POST", "/v1/org/tokens"],
+      [["revoke", "01K0000000000000000000000A"], "DELETE", "/v1/org/tokens/01K0000000000000000000000A"],
+    ];
+    for (const [args, method, path] of verbs) {
+      for (const [cwd, token, url] of [[repoB, TOKEN_B, URL_B], [repoDefault, TOKEN_A, URL_A]] as const) {
+        const seen: (Seen & { method: string })[] = [];
+        const f = (async (input: string | URL | Request, init?: RequestInit) => {
+          seen.push({ url: String(input), authorization: new Headers(init?.headers).get("authorization"), method: init?.method ?? "GET" });
+          if (method === "GET") return Response.json({ tokens: [], entitled: [], serviceTokens: { live: 0, limit: 3 } });
+          return method === "POST" ? Response.json(minted, { status: 201 }) : Response.json({ tokenId: "01K0000000000000000000000A" });
+        }) as unknown as typeof fetch;
+        await swallow(() => runTokens(args, ctx().ctx, { cwd, home, fetchImpl: f }));
+        expect(seen[0]).toEqual({ url: `${url}${path}`, authorization: `Bearer ${token}`, method });
       }
     }
   });
