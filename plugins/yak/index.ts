@@ -4,7 +4,7 @@
  * `eris login` / `eris logout`, which manage the bearer `eris yak` reads, and
  * `eris whoami`, which says which org's bearer a directory uses; `eris tokens
  * ls|create|revoke`, which manage the org's API tokens; and `eris org members
- * [deactivate <id>]`, as registry rows plus handler thunks (docs/dev/PLUGINS.md).
+ * [deactivate <id>]` and `eris org delete --confirm|--cancel`, as registry rows plus handler thunks (docs/dev/PLUGINS.md).
  *
  * Read on every command line, `eris completion` included: rows are inline
  * data, and the handler module loads only when `eris yak` dispatches.
@@ -80,13 +80,23 @@ export default definePlugin({
       ],
     },
     logout: { impl: "ts", summary: "Remove this directory's org's token from ~/.eris/yaks.json" },
-    org: { impl: "ts", summary: "This org's members (members, members deactivate)" },
+    org: { impl: "ts", summary: "This org's members and deletion (members, members deactivate, delete)" },
     "org members": {
       summary: "List this org's members, or deactivate one (an org admin's)",
       json: true,
       pos: ["action?", "id?"],
       usage: "[deactivate <member-id>]",
       complete: [["deactivate"]],
+    },
+    "org delete": {
+      summary: "Schedule this org's deletion (--confirm <workspace>) or cancel it (--cancel); an org admin's",
+      json: true,
+      usage: "--confirm <workspace> | --cancel",
+      flags: [
+        { name: "--confirm", takesValue: true },
+        { name: "--cancel", takesValue: false },
+      ],
+      example: "eris org delete --confirm Acme",
     },
     whoami: { impl: "ts", summary: "Show the org this directory acts as, why, and where its token comes from (never the token)", json: true },
     tokens: { impl: "ts", summary: "List, create and revoke this org's API tokens (ls, create, revoke)" },
@@ -130,6 +140,8 @@ export default definePlugin({
   eris tokens revoke                       {tokenId}
   eris org members                         {members: [{memberId, name, email, role, status, seats}]}
   eris org members deactivate <id>         {memberId, status}
+  eris org delete --confirm <name>         {dueAt, cause}
+  eris org delete --cancel                 {cancelled}
   eris whoami                              {org, source, path?, default, token_source, url,
                                             signed_in, default_org, file}
 `,

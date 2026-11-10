@@ -206,6 +206,25 @@ page. `--output json` prints the server's body. `eris org members deactivate
 may, and a member's `403` is the [`org-admin-required`](ERRORS.md#org-admin-required)
 refusal. The member list carries no last-active time.
 
+### `eris org delete`: schedule or cancel the org's deletion
+
+`eris org delete --confirm <workspace>` schedules the org's deletion
+(`POST /v1/org/deletion`, with that org's bearer) and prints the due date the server
+returns; `eris org delete --cancel` cancels it (`DELETE /v1/org/deletion`) and says
+whether anything was scheduled. Only an org admin may
+([`org-admin-required`](ERRORS.md#org-admin-required)). The server compares the name
+with the org's stored workspace name: a wrong name is
+[`org-confirmation-mismatch`](ERRORS.md#org-confirmation-mismatch) and nothing is
+scheduled, and an org with no stored name is
+[`org-workspace-name-unknown`](ERRORS.md#org-workspace-name-unknown). The CLI never
+compares the name itself and never prints it back. `--output json` prints the server's
+body.
+
+Scheduling revokes every token the org holds, the one that scheduled it included, so
+the next call from this machine, `eris org delete --cancel` and `eris whoami` among
+them, is [`org-tokens-revoked`](ERRORS.md#org-tokens-revoked). The cancel is made from
+the dashboard's Danger zone, signed in again.
+
 ### `yak-setup.ts`: a hand-registered bearer
 
 For a self-hosted endpoint, mint the file with

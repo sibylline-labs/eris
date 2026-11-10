@@ -639,7 +639,7 @@ login`: a CLI login carries it. Exit 1.
 
 ### org-admin-required
 
-`eris org members deactivate` was refused with `403 admin_required`: only an
+`eris org members deactivate` or `eris org delete` was refused with `403 admin_required`: only an
 admin of the org can deactivate a member, and a member's login stays a member's.
 Ask an org admin to run it, or to deactivate the member on the dashboard's
 Members page. The role is never checked by the CLI; the server decides. Exit 1.
@@ -661,10 +661,39 @@ cannot_deactivate_self`). Have another admin do it. Exit 1.
 `eris org members deactivate` was given no member id. Run `eris org members deactivate
 <member-id>`. Exit 1.
 
+### org-delete-flags
+
+`eris org delete` was given neither `--confirm <workspace>` nor `--cancel`, was
+given both, or `--confirm` named an empty or blank workspace. Nothing was sent.
+Run `eris org delete --confirm <workspace>` to schedule the org's deletion or
+`eris org delete --cancel` to cancel it. Exit 1.
+
+### org-confirmation-mismatch
+
+`eris org delete --confirm <workspace>` was refused with `400
+confirmation_mismatch`: the name is not the org's stored workspace name (the
+server compares it, trimmed). Nothing was scheduled. Give the name exactly as the
+dashboard shows it. Exit 1.
+
+### org-workspace-name-unknown
+
+`eris org delete --confirm <workspace>` was refused with `409
+workspace_name_unknown`: the org has no stored workspace name to confirm against,
+so no name can match. Nothing was scheduled. Connect or reconnect the org's Linear
+workspace in the dashboard, then run it again. Exit 1.
+
+### org-tokens-revoked
+
+An `eris org` command was refused with `401 revoked`: the token is revoked. While
+an org's deletion is scheduled the gateway revokes every token the org holds, this
+machine's included, so `eris org delete --cancel` and `eris whoami` cannot reach it
+with a CLI token. Cancel from the dashboard's Danger zone after signing in again;
+if no deletion is scheduled, run `eris login`. Exit 1.
+
 ### org-unknown-verb
 
 `eris org` or `eris org members` was given a word that is not one of its
-commands. The commands are `members` and `members deactivate <member-id>`. Exit 1.
+commands. The commands are `members`, `members deactivate <member-id>` and `delete`. Exit 1.
 
 ### org-unavailable
 

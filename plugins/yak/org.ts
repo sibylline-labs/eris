@@ -3,6 +3,8 @@
  * members, listed and (by an admin) deactivated, over the gateway's bearer
  * routes `GET /v1/org/members` and `POST /v1/org/members/:id/deactivate`.
  * Loaded only when `eris org` dispatches (the manifest is ./index.ts).
+ * `eris org delete --confirm <workspace>` and `--cancel` schedule and cancel the org's
+ * deletion over `POST` and `DELETE /v1/org/deletion`.
  *
  * The routes answer success as plain JSON and every refusal as problem+json
  * with a top-level `code` (`admin_required`, `member_not_found`,
@@ -26,7 +28,7 @@ import { z } from "zod";
 import plugin from "./index";
 
 // A `…Slug`-named union: `tests/errors-doc.test.ts` harvests its members.
-export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied";
+export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied" | "org-delete-flags" | "org-confirmation-mismatch" | "org-workspace-name-unknown" | "org-tokens-revoked";
 
 const ORG_TIMEOUT_MS = 15_000;
 
@@ -43,6 +45,8 @@ const Member = z
 // passthrough: --output json prints the server's body, fields this build does not know included.
 const Members = z.object({ members: z.array(Member) }).passthrough();
 const Deactivated = z.object({ memberId: z.string(), status: z.string() }).passthrough();
+const Scheduled = z.object({ dueAt: z.string(), cause: z.string() }).passthrough();
+const Cancelled = z.object({ cancelled: z.boolean() }).passthrough();
 
 /** A member id is a ULID; anything else never leaves the machine (`.` and `..` would otherwise rewrite the path). */
 const MEMBER_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
@@ -55,6 +59,8 @@ export const ORG_USAGE = `Usage: eris org <command>
 Commands:
   members                        List this org's members: name, email, role, status, seats, id
   members deactivate <member-id> Deactivate a member (an org admin's)
+  delete --confirm <workspace>   Schedule this org's deletion (an org admin's)
+  delete --cancel                Cancel a scheduled deletion
 
 The org is the one this directory acts as ('eris whoami').
 `;
@@ -69,6 +75,18 @@ prints the server's body.
   CLI tokens and seats end now. Only an org admin may; anyone else is refused
   (org-admin-required). The id is the memberId in 'eris org members'. You
   cannot deactivate yourself.
+`;
+
+export const DELETE_USAGE = `Usage: eris org delete --confirm <workspace> | --cancel
+
+  --confirm <workspace>   schedule this org's deletion. The name must be the org's workspace
+                          name exactly; a wrong name is refused and nothing is scheduled.
+                          Only an org admin may.
+  --cancel                cancel a scheduled deletion.
+
+Scheduling revokes every token the org holds, this machine's included, so the cancel
+is made from the dashboard's Danger zone, signed in again. 'eris --output json org delete'
+prints the server's body.
 `;
 
 export interface OrgDeps {
@@ -97,26 +115,48 @@ function problemCode(body: unknown): string | undefined {
   return undefined;
 }
 
-function refusal(status: number, code: string | undefined, target: string): Failure {
+type Action = "deactivate a member" | "delete the org";
+
+function refusal(status: number, code: string | undefined, target: string, action: Action = "deactivate a member"): Failure {
   const answered = `the org endpoint answered ${status}${code ? ` ${code}` : ""} for ${target}`;
+  if (status === 401 && code === "revoked") {
+    return {
+      slug: "org-tokens-revoked",
+      what: `${answered}: this token is revoked. A scheduled deletion revokes every token the org holds`,
+      fix: "if this org's deletion is scheduled, cancel it from the dashboard's Danger zone after signing in again; otherwise run: eris login",
+    };
+  }
   if (status === 401) return { slug: "org-unauthorized", what: `${answered}: it rejected the bearer token`, fix: "run: eris login\n(or check ERIS_YAKS_TOKEN when it is set)" };
   if (status === 403 && code === "admin_required") {
     return {
       slug: "org-admin-required",
-      what: `${answered}: only an admin of this org can deactivate a member`,
-      fix: "ask an org admin to run it, or to deactivate the member in the dashboard's Members page",
+      what: `${answered}: only an admin of this org can ${action}`,
+      fix: action === "delete the org" ? "ask an org admin to run it, or to use the dashboard's Danger zone" : "ask an org admin to run it, or to deactivate the member in the dashboard's Members page",
     };
   }
   if (status === 403 && code === "scope_denied") {
     return { slug: "org-scope-denied", what: `${answered}: this token does not carry the accounts scope`, fix: "run: eris login   (a CLI login carries it; a service token without the accounts scope does not)" };
   }
   if (status === 404 && code === "member_not_found") return { slug: "org-member-not-found", what: `${answered}: this org has no such member`, fix: "list the ids: eris org members" };
+  if (status === 400 && code === "confirmation_mismatch") {
+    return { slug: "org-confirmation-mismatch", what: `${answered}: the name given is not this org's workspace name; nothing was scheduled`, fix: "give the workspace name exactly as the dashboard shows it" };
+  }
+  if (status === 409 && code === "workspace_name_unknown") {
+    return { slug: "org-workspace-name-unknown", what: `${answered}: this org has no stored workspace name to confirm against; nothing was scheduled`, fix: "connect or reconnect the org's Linear workspace in the dashboard, then run it again" };
+  }
   if (status === 400 && code === "cannot_deactivate_self") return { slug: "org-cannot-deactivate-self", what: `${answered}: you cannot deactivate your own member`, fix: "have another admin deactivate it" };
   return { slug: "org-unavailable", what: answered, fix: "retry; 'eris whoami' shows which org and url this directory uses" };
 }
 
 /** One bounded request with the org's bearer; the body parsed against `schema`. */
-async function request<S extends z.ZodTypeAny>(method: "GET" | "POST", path: string, schema: S, ctx: VerbContext, deps: OrgDeps): Promise<Outcome<z.infer<S>>> {
+async function request<S extends z.ZodTypeAny>(
+  method: "GET" | "POST" | "DELETE",
+  path: string,
+  schema: S,
+  ctx: VerbContext,
+  deps: OrgDeps,
+  opts: { body?: unknown; action?: Action } = {},
+): Promise<Outcome<z.infer<S>>> {
   const bearer = await resolveOrgBearer({ home: deps.home ?? ctx.env.HOME ?? homedir(), env: ctx.env, cwd: deps.cwd ?? process.cwd() });
   if ("reason" in bearer) return { ok: false, failure: { slug: bearer.slug, what: bearer.reason, fix: bearer.fix } };
   const base = bearer.value.url.replace(/\/+$/, "");
@@ -128,7 +168,12 @@ async function request<S extends z.ZodTypeAny>(method: "GET" | "POST", path: str
     let response: Response;
     let parsed: unknown;
     try {
-      response = await (deps.fetchImpl ?? fetch)(`${base}${path}`, { method, headers: { authorization: `Bearer ${bearer.value.token}` }, signal: controller.signal });
+      response = await (deps.fetchImpl ?? fetch)(`${base}${path}`, {
+        method,
+        headers: { authorization: `Bearer ${bearer.value.token}`, ...(opts.body !== undefined ? { "content-type": "application/json" } : {}) },
+        ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+        signal: controller.signal,
+      });
       const text = await response.text();
       try {
         parsed = text.length > 0 ? JSON.parse(text) : undefined;
@@ -140,7 +185,7 @@ async function request<S extends z.ZodTypeAny>(method: "GET" | "POST", path: str
       const what = name === "AbortError" || name === "TimeoutError" ? `the org endpoint did not answer within ${timeoutMs}ms (${target})` : `cannot reach the org endpoint (${target}): ${(err as Error).message}`;
       return { ok: false, failure: { slug: "org-unavailable", what, fix: "check the network, and ERIS_YAKS_URL or the url in ~/.eris/yaks.json" } };
     }
-    if (!response.ok) return { ok: false, failure: refusal(response.status, problemCode(parsed), target) };
+    if (!response.ok) return { ok: false, failure: refusal(response.status, problemCode(parsed), target, opts.action) };
     const shaped = schema.safeParse(parsed);
     if (!shaped.success) {
       return { ok: false, failure: { slug: "org-unavailable", what: `the org endpoint answered ${response.status} with a body that does not match the contract (${target})`, fix: "update eris: eris update" } };
@@ -198,6 +243,35 @@ async function runDeactivate(id: string | undefined, ctx: VerbContext, deps: Org
   return 0;
 }
 
+async function runDelete(confirm: string | undefined, cancel: boolean, ctx: VerbContext, deps: OrgDeps): Promise<number> {
+  const given = confirm !== undefined;
+  if (given === cancel) {
+    return fail(ctx, { slug: "org-delete-flags", what: given ? "eris org delete was given both --confirm and --cancel" : "eris org delete was given neither --confirm nor --cancel", fix: "eris org delete --confirm <workspace>   or   eris org delete --cancel" });
+  }
+  if (given && confirm.trim() === "") {
+    return fail(ctx, { slug: "org-delete-flags", what: "eris org delete --confirm was given an empty workspace name; nothing was sent", fix: "eris org delete --confirm <workspace>" });
+  }
+  if (given) {
+    const got = await request("POST", "/v1/org/deletion", Scheduled, ctx, deps, { body: { confirm }, action: "delete the org" });
+    if (!got.ok) return fail(ctx, got.failure);
+    if (ctx.format === "json") {
+      ctx.stdout.write(`${JSON.stringify(got.value)}\n`);
+      return 0;
+    }
+    ctx.stdout.write(`deletion scheduled for ${got.value.dueAt}\n`);
+    ctx.stderr.write("INFO this org's tokens, this machine's included, are now revoked; cancel from the dashboard's Danger zone, signed in again\n");
+    return 0;
+  }
+  const got = await request("DELETE", "/v1/org/deletion", Cancelled, ctx, deps, { action: "delete the org" });
+  if (!got.ok) return fail(ctx, got.failure);
+  if (ctx.format === "json") {
+    ctx.stdout.write(`${JSON.stringify(got.value)}\n`);
+    return 0;
+  }
+  ctx.stdout.write(got.value.cancelled ? "deletion cancelled\n" : "no deletion was scheduled\n");
+  return 0;
+}
+
 function unknown(ctx: VerbContext, sub: string, use: string): never {
   ctx.stderr.write(renderFailureBlock({ slug: "org-unknown-verb", what: `unknown org command '${sub}'`, fix: `use: ${use}\nrun 'eris org --help' for the full command list` }, ctx.erisDir));
   throw new CliExit(1);
@@ -213,7 +287,12 @@ export async function runOrg(args: string[], ctx: VerbContext, deps: OrgDeps = {
     ctx.stdout.write(ORG_USAGE);
     return 0;
   }
-  if (g.kind === "unknown") return unknown(ctx, g.sub, "members");
+  if (g.kind === "unknown") return unknown(ctx, g.sub, "members, delete");
+  if (g.sub === "delete") {
+    const d = readArgs(plugin.rows, "org delete", g.rest, ctx, { help: DELETE_USAGE });
+    if (d === null) return 0;
+    return runDelete(d.flags["--confirm"], d.flags["--cancel"] === true, ctx, deps);
+  }
   const a = readArgs(plugin.rows, "org members", g.rest, ctx, { help: MEMBERS_USAGE });
   if (a === null) return 0;
   const [action, id] = a.pos;
