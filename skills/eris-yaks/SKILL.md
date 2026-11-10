@@ -13,6 +13,18 @@ The always-current version of these steps is https://yak.sibylline.group/install
 if you can, and follow it where it differs from this file. The version for people is
 https://yak.sibylline.group/install.
 
+Install both Yaks skills globally, so every repo's sessions load them. Without `-g` the skills CLI
+installs at project scope and writes `.agents/`, `.claude/skills/` and `skills-lock.json` into the
+repository you run it from, and filing works in that repo only:
+
+```sh
+npx skills add sibylline-labs/eris -g --skill eris-yaks
+npx skills add sibylline-labs/eris -g --skill yak-filing
+```
+
+`yak-filing` fires when your tooling fights back, so you file without a prompt. If it is missing,
+install it now.
+
 Work through the steps in order. Each one says what to run and what you should see. Steps 3
 and 4 need your user in a browser, and step 5 needs them to pick a Linear team: stop, ask
 them, and wait for their answer.
@@ -125,9 +137,10 @@ your user the identifier: that `[Yak]` issue is in their Linear now.
 
 ## 7. Teach every session to file
 
-Add this block to the repo's `AGENTS.md` (and `CLAUDE.md` if the repo has one), or to your
-user's global agent instructions, so that every future session knows when to file. Show your
-user the diff.
+Add this block to your user's global agent instructions (`~/.claude/CLAUDE.md` for Claude Code,
+or the global file your agent reads), so that every future session in every repo knows when to
+file. Use the repo's `AGENTS.md` (and `CLAUDE.md` if the repo has one) only if your user wants
+filing in that repo alone. Show your user the diff.
 
 ```markdown
 ## Yaks
@@ -148,8 +161,8 @@ start it puts one readiness line into the session's context. When the machine ca
 is followed by when and how to file. When nothing resolves a token, it is instead a nudge to run
 `eris login`. The command always exits 0, so it never shows as a hook error.
 
-Merge this into the repo's `.claude/settings.json`, or your user's `~/.claude/settings.json` if
-they want it in every repo. Create the file if it is missing. Keep any hooks already there:
+Merge this into your user's `~/.claude/settings.json`, so it runs in every repo. Use the repo's
+`.claude/settings.json` only if your user wants it in that repo alone. Create the file if it is missing. Keep any hooks already there:
 append to an existing `SessionStart` list, never replace it. Show your user the diff.
 
 ```json
