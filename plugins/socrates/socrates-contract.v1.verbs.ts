@@ -65,6 +65,9 @@ export const SOCRATES_ROUTES = {
   resolve: { method: "POST", path: "/v1/socrates/resolve" },
   status: { method: "GET", path: "/v1/socrates/status" },
   settings_team: { method: "PUT", path: "/v1/socrates/settings/team" },
+  settings: { method: "GET", path: "/v1/socrates/settings" },
+  settings_policy: { method: "PUT", path: "/v1/socrates/settings/policy" },
+  settings_canon: { method: "PUT", path: "/v1/socrates/settings/canon" },
 } as const;
 
 export const SOCRATES_GATE_REASON_MAX_LENGTH = 500;
@@ -230,3 +233,61 @@ export const SocratesSettingsTeamReceipt = z.object({
 });
 export type SocratesSettingsTeamReceipt = z.infer<typeof SocratesSettingsTeamReceipt>;
 export const SocratesSettingsTeamResponse = z.union([SocratesSettingsTeamReceipt, SocratesProblem]);
+
+// --- settings read model and the policy and Canon writes -------------------
+
+/** `rubric_version` must be the rubric the server scores with; `expected_version`, when sent, is the policy version the editor read. */
+export const SocratesSettingsPolicyRequest = z.object({
+  schema_version: Version,
+  rubric_version: RubricVersion,
+  policy: SocratesPolicy,
+  expected_version: NonNegativeInt.optional(),
+});
+export type SocratesSettingsPolicyRequest = z.infer<typeof SocratesSettingsPolicyRequest>;
+
+/** `doc` is a Linear document id; `null` clears the Canon doc. */
+export const SocratesSettingsCanonRequest = z.object({ schema_version: Version, doc: Id.nullable(), expected_version: NonNegativeInt.optional() });
+export type SocratesSettingsCanonRequest = z.infer<typeof SocratesSettingsCanonRequest>;
+
+/** What every settings write answers: the version it stored and the hash that version carries. */
+export const SocratesSettingsReceipt = z.object({
+  rubric_version: RubricVersion,
+  policy_version: NonNegativeInt,
+  policy_hash: PolicyHash,
+  policy: SocratesPolicy,
+  canon_doc_id: Id.nullable(),
+  contract_version: Version,
+});
+export type SocratesSettingsReceipt = z.infer<typeof SocratesSettingsReceipt>;
+export const SocratesSettingsWriteResponse = z.union([SocratesSettingsReceipt, SocratesProblem]);
+
+const Rate = z.number().finite().min(0).max(1);
+
+export const SocratesSettingsResult = z.object({
+  policy: z.object({
+    rubric_version: RubricVersion,
+    version: NonNegativeInt,
+    source: z.enum(["default", "org"]),
+    policy_hash: PolicyHash,
+    policy: SocratesPolicy,
+    updated_at: IsoDatetime.nullable(),
+  }),
+  canon: z.object({ doc_id: Id.nullable() }),
+  enrolment: z.object({ projects: z.array(z.object({ id: Id, name: ProjectHint.nullable(), source: z.enum(["label", "stub"]), url: Url.nullable() })) }),
+  health: z.object({
+    install: z.object({ state: z.enum(["installed", "provisioned", "needs_labels", "uninstalled"]).nullable(), missing_labels: z.array(ProjectHint), checked_at: IsoDatetime.nullable() }),
+    webhook: z.object({ last_delivery_at: IsoDatetime.nullable() }),
+    reconcile: z.object({ last_at: IsoDatetime.nullable(), watermark: IsoDatetime.nullable() }),
+    stuck: z.object({ retrying_writes: NonNegativeInt, oldest_retrying_at: IsoDatetime.nullable(), refused_entries: NonNegativeInt }),
+  }),
+  usage: z.object({
+    window_days: NonNegativeInt,
+    entries: z.object({ total: NonNegativeInt, pending: NonNegativeInt, filed: NonNegativeInt, resolved: NonNegativeInt, rejected: NonNegativeInt, needs_input: NonNegativeInt }),
+    accept_rate: Rate.nullable(),
+    reject_rate: Rate.nullable(),
+    classifications: z.object({ total: NonNegativeInt, passed: NonNegativeInt, failed: NonNegativeInt, overridden: NonNegativeInt, overrides: NonNegativeInt }),
+  }),
+  contract_version: Version,
+});
+export type SocratesSettingsResult = z.infer<typeof SocratesSettingsResult>;
+export const SocratesSettingsResponse = z.union([SocratesSettingsResult, SocratesProblem]);

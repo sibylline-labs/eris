@@ -165,7 +165,9 @@ Each command acts as one org, chosen in this order:
 
 1. `ERIS_ORG=<org id>`, when set;
 2. `repo.org` in the nearest `eris.yaml` that names one, from the current
-   directory up to the checkout root (the directory holding `.git`);
+   directory up to the checkout root (the directory holding `.git`) or the
+   home directory, whichever comes first (a manifest at home or above is never
+   read);
 3. the default org.
 
 ```yaml
@@ -184,11 +186,25 @@ when it is a token for that org ([`org-token-mismatch`](ERRORS.md#org-token-mism
 
 `eris whoami` prints the org the current directory acts as, why that org was
 chosen, where its token comes from (the file or `ERIS_YAKS_TOKEN`), the url, and
-every org the machine is signed in to. It never prints a token, and
-`--output json` gives the same record. `eris logout` signs out only the org the
+every org the machine is signed in to. It then asks the org (`GET /v1/org/me`)
+for your role, its tier, its Linear connection, any scheduled deletion and its
+entitlements. `--output json` prints that answer exactly as the server sent
+it. It never prints a token, and exits 1 (`yak-unauthorized` when the bearer is
+rejected, `yak-admin-unavailable` when the endpoint does not answer) rather than
+print a guess. `eris logout` signs out only the org the
 current directory acts as. `eris login` warns
 ([`login-org-differs`](ERRORS.md#login-org-differs)) when the browser approved a
 different org from the one the directory selects.
+
+### `eris org members`: the org's members
+
+`eris org members` lists the members of the org the current directory acts as
+(`GET /v1/org/members`, with that org's bearer): name (else the email's local
+part), email, role, status, seats and the member id `deactivate` takes, the columns of the dashboard's Members
+page. `--output json` prints the server's body. `eris org members deactivate
+<member-id>` ends a member's sessions, CLI tokens and seats; only an org admin
+may, and a member's `403` is the [`org-admin-required`](ERRORS.md#org-admin-required)
+refusal. The member list carries no last-active time.
 
 ### `yak-setup.ts`: a hand-registered bearer
 

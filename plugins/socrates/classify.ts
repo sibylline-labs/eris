@@ -250,7 +250,7 @@ export async function runClassify(args: string[], ctx: VerbContext, deps: Socrat
   const home = deps.home ?? ctx.env.HOME ?? homedir();
   const file = await readYaksFileConfig(home);
   if ("reason" in file) fail(ctx, file.slug, file.reason, "fix or remove the file, then run 'eris login'");
-  const selection = await resolveOrgSelection(ctx.env, deps.cwd ?? process.cwd());
+  const selection = await resolveOrgSelection(ctx.env, deps.cwd ?? process.cwd(), home);
   if ("reason" in selection) fail(ctx, selection.slug, selection.reason, selection.fix);
   const view = selectOrgConfig(file.value, selection.value, ctx.env);
   if ("reason" in view) fail(ctx, view.slug, view.reason, view.fix);

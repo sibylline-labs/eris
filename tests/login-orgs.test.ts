@@ -29,6 +29,18 @@ let home: string;
 let root: string;
 let server: ReturnType<typeof Bun.serve>;
 let mint: string;
+/** What `GET /v1/org/me` answers for the bearer it is sent: the org its prefix names, or a refusal. */
+let meStatus = 200;
+const ME_TAIL = {
+  entitlements: { accounts: "active", yak: "trialing" },
+  features: {},
+  tier: "free",
+  limits: {},
+  linear: { status: "disconnected", cause: "oauth_revoked" },
+  deletionScheduledAt: "2026-12-01T00:00:00.000Z",
+  workspaceName: "Kilometre",
+  trialEndsAt: null,
+};
 
 beforeAll(() => {
   mkdirSync(join(REPO, ".scratch"), { recursive: true });
@@ -41,6 +53,11 @@ beforeAll(() => {
       if (path === "/v1/device/code") {
         return Response.json({ device_code: DEVICE_CODE, user_code: "BCDF-GHJK", verification_uri: "https://dash.example.test/device", expires_in: 600, interval: 1 });
       }
+      if (path === "/v1/org/me") {
+        if (meStatus !== 200) return Response.json({ error: { code: "unauthorized" } }, { status: meStatus });
+        const org = req.headers.get("authorization")?.split("_")[1] ?? "";
+        return Response.json({ orgId: org, memberId: "mem_1", role: "admin", ...ME_TAIL });
+      }
       if (path === "/v1/device/token") return Response.json({ access_token: mint, token_type: "Bearer", token_id: "tok_1", name: "laptop (eris)", scopes: [] });
       return new Response("not found", { status: 404 });
     },
@@ -51,6 +68,7 @@ afterAll(() => {
   rmSync(sandbox, { recursive: true, force: true });
 });
 beforeEach(() => {
+  meStatus = 200;
   root = realpathSync(mkdtempSync(join(sandbox, "t-")));
   home = join(root, "home");
   mkdirSync(home);
@@ -157,20 +175,33 @@ describe("eris whoami", () => {
     await login(ORG_B, a);
     const ta = await drive(runWhoami as never, [], { cwd: a });
     expect(ta.stdout).toBe(
-      [`org: ${ORG_A} (default)`, "why: this machine's default org", `token: ${yaksJson()}`, `url: ${url()}`, `signed in to: ${ORG_A} (default), ${ORG_B}`, ""].join("\n"),
+      [
+        `org: ${ORG_A} (default)`,
+        "why: this machine's default org",
+        `token: ${yaksJson()}`,
+        `url: ${url()}`,
+        `signed in to: ${ORG_A} (default), ${ORG_B}`,
+        "role: admin",
+        "tier: free",
+        "linear: disconnected (oauth_revoked)",
+        "deletion: scheduled for 2026-12-01T00:00:00.000Z",
+        "entitlements: accounts active, yak trialing",
+        "",
+      ].join("\n"),
     );
     const jb = await drive(runWhoami as never, [], { cwd: b, format: "json" });
-    expect(JSON.parse(jb.stdout)).toEqual({
-      org: ORG_B,
-      source: "eris.yaml",
-      path: join(b, "eris.yaml"),
-      default: false,
-      token_source: "config",
-      url: url(),
-      signed_in: [ORG_A, ORG_B],
-      default_org: ORG_A,
-      file: yaksJson(),
-    });
+    expect(JSON.parse(jb.stdout)).toEqual({ orgId: ORG_B, memberId: "mem_1", role: "admin", ...ME_TAIL });
+  });
+
+  // admits: whoami printing a guess when the org cannot be asked; the server's status is runtime
+  it("exits 1 with the sign-in fix when the endpoint rejects the bearer, and prints nothing to stdout", async () => {
+    const a = checkout("a");
+    await login(ORG_A, a);
+    meStatus = 401;
+    const r = await drive(runWhoami as never, [], { cwd: a });
+    expect({ rc: r.rc, stdout: r.stdout }).toEqual({ rc: 1, stdout: "" });
+    expect(r.stderr).toContain("yak-unauthorized");
+    expect(r.stderr).toContain("eris login");
   });
 
   // admits: the org-not-signed-in fix line not leading to a working state; round trip through the real verbs

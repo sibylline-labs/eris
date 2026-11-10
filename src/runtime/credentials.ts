@@ -36,7 +36,7 @@
 
 import { existsSync, promises as fs, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 
 /** `{ value }` on success, `{ reason, slug }` on failure: `"reason" in outcome` tells them apart. */
 export type CredentialOutcome<T, TSlug extends string> = { value: T } | { reason: string; slug: TSlug };
@@ -314,8 +314,9 @@ function manifestOrg(value: unknown): { kind: "absent" } | { kind: "org"; org: s
 /**
  * The org this directory acts as: `ERIS_ORG` when set, else `repo.org` in the
  * nearest `eris.yaml` at or above `cwd` that names one, stopping at the
- * enclosing checkout's root (a `.git` entry) and a hard depth bound, else the
- * default org. A manifest inside a `node_modules` tree is a dependency's, never
+ * enclosing checkout's root (a `.git` entry), the home directory (its own
+ * manifest and everything above it are never read) and a hard depth bound, else
+ * the default org. A manifest inside a `node_modules` tree is a dependency's, never
  * the repo's, so it is not read. A malformed id, or a manifest on the walk that cannot be read
  * or parsed, fails `org-selector-invalid`: a broken manifest might be the one
  * selecting an org, so it is never skipped.
@@ -323,12 +324,13 @@ function manifestOrg(value: unknown): { kind: "absent" } | { kind: "org"; org: s
 export async function resolveOrgSelection(
   env: Record<string, string | undefined>,
   cwd: string,
+  home: string = homedir(),
 ): Promise<{ value: OrgSelection } | OrgFailure> {
-  return resolveOrgSelectionSync(env, cwd);
+  return resolveOrgSelectionSync(env, cwd, home);
 }
 
 /** `resolveOrgSelection` for a synchronous caller: the same walk, the same outcomes. */
-export function resolveOrgSelectionSync(env: Record<string, string | undefined>, cwd: string): { value: OrgSelection } | OrgFailure {
+export function resolveOrgSelectionSync(env: Record<string, string | undefined>, cwd: string, home: string = homedir()): { value: OrgSelection } | OrgFailure {
   const fromEnv = env.ERIS_ORG;
   if (fromEnv !== undefined && fromEnv.length > 0) {
     if (isOrgId(fromEnv)) return { value: { org: fromEnv, source: "env" } };
@@ -340,6 +342,7 @@ export function resolveOrgSelectionSync(env: Record<string, string | undefined>,
   }
   let dir = cwd;
   for (let i = 0; i < ORG_WALK_MAX_DEPTH; i++) {
+    if (home !== "" && dir === resolve(home)) break;
     const path = join(dir, "eris.yaml");
     let raw: string | undefined;
     if (!dir.split(sep).includes("node_modules")) {
@@ -487,7 +490,7 @@ export async function resolveOrgBearer(opts: {
 > {
   const file = await readYaksFileConfig(opts.home);
   if ("reason" in file) return { reason: file.reason, slug: file.slug, fix: `fix or remove ${yaksConfigPath(opts.home)}, then run 'eris login' again` };
-  const selection = await resolveOrgSelection(opts.env, opts.cwd);
+  const selection = await resolveOrgSelection(opts.env, opts.cwd, opts.home);
   if ("reason" in selection) return selection;
   const view = selectOrgConfig(file.value, selection.value, opts.env);
   if ("reason" in view) return view;

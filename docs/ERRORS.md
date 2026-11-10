@@ -624,6 +624,55 @@ has no remedy for (a `5xx`, `502 linear_unavailable`, `503
 accounts_unavailable`), or answered a body that does not match the contract. Retry.
 If the body does not match, update eris (`eris update`). Exit 1.
 
+### org-unauthorized
+
+`eris org members` or `eris org members deactivate` was refused with `401`: the
+endpoint rejected the bearer token of the org this directory acts as (revoked,
+expired, or a session cookie instead of a CLI token). Run `eris login`, or check
+`ERIS_YAKS_TOKEN` when it is set. Exit 1.
+
+### org-scope-denied
+
+`eris org members` or `deactivate` was refused with `403 scope_denied`: the token
+does not carry the accounts scope (a service token minted without it). Run `eris
+login`: a CLI login carries it. Exit 1.
+
+### org-admin-required
+
+`eris org members deactivate` was refused with `403 admin_required`: only an
+admin of the org can deactivate a member, and a member's login stays a member's.
+Ask an org admin to run it, or to deactivate the member on the dashboard's
+Members page. The role is never checked by the CLI; the server decides. Exit 1.
+
+### org-member-not-found
+
+`eris org members deactivate <id>` named an id the org does not list (`404
+member_not_found`; another org's member is the same answer). Run `eris org
+members` and use an id from its ID column. An id that is not a 26-character ULID
+is refused with this slug before anything is sent. Exit 1.
+
+### org-cannot-deactivate-self
+
+`eris org members deactivate <id>` named the caller's own member (`400
+cannot_deactivate_self`). Have another admin do it. Exit 1.
+
+### org-member-id-missing
+
+`eris org members deactivate` was given no member id. Run `eris org members deactivate
+<member-id>`. Exit 1.
+
+### org-unknown-verb
+
+`eris org` or `eris org members` was given a word that is not one of its
+commands. The commands are `members` and `members deactivate <member-id>`. Exit 1.
+
+### org-unavailable
+
+`eris org members` or `eris org members deactivate` could not complete: the
+endpoint did not answer within 15 seconds, could not be reached, answered a
+status eris has no remedy for, or answered a body that does not match the
+contract. Retry. If the body does not match, update eris (`eris update`). Exit 1.
+
 ### yak-team-not-found
 
 `eris yak discover --team` or `eris yak config set --team` named a Linear team
@@ -809,7 +858,8 @@ for the selected org is used, or set it to a token for that org.
 
 `eris socrates` was given a command it does not have. Fix: use `classify`,
 `consult`, `discover`, `policy`, `resolve`, `settings`, `status` or `submit`, or
-run `eris socrates --help`.
+run `eris socrates --help`. For `eris socrates settings`, use `policy`,
+`enrolment`, `health`, `usage`, `canon` or `team`.
 
 ### socrates-flag-required
 
@@ -1025,6 +1075,9 @@ than one resolve reads); the `fix:` line says which. For `status`, a 404 means
 the org holds no candidate with that id. For `settings team`, a
 403 `admin_required` means only an org admin may change it, and a 422 that the
 team id is not one of the project's teams (the detail lists them). For
+`settings policy` and `settings canon` a 403 means the same, and a 409 on a
+policy change means it was saved by someone else since it was read: run the
+command again. For
 `consult`, a 404 means the org has several enrolled projects and `--project`
 was not passed (the detail lists them) or the project has not created that doc,
 and a 409 means no Canon doc has been chosen; when the endpoint sent a settings

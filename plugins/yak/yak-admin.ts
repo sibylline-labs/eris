@@ -40,7 +40,7 @@ import {
   YakStoredConfig,
   type YakConfigPatch,
 } from "eris/yak-contract";
-import type { z } from "zod";
+import { z } from "zod";
 import plugin from "./index";
 
 // A `…Slug`-named union: `tests/errors-doc.test.ts` harvests its members.
@@ -200,6 +200,14 @@ export const home = (ctx: VerbContext, deps: AdminDeps) => deps.home ?? ctx.env.
 export async function readStatus(url: string, token: string, deps: AdminDeps): Promise<YakStatus | null> {
   const got = await request({ url: url.replace(/\/+$/, ""), token }, "GET", "/v1/yaks/status", YakStatus, deps);
   return got.ok ? got.value : null;
+}
+
+/** `GET /v1/org/me`: the caller's member and org, read through the same bounded request as the admin verbs. Fields beyond the three named pass through untouched, so `--output json` can print the body as-is. */
+const OrgMe = z.object({ orgId: z.string(), memberId: z.string(), role: z.string() }).passthrough();
+export type OrgMe = z.infer<typeof OrgMe>;
+
+export async function readOrgMe(url: string, token: string, deps: AdminDeps): Promise<Outcome<OrgMe>> {
+  return request({ url: url.replace(/\/+$/, ""), token }, "GET", "/v1/org/me", OrgMe, deps);
 }
 
 export async function runStatus(args: string[], ctx: VerbContext, deps: AdminDeps = {}): Promise<number> {

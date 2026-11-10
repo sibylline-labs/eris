@@ -69,7 +69,7 @@ describe("the top level", () => {
   it.each([[["--help", "--json"]], [["--json"]], [["-h", "--output", "json"]]])("%p lists the composed groups", async (argv) => {
     const doc = await helpDoc(argv);
     expect({ path: doc.path, usage: doc.usage }).toEqual({ path: "", usage: "eris <command> [args]" });
-    expect(names(doc, "commands")).toEqual(["completion", "update", "yak", "login", "logout", "whoami", "tokens", "socrates"]);
+    expect(names(doc, "commands")).toEqual(["completion", "update", "yak", "login", "logout", "org", "whoami", "tokens", "socrates"]);
     expect(names(doc, "flags")).toEqual(expect.arrayContaining(["--output", "--json", "--version", "--help"]));
   });
 });
