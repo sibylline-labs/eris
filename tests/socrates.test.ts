@@ -152,6 +152,19 @@ async function drive(args: string[], opts: { format?: "text" | "json"; env?: Rec
 }
 
 describe("eris socrates submit", () => {
+  // admits: an ambiguity refusal that exits non-zero or drops its candidates.
+  it("an ambiguous project name prints its candidates as a WARN and exits 0", async () => {
+    /** When a 409 linear_ref_ambiguous on a project name reads as a failure block, the submitter gets exit 1 and no list to choose from; observed as rc, stdout and the WARN on stderr. */
+    answer = () =>
+      Response.json(
+        { type: "urn:hera:error:linear_ref_ambiguous", title: "linear_ref_ambiguous", status: 409, detail: "More than one Linear object matches the reference", code: "linear_ref_ambiguous", kind: "project", candidates: [{ id: "proj_a", name: "Platform" }, { id: "proj_b", name: "Platform" }] },
+        { status: 409, headers: { "content-type": "application/problem+json" } },
+      );
+    const r = await drive(["submit", ...STAMPED, "--project", "Platform"]);
+    expect(r).toMatchObject({ rc: 0, stdout: "", slug: "socrates-ref-ambiguous" });
+    expect(r.stderr).toContain("  proj_a  Platform\n  proj_b  Platform\n");
+  });
+
   it("posts one schema-checked candidate with the login bearer and prints the receipt", async () => {
     /** When the body, path or bearer drifts, the endpoint refuses every submission. */
     expect(await drive(["submit", ...STAMPED, "--project", "platform"])).toMatchObject({ rc: 0, stdout: "submitted: cand_1\n", stderr: "" });

@@ -1074,7 +1074,7 @@ Epic by that id and a 409 that the Epic is still open (or has more entries
 than one resolve reads); the `fix:` line says which. For `status`, a 404 means
 the org holds no candidate with that id. For `settings team`, a
 403 `admin_required` means only an org admin may change it, and a 422 that the
-team id is not one of the project's teams (the detail lists them). For
+team is not one of the project's teams (the detail lists them). For
 `settings policy` and `settings canon` a 403 means the same, and a 409 on a
 policy change means it was saved by someone else since it was read: run the
 command again. For
@@ -1092,6 +1092,14 @@ Canon doc nobody has chosen), and went on with the others. The line names the
 doc and the refusal, and the settings link when the endpoint sent one. Fix:
 open the link or create the doc in Linear; a brief that read nothing fails with
 `socrates-refused` instead.
+
+### socrates-ref-ambiguous
+
+A `WARN`, not a failure, and the command exits `0`. A Linear name the command
+sent (a team key or name, a project name) matched more than one object, so the
+endpoint changed nothing and listed the candidates as `<id>  <name>` lines. Fix:
+run the command again with one candidate's id. `--output json` prints
+`{ambiguous: {kind, candidates: [{id, name}]}}` on stdout instead.
 
 ### socrates-bad-response
 

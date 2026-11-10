@@ -76,10 +76,11 @@ your user the link and carry on without it; never invent a house rule.
 | `eris socrates policy` | Print the org's policy that `classify` and `submit` apply |
 | `eris socrates discover` | List the commits in this repo that no candidate has covered yet |
 | `eris socrates resolve` | Resolve a closed review Epic |
-| `eris socrates settings team` | Set which Linear team reviews file on (an org admin's) |
+| `eris socrates settings team` | Set which Linear team reviews file on (an org admin's); takes a team key, name or id |
 
 Before you run a verb for the first time, run `eris socrates <verb> --help` and follow it.
 For a failure, the printed `fix:` line says what to do next.
+A Linear team or project is accepted by name, key or id, so pass what the user typed. If a name matches several objects, the command prints a `WARN` listing the candidates and exits 0 having changed nothing: run it again with one candidate's id.
 
 ## Done
 

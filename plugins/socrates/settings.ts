@@ -9,14 +9,14 @@
  * admin; this verb names the team and nothing else.
  *
  * Invariants:
- *   - `<team-uuid>` and `--clear` are exclusive, and one of them is required.
+ *   - `<team>` and `--clear` are exclusive, and one of them is required.
  *   - Nothing leaves the machine before `eris/outbound-scan` has run over the
  *     body: a gitleaks hit refuses it (`socrates-secret-detected`).
  *   - The request body is `SocratesSettingsTeamRequest`'s parse; the reply is
  *     read only through `SocratesSettingsTeamResponse` (./client.ts owns the
  *     exchange).
- *   - The team is a Linear team UUID; resolving a key or name is the server's
- *     to add, so the verb never guesses one.
+ *   - The team is sent as typed (a key, name or id); the server resolves it
+ *     and the verb holds no lookup table or Linear id.
  */
 
 import { scanStrings } from "eris/outbound-scan";
@@ -41,7 +41,7 @@ Commands:
 Run 'eris socrates settings <command> --help' for its flags.
 `;
 
-export const TEAM_USAGE = `Usage: eris socrates settings team <team-uuid> [--project <name>]
+export const TEAM_USAGE = `Usage: eris socrates settings team <team> [--project <name>]
        eris socrates settings team --clear [--project <name>]
 
 Set the Linear team an enrolled project's review Epics, their entries and
@@ -53,7 +53,7 @@ Prints 'files on <key> (<source>)', where <source> is override, lead or first.
 --output json prints {project, override: {id, key} | null, filing_team: {id,
 key, source}, contract_version}.
 
-  <team-uuid>       the Linear team's id; it must be one of the project's teams
+  <team>            the Linear team's key, name or id; it must be one of the project's teams
   --clear           remove the override
   --project <name>  the enrolled project; required when the org enrols several
 
@@ -64,7 +64,7 @@ const refusalFix = (status: number): string | undefined => {
   if (status === 403) return "ask an org admin to run this command";
   if (status === 404) return "pass --project <name> with one of the enrolled projects the detail lists";
   if (status === 409) return "follow the step named above, then run the command again";
-  if (status === 422) return "pass one of the team ids the detail lists, or --clear";
+  if (status === 422) return "pass one of the teams the detail lists, or --clear";
   return undefined;
 };
 
@@ -99,9 +99,9 @@ async function runTeam(args: string[], ctx: VerbContext, deps: SocratesDeps): Pr
   if (a === null) return 0;
   const [team] = a.pos;
   const clear = a.flags["--clear"] === true;
-  const usage = "eris socrates settings team <team-uuid> | --clear";
-  if (team !== undefined && clear) fail(ctx, "socrates-flag-required", "pass either <team-uuid> or --clear, not both", usage);
-  if (team === undefined && !clear) fail(ctx, "socrates-flag-required", "missing <team-uuid> (or --clear)", usage);
+  const usage = "eris socrates settings team <team> | --clear";
+  if (team !== undefined && clear) fail(ctx, "socrates-flag-required", "pass either <team> or --clear, not both", usage);
+  if (team === undefined && !clear) fail(ctx, "socrates-flag-required", "missing <team> (or --clear)", usage);
   const project = a.flags["--project"];
 
   const parsed = SocratesSettingsTeamRequest.safeParse({
@@ -109,10 +109,10 @@ async function runTeam(args: string[], ctx: VerbContext, deps: SocratesDeps): Pr
     ...(typeof project === "string" ? { project } : {}),
     team: clear ? null : team,
   });
-  if (!parsed.success) fail(ctx, "socrates-flag-required", `not a team id or project name: ${printable(parsed.error.issues.map((i) => i.path.join(".")).join(", "))}`, usage);
+  if (!parsed.success) fail(ctx, "socrates-flag-required", `not a team or project name: ${printable(parsed.error.issues.map((i) => i.path.join(".")).join(", "))}`, usage);
 
   const leaked = scanStrings(parsed.data);
-  if (leaked.length > 0) fail(ctx, "socrates-secret-detected", `a secret was found in the arguments (${leaked.map((h) => h.rule).join(", ")}); nothing was sent`, "pass the team's id; this check cannot be overridden");
+  if (leaked.length > 0) fail(ctx, "socrates-secret-detected", `a secret was found in the arguments (${leaked.map((h) => h.rule).join(", ")}); nothing was sent`, "pass the team's key; this check cannot be overridden");
 
   const endpoint = await socratesEndpoint(ctx, deps);
   const receipt = await postSocrates(ctx, deps, endpoint, {

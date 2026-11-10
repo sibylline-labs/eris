@@ -221,7 +221,7 @@ export const SocratesStatusResponse = z.union([SocratesStatusResult, SocratesPro
 
 // --- settings team ----------------------------------------------------------
 
-/** `team` is a Linear team UUID on the project; `null` clears the override. */
+/** `team` is a Linear team key, name or id, sent as typed and resolved by the server; `null` clears the override. */
 export const SocratesSettingsTeamRequest = z.object({ schema_version: Version, project: ProjectHint.optional(), team: Id.nullable() });
 
 const TeamRef = z.object({ id: Id, key: Id });

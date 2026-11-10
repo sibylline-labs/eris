@@ -13,14 +13,17 @@
  *   - One request, no retry. The deadline covers the whole exchange, headers
  *     and body.
  *   - A failure is a slugged block on stderr and exit 1, with nothing on
- *     stdout. A 402's subscribe link is the block's `fix:` line.
+ *     stdout. A 402's subscribe link is the block's `fix:` line. The one
+ *     exception is an ambiguous Linear name (409 `linear_ref_ambiguous`): a
+ *     `WARN` naming the candidates and exit 0, because the user's next step is
+ *     to retype the name, not to repair anything.
  *   - Text a server sent is shown only after control characters are stripped;
  *     markdown keeps its newlines and tabs (`printableMarkdown`).
  */
 
 import { homedir } from "node:os";
 import type { ZodType } from "zod";
-import { CliExit, renderFailureBlock, resolveOrgBearer, type OrgSlug, type VerbContext } from "../../src/cli/plugin";
+import { CliExit, renderFailureBlock, renderWarnLines, resolveOrgBearer, type OrgSlug, type VerbContext } from "../../src/cli/plugin";
 import type { SocratesProblem } from "./socrates-contract.v1";
 
 /** The `docs/ERRORS.md` slugs the socrates plugin raises (`tests/errors-doc.test.ts`). */
@@ -45,7 +48,8 @@ export type SocratesSlug =
   | "socrates-unfit-unsupported"
   | "socrates-evidence-file-invalid"
   | "socrates-evidence-invalid"
-  | "socrates-policy-not-cached";
+  | "socrates-policy-not-cached"
+  | "socrates-ref-ambiguous";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -105,8 +109,26 @@ export type SocratesCall<T> =
 /** One exchange's outcome: the route's reply, or the gateway's problem+json. */
 export type SocratesOutcome<T> = { kind: "reply"; reply: T } | { kind: "problem"; problem: SocratesProblem };
 
+/**
+ * An ambiguous Linear name is the user's to retype: the candidates on stderr (a
+ * `WARN`, `socrates-ref-ambiguous`), one bare record on stdout under
+ * `--output json`, nothing stored, exit 0.
+ */
+function warnAmbiguous(ctx: VerbContext, problem: SocratesProblem, subject: string): never {
+  const candidates = problem.candidates ?? [];
+  if (ctx.format === "json") {
+    ctx.stdout.write(`${JSON.stringify({ ambiguous: { kind: problem.kind ?? null, candidates } })}\n`);
+  } else {
+    const kind = problem.kind === undefined ? "Linear name" : `Linear ${printable(problem.kind)} name`;
+    const list = candidates.length === 0 ? "" : `\n${candidates.map((c) => `  ${printable(c.id)}  ${printable(c.name)}`).join("\n")}\nrun the command again with one candidate's id`;
+    ctx.stderr.write(renderWarnLines(`${subject}: the ${kind} matches more than one object, so nothing was changed${list}`, "socrates-ref-ambiguous"));
+  }
+  throw new CliExit(0);
+}
+
 /** The failure block for a refusal: the subscribe link, then a login, then the setting's link, then the route's own fix. */
 export function refuse(ctx: VerbContext, problem: SocratesProblem, call: Pick<SocratesCallBase<unknown>, "subject" | "refusalFix">): never {
+  if (problem.status === 409 && problem.code === "linear_ref_ambiguous") warnAmbiguous(ctx, problem, call.subject);
   const what = `the endpoint refused ${call.subject}: ${printable(problem.detail)} (${printable(problem.code)}, HTTP ${problem.status})`;
   const subscribe = problem._links?.subscribe?.href;
   if (subscribe !== undefined) fail(ctx, "socrates-not-entitled", what, `subscribe: ${printable(subscribe)}`);
