@@ -679,6 +679,75 @@ contract. Retry. If the body does not match, update eris (`eris update`). Exit 1
 id the workspace does not list (`404 team_not_found`). Run `eris yak discover
 teams` and use one of its ids or keys. Exit 1.
 
+### tokens-admin-required
+
+`eris tokens create` was refused with `403 admin_required`: only an admin member
+of the org can mint a service token. A member can list the tokens they own and
+revoke them. Fix: have an org admin run it, or mint it on the dashboard's
+Settings > API Tokens page. Exit 1.
+
+### tokens-forbidden
+
+`eris tokens` was refused with a `403` that is not `admin_required`: the
+credential cannot manage tokens. A service token (`ERIS_YAKS_TOKEN`) carries no
+account scope, so only a person's login can. Fix: unset `ERIS_YAKS_TOKEN` and
+run `eris login`. Exit 1.
+
+### tokens-service-limit
+
+`eris tokens create` was refused with `409 service_token_limit`: the org already
+holds the most live service tokens its tier allows (3 on the free tier). Fix:
+`eris tokens ls` shows the live ones and the cap; `eris tokens revoke <id>`
+frees a slot. Exit 1.
+
+### tokens-invalid-spec
+
+`eris tokens create` was refused with `400`: the server rejected the spec, for
+example a scope on a product the org is not entitled to or on `accounts`. The
+`entitled` list in `eris --output json tokens ls` names the products. Exit 1.
+
+### tokens-not-found
+
+`eris tokens revoke <id>` named no token in this org (`404`). A token of another
+org reads the same. Fix: `eris tokens ls` prints the ids. Exit 1.
+
+### tokens-unavailable
+
+`eris tokens` could not complete: the endpoint did not answer within 15
+seconds, could not be reached, answered a status eris has no remedy for, or
+answered a body that does not match the contract. The block names the status and
+the server's error code, never the response body. Retry; if the body does not
+match, `eris update`. Exit 1.
+
+### tokens-name-required
+
+`eris tokens create` was given no `--name`. Nothing was sent. Exit 1.
+
+### tokens-name-invalid
+
+`eris tokens create` was given a `--name` over 128 characters. Nothing was sent.
+Exit 1.
+
+### tokens-scope-required
+
+`eris tokens create` was given no `--scope`; a token with no scope is refused.
+Nothing was sent. Exit 1.
+
+### tokens-scope-invalid
+
+A `--scope` is not `product:access` with access `read`, `write` or `admin`
+(for example `yak:write`), or more than 16 were given. Nothing was sent. Exit 1.
+
+### tokens-id-required
+
+`eris tokens revoke` was given no token id. Nothing was sent. Fix: `eris tokens
+ls` prints the ids. Exit 1.
+
+### tokens-unknown-command
+
+`eris tokens <word>` where the word is not `ls`, `create` or `revoke`. Nothing
+was sent. Exit 1.
+
 ### yak-linear-disconnected
 
 The org's Linear connection is missing or revoked (`409 linear_disconnected`),

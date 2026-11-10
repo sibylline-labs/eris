@@ -110,6 +110,34 @@ polls `/v1/device/token` at the advertised interval and slows down when told to.
 a token revoke itself, so it stays valid until you revoke it from the
 endpoint's dashboard (Settings > API Tokens).
 
+### `eris tokens`: API tokens from the CLI
+
+`eris tokens` manages the org's API tokens, the CLI side of the dashboard's
+Settings > API Tokens page. It uses the signed-in login's bearer (the org
+`eris whoami` reports), against the same gateway as `eris yak`.
+
+```sh
+eris tokens ls                                       # id, name, kind, scope, created, last used
+eris tokens create --name ci --scope yak:write       # prints the sib_ secret, once
+eris tokens revoke <id>
+```
+
+- `ls` lists the tokens you may see (an admin sees the org's, a member their
+  own) and never a secret. The live service-token count and the cap print on
+  stderr (`service tokens: 1 of 3 live`).
+- `create` mints a **service** token (admin only). `--scope` is
+  `product:access` with access `read`, `write` or `admin`, repeatable; the
+  server checks the product is one the org is entitled to. The secret is the
+  only line on stdout and is shown once: capture it
+  (`TOKEN=$(eris tokens create ...)`) or it is gone. `create` never mints a
+  user token: those come only from `eris login`.
+- The free tier holds at most 3 live service tokens; a fourth is refused with
+  `tokens-service-limit`, and `revoke` frees a slot.
+- `revoke <id>` kills a token, which stops authenticating.
+- Under `--output json` each verb prints the server's body, bare; the secret
+  appears in `create`'s single body and nowhere else. A service token
+  (`ERIS_YAKS_TOKEN`) cannot run these verbs; unset it to use the login.
+
 ### More than one org: `repo.org` and `eris whoami`
 
 One machine can be signed in to several orgs. A token belongs to the org the

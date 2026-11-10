@@ -41,6 +41,10 @@ describe("router table", () => {
       org: "ts",
       "org members": "ts",
       whoami: "ts",
+      tokens: "ts",
+      "tokens ls": "ts",
+      "tokens create": "ts",
+      "tokens revoke": "ts",
       socrates: "ts",
       "socrates classify": "ts",
       "socrates consult": "ts",
@@ -165,6 +169,7 @@ describe("the --output json surfaces, from the registry", () => {
     expect(JSON_SURFACES).toEqual({
       "--version": true,
       socrates: ["submit", "classify", "resolve", "settings", "discover", "consult", "status", "evidence", "policy"],
+      tokens: ["ls", "create", "revoke"],
       org: ["members"],
       update: true,
       whoami: true,

@@ -70,22 +70,22 @@ export interface AdminDeps {
   cwd?: string;
 }
 
-interface Failure {
+export interface Failure {
   slug: string;
   what: string;
   fix?: string;
 }
 
-type Outcome<T> = { ok: true; value: T } | { ok: false; failure: Failure };
+export type Outcome<T> = { ok: true; value: T } | { ok: false; failure: Failure };
 
 const failed = <T>(failure: Failure): Outcome<T> => ({ ok: false, failure });
 
-interface Endpoint {
+export interface Endpoint {
   url: string;
   token: string;
 }
 
-async function resolveEndpoint(env: Record<string, string | undefined>, home: string, cwd: string): Promise<Outcome<Endpoint>> {
+export async function resolveEndpoint(env: Record<string, string | undefined>, home: string, cwd: string): Promise<Outcome<Endpoint>> {
   const bearer = await resolveOrgBearer({ home, env, cwd });
   if ("reason" in bearer) return failed({ slug: bearer.slug, what: bearer.reason, fix: bearer.fix });
   return { ok: true, value: { url: bearer.value.url.replace(/\/+$/, ""), token: bearer.value.token } };
@@ -125,13 +125,14 @@ function refusal(status: number, code: string | undefined, target: string): Fail
 }
 
 /** One bounded request; the body parsed against `schema`. */
-async function request<S extends z.ZodTypeAny>(
+export async function request<S extends z.ZodTypeAny>(
   ep: Endpoint,
-  method: "GET" | "PUT",
+  method: "GET" | "PUT" | "POST" | "DELETE",
   path: string,
   schema: S,
   deps: AdminDeps,
   body?: unknown,
+  refuse: (status: number, code: string | undefined, target: string) => Failure = refusal,
 ): Promise<Outcome<z.infer<S>>> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const timeoutMs = deps.timeoutMs ?? ADMIN_TIMEOUT_MS;
@@ -159,7 +160,7 @@ async function request<S extends z.ZodTypeAny>(
       const what = name === "AbortError" || name === "TimeoutError" ? `the yaks endpoint did not answer within ${timeoutMs}ms (${target})` : `cannot reach the yaks endpoint (${target}): ${(err as Error).message}`;
       return failed({ slug: "yak-admin-unavailable", what, fix: "check the network, and ERIS_YAKS_URL or the url in ~/.eris/yaks.json" });
     }
-    if (!response.ok) return failed(refusal(response.status, errorCode(parsed), target));
+    if (!response.ok) return failed(refuse(response.status, errorCode(parsed), target));
     const shaped = schema.safeParse(parsed);
     if (!shaped.success) {
       return failed({ slug: "yak-admin-unavailable", what: `the yaks endpoint answered ${response.status} with a body that does not match the contract (${target})`, fix: "update eris: eris update" });
@@ -171,24 +172,24 @@ async function request<S extends z.ZodTypeAny>(
 }
 
 /** Where the verbs write: the payload, the block, the exit code. */
-function fail(ctx: VerbContext, failure: Failure): number {
+export function fail(ctx: VerbContext, failure: Failure): number {
   ctx.stderr.write(renderFailureBlock({ slug: failure.slug, what: failure.what, ...(failure.fix ? { fix: failure.fix } : {}) }, ctx.erisDir));
   return 1;
 }
 
-function emitJson(ctx: VerbContext, value: unknown): number {
+export function emitJson(ctx: VerbContext, value: unknown): number {
   ctx.stdout.write(`${JSON.stringify(value)}\n`);
   return 0;
 }
 
 /** Columns, two spaces apart, the last unpadded. */
-function table(rows: readonly (readonly string[])[]): string {
+export function table(rows: readonly (readonly string[])[]): string {
   if (rows.length === 0) return "";
   const widths = rows[0]!.map((_, i) => Math.max(...rows.map((r) => r[i]!.length)));
   return rows.map((r) => r.map((cell, i) => (i === r.length - 1 ? cell : cell.padEnd(widths[i]!))).join("  ").trimEnd()).join("\n") + "\n";
 }
 
-const home = (ctx: VerbContext, deps: AdminDeps) => deps.home ?? ctx.env.HOME ?? homedir();
+export const home = (ctx: VerbContext, deps: AdminDeps) => deps.home ?? ctx.env.HOME ?? homedir();
 
 // ---------------------------------------------------------------------------
 // status

@@ -64,7 +64,7 @@ The person who approves must be a Linear admin of the workspace: step 5 sets the
 destination, which only an admin may do.
 
 On a CI runner with no person to approve, your user mints a service token under
-**Settings → API Tokens** in dash and sets `ERIS_YAKS_TOKEN` and `ERIS_YAKS_URL` instead. A
+**Settings → API Tokens** in dash (or `eris tokens create --name ci --scope yak:write` from a signed-in admin machine) and sets `ERIS_YAKS_TOKEN` and `ERIS_YAKS_URL` instead. A
 service token can file yaks but cannot set the destination, so do step 5 from a signed-in
 machine first.
 
