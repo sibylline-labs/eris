@@ -115,7 +115,7 @@ function problemCode(body: unknown): string | undefined {
   return undefined;
 }
 
-type Action = "deactivate a member" | "delete the org";
+type Action = "deactivate a member" | "delete the org" | "cancel the org's deletion";
 
 function refusal(status: number, code: string | undefined, target: string, action: Action = "deactivate a member"): Failure {
   const answered = `the org endpoint answered ${status}${code ? ` ${code}` : ""} for ${target}`;
@@ -131,7 +131,7 @@ function refusal(status: number, code: string | undefined, target: string, actio
     return {
       slug: "org-admin-required",
       what: `${answered}: only an admin of this org can ${action}`,
-      fix: action === "delete the org" ? "ask an org admin to run it, or to use the dashboard's Danger zone" : "ask an org admin to run it, or to deactivate the member in the dashboard's Members page",
+      fix: action === "deactivate a member" ? "ask an org admin to run it, or to deactivate the member in the dashboard's Members page" : "ask an org admin to run it, or to use the dashboard's Danger zone",
     };
   }
   if (status === 403 && code === "scope_denied") {
@@ -201,6 +201,9 @@ function fail(ctx: VerbContext, failure: Failure): number {
   return 1;
 }
 
+/** A server string for a terminal: control characters (escapes, newlines) become `?`. */
+const plain = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "?");
+
 /** Columns, two spaces apart, the last unpadded. */
 function table(rows: readonly (readonly string[])[]): string {
   const widths = rows[0]!.map((_, i) => Math.max(...rows.map((r) => r[i]!.length)));
@@ -258,11 +261,11 @@ async function runDelete(confirm: string | undefined, cancel: boolean, ctx: Verb
       ctx.stdout.write(`${JSON.stringify(got.value)}\n`);
       return 0;
     }
-    ctx.stdout.write(`deletion scheduled for ${got.value.dueAt}\n`);
+    ctx.stdout.write(`deletion scheduled for ${plain(got.value.dueAt)}\n`);
     ctx.stderr.write("INFO this org's tokens, this machine's included, are now revoked; cancel from the dashboard's Danger zone, signed in again\n");
     return 0;
   }
-  const got = await request("DELETE", "/v1/org/deletion", Cancelled, ctx, deps, { action: "delete the org" });
+  const got = await request("DELETE", "/v1/org/deletion", Cancelled, ctx, deps, { action: "cancel the org's deletion" });
   if (!got.ok) return fail(ctx, got.failure);
   if (ctx.format === "json") {
     ctx.stdout.write(`${JSON.stringify(got.value)}\n`);

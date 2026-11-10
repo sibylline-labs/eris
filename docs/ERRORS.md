@@ -664,7 +664,8 @@ cannot_deactivate_self`). Have another admin do it. Exit 1.
 ### org-delete-flags
 
 `eris org delete` was given neither `--confirm <workspace>` nor `--cancel`, was
-given both, or `--confirm` named an empty or blank workspace. Nothing was sent.
+given both, or `--confirm` named a blank workspace (an empty value is the
+parser's [`flag-value-missing`](#flag-value-missing)). Nothing was sent.
 Run `eris org delete --confirm <workspace>` to schedule the org's deletion or
 `eris org delete --cancel` to cancel it. Exit 1.
 

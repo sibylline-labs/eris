@@ -272,6 +272,19 @@ describe("eris org delete", () => {
     }
   });
 
+  it("prints the due date as one plain line even from a hostile body", async () => {
+    /** When the server's dueAt is printed raw, a compromised endpoint injects terminal escapes or a fake second line: observed in the stdout line count and bytes. */
+    reply = () => Response.json({ dueAt: "\u001b[2Jx\nfake line", cause: "self_serve" }, { status: 202 });
+    const r = await run(["delete", "--confirm", WORKSPACE]);
+    expect(r.stdout).toBe("deletion scheduled for ?[2Jx?fake line\n");
+  });
+
+  it("names the verb a non-admin tried: cancel is not delete", async () => {
+    /** When a refused cancel says the member tried to delete the org, the refusal misdescribes what was run: observed in the what-line. */
+    reply = () => problem(403, "admin_required");
+    expect((await run(["delete", "--cancel"])).stderr).toContain("can cancel the org's deletion");
+  });
+
   it("explains the revoked-token 401 a schedule leaves behind, and still sends a plain 401 to eris login", async () => {
     /** When the post-schedule 401 `revoked` is reported as 'run eris login', the operator signs in again to a token that stays revoked and never learns the cancel is the dashboard's: observed in the slug and fix of the two 401s. */
     reply = () => problem(401, "revoked");
