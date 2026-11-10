@@ -110,12 +110,14 @@ describe("eris socrates settings team", () => {
     expect(requests).toHaveLength(0);
   });
 
+  // admits: a client change that rewrites, resolves or fails on a name the server should resolve.
   it("sends a team key as typed, so the server resolves it and the client holds no id table", async () => {
     /** When the client rewrites or validates the string as an id, a key like ENG is refused or swapped before the server sees it; observed as the PUT body at the loopback endpoint. */
     expect(await drive(["settings", "team", "ENG", "--project", "Socrates"])).toMatchObject({ rc: 0, stderr: "" });
     expect(requests[0]?.body).toEqual({ schema_version: "1.0.0", project: "Socrates", team: "ENG" });
   });
 
+  // admits: an ambiguity refusal that exits non-zero or drops its candidates.
   it("an ambiguous name prints its candidates as a WARN, exits 0 and prints nothing to stdout", async () => {
     /** When a 409 linear_ref_ambiguous reads as a failure block, the user gets exit 1 and no list to choose from; observed as rc, stdout and the WARN lines on stderr. */
     answer = () =>
@@ -133,6 +135,7 @@ describe("eris socrates settings team", () => {
     expect(JSON.parse(json.stdout)).toEqual({ ambiguous: { kind: "team", candidates: [{ id: ENG, name: "Engineering" }, { id: SKW, name: "Engineering" }] } });
   });
 
+  // admits: a Linear id pinned into the client.
   it("no Linear id literal sits in the socrates plugin sources", () => {
     /** When a team or label id is pinned into the client, it goes stale per workspace and leaks one org's ids into the public tree; observed as a UUID-shaped literal in a plugins/socrates source. */
     const dir = join(REPO, "plugins", "socrates");

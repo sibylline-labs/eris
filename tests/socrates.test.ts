@@ -152,6 +152,7 @@ async function drive(args: string[], opts: { format?: "text" | "json"; env?: Rec
 }
 
 describe("eris socrates submit", () => {
+  // admits: an ambiguity refusal that exits non-zero or drops its candidates.
   it("an ambiguous project name prints its candidates as a WARN and exits 0", async () => {
     /** When a 409 linear_ref_ambiguous on a project name reads as a failure block, the submitter gets exit 1 and no list to choose from; observed as rc, stdout and the WARN on stderr. */
     answer = () =>
