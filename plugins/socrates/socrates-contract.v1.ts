@@ -234,6 +234,7 @@ export const HalLink = z.object({ href: Url, title: z.string().optional() });
 /**
  * The gateway's RFC 7807 error. The not-entitled 402 carries `_links.subscribe`; a
  * fragment refused because the org's evidence setting is off carries `_links.settings`.
+ * An ambiguous Linear name (409 `linear_ref_ambiguous`) carries `kind` and `candidates`.
  */
 export const SocratesProblem = z.object({
   type: z.string().regex(/^urn:hera:error:[a-z][a-z0-9_]*$/),
@@ -243,6 +244,9 @@ export const SocratesProblem = z.object({
   code: z.string(),
   request_id: z.string().optional(),
   retry_after: z.number().optional(),
+  /** A 409 `linear_ref_ambiguous`: the kind of Linear object named and every object the name matched. */
+  kind: z.string().optional(),
+  candidates: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
   _links: z.object({ subscribe: HalLink.optional(), settings: HalLink.optional() }).optional(),
 });
 export type SocratesProblem = z.infer<typeof SocratesProblem>;

@@ -10,6 +10,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { join, resolve } from "node:path";
 import { runSocrates } from "../plugins/socrates/submit";
+import { readdirSync, readFileSync } from "node:fs";
 import { CliExit } from "../src/cli/ts-verb";
 
 const REPO = resolve(import.meta.dir, "..");
@@ -89,11 +90,11 @@ describe("eris socrates settings team", () => {
     expect(member).toMatchObject({ rc: 1, stdout: "", slug: "socrates-refused" });
     expect(member.stderr).toContain("fix: ask an org admin to run this command");
     answer = () => problem(422, "unprocessable", "That team is not on the enrolled project");
-    expect((await drive(["settings", "team", ENG])).stderr).toContain("fix: pass one of the team ids the detail lists, or --clear");
+    expect((await drive(["settings", "team", ENG])).stderr).toContain("fix: pass one of the teams the detail lists, or --clear");
   });
 
   it("an unenrolled org is told to follow the step the detail names", async () => {
-    /** When a 409 reads as a generic refusal, an admin whose org has no enrolled project is told to check the team id they passed. */
+    /** When a 409 reads as a generic refusal, an admin whose org has no enrolled project is told to check the team they passed. */
     answer = () => problem(409, "conflict", 'No Linear project is enrolled in Socrates. Add the "Socrates › Enrolled" label to a Linear project, then run the command again.');
     const r = await drive(["settings", "team", ENG]);
     expect(r).toMatchObject({ rc: 1, stdout: "", slug: "socrates-refused" });
@@ -109,10 +110,42 @@ describe("eris socrates settings team", () => {
     expect(requests).toHaveLength(0);
   });
 
+  it("sends a team key as typed, so the server resolves it and the client holds no id table", async () => {
+    /** When the client rewrites or validates the string as an id, a key like ENG is refused or swapped before the server sees it; observed as the PUT body at the loopback endpoint. */
+    expect(await drive(["settings", "team", "ENG", "--project", "Socrates"])).toMatchObject({ rc: 0, stderr: "" });
+    expect(requests[0]?.body).toEqual({ schema_version: "1.0.0", project: "Socrates", team: "ENG" });
+  });
+
+  it("an ambiguous name prints its candidates as a WARN, exits 0 and prints nothing to stdout", async () => {
+    /** When a 409 linear_ref_ambiguous reads as a failure block, the user gets exit 1 and no list to choose from; observed as rc, stdout and the WARN lines on stderr. */
+    answer = () =>
+      Response.json(
+        { type: "urn:hera:error:linear_ref_ambiguous", title: "linear_ref_ambiguous", status: 409, detail: "More than one Linear object matches the reference", code: "linear_ref_ambiguous", kind: "team", candidates: [{ id: ENG, name: "Engineering" }, { id: SKW, name: "Engineering" }] },
+        { status: 409, headers: { "content-type": "application/problem+json" } },
+      );
+    const r = await drive(["settings", "team", "Engineering"]);
+    expect(r).toMatchObject({ rc: 0, stdout: "", slug: "socrates-ref-ambiguous" });
+    expect(r.stderr).toStartWith("WARN ");
+    expect(r.stderr).toContain(`  ${ENG}  Engineering\n  ${SKW}  Engineering\n`);
+    expect(r.stderr).toContain("run the command again with one candidate's id");
+    const json = await drive(["settings", "team", "Engineering"], { format: "json" });
+    expect(json).toMatchObject({ rc: 0, stderr: "" });
+    expect(JSON.parse(json.stdout)).toEqual({ ambiguous: { kind: "team", candidates: [{ id: ENG, name: "Engineering" }, { id: SKW, name: "Engineering" }] } });
+  });
+
+  it("no Linear id literal sits in the socrates plugin sources", () => {
+    /** When a team or label id is pinned into the client, it goes stale per workspace and leaks one org's ids into the public tree; observed as a UUID-shaped literal in a plugins/socrates source. */
+    const dir = join(REPO, "plugins", "socrates");
+    const hits = readdirSync(dir)
+      .filter((f) => f.endsWith(".ts"))
+      .filter((f) => /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(readFileSync(join(dir, f), "utf8")));
+    expect(hits).toEqual([]);
+  });
+
   it("the settings group prints its usage, and refuses an unknown sub-command", async () => {
     /** When the group swallows an unknown word, a typo reads as success. */
     expect(await drive(["settings"])).toMatchObject({ rc: 0, stdout: expect.stringContaining("team       Set or clear the Linear team") });
     expect(await drive(["settings", "nope"])).toMatchObject({ rc: 1, slug: "socrates-unknown-verb" });
-    expect((await drive(["settings", "team", "--help"])).stdout).toContain("<team-uuid>       the Linear team's id");
+    expect((await drive(["settings", "team", "--help"])).stdout).toContain("<team>            the Linear team's key, name or id");
   });
 });

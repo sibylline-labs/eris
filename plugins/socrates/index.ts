@@ -64,7 +64,7 @@ export default definePlugin({
       summary: "Set or clear the Linear team a project's review Epics file on (an org admin's)",
       json: true,
       pos: ["team?"],
-      usage: "<team-uuid> [--project <name>] | --clear [--project <name>]",
+      usage: "<team> [--project <name>] | --clear [--project <name>]",
       flags: [
         { name: "--project", takesValue: true },
         { name: "--clear", takesValue: false },

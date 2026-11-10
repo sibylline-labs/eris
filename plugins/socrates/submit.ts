@@ -123,7 +123,7 @@ what they match with «redacted:<class>» and print a WARN.
   --kind <kind>        decision (default), practice, prd or conflict; a prd or
                        conflict statement follows the grammar in
                        'eris socrates classify --help' and files as one issue
-  --project <name>     optional project hint, <= 200 chars
+  --project <name>     optional project hint, <= 200 chars: its name or id
   --scope <text>       optional single-line scope (e.g. repo, org), <= 200 chars
   --section <text>     optional single-line target section heading (e.g. '## Current'), <= 200 chars
   --evidence <text>    optional single-line evidence summary or fragment provenance, <= 2048 chars
