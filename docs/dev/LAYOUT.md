@@ -42,7 +42,7 @@ src/                    # The TS program the shim and the bin run
 ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN lines
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
-plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consult|status|policy|evidence`: index.ts (the manifest), submit.ts
+plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consult|status|policy|evidence|settings`: index.ts (the manifest), submit.ts
                         #   (submit, its unfit and stamp rules, and the group dispatch), client.ts (the credentialed GET,
                         #   POST or PUT every endpoint verb shares), classify.ts (local rubric scoring, HAL override
                         #   links), answers.ts (the --answer/--override parsers classify and submit share), policy.ts
@@ -54,10 +54,11 @@ plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consul
                         #   repo@sha:path#L provenance), evidence.ts (`evidence`: one stored fragment, read back),
                         #   resolve.ts (a closed review Epic, resolved on the server), discover.ts (first-parent
                         #   commits after the per-repo cursor in ~/.eris/socrates/cursors.json), consult.ts (a living
-                        #   doc, or a brief of six, read whole over the consult route),
+                        #   doc, or a brief of six, read whole over the consult route), settings.ts (`settings team`, and the group's routing) and
+                        #   settings-panels.ts (`settings policy|enrolment|health|usage|canon` over the settings read model),
                         #   socrates-contract.v1.ts (the vendored submit contract, unfit included) and
                         #   socrates-contract.v1.verbs.ts (classify, policy, evidence, consult, resolve,
-                        #   status); their golden file is tests/fixtures/socrates-contract-v1.json
+                        #   status, settings); their golden file is tests/fixtures/socrates-contract-v1.json
 plugins/yak/            # `eris yak` as a plugin: index.ts (the manifest: rows + handler thunks), handlers.ts
                         #   (the dispatcher), yak.ts (the core), yak-{identity,context,submit}.ts,
                         #   login.ts (`eris login`/`logout`, the device-code client), whoami.ts (`eris whoami`, the org a directory acts as), yak-setup.ts (mints the bearer; docs/YAK.md); the wire contract is packages/yak-contract, imported by name

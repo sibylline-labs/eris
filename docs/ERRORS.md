@@ -740,7 +740,8 @@ for the selected org is used, or set it to a token for that org.
 
 `eris socrates` was given a command it does not have. Fix: use `classify`,
 `consult`, `discover`, `policy`, `resolve`, `settings`, `status` or `submit`, or
-run `eris socrates --help`.
+run `eris socrates --help`. For `eris socrates settings`, use `policy`,
+`enrolment`, `health`, `usage`, `canon` or `team`.
 
 ### socrates-flag-required
 
@@ -956,6 +957,9 @@ than one resolve reads); the `fix:` line says which. For `status`, a 404 means
 the org holds no candidate with that id. For `settings team`, a
 403 `admin_required` means only an org admin may change it, and a 422 that the
 team id is not one of the project's teams (the detail lists them). For
+`settings policy` and `settings canon` a 403 means the same, and a 409 on a
+policy change means it was saved by someone else since it was read: run the
+command again. For
 `consult`, a 404 means the org has several enrolled projects and `--project`
 was not passed (the detail lists them) or the project has not created that doc,
 and a 409 means no Canon doc has been chosen; when the endpoint sent a settings
