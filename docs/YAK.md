@@ -206,6 +206,20 @@ page. `--output json` prints the server's body. `eris org members deactivate
 may, and a member's `403` is the [`org-admin-required`](ERRORS.md#org-admin-required)
 refusal. The member list carries no last-active time.
 
+### `eris org connect-linear`: connect the org's Linear workspace
+
+Linear's install is browser-only, so the verb hands off to the browser the way device-code login does.
+It reads the org (`GET /v1/org/me`); an org whose Linear is already `connected` prints `already connected`
+and exits 0 without minting anything. Otherwise the org's bearer mints a short-lived, single-use link bound to
+that org (`POST /v1/org/linear/connect`, 10 minutes), the link is opened in the browser (printed on stderr
+either way, and only printed under `--no-browser`), and the verb polls the org every two seconds until
+Linear reads `connected` (stdout `connected`, exit 0). The wait ends at the link's expiry with
+[`org-connect-timeout`](ERRORS.md#org-connect-timeout). Only an org admin may: a member is
+refused by the server with [`org-admin-required`](ERRORS.md#org-admin-required) before any link exists to
+open, and a platform with no dashboard address is
+[`org-connect-unconfigured`](ERRORS.md#org-connect-unconfigured). A link that is not an `http(s)` url is
+never opened. `--output json` prints the org's own body from the last read.
+
 ### `eris org delete`: schedule or cancel the org's deletion
 
 `eris org delete --confirm <workspace>` schedules the org's deletion

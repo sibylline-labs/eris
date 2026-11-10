@@ -5,6 +5,9 @@
  * Loaded only when `eris org` dispatches (the manifest is ./index.ts).
  * `eris org delete --confirm <workspace>` and `--cancel` schedule and cancel the org's
  * deletion over `POST` and `DELETE /v1/org/deletion`.
+ * `eris org connect-linear` has an admin's bearer mint an org-bound install link
+ * (`POST /v1/org/linear/connect`), hands it to the browser, and polls `GET /v1/org/me` until
+ * `linear.status` reads `connected`.
  *
  * The routes answer success as plain JSON and every refusal as problem+json
  * with a top-level `code` (`admin_required`, `member_not_found`,
@@ -19,16 +22,20 @@
  *     stale role cannot make the CLI refuse or allow wrongly.
  *   - Every failure is the slugged block on stderr, nothing on stdout, exit 1.
  *     Under `--output json` a success prints the server's body, bare.
- *   - One request, bounded by `ORG_TIMEOUT_MS` over the whole exchange.
+ *   - One request, bounded by `ORG_TIMEOUT_MS` over the whole exchange. `connect-linear` is a
+ *     sequence of such requests whose wait ends at the link's expiry, never later than `MAX_WAIT_MS`.
+ *   - The link the server minted is opened only when it is an http(s) url, and is printed on
+ *     stderr alone (stdout is the payload).
  */
 
 import { homedir } from "node:os";
 import { CliExit, groupArgs, readArgs, renderFailureBlock, resolveOrgBearer, type VerbContext } from "../../src/cli/plugin";
 import { z } from "zod";
 import plugin from "./index";
+import { defaultOpenBrowser } from "./login";
 
 // A `…Slug`-named union: `tests/errors-doc.test.ts` harvests its members.
-export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied" | "org-delete-flags" | "org-confirmation-mismatch" | "org-workspace-name-unknown" | "org-tokens-revoked";
+export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied" | "org-delete-flags" | "org-confirmation-mismatch" | "org-workspace-name-unknown" | "org-tokens-revoked" | "org-connect-unconfigured" | "org-connect-timeout";
 
 const ORG_TIMEOUT_MS = 15_000;
 
@@ -47,6 +54,15 @@ const Members = z.object({ members: z.array(Member) }).passthrough();
 const Deactivated = z.object({ memberId: z.string(), status: z.string() }).passthrough();
 const Scheduled = z.object({ dueAt: z.string(), cause: z.string() }).passthrough();
 const Cancelled = z.object({ cancelled: z.boolean() }).passthrough();
+// passthrough: --output json prints the org's body as sent; only the connection's state is read here.
+const OrgMe = z.object({ linear: z.object({ status: z.string(), cause: z.string().optional() }).passthrough() }).passthrough();
+const ConnectLink = z.object({ url: z.string(), expires_at: z.string() }).passthrough();
+
+/** How often the org is asked whether Linear is connected yet, and how many consecutive failed asks end the wait. */
+const POLL_MS = 2_000;
+const MAX_TRANSIENT = 3;
+/** The wait never outlives the link by more than this: the server's clock and the machine's differ by a little. */
+const EXPIRY_GRACE_MS = 5_000;
 
 /** A member id is a ULID; anything else never leaves the machine (`.` and `..` would otherwise rewrite the path). */
 const MEMBER_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
@@ -61,6 +77,7 @@ Commands:
   members deactivate <member-id> Deactivate a member (an org admin's)
   delete --confirm <workspace>   Schedule this org's deletion (an org admin's)
   delete --cancel                Cancel a scheduled deletion
+  connect-linear [--no-browser]  Connect this org's Linear workspace through the browser (an org admin's)
 
 The org is the one this directory acts as ('eris whoami').
 `;
@@ -75,6 +92,17 @@ prints the server's body.
   CLI tokens and seats end now. Only an org admin may; anyone else is refused
   (org-admin-required). The id is the memberId in 'eris org members'. You
   cannot deactivate yourself.
+`;
+
+export const CONNECT_USAGE = `Usage: eris org connect-linear [--no-browser]
+
+Connect (or reconnect) the Linear workspace of the org this directory acts as. An org
+admin's bearer mints a short-lived, single-use link bound to the org; this opens it in the
+browser (or only prints it under --no-browser), then waits until the org reports Linear as
+connected. An org that is already connected says so and mints nothing. Anyone but an org
+admin is refused before the browser is opened (org-admin-required). The link stops working
+after 10 minutes; run the command again for a new one. 'eris --output json org connect-linear'
+prints the org's own body once connected.
 `;
 
 export const DELETE_USAGE = `Usage: eris org delete --confirm <workspace> | --cancel
@@ -95,6 +123,12 @@ export interface OrgDeps {
   home?: string;
   /** The directory whose `eris.yaml` selects the org; the process's cwd when absent. */
   cwd?: string;
+  /** Hands a url to the operating system's browser opener. */
+  openBrowser?: (url: string) => Promise<void>;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+  /** Time between asks of `connect-linear`'s wait. */
+  pollMs?: number;
 }
 
 interface Failure {
@@ -115,7 +149,7 @@ function problemCode(body: unknown): string | undefined {
   return undefined;
 }
 
-type Action = "deactivate a member" | "delete the org" | "cancel the org's deletion";
+type Action = "deactivate a member" | "delete the org" | "cancel the org's deletion" | "connect Linear";
 
 function refusal(status: number, code: string | undefined, target: string, action: Action = "deactivate a member"): Failure {
   const answered = `the org endpoint answered ${status}${code ? ` ${code}` : ""} for ${target}`;
@@ -131,8 +165,16 @@ function refusal(status: number, code: string | undefined, target: string, actio
     return {
       slug: "org-admin-required",
       what: `${answered}: only an admin of this org can ${action}`,
-      fix: action === "deactivate a member" ? "ask an org admin to run it, or to deactivate the member in the dashboard's Members page" : "ask an org admin to run it, or to use the dashboard's Danger zone",
+      fix:
+        action === "deactivate a member"
+          ? "ask an org admin to run it, or to deactivate the member in the dashboard's Members page"
+          : action === "connect Linear"
+            ? "ask an org admin to run: eris org connect-linear"
+            : "ask an org admin to run it, or to use the dashboard's Danger zone",
     };
+  }
+  if (status === 503 && code === "connect_unconfigured") {
+    return { slug: "org-connect-unconfigured", what: `${answered}: this platform has no dashboard address to send the install link to; nothing was opened`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
   }
   if (status === 403 && code === "scope_denied") {
     return { slug: "org-scope-denied", what: `${answered}: this token does not carry the accounts scope`, fix: "run: eris login   (a CLI login carries it; a service token without the accounts scope does not)" };
@@ -275,6 +317,58 @@ async function runDelete(confirm: string | undefined, cancel: boolean, ctx: Verb
   return 0;
 }
 
+/** The whole wait is bounded: the link's own lifetime (it cannot be redeemed after), and never longer than this. */
+const MAX_WAIT_MS = 15 * 60_000;
+
+async function runConnectLinear(noBrowser: boolean, ctx: VerbContext, deps: OrgDeps): Promise<number> {
+  const now = deps.now ?? Date.now;
+  const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
+  const openBrowser = deps.openBrowser ?? defaultOpenBrowser;
+  const pollMs = deps.pollMs ?? POLL_MS;
+  const done = (body: z.infer<typeof OrgMe>, text: string): number => {
+    ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify(body)}\n` : text);
+    return 0;
+  };
+
+  const first = await request("GET", "/v1/org/me", OrgMe, ctx, deps, { action: "connect Linear" });
+  if (!first.ok) return fail(ctx, first.failure);
+  if (first.value.linear.status === "connected") return done(first.value, "already connected\n");
+
+  // The server decides who may connect: a member is refused here, before any link exists to open.
+  const minted = await request("POST", "/v1/org/linear/connect", ConnectLink, ctx, deps, { action: "connect Linear" });
+  if (!minted.ok) return fail(ctx, minted.failure);
+  let link: URL;
+  try {
+    link = new URL(minted.value.url);
+  } catch {
+    link = new URL("about:blank");
+  }
+  if (link.protocol !== "https:" && link.protocol !== "http:") {
+    return fail(ctx, { slug: "org-unavailable", what: "the org endpoint answered with a link that is not an http(s) url; nothing was opened", fix: "update eris: eris update   (or tell the platform's operator)" });
+  }
+  const started = now();
+  const expires = Date.parse(minted.value.expires_at);
+  const deadline = Math.min(Number.isNaN(expires) ? started + MAX_WAIT_MS : expires + EXPIRY_GRACE_MS, started + MAX_WAIT_MS);
+  ctx.stderr.write(`To connect this org's Linear workspace, open this link in a browser signed in to Linear:\n\n  ${link.href}\n\nWaiting for Linear to connect (the link works once, for ${Math.max(1, Math.round((deadline - started) / 60_000))} min)...\n`);
+  if (!noBrowser) await openBrowser(link.href).catch(() => undefined);
+
+  let transient = 0;
+  for (;;) {
+    await sleep(pollMs);
+    if (now() >= deadline) {
+      return fail(ctx, { slug: "org-connect-timeout", what: "the org did not report Linear as connected before the link expired", fix: "run: eris org connect-linear   (it mints a new link; 'eris whoami' shows the connection's state)" });
+    }
+    const polled = await request("GET", "/v1/org/me", OrgMe, ctx, deps, { action: "connect Linear" });
+    if (!polled.ok) {
+      // Only an answer that says nothing about the connection (a dropped request, a 5xx) is waited out.
+      if (polled.failure.slug === "org-unavailable" && ++transient <= MAX_TRANSIENT) continue;
+      return fail(ctx, polled.failure);
+    }
+    transient = 0;
+    if (polled.value.linear.status === "connected") return done(polled.value, "connected\n");
+  }
+}
+
 function unknown(ctx: VerbContext, sub: string, use: string): never {
   ctx.stderr.write(renderFailureBlock({ slug: "org-unknown-verb", what: `unknown org command '${sub}'`, fix: `use: ${use}\nrun 'eris org --help' for the full command list` }, ctx.erisDir));
   throw new CliExit(1);
@@ -290,7 +384,12 @@ export async function runOrg(args: string[], ctx: VerbContext, deps: OrgDeps = {
     ctx.stdout.write(ORG_USAGE);
     return 0;
   }
-  if (g.kind === "unknown") return unknown(ctx, g.sub, "members, delete");
+  if (g.kind === "unknown") return unknown(ctx, g.sub, "members, delete, connect-linear");
+  if (g.sub === "connect-linear") {
+    const c = readArgs(plugin.rows, "org connect-linear", g.rest, ctx, { help: CONNECT_USAGE });
+    if (c === null) return 0;
+    return runConnectLinear(c.flags["--no-browser"] === true, ctx, deps);
+  }
   if (g.sub === "delete") {
     const d = readArgs(plugin.rows, "org delete", g.rest, ctx, { help: DELETE_USAGE });
     if (d === null) return 0;

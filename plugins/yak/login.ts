@@ -192,7 +192,7 @@ function deviceLabel(host: string, env: Record<string, string | undefined>): str
   return `${short} (eris${harness})`.slice(0, MAX_LABEL);
 }
 
-async function defaultOpenBrowser(url: string): Promise<void> {
+export async function defaultOpenBrowser(url: string): Promise<void> {
   if (!process.stderr.isTTY) return;
   const cmd = process.platform === "darwin" ? ["open", url] : process.platform === "linux" ? ["xdg-open", url] : null;
   if (cmd !== null) await runBounded(cmd, process.cwd(), 5_000);
