@@ -2,7 +2,8 @@
  * The yak plugin's manifest: `eris yak issue|suggest|fatal`; `eris yak status`, `ready`,
  * `discover` and `config get|set`, which read and set the org's destination; and
  * `eris login` / `eris logout`, which manage the bearer `eris yak` reads, and
- * `eris whoami`, which says which org's bearer a directory uses, as
+ * `eris whoami`, which says which org's bearer a directory uses, and
+ * `eris org members [deactivate <id>]`, as
  * registry rows plus handler thunks (docs/dev/PLUGINS.md).
  *
  * Read on every command line, `eris completion` included: rows are inline
@@ -79,6 +80,14 @@ export default definePlugin({
       ],
     },
     logout: { impl: "ts", summary: "Remove this directory's org's token from ~/.eris/yaks.json" },
+    org: { impl: "ts", summary: "This org's members (members, members deactivate)" },
+    "org members": {
+      summary: "List this org's members, or deactivate one (an org admin's)",
+      json: true,
+      pos: ["action?", "id?"],
+      usage: "[deactivate <member-id>]",
+      complete: [["deactivate"]],
+    },
     whoami: { impl: "ts", summary: "Show the org this directory acts as, why, and where its token comes from (never the token)", json: true },
   },
   handlers: {
@@ -86,6 +95,7 @@ export default definePlugin({
     login: async () => (await import("./login")).runLogin,
     logout: async () => (await import("./login")).runLogout,
     whoami: async () => (await import("./whoami")).runWhoami,
+    org: async () => (await import("./org")).runOrg,
   },
   jsonFix: `  eris yak issue|suggest|fatal             {verb, delivered, id?, idempotency_key?, replay?,
                                             contract_version?, key_mismatch?, configured?,
@@ -98,6 +108,8 @@ export default definePlugin({
                                             default_state_id}
   eris yak config get                      {configured, config?, updated_at?, updated_by?}
   eris yak config set                      {config, updated_at, updated_by}
+  eris org members                         {members: [{memberId, name, email, role, status, seats}]}
+  eris org members deactivate <id>         {memberId, status}
   eris whoami                              {org, source, path?, default, token_source, url,
                                             signed_in, default_org, file}
 `,
