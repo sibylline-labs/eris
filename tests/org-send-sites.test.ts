@@ -2,7 +2,7 @@
  * Where a bearer is sent: a repo whose `eris.yaml` names org B sends org B's
  * bearer to org B's url, never the default org's, from every site that
  * resolves one (`eris yak` submit, `eris yak status` and `ready`, the
- * socrates client, `eris org members` and `eris org members deactivate`).
+ * socrates client, `eris org members`, `eris org members deactivate` and `eris org delete`).
  *
  * The seam is each verb's entry point with an injected `fetch` and `cwd` over a
  * sandbox HOME holding two orgs. The resolver itself is covered by
@@ -148,13 +148,15 @@ describe("a repo that selects org B sends org B's bearer and url", () => {
   });
 
   // admits: another org verb resolving from the process cwd; both org verbs share runOrg's request, each is driven
-  it("eris org members and eris org members deactivate", async () => {
+  it("eris org members, members deactivate and delete", async () => {
     /** When org.ts resolves from process.cwd() instead of the caller's, an org-B repo lists or deactivates the default org's members with the default bearer: observed in the request the injected fetch receives, from an org-B repo, a default repo and a directory (`/`) with no eris.yaml at all. */
     const members = { members: [] };
     const deactivated = { memberId: "01J0CCCCCCCCCCCCCCCCCCCCCC", status: "deactivated" };
     for (const [args, body, path] of [
       [["members"], members, "/v1/org/members"],
       [["members", "deactivate", "01J0CCCCCCCCCCCCCCCCCCCCCC"], deactivated, "/v1/org/members/01J0CCCCCCCCCCCCCCCCCCCCCC/deactivate"],
+      [["delete", "--confirm", "Acme"], { dueAt: "2026-11-17T12:00:00.000Z", cause: "self_serve" }, "/v1/org/deletion"],
+      [["delete", "--cancel"], { cancelled: true }, "/v1/org/deletion"],
     ] as const) {
       for (const [cwd, token, url] of [[repoB, TOKEN_B, URL_B], [repoDefault, TOKEN_A, URL_A], ["/", TOKEN_A, URL_A]] as const) {
         const { seen, fetch } = recorder(() => body);
