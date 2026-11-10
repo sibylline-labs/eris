@@ -103,11 +103,15 @@ flag) exits 1. [docs/YAK.md](docs/YAK.md) has the full reference.
 
 [`skills/eris-yaks`](skills/eris-yaks/SKILL.md) is an agent skill that walks a coding agent
 through setting up Yaks for its user: running eris, the browser steps to connect Linear and
-create a token, a test yak, and the `AGENTS.md` block that teaches later sessions to file. Install
-it with the [skills](https://github.com/vercel-labs/skills) CLI:
+create a token, a test yak, and the global instructions block that teaches later sessions to file.
+[`skills/yak-filing`](skills/yak-filing/SKILL.md) fires when an agent's tooling fights back, so it files
+without a prompt. Install both globally with `-g` using the [skills](https://github.com/vercel-labs/skills)
+CLI; without it the skills CLI installs at project scope and writes `.agents/`, `.claude/skills/` and
+`skills-lock.json` into the repository you run it from, so filing works in that repo only:
 
 ```bash
-npx skills add sibylline-labs/eris --skill eris-yaks
+npx skills add sibylline-labs/eris -g --skill eris-yaks
+npx skills add sibylline-labs/eris -g --skill yak-filing
 ```
 
 Socrates has three skills. [`skills/eris-socrates`](skills/eris-socrates/SKILL.md) gets a coding agent

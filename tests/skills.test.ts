@@ -9,6 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import socrates from "../plugins/socrates/index";
+import yak from "../plugins/yak/index";
 
 const SKILLS = join(import.meta.dir, "..", "skills");
 const skillDirs = readdirSync(SKILLS, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
@@ -158,5 +159,82 @@ describe("the install path", () => {
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.filter((l) => !/\s-g\b/.test(l))).toEqual([]);
     expect(skillText("eris-socrates")).toMatch(/project scope[^\n]*(writes|repo)/i);
+  });
+});
+
+const YAK_ROWS = yak.rows as Record<string, Row>;
+
+/** Every `eris yak ...` command in a markdown body: inline code spans and fenced lines, `$ ` stripped. */
+function yakInvocations(markdown: string): string[] {
+  return socratesInvocations(markdown.replace(/eris yak/g, "eris socrates")).map((c) => c.replace(/^eris socrates/, "eris yak"));
+}
+
+describe("the Yaks usage skill", () => {
+  const yakSkill = () => join(SKILLS, "yak-filing", "SKILL.md");
+
+  // admits: a skill that cannot fire is never offered; only the description decides, and no type or lint reads it.
+  test("yak-filing fires when the agent's own tooling fights back", () => {
+    // When the usage skill is missing, gated off the model, or its description loses the friction trigger, a
+    // session whose repo has no AGENTS.md block never reaches for `eris yak` on friction — observed here as the
+    // missing file, the disable-model-invocation key or the missing trigger phrase.
+    expect(existsSync(yakSkill())).toBe(true);
+    const f = frontmatterOf(readFileSync(yakSkill(), "utf8"));
+    expect(f["disable-model-invocation"]).toBeUndefined();
+    expect(f.description).toMatch(/fights? back|errors?|blocks?/i);
+    expect(f.description).toMatch(/\bmid-task\b|\bwhen\b/i);
+  });
+
+  // admits: the setup skill keeps firing on friction phrases if its description still names them.
+  test("eris-yaks fires on setup only", () => {
+    // When the setup skill's description claims filing friction, it competes with the usage skill and buries
+    // its trigger in install steps — observed as the matched phrase.
+    const f = frontmatterOf(skillText("eris-yaks"));
+    expect(f.description).toMatch(/\bset up\b/i);
+    expect(f.description).not.toMatch(/fights? back|file a yak/i);
+  });
+
+  // admits: a verb or flag renamed in the registry leaves the skill naming a command that fails; no type reaches markdown code spans.
+  test("yak-filing names only verbs and flags the registry has", () => {
+    // When a verb or flag is renamed in plugins/yak/index.ts and the skill is not, an agent that follows it runs
+    // a command that exits unknown — observed here as the unmatched command.
+    expect(existsSync(yakSkill())).toBe(true);
+    const text = readFileSync(yakSkill(), "utf8");
+    const bad: string[] = [];
+    const commands = yakInvocations(text);
+    for (const cmd of commands) {
+      const tokens = cmd.split(/\s+/).filter((t) => !t.startsWith("<"));
+      const verb = tokens[2] && !tokens[2].startsWith("-") ? `yak ${tokens[2]}` : "yak";
+      const row = YAK_ROWS[verb];
+      if (!row) {
+        bad.push(`${cmd}: no registry row "${verb}"`);
+        continue;
+      }
+      const known = new Set([...(row.flags ?? []).map((f) => f.name), "--help", "--output"]);
+      for (const t of tokens) if (t.startsWith("--") && !known.has(t)) bad.push(`${cmd}: ${t} is not a flag of "${verb}"`);
+    }
+    expect(commands.length).toBeGreaterThan(0);
+    expect(bad).toEqual([]);
+    expect(text.split("\n").length).toBeLessThanOrEqual(60);
+  });
+
+  // admits: a project-scope install writes .agents/, .claude/skills and skills-lock.json into the current repo; no type sees a docs line.
+  test("every documented `npx skills add` of a Yaks skill is global, and steps 7 and 8 name user scope first", () => {
+    // When a doc line installs a Yaks skill without -g, or step 7 or 8 puts the repo ahead of the user's own
+    // files, filing is on in one repo and silent in every other — observed here as the line without -g or the
+    // out-of-order scope.
+    const setup = skillText("eris-yaks");
+    const lines = [README, setup, ...(existsSync(yakSkill()) ? [readFileSync(yakSkill(), "utf8")] : [])]
+      .flatMap((t) => t.match(/npx skills add[^\n]*/g) ?? [])
+      .filter((l) => /--skill (eris-yaks|yak-filing)/.test(l));
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.filter((l) => !/\s-g\b/.test(l))).toEqual([]);
+    expect(lines.some((l) => /--skill yak-filing/.test(l))).toBe(true);
+    expect(setup).toMatch(/project scope[^\n]*(writes|repo)/i);
+    const step7 = setup.slice(setup.indexOf("## 7."), setup.indexOf("## 8."));
+    const step8 = setup.slice(setup.indexOf("## 8."), setup.indexOf("## Done"));
+    expect(step7.search(/global|user-level|user's/i)).toBeGreaterThanOrEqual(0);
+    expect(step7.search(/global|user-level|user's/i)).toBeLessThan(step7.search(/repo's|per-repo/i));
+    expect(step8.indexOf("~/.claude/settings.json")).toBeGreaterThanOrEqual(0);
+    expect(step8.indexOf("~/.claude/settings.json")).toBeLessThan(step8.search(/repo's\s+`\.claude\/settings\.json`/));
   });
 });

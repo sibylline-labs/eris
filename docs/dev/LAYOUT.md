@@ -75,13 +75,14 @@ packages/socrates-core/ # Socrates living-doc surgery, `eris/socrates-core`: src
                         #   LinearDocPort; ensureDoc; parseTitle). Web APIs only: its tsconfig has no Bun/Node types.
                         #   src/rubric/definition.ts (the rubric shape, answers schema, pure scorer), v1.ts, v2.ts (rubric@v1, @v2);
                         #   src/index.ts also serves RUBRICS / rubricFor(version)
-skills/eris-yaks/       # SKILL.md: the agent skill that sets up Yaks (`npx skills add sibylline-labs/eris
+skills/eris-yaks/       # SKILL.md: the agent skill that sets up Yaks (`npx skills add sibylline-labs/eris -g
                         #   --skill eris-yaks`); the skills CLI discovers skills/<name>/SKILL.md
+skills/yak-filing/      # SKILL.md: file a yak when the agent's own tooling fights back (`-g --skill yak-filing`)
 skills/eris-socrates/   # SKILL.md: the agent skill that installs (`-g`) and signs an agent in to Socrates
                         #   (`--skill eris-socrates`); setup only
 skills/socrates-consult/  # SKILL.md: read the living docs and Canon before planning or deciding
 skills/socrates-capture/  # SKILL.md: offer to file a session's decisions when a stint ends
-                        #   tests/skills.test.ts holds all three to the registry's verbs and flags, their triggers
+                        #   tests/skills.test.ts holds the Socrates skills and yak-filing to the registry's verbs and flags, their triggers
                         #   and the global install
 examples/plugins/widgets/  # the worked plugin example tests/plugins.test.ts composes
 examples/distribution/  # the worked distribution: an entry importing eris/sdk alone, a demo plugin with a
