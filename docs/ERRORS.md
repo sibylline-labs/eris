@@ -639,10 +639,11 @@ login`: a CLI login carries it. Exit 1.
 
 ### org-admin-required
 
-`eris org members deactivate` or `eris org delete` was refused with `403 admin_required`: only an
-admin of the org can deactivate a member, and a member's login stays a member's.
-Ask an org admin to run it, or to deactivate the member on the dashboard's
-Members page. The role is never checked by the CLI; the server decides. Exit 1.
+`eris org members deactivate`, `eris org delete` or `eris org connect-linear` was refused with `403
+admin_required`: only an admin of the org can deactivate a member, delete the org or connect its
+Linear workspace, and a member's login stays a member's. Ask an org admin to run it (for a member,
+to deactivate them on the dashboard's Members page). `connect-linear` is refused before any
+browser is opened. The role is never checked by the CLI; the server decides. Exit 1.
 
 ### org-member-not-found
 
@@ -682,6 +683,20 @@ dashboard shows it. Exit 1.
 workspace_name_unknown`: the org has no stored workspace name to confirm against,
 so no name can match. Nothing was scheduled. Connect or reconnect the org's Linear
 workspace in the dashboard, then run it again. Exit 1.
+
+### org-connect-unconfigured
+
+`eris org connect-linear` was refused with `503 connect_unconfigured`: the platform has no dashboard
+address to build the install link on, so no link was minted and nothing was opened. This is the
+platform's setup, not this machine's: tell the platform's operator. Exit 1.
+
+### org-connect-timeout
+
+`eris org connect-linear` opened (or printed) the install link and waited, but the org never
+reported Linear as connected before the link expired (10 minutes after it was minted). The install
+was abandoned, was not finished in the browser, or was finished for another workspace. Run `eris org
+connect-linear` again for a new link (each link works once; a new one replaces the old); `eris whoami`
+shows the connection's state. Exit 1.
 
 ### org-tokens-revoked
 

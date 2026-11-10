@@ -116,7 +116,7 @@ function refusal(status: number, code: string | undefined, target: string): Fail
     return { slug: "yak-team-not-found", what: `${answered}: no such Linear team in this workspace`, fix: "list the teams: eris yak discover teams" };
   }
   if (status === 409 && code === "linear_disconnected") {
-    return { slug: "yak-linear-disconnected", what: `${answered}: this org's Linear connection is missing or revoked`, fix: "a Linear admin reconnects it in the dashboard: Sign in with Linear, then install the Yaks app" };
+    return { slug: "yak-linear-disconnected", what: `${answered}: this org's Linear connection is missing or revoked`, fix: "an org admin reconnects it: eris org connect-linear (or the dashboard: Sign in with Linear, then install the Yaks app)" };
   }
   if (status === 422) {
     return { slug: "yak-config-invalid", what: `${answered}: the server refused the config`, fix: "an org's first set needs --team; every id must be one 'eris yak discover' lists" };

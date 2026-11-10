@@ -80,13 +80,20 @@ export default definePlugin({
       ],
     },
     logout: { impl: "ts", summary: "Remove this directory's org's token from ~/.eris/yaks.json" },
-    org: { impl: "ts", summary: "This org's members and deletion (members, members deactivate, delete)" },
+    org: { impl: "ts", summary: "This org's members, Linear connection and deletion (members, connect-linear, delete)" },
     "org members": {
       summary: "List this org's members, or deactivate one (an org admin's)",
       json: true,
       pos: ["action?", "id?"],
       usage: "[deactivate <member-id>]",
       complete: [["deactivate"]],
+    },
+    "org connect-linear": {
+      summary: "Connect this org's Linear workspace through the browser, then wait until it reads connected (an org admin's)",
+      json: true,
+      usage: "[--no-browser]",
+      flags: [{ name: "--no-browser", takesValue: false }],
+      example: "eris org connect-linear --no-browser",
     },
     "org delete": {
       summary: "Schedule this org's deletion (--confirm <workspace>) or cancel it (--cancel); an org admin's",
@@ -140,6 +147,8 @@ export default definePlugin({
   eris tokens revoke                       {tokenId}
   eris org members                         {members: [{memberId, name, email, role, status, seats}]}
   eris org members deactivate <id>         {memberId, status}
+  eris org connect-linear                  the org's body from GET /v1/org/me once Linear reads connected
+                                            ({orgId, memberId, role, linear: {status}, ...})
   eris org delete --confirm <name>         {dueAt, cause}
   eris org delete --cancel                 {cancelled}
   eris whoami                              {org, source, path?, default, token_source, url,

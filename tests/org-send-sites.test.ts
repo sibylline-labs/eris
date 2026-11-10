@@ -2,7 +2,7 @@
  * Where a bearer is sent: a repo whose `eris.yaml` names org B sends org B's
  * bearer to org B's url, never the default org's, from every site that
  * resolves one (`eris yak` submit, `eris yak status` and `ready`, the
- * socrates client, `eris org members`, `eris org members deactivate` and `eris org delete`).
+ * socrates client, `eris org members`, `eris org members deactivate`, `eris org delete` and `eris org connect-linear`).
  *
  * The seam is each verb's entry point with an injected `fetch` and `cwd` over a
  * sandbox HOME holding two orgs. The resolver itself is covered by
@@ -163,6 +163,22 @@ describe("a repo that selects org B sends org B's bearer and url", () => {
         await swallow(() => runOrg([...args], ctx().ctx, { cwd, home, fetchImpl: fetch }));
         expect(seen[0]).toEqual({ url: `${url}${path}`, authorization: `Bearer ${token}` });
       }
+    }
+  });
+  // admits: another org verb resolving from the process cwd; connect-linear sends twice (the org read, the mint) and polls, so each send is checked
+  it("eris org connect-linear", async () => {
+    /** When connect-linear's reads or its mint resolve from process.cwd(), an org-B repo mints an install link for the default org with the default bearer, so the browser connects the wrong workspace: observed in the url and bearer of every request the injected fetch receives, from an org-B repo, a default repo and a directory (`/`) with no eris.yaml. */
+    for (const [cwd, token, url] of [[repoB, TOKEN_B, URL_B], [repoDefault, TOKEN_A, URL_A], ["/", TOKEN_A, URL_A]] as const) {
+      const seen: (Seen & { method: string })[] = [];
+      const f = (async (input: string | URL | Request, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        seen.push({ url: String(input), authorization: new Headers(init?.headers).get("authorization"), method });
+        if (method === "POST") return Response.json({ url: "https://dash.example.test/auth/linear/connect?link=x", expires_at: new Date(Date.now() + 600_000).toISOString() }, { status: 201 });
+        return Response.json({ orgId: ORG_A, memberId: "m", role: "admin", linear: { status: seen.length > 2 ? "connected" : "disconnected" } });
+      }) as unknown as typeof fetch;
+      await swallow(() => runOrg(["connect-linear"], ctx().ctx, { cwd, home, fetchImpl: f, openBrowser: async () => {}, sleep: async () => {} }));
+      expect(seen.map((r) => `${r.method} ${r.url}`)).toEqual([`GET ${url}/v1/org/me`, `POST ${url}/v1/org/linear/connect`, `GET ${url}/v1/org/me`]);
+      for (const r of seen) expect(r.authorization).toBe(`Bearer ${token}`);
     }
   });
 });
