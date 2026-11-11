@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { defaultPolicy, RUBRIC_V1, RUBRIC_V2 } from "../packages/socrates-core/src/index";
+import { CURRENT_RUBRIC, defaultPolicy, RUBRIC_V1 } from "../packages/socrates-core/src/index";
 import { runSocrates } from "../plugins/socrates/submit";
 import { CliExit } from "../src/cli/ts-verb";
 
@@ -37,8 +37,8 @@ const PASSING: Record<string, string> = {
 };
 const answers = (over: Record<string, string> = {}) => Object.entries({ ...PASSING, ...over }).flatMap(([q, v]) => ["--answer", `${q}=${v}`]);
 
-const policyResult = (hash: string, policy: object, rubric_version = "rubric@v2") => ({ rubric_version, policy_hash: hash, policy, contract_version: "1.0.0" });
-const ORG_V2 = { ...defaultPolicy(RUBRIC_V2), threshold: 5 };
+const policyResult = (hash: string, policy: object, rubric_version: string = CURRENT_RUBRIC.version) => ({ rubric_version, policy_hash: hash, policy, contract_version: "1.0.0" });
+const ORG_POLICY = { ...defaultPolicy(CURRENT_RUBRIC), threshold: 5 };
 
 let home: string;
 let cwd: string;
@@ -52,7 +52,7 @@ beforeEach(() => {
   mkdirSync(join(cwd, ".git"));
   mkdirSync(join(home, ".eris"));
   calls = [];
-  serverPolicy = policyResult(H1, ORG_V2);
+  serverPolicy = policyResult(H1, ORG_POLICY);
   receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0" };
 });
 afterEach(() => {
@@ -99,7 +99,7 @@ describe("eris socrates classify under the repo layer and the cached org policy"
     expect(r).toMatchObject({ rc: 0, stderr: "" });
     expect(JSON.parse(r.stdout)).toMatchObject({ verdict: "not-load-bearing", score: 3, threshold: 99, policy_hash: null, repo_policy: { threshold: 99 } });
     expect((await drive(["classify", ...CANDIDATE, ...answers()])).stdout).toBe(
-      "not-load-bearing: score 3 of 99 (rubric@v2)\n  policy: rubric defaults + repo layer\n  next: not filed: submit it only if your user asked for it to be logged\n",
+      "not-load-bearing: score 3 of 99 (rubric@v3)\n  policy: rubric defaults + repo layer\n  next: not filed: submit it only if your user asked for it to be logged\n",
     );
     expect(calls).toEqual([]);
   });
@@ -127,7 +127,7 @@ describe("eris socrates classify under the repo layer and the cached org policy"
 
   // admits: a threshold below the cached org's is clamped or applied, so a repo loosens the org policy; observed at the slug. Only the runtime org value can decide it.
   it("refuses a repo threshold below the cached org's", async () => {
-    writeCache(policyResult(H1, ORG_V2));
+    writeCache(policyResult(H1, ORG_POLICY));
     erisYaml("socrates:\n  policy:\n    threshold: 4\n");
     const r = await drive(["classify", ...CANDIDATE, ...answers()]);
     expect(r).toMatchObject({ rc: 1, stdout: "", slug: "socrates-repo-policy-looser" });
@@ -139,7 +139,7 @@ describe("eris socrates classify under the repo layer and the cached org policy"
     writeCache(policyResult(H1, { ...defaultPolicy(RUBRIC_V1), threshold: 50 }, "rubric@v1"));
     expect(JSON.parse((await drive(["classify", ...CANDIDATE, ...answers()], { format: "json" })).stdout)).toMatchObject({ verdict: "load-bearing", threshold: 3, policy_hash: null, repo_policy: null });
 
-    const off = { ...ORG_V2, gates: { ...ORG_V2.gates, end_condition: { enabled: false, weight: 0 } } };
+    const off = { ...ORG_POLICY, gates: { ...ORG_POLICY.gates, end_condition: { enabled: false, weight: 0 } } };
     writeCache(policyResult(H1, off));
     const r = await drive(["classify", ...CANDIDATE, ...answers({ end_condition: "has-end-condition" })], { format: "json" });
     expect(JSON.parse(r.stdout)).toMatchObject({ verdict: "not-load-bearing", score: 3, threshold: 5, policy_hash: H1, repo_policy: null });
@@ -153,17 +153,17 @@ describe("eris socrates submit --answer", () => {
   // admits: a stamped submit sent without a cached policy carries no hash the server can compare, or a corrupt cache crashes the verb; observed at the requests in order and the body sent.
   it("fetches the org policy first when the cache is absent or corrupt, then sends the stamp", async () => {
     erisYaml("socrates:\n  policy:\n    threshold: 9\n");
-    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "pass", rubric_version: "rubric@v2", policy_hash: H1, reclassified: false } };
-    for (const cache of [undefined, "{not json", JSON.stringify({ rubric_version: "rubric@v2" })]) {
+    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "pass", rubric_version: "rubric@v3", policy_hash: H1, reclassified: false } };
+    for (const cache of [undefined, "{not json", JSON.stringify({ rubric_version: "rubric@v3" })]) {
       calls = [];
       rmSync(cacheFile(), { force: true });
       if (cache !== undefined) writeFileSync(cacheFile(), cache);
       const r = await drive(["submit", ...CANDIDATE, ...answers()]);
-      expect({ cache, ...r }).toMatchObject({ cache, rc: 0, stderr: "", stdout: `submitted: cand_1\n  verdict: pass (rubric@v2, policy ${H1.slice(0, 12)})\n` });
+      expect({ cache, ...r }).toMatchObject({ cache, rc: 0, stderr: "", stdout: `submitted: cand_1\n  verdict: pass (rubric@v3, policy ${H1.slice(0, 12)})\n` });
       expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /v1/socrates/policy", "POST /v1/socrates/submit"]);
       expect(calls[0]!.body).toBeUndefined();
-      expect((calls[1]!.body as { classification: unknown }).classification).toEqual({ rubric_version: "rubric@v2", policy_hash: H1, answers: PASSING, repo_policy: { threshold: 9 } });
-      expect(JSON.parse(readFileSync(cacheFile(), "utf8"))).toMatchObject({ rubric_version: "rubric@v2", policy_hash: H1, policy: ORG_V2 });
+      expect((calls[1]!.body as { classification: unknown }).classification).toEqual({ rubric_version: "rubric@v3", policy_hash: H1, answers: PASSING, repo_policy: { threshold: 9 } });
+      expect(JSON.parse(readFileSync(cacheFile(), "utf8"))).toMatchObject({ rubric_version: "rubric@v3", policy_hash: H1, policy: ORG_POLICY });
     }
     calls = [];
     expect((await drive(["submit", ...CANDIDATE, ...answers()])).rc).toBe(0);
@@ -172,9 +172,9 @@ describe("eris socrates submit --answer", () => {
 
   // admits: a reclassified receipt reads as the verdict eris scored, or the stale cache is kept so every later submit is reclassified too; observed at the WARN and at the GET that follows the POST.
   it("warns on a reclassified receipt and refreshes the cache", async () => {
-    writeCache(policyResult(H1, ORG_V2));
-    serverPolicy = policyResult(H2, { ...ORG_V2, threshold: 7 });
-    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "fail", rubric_version: "rubric@v2", policy_hash: H2, reclassified: true, stamped_policy_hash: H1 } };
+    writeCache(policyResult(H1, ORG_POLICY));
+    serverPolicy = policyResult(H2, { ...ORG_POLICY, threshold: 7 });
+    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "fail", rubric_version: "rubric@v3", policy_hash: H2, reclassified: true, stamped_policy_hash: H1 } };
     const r = await drive(["submit", ...CANDIDATE, ...answers()], { format: "json" });
     expect(r.rc).toBe(0);
     expect(r.stderr).toContain(`reclassified under ${H2.slice(0, 12)} (was ${H1.slice(0, 12)}): fail`);
@@ -191,7 +191,7 @@ describe("eris socrates submit --answer", () => {
     expect(await drive(["submit", ...prd, ...answers()])).toMatchObject({ rc: 1, slug: "socrates-answers-invalid" });
     expect(await drive(["submit", ...prd, "--override", "end_condition=a"])).toMatchObject({ rc: 1, slug: "socrates-override-invalid" });
     expect(await drive(["submit", ...CANDIDATE, "--override", "end_condition=a"])).toMatchObject({ rc: 1, slug: "socrates-flag-required" });
-    writeCache(policyResult(H1, ORG_V2));
+    writeCache(policyResult(H1, ORG_POLICY));
     erisYaml("socrates:\n  policy:\n    threshold: 4\n");
     expect(await drive(["submit", ...CANDIDATE, ...answers()])).toMatchObject({ rc: 1, slug: "socrates-repo-policy-looser" });
     expect(calls).toEqual([]);

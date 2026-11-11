@@ -13,7 +13,7 @@ import { repoOfRemote } from "../plugins/socrates/fragment";
 import { runSocrates } from "../plugins/socrates/submit";
 import { CliExit } from "../src/cli/ts-verb";
 import { type Sandbox, sandbox } from "./helpers/blackbox";
-import { answers, CANDIDATE, ENDPOINT, GHP, H1, ORG_V2, policyResult, TOKEN } from "./helpers/socrates-fake";
+import { answers, CANDIDATE, ENDPOINT, GHP, H1, ORG_POLICY, policyResult, TOKEN } from "./helpers/socrates-fake";
 
 const REPO = resolve(import.meta.dir, "..");
 const HYPOTHESIS = "I think this is a retry-budget invariant the rubric has no question for.";
@@ -80,7 +80,7 @@ async function drive(args: string[], opts: { format?: "text" | "json"; cwd?: str
     const url = new URL(String(input));
     const body = init?.body === undefined ? undefined : JSON.parse(String(init.body));
     calls.push({ method: init?.method ?? "GET", path: url.pathname, body });
-    if (url.pathname === "/v1/socrates/policy") return Response.json(policyResult(H1, ORG_V2));
+    if (url.pathname === "/v1/socrates/policy") return Response.json(policyResult(H1, ORG_POLICY));
     if (url.pathname === "/v1/socrates/evidence") return answer.evidence(body as { content: string });
     if (url.pathname.startsWith("/v1/socrates/evidence/")) return answer.fragment(decodeURIComponent(url.pathname.slice("/v1/socrates/evidence/".length)));
     return answer.submit();
