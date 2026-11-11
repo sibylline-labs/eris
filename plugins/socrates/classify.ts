@@ -28,6 +28,10 @@
  *   - A `prd` or `conflict` candidate is never scored: it files as one review
  *     issue, so its verdict is its kind once socrates-core's `issueEntryOf`
  *     accepts the statement, and it takes no answers and no overrides.
+ *   - Every verdict carries `next`, the one step an agent takes after it
+ *     (`nextStep`, exhaustive over the verdicts), so the published skills
+ *     name no rubric logic of their own. The help states every question's
+ *     prompt from the rubric itself, so an answer is never chosen blind.
  */
 
 import { homedir } from "node:os";
@@ -50,9 +54,10 @@ load-bearing, not-load-bearing, rejected, rerouted (to a key assumption) or
 practice (to the Practices doc). A --kind prd or conflict candidate is not
 scored: its statement is checked against the grammar below and the verdict is
 prd or conflict, one review issue. Nothing is sent. The same answers always give
-the same verdict. --output json prints {verdict, rubric_version, score?,
-threshold?, breakdown?, gate?, answer?, feature?, route?, reason?, overrides,
-policy_hash?, repo_policy?, meta: {_links: {override?}}}.
+the same verdict, and its last line, 'next:', says what to do with it: submit
+it, submit it as a practice, or leave it unfiled. --output json prints {verdict,
+rubric_version, score?, threshold?, breakdown?, gate?, answer?, feature?, route?,
+reason?, overrides, policy_hash?, repo_policy?, next, meta: {_links: {override?}}}.
 
 A scored verdict names the policy it was scored under: the org's, as 'eris
 socrates submit' last cached it in ~/.eris/socrates-policy.json (policy_hash),
@@ -75,9 +80,10 @@ and bypasses only the gate it names.
   --title, --statement, --source, --kind, --project
                        the candidate, as 'eris socrates submit' takes it
   --answer <question>=<answer>
-                       repeatable, one per rubric question:
+                       repeatable, one per rubric question; answer each from
+                       what you observed:
 ${Object.entries(CURRENT_RUBRIC.questions)
-  .map(([id, q]) => `                         ${id}: ${q.answers.join(" | ")}`)
+  .map(([id, q]) => `                         ${id}: ${q.prompt}\n                           ${q.answers.join(" | ")}`)
   .join("\n")}
   --override <gate>=<reason>
                        repeatable: bypass this rejecting gate, with a one-line
@@ -119,10 +125,38 @@ const ClassifyReport = z
     overrides: z.array(SocratesOverride),
     policy_hash: SocratesPolicyHash.nullable().optional(),
     repo_policy: SocratesRepoPolicy.nullable().optional(),
+    next: z.string().min(1),
     meta: z.object({ _links: z.object({ override: z.array(SocratesOverrideLink).min(1).optional() }) }),
   })
   .strict();
 type ClassifyReport = z.infer<typeof ClassifyReport>;
+type Unsteered = Omit<ClassifyReport, "next">;
+
+const SAME = "with the same flags and answers";
+
+/** The one step an agent takes after this verdict. A rejected or not-load-bearing candidate is not filed unless the user asked for it to be logged. */
+function nextStep(r: Unsteered): string {
+  switch (r.verdict) {
+    case "load-bearing":
+    case "rerouted":
+      return `submit it: eris socrates submit ${SAME}`;
+    case "practice":
+      return `submit it as a practice: eris socrates submit --kind practice ${SAME}`;
+    case "prd":
+    case "conflict":
+      return `submit it: eris socrates submit --kind ${r.verdict} with the same flags`;
+    case "not-load-bearing":
+      return "not filed: submit it only if your user asked for it to be logged";
+    case "rejected":
+      return `not filed: override ${r.gate ?? "the gate"} only when your user explicitly asked for this to be logged, quoting them as the reason`;
+    default: {
+      const unreachable: never = r.verdict;
+      return unreachable;
+    }
+  }
+}
+
+const steered = (r: Unsteered): ClassifyReport => ClassifyReport.parse({ ...r, next: nextStep(r) });
 
 interface ClassifyInput {
   readonly rubricVersion: unknown;
@@ -169,7 +203,7 @@ function why(rubric: Rubric, gate: string, answer: string, feature: string | und
   return `${(rubric.questions as Readonly<Record<string, { prompt: string }>>)[gate]!.prompt} Answered ${answer}.`;
 }
 
-function report(rubric: Rubric, verdict: Verdict<Rubric>, overrides: Override[], local: LocalPolicy, href: string): ClassifyReport {
+function report(rubric: Rubric, verdict: Verdict<Rubric>, overrides: Override[], local: LocalPolicy, href: string): Unsteered {
   const base = { rubric_version: verdict.rubric, overrides, policy_hash: local.policy_hash, repo_policy: local.repo_policy };
   switch (verdict.kind) {
     case "load-bearing":
@@ -201,6 +235,7 @@ function text(r: ClassifyReport): string {
   for (const o of r.overrides) lines.push(`  overrode ${o.gate}: ${printable(o.reason)}`);
   const carries = r.repo_policy ? "overrides and repo_policy" : "overrides";
   for (const l of r.meta._links.override ?? []) lines.push(`  override: re-run with --override ${l.gate}=<one-line reason> (or ${l.method} ${l.href} with ${carries})`);
+  lines.push(`  next: ${r.next}`);
   return `${lines.join("\n")}\n`;
 }
 
@@ -211,7 +246,7 @@ function issueVerdict(ctx: VerbContext, rubric: Rubric, candidate: { kind: "prd"
   if (given(input.overrides)) fail(ctx, "socrates-override-invalid", `a ${candidate.kind} entry has no gate to override`, "drop --override");
   const entry = issueEntryOf(candidate);
   if (!entry.ok) fail(ctx, "socrates-candidate-invalid", `the ${candidate.kind} statement cannot be filed (${printable(entry.reason)})`, "run 'eris socrates classify --help' for the statement grammar");
-  const out = ClassifyReport.parse({
+  const out = steered({
     verdict: candidate.kind,
     rubric_version: rubric.version,
     route: "review-issue",
@@ -257,7 +292,7 @@ export async function runClassify(args: string[], ctx: VerbContext, deps: Socrat
   const href = `${resolveUrl(view.value.config, ctx.env).value.replace(/\/+$/, "")}${SOCRATES_ROUTES.classify.path}`;
 
   const verdict = scoreUnderPolicy(rubric, local.policy, answers, features, overrides.map((o) => o.gate)) as Verdict<Rubric>;
-  const out = ClassifyReport.parse(report(rubric, verdict, overrides, local, href));
+  const out = steered(report(rubric, verdict, overrides, local, href));
   ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify(out)}\n` : text(out));
   return 0;
 }

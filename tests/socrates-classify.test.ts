@@ -80,9 +80,12 @@ describe("eris socrates classify", () => {
       overrides: [],
       policy_hash: null,
       repo_policy: null,
+      next: "submit it: eris socrates submit with the same flags and answers",
       meta: { _links: {} },
     });
-    expect((await drive([...CANDIDATE, ...answers()])).stdout).toBe("load-bearing: score 3 of 3 (rubric@v2)\n  policy: rubric defaults\n");
+    expect((await drive([...CANDIDATE, ...answers()])).stdout).toBe(
+      "load-bearing: score 3 of 3 (rubric@v2)\n  policy: rubric defaults\n  next: submit it: eris socrates submit with the same flags and answers\n",
+    );
     expect(fetches).toEqual([]);
   });
 
@@ -173,10 +176,11 @@ describe("eris socrates classify", () => {
       route: "review-issue",
       reason: "files as one review issue: PRD authored: PRD — Acme Billing",
       overrides: [],
+      next: "submit it: eris socrates submit --kind prd with the same flags",
       meta: { _links: {} },
     });
     const conflict = ["--kind", "conflict", "--title", "Two sources disagree", "--source", "https://example.com/pr/14", "--statement", "S.\n\nAuthoritative sites:\n- `ACME-K11` in [Doc](https://docs.example.com/a)\n- [Code](https://code.example.com/b)"];
-    expect((await drive(conflict)).stdout).toBe("conflict: one review issue (rubric@v2) -> review-issue\n  why: files as one review issue: Two sources disagree\n");
+    expect((await drive(conflict)).stdout).toBe("conflict: one review issue (rubric@v2) -> review-issue\n  why: files as one review issue: Two sources disagree\n  next: submit it: eris socrates submit --kind conflict with the same flags\n");
     expect(await drive([...conflict.slice(0, -1), "S. with no sites"])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-candidate-invalid" });
     expect(await drive([...prd, ...answers()])).toMatchObject({ rc: 1, slug: "socrates-answers-invalid" });
     expect(await drive([...prd, "--override", "end_condition=a"])).toMatchObject({ rc: 1, slug: "socrates-override-invalid" });
