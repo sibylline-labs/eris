@@ -114,6 +114,12 @@ describe("rubric@v3: a statement that names its owning layer is not load-bearing
   });
 
   it("rejects a dependency pick at reversibility", () => {
+    for (const s of [
+      "Assertion verify uses @example/webauthn-server and its token signing uses jose.",
+      "The worker depends on @example/jose-lite, chosen for its size.",
+    ]) {
+      expect([s, fired(s).dependency]).toEqual([s, true]);
+    }
     /** When nothing detects 'uses @scope/pkg for …', a library choice the reversibility prompt already calls setting-level reaches review on a more-than-a-setting answer: observed at the verdict of that statement stamped with every gate passing. */
     expect(score(RUBRIC_V3, PASSING, extractFeatures(RUBRIC_V3, DEPENDENCY_REJECT, NOTHING_RECORDED))).toEqual({
       kind: "rejected",

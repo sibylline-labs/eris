@@ -66,7 +66,8 @@ const NAMED_RULE = firesUnlessPreceded(
 );
 /** A Canon NFR register row, unless the statement deviates from it. Case-sensitive: the ids are upper case. */
 const NFR_ROW = firesUnlessPreceded(/\bNFR-[A-Z][A-Z0-9]*-\d+\b/g, /\b(?:deviat(?:e|es|ing) from|waiv(?:e|es|ing)|relax(?:es|ing)?|overrid(?:e|es|ing))\s+$/i);
-const DEPENDENCY_PICK = /\b(?:uses?|depends on|adopts?|relies on)\s+["'`]?@[\w.-]+\/[\w.-]+["'`]?\s+(?:for|to)\b/i;
+/** A scoped package picked for a job; "uses @scope/pkg as its boundary" names an architecture seam instead. */
+const DEPENDENCY_PICK = /\b(?:uses?|depends on|adopts?|relies on)\s+["'`]?@[\w.-]+\/[\w.-]+["'`]?(?:\s+(?:for|to|and)\b|\s*[,;.]|$)/i;
 
 export const RUBRIC_V3 = defineRubric({
   version: "rubric@v3",
@@ -172,7 +173,7 @@ export const RUBRIC_V3 = defineRubric({
       detect: (s) => FLAG_VALUE.test(s),
     },
     dependency_pick_wording: {
-      description: "The statement picks a package for a job (uses, depends on, adopts or relies on @scope/pkg for or to something): a dependency choice.",
+      description: "The statement picks a scoped package (uses, depends on, adopts or relies on @scope/pkg), not as a named boundary: a dependency choice.",
       points: 0,
       detect: (s) => DEPENDENCY_PICK.test(s),
     },
