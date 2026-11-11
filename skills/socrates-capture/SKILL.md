@@ -39,8 +39,9 @@ link to where it was decided. Never invent one. A session that decided nothing e
 eris socrates consult --brief --project <name>
 ```
 
-An entry that already says it means the candidate is already recorded. An entry, Canon rule or PRD
-row that says otherwise makes it a conflict. Then, for each candidate:
+An entry that already says it means the candidate is already recorded; one that later settled it
+the other way makes it stale (skip it). A current entry, Canon rule or PRD row that says otherwise
+makes it a conflict. Then, for each candidate:
 
 ```sh
 eris socrates classify --help
@@ -64,26 +65,25 @@ When your user asked you to log something, follow the exception a `not filed` li
 
 With your user present, show each candidate with its `next:` line and file the ones they approve.
 With no user present (a loop, a scheduled or delegated run), file what `next:` says to file: the
-review Epic is where a person decides.
+review Epic is where a person decides, and the first practice creates a missing Practices doc.
 
 ```sh
-eris socrates submit --title <title> --statement <statement> --source <url> --project <name> --evidence <why, and where: repo@sha:path#L or a PR link>
-eris socrates submit --title <title> --statement <statement> --source <url> --fragment <path>#L<x>-L<y>
+eris socrates submit <the flags and answers classify took> --project <name> --evidence <why, and where: repo@sha:path#L or a PR link>
+eris socrates submit <the flags and answers classify took> --project <name> --fragment <path>#L<x>-L<y>
 ```
 
-Give `submit` the flags `classify` took, plus `--evidence`. Attach a committed passage with
-`--fragment`: only its provenance reaches Linear. Quote the receipt (`submitted: <id>` or
+Attach a passage committed in the repo you are in with `--fragment`: only its provenance reaches
+Linear; cite any other repo in `--evidence`. Quote the receipt (`submitted: <id>` or
 `already submitted: <id>`). A refusal prints a `fix:` line: follow it, and never remove a redaction
 yourself.
 
 ## 5. Move the cursor
 
-Only after a full `discover` run, once every listed commit is filed or deliberately skipped:
+Only after a full `discover` run, never a scoped one (a caller's list or some of the listed
+commits), once every listed commit is filed or deliberately skipped:
 
 ```sh
 eris socrates discover --advance <rev>
 ```
-
-A run scoped to a caller's list, or to some of the listed commits, leaves the cursor where it is.
 
 Reference: `eris socrates --help` · https://github.com/sibylline-labs/eris
