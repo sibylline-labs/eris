@@ -9,8 +9,8 @@ import { CLI } from "../src/main";
 import { REPO, sandbox } from "./helpers/blackbox";
 
 describe("eris docs", () => {
+  // admits: a reference that misses a plugin's verb, or restates a flag differently from the parser, sends an agent to a command that fails.
   it("--json lists every composed command, each as the help document its own --help --json prints", async () => {
-    // admits: a reference that misses a plugin's verb, or restates a flag differently from the parser, sends an agent to a command that fails.
     /** When the reference is not derived from the composed rows, a verb or flag the build has is missing or wrong in it: observed at the parsed record against the registry and against one verb's own help document. */
     const sb = sandbox("eris-docs-");
     try {
@@ -31,8 +31,9 @@ describe("eris docs", () => {
     }
   });
 
+  // admits: a human reference that drops a group reads as a build without it.
+
   it("text names every composed command's usage line and summary", async () => {
-    // admits: a human reference that drops a group reads as a build without it.
     /** When the text rendering skips a row, a reader is told a verb does not exist: observed at stdout against each composed row. */
     const sb = sandbox("eris-docs-");
     try {
