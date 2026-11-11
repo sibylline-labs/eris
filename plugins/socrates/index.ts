@@ -54,10 +54,11 @@ export default definePlugin({
       ],
     },
     "socrates resolve": {
-      summary: "Resolve a closed review Epic on the server and print what it did",
+      summary: "Resolve a closed review Epic on the server and print what it did, amending Done entries first",
       json: true,
       pos: ["epic?"],
-      usage: "<epic>",
+      usage: "<epic> [--amend <child>=<path>]...",
+      flags: [{ name: "--amend", takesValue: true, repeatable: true }],
     },
     "socrates settings": { summary: "Read and change the org's Socrates settings (policy, enrolment, health, usage, Canon, team)" },
     "socrates settings team": {
@@ -147,7 +148,7 @@ export default definePlugin({
                                             gate?, answer?, feature?, route?, reason?, overrides,
                                             policy_hash?, repo_policy?, meta: {_links: {override?}}}
   eris socrates resolve                    {epic, outcome, applied, carried_over, carry_over_epic?,
-                                            reporting, contract_version}
+                                            amended?, reporting, contract_version}
   eris socrates consult                    {docs: [{doc, title, url, markdown, fetched_at,
                                             contract_version}], unavailable: [{doc, status, code,
                                             detail, settings?}], contract_version}
