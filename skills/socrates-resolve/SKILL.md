@@ -11,41 +11,45 @@ it gets applied; this skill picks the right one.
 
 ## 1. Check whether the hosted resolver has it
 
+When the Epic closed, Socrates commented on it saying which path it took (a comment that starts
+with **Socrates**). If it says the hosted resolver applied it, tell your user what it did and stop.
+For an Epic with no such comment, read the org's current setting; `auto_resolve: on` means hosted:
+
 ```sh
 eris socrates settings policy
 ```
 
-`auto_resolve: on` means the org's hosted resolver applies the Epic when it closes: read the
-Socrates comment on the Epic, tell your user what it did, and stop. `off` means you resolve it.
-
 ## 2. Resolve it agentically (the correct way)
 
-Read the Epic and every sub-issue with its full comment thread in Linear. For each one:
+Read the Epic and every sub-issue with its full comment thread in Linear. A comment that starts
+with **Socrates** is Socrates' own, never a reviewer's. For each sub-issue:
 
 - **Done, no comment:** it applies as filed.
-- **Done, with an edit instruction** (new wording, a split, "this is a practice", "this belongs
-  in Key Assumptions"): note the change it asks for. `eris socrates resolve` applies the entry as
-  filed and cannot carry an edit or a reroute yet, so it is a pending edit.
-- **Conflict or supersession:** the reviewer's comment is the answer, and it applies to every doc,
-  register row and issue the conflict links. Resolve carries the latest reviewer comment, word for
-  word, to each of those sites. Make sure the last comment states the settled text; if it doesn't,
-  ask your user to add it. A conflict with no answer is carried over, never applied.
+- **Done, with an edit instruction** (new wording, a split, "this is a practice", "this belongs in
+  Key Assumptions"): a pending edit. `eris socrates resolve` applies the entry as filed and cannot
+  carry an edit or a reroute yet.
+- **Conflict or supersession:** the reviewer's latest comment is the answer. Resolve carries it,
+  word for word, to every site the issue lists under its authoritative sites; with no comment, it
+  carries the proposed resolution. So the latest comment must be the settled text itself, fit to
+  stand in each of those sites. A conversational or instruction-shaped comment ("update X to Y")
+  is pending until the reviewer restates it. With neither comment nor proposed resolution, it is
+  carried over, never applied.
 - **Canceled:** rejected. Its comment is the reason.
 - **Still open:** carried over to a new review Epic.
 
-Never change a Done or Canceled state, and never close or reopen an issue: those are the
-reviewer's. Then:
+Never change a Done or Canceled state, and never close or reopen an issue yourself: those are the
+reviewer's, and resolve propagates what a settled conflict says. Then:
 
-- **No pending edits:** run the resolve and report its receipt.
+- **Nothing pending:** run the resolve and report its receipt.
 
 ```sh
 eris socrates resolve <epic>
 ```
 
-- **Pending edits:** name each one and the change it asks for, and run the resolve only when your
-  user says to. The edits are not applied: tell your user which entries to fix in their docs.
-- **No user present** (a loop, a scheduled or delegated run) **and pending edits:** don't resolve.
-  Report the entries and their edits, and stop.
+- **Something pending, your user present:** name each pending entry and what it needs. Run the
+  resolve only when your user says to; then tell them which entries to fix in their docs.
+- **Something pending, no user present** (a loop, a scheduled or delegated run): don't resolve.
+  Report each pending entry and what it needs, and stop.
 
 ## 3. What the deterministic resolve does alone
 

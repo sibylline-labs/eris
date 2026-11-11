@@ -85,7 +85,7 @@ Commands:
   evidence  Print one stored evidence fragment, by the id submit printed
   policy    Print the org's scoring policy, and refresh the cached copy
   resolve   Resolve a closed review Epic on the server and print what it did
-  settings  Change where this org's Socrates reviews file (team)
+  settings  Read and change the org's Socrates settings (policy, enrolment, health, usage, Canon, team)
   status    Print the pending count, the open review Epics and one candidate's state
   submit    Submit one candidate (a decision, practice, PRD or conflict) for review
 

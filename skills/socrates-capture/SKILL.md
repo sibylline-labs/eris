@@ -29,9 +29,9 @@ eris socrates discover
 
 Add what was decided with no commit yet: a rejected option, a convention agreed in chat. Read each
 item's intent (the PR description, a design or planning doc, what your user said), not the code diff.
-A candidate is one claim the session made or your user endorsed: a title that states the claim, a
-one-sentence statement in the voice of the doc it will live in, and a `--source` link to where it
-was decided. Never invent one. A session that decided nothing ends here: say so and stop.
+A candidate is one claim the session made or your user endorsed: a title of at most 80 characters
+that states it, a one-sentence statement in the voice of the doc it will live in, and a `--source`
+link to where it was decided. Never invent one. A session that decided nothing ends here: say so and stop.
 
 ## 3. Read the living docs, then check each candidate
 
@@ -48,17 +48,17 @@ eris socrates classify --title <title> --statement <statement> --source <url> --
 ```
 
 Answer every question the help asks, from what you observed, and do what the `next:` line says.
-Three shapes take no questions:
+Write the statement before you classify and never reword it to change the verdict; if you think a
+gate misread it, say so to your user and leave it unfiled. Three shapes take no questions:
 
 - A PRD the session wrote or extended files once, never one entry per decision in it:
-  `eris socrates classify --kind prd --title <PRD title> --statement <grammar> --source <url>`.
-- A contradiction files as a conflict that links every site involved, and is never dropped:
-  `eris socrates submit --kind conflict --title <title> --statement <grammar> --source <url>`.
+  `eris socrates classify --kind prd --title <title> --statement <grammar> --source <url> --project <name>`.
+- A contradiction is a conflict linking every site involved, and is never dropped:
+  `eris socrates classify --kind conflict --title <title> --statement <grammar> --source <url> --project <name>`.
 - A decision the questions cannot express goes up as a hypothesis with its evidence:
   `eris socrates submit --unfit --hypothesis <what you think it is> --evidence-file <path> --title <title> --statement <statement> --source <url>`.
 
-When your user asked you to log something, it is filed even if `next:` says not filed: follow the
-exception that line names.
+When your user asked you to log something, follow the exception a `not filed` line names.
 
 ## 4. File them
 
