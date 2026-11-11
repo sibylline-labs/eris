@@ -19,6 +19,10 @@
  *     `docs/*.md` the bundled source names (a `docs:` line or a `fix:` text), taken
  *     from the first of `docRoots` that has it. `src/runtime/home.ts` writes them
  *     to a per-build cache home;
+ *   - the agent skills the build publishes (`skills/<name>/`, src/runtime/skills.ts),
+ *     from the first of `skillRoots` that holds each name, as assets under
+ *     `skills/`, so `eris skills install` installs the skills of the build that
+ *     runs it;
  *   - `__ERIS_BUILD_ID__`: a content hash of those assets, the release repository
  *     and the source (the distribution's and this package's), prefixed by `tag`
  *     when given, so a rebuild with any change gets a new home;
@@ -57,6 +61,7 @@ import { composeCli } from "./cli/compose";
 import type { ErisPlugin } from "./cli/plugin";
 import { REGISTRY } from "./cli/registry";
 import { checkoutRoot, type DistributionIdentity, firstDocRoot, resolveIdentity } from "./runtime/home";
+import { publishedSkills } from "./runtime/skills";
 
 /** This package's root: core's source, and the docs core names. */
 const CORE = checkoutRoot();
@@ -91,6 +96,8 @@ export interface BuildOptions extends DistributionIdentity {
   readonly assetRoots?: readonly string[];
   /** Where each doc the source names is looked for, in order. Default: the root, then this package. */
   readonly docRoots?: readonly string[];
+  /** Roots whose `skills/<name>/` the binary carries, the first holding a name winning. Default: the root, then this package. */
+  readonly skillRoots?: readonly string[];
   /** Directories (their .ts/.tsx files) and files hashed into the build id and
    *  scanned for docs. Default: src, ts and plugins where present, the entry,
    *  package.json and the lockfile. This package's own source is always added. */
@@ -205,6 +212,13 @@ export async function build(opts: BuildOptions): Promise<BuildResult> {
   const assets: Record<string, string> = {};
   for (const rel of opts.assetRoots ?? []) for (const f of filesOf(root, rel, "asset root")) assets[f] = readFileSync(join(root, f), "utf8");
   for (const [doc, text] of Object.entries(namedDocs(sources, docRoots))) if (!Object.hasOwn(assets, doc)) assets[doc] = text;
+  const skillRoots = [...new Set((opts.skillRoots ?? [root, CORE]).map((d) => resolve(root, d)))];
+  for (const skill of publishedSkills(skillRoots).values()) {
+    for (const f of skill.files) {
+      const key = join("skills", skill.name, f);
+      if (!Object.hasOwn(assets, key)) assets[key] = readFileSync(join(skill.dir, f), "utf8");
+    }
+  }
   const sorted = Object.fromEntries(Object.keys(assets).sort().map((k) => [k, assets[k]!]));
 
   const h = createHash("sha256");

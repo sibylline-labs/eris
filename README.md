@@ -114,6 +114,9 @@ npx skills add sibylline-labs/eris -g --skill eris-yaks
 npx skills add sibylline-labs/eris -g --skill yak-filing
 ```
 
+With eris installed, `eris skills install eris-yaks yak-filing` writes the same files without npm
+([docs/SKILLS.md](docs/SKILLS.md)).
+
 Socrates has three skills. [`skills/eris-socrates`](skills/eris-socrates/SKILL.md) gets a coding agent
 signed in; [`skills/socrates-consult`](skills/socrates-consult/SKILL.md) reads the living docs and Canon
 before the agent plans or decides; [`skills/socrates-capture`](skills/socrates-capture/SKILL.md) offers to
@@ -126,6 +129,10 @@ npx skills add sibylline-labs/eris -g --skill eris-socrates
 npx skills add sibylline-labs/eris -g --skill socrates-consult
 npx skills add sibylline-labs/eris -g --skill socrates-capture
 ```
+
+With eris installed, `eris skills install eris-socrates socrates-consult socrates-capture` writes the
+same files without npm. `eris docs --json` prints every verb with its flags and summary, for an agent
+that needs the reference ([docs/SKILLS.md](docs/SKILLS.md)).
 
 ## Writing a plugin
 

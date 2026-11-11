@@ -1206,3 +1206,25 @@ lowercase kebab-case, stable once shipped.
 union, and `renderWarnLines(…, "<slug>")` arguments. So a new slug is covered
 the moment it is raised — but it also fails the suite until its heading exists,
 which is the point.
+
+### skills-unknown
+
+`eris skills install` was given a skill name this build does not publish, or the build carries no
+skills at all. Nothing was installed. The `fix:` line lists the published names; run the command
+with one of them, or with none to install every one. A build with no skills is incomplete:
+reinstall eris. See [SKILLS.md](SKILLS.md).
+
+### skills-target-occupied
+
+A path `eris skills install` writes holds something it does not recognise as the skill: a file, a
+symlink pointing elsewhere, or a directory that is not this skill. eris never overwrites it, and
+refuses before writing anything for any named skill. Move or remove the path the error names (the
+`fix:` line has the command), then run the install again. See [SKILLS.md](SKILLS.md).
+
+### skills-install-failed
+
+A write under `~/.agents/skills` or `~/.claude/skills` failed (permissions, a full disk, a
+read-only home). Skills listed before the failure were installed; the one that failed was put back
+as it was. Fix the cause the error names and run the command again: a rerun leaves installed skills
+`unchanged`.
+

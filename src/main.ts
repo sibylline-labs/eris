@@ -65,6 +65,8 @@ export const HANDLERS: Readonly<Record<string, () => Promise<VerbHandler>>> = {
   "--version": async () => (await import("./cli/commands/version")).runVersion,
   completion: async () => (await import("./cli/commands/completion")).runCompletion,
   update: async () => (await import("./cli/commands/update")).runUpdate,
+  docs: async () => (await import("./cli/commands/docs")).runDocs,
+  skills: async () => (await import("./cli/commands/skills")).runSkills,
 };
 
 /** Core composed with the build's plugin list. */
