@@ -28,7 +28,7 @@ eris socrates discover
 ```
 
 Add what was decided with no commit yet: a rejected option, a convention agreed in chat. Read each
-item's intent (the PR description, the plan or design doc, what your user said), not the code diff.
+item's intent (the PR description, a design or planning doc, what your user said), not the code diff.
 A candidate is one claim the session made or your user endorsed: a title that states the claim, a
 one-sentence statement in the voice of the doc it will live in, and a `--source` link to where it
 was decided. Never invent one. A session that decided nothing ends here: say so and stop.
