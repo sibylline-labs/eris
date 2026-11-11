@@ -59,7 +59,7 @@ describe("skills/", () => {
   });
 });
 
-const SOCRATES_SKILLS = ["eris-socrates", "socrates-capture", "socrates-consult"] as const;
+const SOCRATES_SKILLS = ["eris-socrates", "socrates-capture", "socrates-consult", "socrates-resolve"] as const;
 const skillText = (dir: string) => readFileSync(join(SKILLS, dir, "SKILL.md"), "utf8");
 const README = readFileSync(join(import.meta.dir, "..", "README.md"), "utf8");
 
@@ -114,6 +114,7 @@ describe("the Socrates skills' triggers", () => {
     expect(f["disable-model-invocation"]).toBeUndefined();
     expect(f.description).toMatch(/\b(stint|wrap(s|ping)? up|ends?)\b/i);
     expect(f.description).toMatch(/\bdecision/i);
+    expect(f.description).toMatch(/\basks? (you )?to (log|record)\b/i);
   });
 
   // admits: same as above for the read side.
@@ -138,6 +139,34 @@ describe("the Socrates skills' triggers", () => {
     expect(con).toMatch(/consult --canon/);
   });
 
+  // admits: the capture flow's routes are prose over verb calls; only the calls and flags it names can be checked.
+  test("the capture body reads the docs before classifying and names every route a candidate can take", () => {
+    // When capture classifies without reading the living docs, `already recorded` and contradictions go unseen; when it
+    // drops --unfit, --kind prd or conflict, or the evidence flags, those candidates are forced into the wrong shape or
+    // file with no evidence — observed as the missing call or flag, or consult coming after classify.
+    const cap = socratesInvocations(skillText("socrates-capture")).join("\n");
+    const consult = cap.search(/eris socrates consult --brief/);
+    expect(consult).toBeGreaterThanOrEqual(0);
+    expect(consult).toBeLessThan(cap.search(/eris socrates classify\b/));
+    for (const flag of ["--unfit", "--hypothesis", "--kind prd", "--kind conflict", "--evidence", "--fragment", "--project"]) expect(cap).toContain(flag);
+  });
+
+  // admits: a resolve skill that cannot fire never resolves; only its description and verbs can be checked.
+  test("socrates-resolve fires when a review Epic closes and walks the hosted check and resolve", () => {
+    // When the resolve skill is missing, gated off the model, or loses its closed-Epic trigger, a closed Epic waits for a
+    // command nobody gives; when it drops the policy check or the resolve call, it cannot tell the hosted path from its own
+    // — observed as the missing file, key, phrase or verb.
+    const file = join(SKILLS, "socrates-resolve", "SKILL.md");
+    expect(existsSync(file)).toBe(true);
+    const f = fm("socrates-resolve");
+    expect(f["disable-model-invocation"]).toBeUndefined();
+    expect(f.description).toMatch(/review Epic/i);
+    expect(f.description).toMatch(/\bclos(e|es|ed)\b/i);
+    const res = socratesInvocations(skillText("socrates-resolve")).join("\n");
+    expect(res).toMatch(/eris socrates settings policy/);
+    expect(res).toMatch(/eris socrates resolve\b/);
+  });
+
   // admits: the setup skill keeps firing on capture and consult phrases if its description still names them.
   test("eris-socrates fires on setup only", () => {
     // When the setup skill's description still claims "record a decision" or "check a plan", it competes with
@@ -158,6 +187,7 @@ describe("the install path", () => {
       .filter((l) => /--skill (eris-socrates|socrates-)/.test(l));
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.filter((l) => !/\s-g\b/.test(l))).toEqual([]);
+    for (const dir of SOCRATES_SKILLS) expect(lines.some((l) => l.includes(`--skill ${dir}`))).toBe(true);
     expect(skillText("eris-socrates")).toMatch(/project scope[^\n]*(writes|repo)/i);
   });
 });
