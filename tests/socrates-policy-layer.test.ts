@@ -98,7 +98,9 @@ describe("eris socrates classify under the repo layer and the cached org policy"
     const r = await drive(["classify", ...CANDIDATE, ...answers()], { format: "json" });
     expect(r).toMatchObject({ rc: 0, stderr: "" });
     expect(JSON.parse(r.stdout)).toMatchObject({ verdict: "not-load-bearing", score: 3, threshold: 99, policy_hash: null, repo_policy: { threshold: 99 } });
-    expect((await drive(["classify", ...CANDIDATE, ...answers()])).stdout).toBe("not-load-bearing: score 3 of 99 (rubric@v2)\n  policy: rubric defaults + repo layer\n");
+    expect((await drive(["classify", ...CANDIDATE, ...answers()])).stdout).toBe(
+      "not-load-bearing: score 3 of 99 (rubric@v2)\n  policy: rubric defaults + repo layer\n  next: not filed: submit it only if your user asked for it to be logged\n",
+    );
     expect(calls).toEqual([]);
   });
 
