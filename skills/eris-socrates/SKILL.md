@@ -1,14 +1,13 @@
 ---
 name: eris-socrates
-description: Set up Socrates so this coding agent can read the team's living docs and Canon and file its decisions as reviewable candidates in the user's Linear. Use when the user asks to set up, install, connect or sign in to Socrates or `eris socrates`, or when an `eris socrates` command fails because eris is missing or signed out. Reading before a decision and filing after one are the socrates-consult and socrates-capture skills.
+description: Set up Socrates so this coding agent can read the team's living docs and Canon and file its decisions as reviewable candidates in the user's Linear. Use when the user asks to set up, install, connect or sign in to Socrates or `eris socrates`, or when an `eris socrates` command fails because eris is missing or signed out. Reading before a decision, filing after one and resolving a closed review are the socrates-consult, socrates-capture and socrates-resolve skills.
 ---
 
 # Set up Socrates
 
 Socrates keeps a project's living docs and the org's Canon current in your user's Linear.
 `eris socrates` is the client. This skill gets you signed in and names the verbs. Each verb's
-`--help` is the source for how to use it, so run it and follow what it prints instead of
-relying on this file.
+`--help` is the source for how to use it: run it and follow what it prints.
 
 ## 0. Install the skills globally
 
@@ -20,12 +19,12 @@ are standing in. Run this from any directory:
 npx skills add sibylline-labs/eris -g --skill eris-socrates
 npx skills add sibylline-labs/eris -g --skill socrates-consult
 npx skills add sibylline-labs/eris -g --skill socrates-capture
+npx skills add sibylline-labs/eris -g --skill socrates-resolve
 ```
 
 ## 1. Check for bun
 
-eris is TypeScript that runs on bun. If it isn't installed, ask your user to install it
-from https://bun.sh, then continue.
+eris runs on bun. If it isn't installed, ask your user to install it from https://bun.sh.
 
 ```sh
 bun --version
@@ -60,10 +59,11 @@ Expect: `logged in: token "…" written to …`
 
 ## 4. Use it
 
-Two sibling skills carry the day-to-day work: `socrates-consult` reads the living docs and Canon
-before you plan or decide, and `socrates-capture` offers to file what a session decided when the
-stint ends. A refusal that prints a settings link means the org has not chosen that doc yet. Show
-your user the link and carry on without it; never invent a house rule.
+Three sibling skills carry the day-to-day work: `socrates-consult` reads the living docs and Canon
+before you plan or decide, `socrates-capture` files what a session decided when the stint ends,
+and `socrates-resolve` applies a review Epic once a person closes it. A refusal that prints a
+settings link means the org has not chosen that doc yet: show your user the link and carry on.
+Never invent a house rule.
 
 ## 5. The verbs
 

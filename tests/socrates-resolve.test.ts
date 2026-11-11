@@ -10,6 +10,8 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { runSocrates } from "../plugins/socrates/submit";
 import { CliExit } from "../src/cli/ts-verb";
@@ -22,6 +24,13 @@ const RECEIPT = { epic: "epic_412", outcome: "resolved", applied: ["epic_413", "
 let server: ReturnType<typeof Bun.serve>;
 let answer: (epic: string) => Response;
 const requests: { path: string; auth: string | null; body: unknown }[] = [];
+/** The amendment files a test writes; removed after the run. */
+const files = mkdtempSync(join(tmpdir(), "eris-socrates-amend-"));
+const amendFile = (name: string, content: unknown) => {
+  const path = join(files, name);
+  writeFileSync(path, typeof content === "string" ? content : JSON.stringify(content));
+  return path;
+};
 /** The stand-in's resolution ledger: an Epic resolved once answers its stored receipt. */
 const stored = new Map<string, typeof RECEIPT>();
 let writes = 0;
@@ -40,7 +49,10 @@ beforeAll(() => {
     },
   });
 });
-afterAll(() => server.stop(true));
+afterAll(() => {
+  server.stop(true);
+  rmSync(files, { recursive: true, force: true });
+});
 beforeEach(() => {
   requests.length = 0;
   stored.clear();
@@ -139,6 +151,62 @@ describe("eris socrates resolve", () => {
     const leak = await drive(["resolve", ghp]);
     expect(leak).toMatchObject({ rc: 1, slug: "socrates-secret-detected" });
     expect(leak.stderr).not.toContain(ghp);
+    expect(requests).toEqual([]);
+  });
+
+  it("sends each --amend file as the child's amendment and prints the amended entries", async () => {
+    /** When the edit never reaches the wire, the reviewer's instruction is lost and the filed text is written; observed at the loopback endpoint and on stdout. */
+    const edited = amendFile("edit.json", { statement: "The edited statement.", source_comment: "comment-1" });
+    const rerouted = amendFile("ka.json", { target: "ka" });
+    answer = () => Response.json({ ...RECEIPT, amended: ["epic_413", "epic_414"] });
+    const r = await drive(["resolve", "epic_412", "--amend", `epic_413=${edited}`, "--amend", `epic_414=${rerouted}`]);
+    expect(r).toMatchObject({ rc: 0, stderr: "" });
+    expect(r.stdout).toBe("resolved epic_412: 2 applied, 1 carried over to epic_420\n  applied: epic_413, epic_414\n  amended: epic_413, epic_414\n  carried over: epic_415\n");
+    expect(requests[0]?.body).toEqual({
+      schema_version: "1.0.0",
+      epic: "epic_412",
+      amendments: [
+        { child: "epic_413", statement: "The edited statement.", source_comment: "comment-1" },
+        { child: "epic_414", target: "ka" },
+      ],
+    });
+  });
+
+  it("fails when the endpoint resolves without applying the amendments, as one that predates them does", async () => {
+    /** When an endpoint drops the field, it writes the filed text while the client reports success; observed as the receipt with no amended list. */
+    const edited = amendFile("ignored.json", { statement: "An edit the old server drops." });
+    const ignored = await drive(["resolve", "epic_412", "--amend", `epic_413=${edited}`]);
+    expect(ignored).toMatchObject({ rc: 1, stdout: "", slug: "socrates-amend-ignored" });
+    expect(ignored.stderr).toContain("epic_413");
+    expect(ignored.stderr).toContain("update the server");
+  });
+
+  it("sends nothing for an --amend it cannot read as an amendment", async () => {
+    /** When a malformed edit reaches the endpoint, its refusal (or worse, a partial edit) hides the local fix; observed as no request. */
+    const cases: string[][] = [
+      ["--amend", "epic_413"],
+      ["--amend", `=${amendFile("x.json", { target: "ka" })}`],
+      ["--amend", `epic_413=${join(files, "missing.json")}`],
+      ["--amend", `epic_413=${amendFile("bad.json", "{not json")}`],
+      ["--amend", `epic_413=${amendFile("empty.json", {})}`],
+      ["--amend", `epic_413=${amendFile("only-source.json", { source_comment: "comment-1" })}`],
+      ["--amend", `epic_413=${amendFile("canon.json", { target: "canon" })}`],
+      ["--amend", `epic_413=${amendFile("typo.json", { statment: "Misspelt." })}`],
+      ["--amend", `epic_413=${amendFile("a.json", { target: "ka" })}`, "--amend", `epic_413=${amendFile("b.json", { target: "lbd" })}`],
+    ];
+    for (const extra of cases) {
+      expect({ extra, ...(await drive(["resolve", "epic_412", ...extra])) }).toMatchObject({ extra, rc: 1, stdout: "", slug: "socrates-amend-invalid" });
+    }
+    expect(requests).toEqual([]);
+  });
+
+  it("refuses an amendment carrying a secret before anything leaves the machine", async () => {
+    /** When an edit pastes a token, it would reach the living doc; observed as no request and the token absent from stderr. */
+    const ghp = ["ghp", "Zq8Lr2Vm5Nx7Pk1Ws4Ty6Hb9Jd3Gf0Ca8Ee2"].join("_");
+    const leaked = amendFile("leak.json", { statement: `Use ${ghp} for the deploy.` });
+    const r = await drive(["resolve", "epic_412", "--amend", `epic_413=${leaked}`]);
+    expect(r).toMatchObject({ rc: 1, slug: "socrates-secret-detected" });
+    expect(r.stderr).not.toContain(ghp);
     expect(requests).toEqual([]);
   });
 });

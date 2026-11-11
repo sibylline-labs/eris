@@ -87,6 +87,7 @@ skills/eris-socrates/   # SKILL.md: the agent skill that installs (`-g`) and sig
                         #   (`--skill eris-socrates`); setup only
 skills/socrates-consult/  # SKILL.md: read the living docs and Canon before planning or deciding
 skills/socrates-capture/  # SKILL.md: offer to file a session's decisions when a stint ends
+skills/socrates-resolve/  # SKILL.md: apply a closed review Epic, reading each entry's comments first
                         #   tests/skills.test.ts holds the Socrates skills and yak-filing to the registry's verbs and flags, their triggers
                         #   and the global install
 examples/plugins/widgets/  # the worked plugin example tests/plugins.test.ts composes

@@ -117,10 +117,11 @@ npx skills add sibylline-labs/eris -g --skill yak-filing
 With eris installed, `eris skills install eris-yaks yak-filing` writes the same files without npm
 ([docs/SKILLS.md](docs/SKILLS.md)).
 
-Socrates has three skills. [`skills/eris-socrates`](skills/eris-socrates/SKILL.md) gets a coding agent
+Socrates has four skills. [`skills/eris-socrates`](skills/eris-socrates/SKILL.md) gets a coding agent
 signed in; [`skills/socrates-consult`](skills/socrates-consult/SKILL.md) reads the living docs and Canon
 before the agent plans or decides; [`skills/socrates-capture`](skills/socrates-capture/SKILL.md) offers to
-file what a session decided when the stint ends. Install them globally with `-g`; without it the skills
+file what a session decided when the stint ends; [`skills/socrates-resolve`](skills/socrates-resolve/SKILL.md)
+applies a closed review Epic, reading each entry's comments first. Install them globally with `-g`; without it the skills
 CLI installs at project scope and writes `.agents/`, `.claude/skills/` and `skills-lock.json` into the
 repository you run it from:
 
@@ -128,9 +129,10 @@ repository you run it from:
 npx skills add sibylline-labs/eris -g --skill eris-socrates
 npx skills add sibylline-labs/eris -g --skill socrates-consult
 npx skills add sibylline-labs/eris -g --skill socrates-capture
+npx skills add sibylline-labs/eris -g --skill socrates-resolve
 ```
 
-With eris installed, `eris skills install eris-socrates socrates-consult socrates-capture` writes the
+With eris installed, `eris skills install eris-socrates socrates-consult socrates-capture socrates-resolve` writes the
 same files without npm. `eris docs --json` prints every verb with its flags and summary, for an agent
 that needs the reference ([docs/SKILLS.md](docs/SKILLS.md)).
 

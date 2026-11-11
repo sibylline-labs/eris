@@ -34,7 +34,9 @@ import {
   SocratesRubricAnswers,
   SocratesRubricVersion as RubricVersion,
   SocratesVerdict,
+  SOCRATES_STATEMENT_MAX_LENGTH,
   SOCRATES_SUBMIT_PATH,
+  SOCRATES_TITLE_MAX_LENGTH,
   uniqueGates,
   Url,
   Version,
@@ -193,7 +195,32 @@ export const SocratesConsultResponse = z.union([SocratesConsultResult, SocratesP
 
 // --- resolve and status -----------------------------------------------------
 
-export const SocratesResolveRequest = z.object({ schema_version: Version, epic: Id });
+/** The living docs an amendment may route a Done decision to. */
+export const SOCRATES_AMEND_TARGETS = ["lbd", "ka", "practices"] as const;
+/** At most one amendment per child one resolve reads (one page of an Epic's children). */
+export const SOCRATES_RESOLVE_AMENDMENTS_MAX = 250;
+
+/** What an amendment may change on a Done child: at least one of its title, statement or target. */
+export const SocratesAmendmentFields = z.object({
+  title: nonBlank(SOCRATES_TITLE_MAX_LENGTH).optional(),
+  statement: nonBlank(SOCRATES_STATEMENT_MAX_LENGTH).optional(),
+  target: z.enum(SOCRATES_AMEND_TARGETS).optional(),
+  source_comment: Id.optional(),
+});
+
+/** An edit to one Done child before resolve writes it. It carries no verdict: the child's Linear
+ *  state, set by a person, stays the only one. */
+export const SocratesResolveAmendment = SocratesAmendmentFields.extend({ child: Id }).refine(
+  (a) => a.title !== undefined || a.statement !== undefined || a.target !== undefined,
+  { message: "an amendment changes the title, the statement or the target" },
+);
+export type SocratesResolveAmendment = z.infer<typeof SocratesResolveAmendment>;
+
+export const SocratesResolveRequest = z.object({
+  schema_version: Version,
+  epic: Id,
+  amendments: z.array(SocratesResolveAmendment).max(SOCRATES_RESOLVE_AMENDMENTS_MAX).optional(),
+});
 
 export const SocratesResolveReceipt = z.object({
   epic: Id,
@@ -201,6 +228,8 @@ export const SocratesResolveReceipt = z.object({
   applied: z.array(Id),
   carried_over: z.array(Id),
   carry_over_epic: Id.optional(),
+  /** The applied children whose entry was written as amended. */
+  amended: z.array(Id).optional(),
   reporting: SocratesReporting,
   contract_version: Version,
 });

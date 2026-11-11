@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { join, resolve } from "node:path";
+import { CURRENT_RUBRIC } from "eris/socrates-core";
 import { runSocrates } from "../plugins/socrates/submit";
 import { CliExit } from "../src/cli/ts-verb";
 
@@ -79,9 +80,12 @@ describe("eris socrates classify", () => {
       overrides: [],
       policy_hash: null,
       repo_policy: null,
+      next: "submit it: eris socrates submit with the same flags and answers",
       meta: { _links: {} },
     });
-    expect((await drive([...CANDIDATE, ...answers()])).stdout).toBe("load-bearing: score 3 of 3 (rubric@v2)\n  policy: rubric defaults\n");
+    expect((await drive([...CANDIDATE, ...answers()])).stdout).toBe(
+      "load-bearing: score 3 of 3 (rubric@v2)\n  policy: rubric defaults\n  next: submit it: eris socrates submit with the same flags and answers\n",
+    );
     expect(fetches).toEqual([]);
   });
 
@@ -172,13 +176,45 @@ describe("eris socrates classify", () => {
       route: "review-issue",
       reason: "files as one review issue: PRD authored: PRD — Acme Billing",
       overrides: [],
+      next: "submit it: eris socrates submit --kind prd with the same flags",
       meta: { _links: {} },
     });
     const conflict = ["--kind", "conflict", "--title", "Two sources disagree", "--source", "https://example.com/pr/14", "--statement", "S.\n\nAuthoritative sites:\n- `ACME-K11` in [Doc](https://docs.example.com/a)\n- [Code](https://code.example.com/b)"];
-    expect((await drive(conflict)).stdout).toBe("conflict: one review issue (rubric@v2) -> review-issue\n  why: files as one review issue: Two sources disagree\n");
+    expect((await drive(conflict)).stdout).toBe("conflict: one review issue (rubric@v2) -> review-issue\n  why: files as one review issue: Two sources disagree\n  next: submit it: eris socrates submit --kind conflict with the same flags\n");
     expect(await drive([...conflict.slice(0, -1), "S. with no sites"])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-candidate-invalid" });
     expect(await drive([...prd, ...answers()])).toMatchObject({ rc: 1, slug: "socrates-answers-invalid" });
     expect(await drive([...prd, "--override", "end_condition=a"])).toMatchObject({ rc: 1, slug: "socrates-override-invalid" });
+    expect(fetches).toEqual([]);
+  });
+});
+
+describe("eris socrates classify steers the agent", () => {
+  // admits: the help is the only place an agent learns what each answer means (the skills may not restate it); no type reaches help text.
+  it("states every rubric question in --help, next to its answers", async () => {
+    /** When the help lists only answer ids, an agent picks `setting-level` or `inferred` without the question it answers, and the verdict is noise. Observed as a question's prompt missing from stdout. */
+    const r = await drive(["--help"]);
+    expect(r.rc).toBe(0);
+    const missing = Object.entries(CURRENT_RUBRIC.questions).filter(([id, q]) => !r.stdout.includes(`${id}: ${q.prompt}`)).map(([id]) => id);
+    expect(missing).toEqual([]);
+  });
+
+  // admits: the next step is steering the thin skills leave to the CLI; a wrong or missing line sends a candidate to the wrong doc or files noise, and no type sees the wording.
+  it("says what to do next for every verdict, in text and JSON", async () => {
+    /** When a verdict carries no next step, a practice files as a decision, and a rejected or not-load-bearing candidate is submitted anyway. Observed as the `next:` line or the JSON `next` field. */
+    const cases: [string[], RegExp][] = [
+      [[...CANDIDATE, ...answers()], /^submit it: eris socrates submit with the same flags and answers$/],
+      [[...CANDIDATE, ...answers({ premise_basis: "inferred" })], /^submit it: eris socrates submit with the same flags and answers$/],
+      [[...CANDIDATE, ...answers({ practice: "how-people-work" })], /^submit it as a practice: eris socrates submit --kind practice with the same flags and answers$/],
+      [[...CANDIDATE, ...answers({ consequence: "nothing-beyond-this-change" })], /^not filed: submit it only if your user asked for it to be logged$/],
+      [[...CANDIDATE, ...answers({ end_condition: "has-end-condition" })], /^not filed: override end_condition only when your user explicitly asked for this to be logged, quoting them as the reason$/],
+      [["--kind", "conflict", "--title", "Two sources disagree", "--source", "https://example.com/pr/14", "--statement", "S.\n\nAuthoritative sites:\n- `ACME-K11` in [Doc](https://docs.example.com/a)\n- [Code](https://code.example.com/b)"], /^submit it: eris socrates submit --kind conflict with the same flags$/],
+    ];
+    for (const [args, next] of cases) {
+      const j = await json(args);
+      expect({ verdict: j.verdict, next: j.next }).toEqual({ verdict: j.verdict, next: expect.stringMatching(next) });
+      const text = (await drive(args)).stdout.trimEnd().split("\n");
+      expect({ verdict: j.verdict, last: text.at(-1) }).toEqual({ verdict: j.verdict, last: `  next: ${j.next as string}` });
+    }
     expect(fetches).toEqual([]);
   });
 });
