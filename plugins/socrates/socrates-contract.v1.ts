@@ -215,8 +215,18 @@ export const SocratesSubmitRequest = z
   .refine((r) => r.unfit === undefined || r.classification === undefined, "either unfit or classification, not both");
 export type SocratesSubmitRequest = z.infer<typeof SocratesSubmitRequest>;
 
+/** When the review Epic's verbosity cap releases a held candidate, and why it is held; they ride together. */
+export const SocratesHeldUntil = z
+  .string()
+  .regex(
+    /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/,
+    "must be an ISO 8601 datetime with an offset",
+  );
+export const SocratesHeldReason = z.literal("verbosity_cap");
+
 /**
  * `deduped` is true when the server already held this candidate and wrote nothing.
+ * `held_until` and `held_reason` say the review Epic's verbosity cap holds the candidate until then.
  * `classification` answers a stamped submit with the server's verdict under the current policy.
  * `unfit` answers an unfit submit with the candidate's state; a receipt without it means the server did not read the field.
  */
@@ -225,6 +235,8 @@ export const SocratesSubmitReceipt = z.object({
   deduped: z.boolean(),
   classification: SocratesSubmitClassification.optional(),
   unfit: z.object({ state: SocratesCandidateState }).optional(),
+  held_until: SocratesHeldUntil.optional(),
+  held_reason: SocratesHeldReason.optional(),
   contract_version: Version,
 });
 export type SocratesSubmitReceipt = z.infer<typeof SocratesSubmitReceipt>;

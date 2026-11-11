@@ -18,7 +18,7 @@
 
 import { scanStrings } from "eris/outbound-scan";
 import { readArgs, type VerbContext } from "../../src/cli/plugin";
-import { fail, postSocrates, printable, type SocratesDeps, socratesEndpoint } from "./client";
+import { fail, heldLine, postSocrates, printable, type SocratesDeps, socratesEndpoint } from "./client";
 import plugin from "./index";
 import { SOCRATES_ROUTES, SocratesStatusRequest, SocratesStatusResponse } from "./socrates-contract.v1.verbs";
 
@@ -27,9 +27,10 @@ export const STATUS_USAGE = `Usage: eris socrates status [--candidate <id>]
 Ask the Socrates endpoint what is waiting and print it:
 'pending candidates: <n>', 'open review Epics: <n>' and one line per Epic
 ('  <epic>  <project>  <n> open  <url>'). With --candidate, then
-'candidate <id>: <state>' and the issue it is filed as. --output json prints
+'candidate <id>: <state>', the issue it is filed as and, when the review Epic's
+verbosity cap holds it, '  held by the verbosity cap until <Mon-DD HH:MMZ>'. --output json prints
 {rubric_version, policy_hash, pending_candidates, open_epics: [{epic, project,
-url, open_children}], candidate?: {candidate_id, state, issue_url?},
+url, open_children}], candidate?: {candidate_id, state, issue_url?, held_until?, held_reason?},
 contract_version}.
 
   --candidate <id>   a candidate id, as 'eris socrates submit' prints it. State
@@ -77,6 +78,7 @@ export async function runStatus(args: string[], ctx: VerbContext, deps: Socrates
   if (candidate_id !== undefined && reply.candidate !== undefined) {
     out += `candidate ${printable(reply.candidate.candidate_id)}: ${reply.candidate.state}\n`;
     if (reply.candidate.issue_url !== undefined) out += `  issue: ${printable(reply.candidate.issue_url)}\n`;
+    if (reply.candidate.held_until !== undefined) out += `  ${heldLine(reply.candidate.held_until)}\n`;
   }
   ctx.stdout.write(out);
   return 0;

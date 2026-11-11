@@ -224,6 +224,18 @@ describe("eris socrates submit", () => {
     expect((await drive(["submit", ...STAMPED])).stdout).toBe("already submitted: cand_1\n");
   });
 
+  it("says a candidate the verbosity cap holds is held, and until when", async () => {
+    /** When the hold is not printed, a submitter cannot tell a held candidate from a stalled one; when an unheld receipt changes, scripts reading it break. */
+    const held = { held_until: "2026-11-12T00:00:00.000Z", held_reason: "verbosity_cap" };
+    answer = () => Response.json({ candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", ...held });
+    expect(await drive(["submit", ...STAMPED])).toMatchObject({ rc: 0, stdout: "submitted: cand_1\n  held by the verbosity cap until Nov-12 00:00Z\n", stderr: "" });
+    expect((await drive(["submit", ...STAMPED], { format: "json" })).stdout).toBe(
+      '{"candidate_id":"cand_1","deduped":false,"contract_version":"1.0.0","held_until":"2026-11-12T00:00:00.000Z","held_reason":"verbosity_cap","redactions":{"count":0,"classes":[]},"overrides":[]}\n',
+    );
+    answer = () => Response.json({ candidate_id: "cand_1", deduped: false, contract_version: "1.0.0" });
+    expect((await drive(["submit", ...STAMPED])).stdout).toBe("submitted: cand_1\n");
+  });
+
   it("prints the subscribe link when the endpoint says the workspace is not entitled", async () => {
     /** When the 402 loses its link, an unentitled user has no way forward from the CLI. */
     answer = () =>

@@ -73,6 +73,17 @@ export function printable(text: string): string {
   return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** The line that says the review Epic's verbosity cap holds a candidate, and until when, in UTC:
+ *  `held by the verbosity cap until Nov-12 00:00Z`. */
+export function heldLine(heldUntil: string): string {
+  const at = new Date(heldUntil);
+  const hh = String(at.getUTCHours()).padStart(2, "0");
+  const mm = String(at.getUTCMinutes()).padStart(2, "0");
+  return `held by the verbosity cap until ${MONTHS[at.getUTCMonth()]}-${String(at.getUTCDate()).padStart(2, "0")} ${hh}:${mm}Z`;
+}
+
 /**
  * Drop control characters from markdown a server sent, keeping `\n` and `\t`. A carriage return
  * (alone or before a newline) becomes a newline, since a bare one rewrites the line it follows.
