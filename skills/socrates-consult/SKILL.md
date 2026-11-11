@@ -25,7 +25,17 @@ eris socrates consult --canon
 
 ## 3. Use what you read
 
-Name the entries your plan or decision depends on, and say so when it departs from one.
+- Answer first, then cite: the doc and the entry's ID or title for every claim you take from it. A
+  claim you cannot cite is your inference: say so.
+- When the docs do not settle it, say "not confirmed in Socrates" plainly. Absence is not consent,
+  and code you read is not a recorded decision.
+- An entry still under review in an open review Epic is pending, not settled; never present it as
+  current.
+- Checking a plan, lead with the verdict: clear, conflicts (each with its entry), or contested
+  (an open conflict or a pending entry touches it).
+- When your plan departs from an entry or from Canon, tell your user before you act on it. If they
+  confirm the departure, it is a conflict to file: the `socrates-capture` skill files it. Never
+  edit a living doc yourself.
 
 ## When it fails
 
