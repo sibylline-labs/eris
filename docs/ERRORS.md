@@ -922,6 +922,26 @@ Epic is missing or is not an identifier (blank, or over 200 characters);
 nothing was sent. Fix: pass the Epic's identifier, as the Epic's Socrates
 comment prints the command.
 
+### socrates-amend-invalid
+
+`eris socrates resolve --amend <child>=<path>` could not build an amendment:
+the value is not `<child>=<path>`, the same child is amended twice, the file
+cannot be read or is not JSON, or it is not an amendment. The file must be one
+JSON object with at least one of `title` (one line, up to 200 characters),
+`statement` (up to 4000), `target` (`lbd`, `ka` or `practices`), and
+optionally `source_comment`; any other key is refused. At most 250 children
+can be amended in one resolve. Nothing was sent. Fix: correct the named
+`--amend`, or drop it.
+
+### socrates-amend-ignored
+
+`eris socrates resolve --amend` reached an endpoint that resolved the Epic
+without applying every amendment: its receipt does not name the amended
+children. An endpoint from before amendments ignores the field and writes the
+filed text. The Epic is now resolved, so running the command again changes
+nothing. Fix: update the server, then correct the named entries in the living
+doc by hand.
+
 ### socrates-candidate-invalid
 
 The candidate does not match the contract: a field is blank or over

@@ -236,17 +236,24 @@
     "resolve": {
       "request": {
         "accept": [
-          {"schema_version": "1.0.0", "epic": "epic_412"}
+          {"schema_version": "1.0.0", "epic": "epic_412"},
+          {"schema_version": "1.0.0", "epic": "epic_412", "amendments": [{"child": "epic_413", "statement": "The edited statement.", "source_comment": "comment_1"}, {"child": "epic_414", "target": "ka"}, {"child": "epic_416", "title": "A clearer title", "statement": "Restated.", "target": "practices"}]}
         ],
         "reject": [
           {"schema_version": "1.0.0"},
-          {"schema_version": "1.0.0", "epic": ""}
+          {"schema_version": "1.0.0", "epic": ""},
+          {"schema_version": "1.0.0", "epic": "epic_412", "amendments": [{"child": "epic_413"}]},
+          {"schema_version": "1.0.0", "epic": "epic_412", "amendments": [{"child": "epic_413", "source_comment": "comment_1"}]},
+          {"schema_version": "1.0.0", "epic": "epic_412", "amendments": [{"child": "epic_413", "target": "canon"}]},
+          {"schema_version": "1.0.0", "epic": "epic_412", "amendments": [{"child": "epic_413", "statement": ""}]},
+          {"schema_version": "1.0.0", "epic": "epic_412", "amendments": [{"child": "", "statement": "x"}]}
         ]
       },
       "response": {
         "accept": [
           {"epic": "epic_412", "outcome": "resolved", "applied": ["epic_413", "epic_414"], "carried_over": ["epic_415"], "carry_over_epic": "epic_420", "reporting": "pulse", "contract_version": "1.0.0"},
           {"epic": "epic_412", "outcome": "queued", "applied": [], "carried_over": [], "reporting": "none", "contract_version": "1.0.0"},
+          {"epic": "epic_412", "outcome": "resolved", "applied": ["epic_413", "epic_414"], "carried_over": [], "amended": ["epic_413"], "reporting": "none", "contract_version": "1.0.0"},
           {"type": "urn:hera:error:entitlement_lapsed", "title": "Organization entitlement has lapsed", "status": 402, "detail": "This organization is not entitled to socrates", "code": "entitlement_lapsed", "_links": {"subscribe": {"href": "https://example.com/billing/subscribe?product=socrates"}}}
         ],
         "reject": [
@@ -256,7 +263,8 @@
           {"type": "urn:hera:error:x", "title": "t", "status": 402, "detail": "x", "code": "x", "_links": {"settings": {"href": "javascript:alert(1)"}}},
           "<html>502 Bad Gateway</html>",
           null,
-          {"epic": "epic_412", "outcome": "done", "applied": [], "carried_over": [], "reporting": "none", "contract_version": "1.0.0"}
+          {"epic": "epic_412", "outcome": "done", "applied": [], "carried_over": [], "reporting": "none", "contract_version": "1.0.0"},
+          {"epic": "epic_412", "outcome": "resolved", "applied": [], "carried_over": [], "amended": [""], "reporting": "none", "contract_version": "1.0.0"}
         ]
       }
     },
