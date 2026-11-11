@@ -33,12 +33,15 @@ src/                    # The TS program the shim and the bin run
 │                       #   update.ts (eris update: prints the npm commands), update/ (RELEASE_UPDATE,
 │                       #   the in-place verb a distribution opts into: opt-in.ts the row and thunk,
 │                       #   release.ts the verb, github.ts the releases API and the download,
-│                       #   replace.ts the staged rename and its restore, semver.ts)
+│                       #   replace.ts the staged rename and its restore, semver.ts), docs.ts (eris docs:
+│                       #   the verb reference from the composed rows), skills.ts + skills/install.ts
+│                       #   (eris skills install, docs/SKILLS.md)
 └── runtime/            #   logging, process (the one spawn adapter), settings (~/.eris/settings.json),
                         #   env (readEnv), credentials (~/.eris/yaks.json and the url/token
                         #   resolvers every bearer client shares), home (the install root: the checkout, a distribution's own root
                         #   when its entry names one, or a compiled binary's
-                        #   per-build asset home)
+                        #   per-build asset home), skills (the skills an install root publishes,
+                        #   and installing one where `npx skills add -g` does)
 ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN lines
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
@@ -75,6 +78,8 @@ packages/socrates-core/ # Socrates living-doc surgery, `eris/socrates-core`: src
                         #   LinearDocPort; ensureDoc; parseTitle). Web APIs only: its tsconfig has no Bun/Node types.
                         #   src/rubric/definition.ts (the rubric shape, answers schema, pure scorer), v1.ts, v2.ts (rubric@v1, @v2);
                         #   src/index.ts also serves RUBRICS / rubricFor(version)
+                        # `eris skills install` (src/runtime/skills.ts) writes them where the skills CLI does;
+                        #   build() carries every skills/<name>/ into the binary (`skillRoots`)
 skills/eris-yaks/       # SKILL.md: the agent skill that sets up Yaks (`npx skills add sibylline-labs/eris -g
                         #   --skill eris-yaks`); the skills CLI discovers skills/<name>/SKILL.md
 skills/yak-filing/      # SKILL.md: file a yak when the agent's own tooling fights back (`-g --skill yak-filing`)

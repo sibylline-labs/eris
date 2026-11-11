@@ -58,6 +58,9 @@ describe("router table", () => {
       "socrates status": "ts",
       "socrates submit": "ts",
       update: "ts",
+      docs: "ts",
+      skills: "ts",
+      "skills install": "ts",
       yak: "ts",
       "yak config": "ts",
       "yak discover": "ts",
@@ -174,6 +177,8 @@ describe("the --output json surfaces, from the registry", () => {
       tokens: ["ls", "create", "revoke"],
       org: ["members", "connect-linear", "delete"],
       update: true,
+      docs: true,
+      skills: ["install"],
       whoami: true,
       yak: ["fatal", "issue", "suggest", "status", "ready", "discover", "config"],
     });

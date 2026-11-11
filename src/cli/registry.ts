@@ -93,13 +93,21 @@ export type SlotWord = string | CompletionDomain;
 
 /** Every verb, as declared: the literal types the parser derives a handler's
  *  argument type from. `REGISTRY` is the same object for code that walks it.
- *  Core declares `completion` and `update`; every other group is a plugin's
+ *  Core declares `completion`, `update`, `docs` and `skills`; every other group is a plugin's
  *  (plugins/index.ts, composed by src/cli/compose.ts). */
 export const VERBS = {
   completion: { impl: "ts", summary: "Emit shell tab-completion script (bash, zsh)" },
   "completion bash": { summary: "Emit the bash completion script" },
   "completion zsh": { summary: "Emit the zsh completion script" },
   update: { impl: "ts", summary: "Print how to get the latest eris release (npx, bunx)", json: true },
+  docs: { impl: "ts", summary: "Print the verb reference: every command, its flags and summary", json: true },
+  skills: { impl: "ts", summary: "Install the agent skills this build publishes" },
+  "skills install": {
+    summary: "Install published skills for your coding agents (every skill when none is named)",
+    pos: ["skill..."],
+    json: true,
+    example: "eris skills install eris-socrates",
+  },
 } as const satisfies Readonly<Record<string, Row>>;
 
 export type VerbPath = keyof typeof VERBS;

@@ -222,7 +222,7 @@ describe("this build's composition", () => {
     const help = spawnSync(ERIS, ["--help"], { env: { ...process.env, ...oracleEnv() }, encoding: "utf8" });
     expect(help.status).toBe(0);
     const commands = help.stdout.split("\nCommands:\n")[1]!.split("\n\n")[0]!.split("\n").map((l) => l.trim().split(/\s+/)[0]);
-    expect(commands).toEqual(["completion", "update", "yak", "login", "logout", "org", "whoami", "tokens", "socrates"]);
+    expect(commands).toEqual(["completion", "update", "docs", "skills", "yak", "login", "logout", "org", "whoami", "tokens", "socrates"]);
     // The public program has no menu, so it promises no interactive mode (the example distribution's usage does).
     expect(help.stdout).toContain("\nRun 'eris <command> --help' for command-specific usage.\n");
     expect(help.stdout).not.toContain("interactive mode");
@@ -450,6 +450,6 @@ describe.skipIf(checkoutOnly("builds its own binary from this checkout's source"
     expect(press(script, ["eris", "demo", "hello", ""])).toEqual(["loud", "quiet"]);
     expect(press(script, ["eris", "demo", "hello", "loud", ""])).toEqual(["ADA", "GRACE"]);
     expect(press(script, ["eris", "demo", "hello", "quiet", ""])).toEqual(["ada", "grace"]);
-    expect(press(script, ["eris", ""])).toEqual(["--help", "--version", "completion", "demo", "login", "logout", "org", "socrates", "tokens", "update", "whoami", "yak"]);
+    expect(press(script, ["eris", ""])).toEqual(["--help", "--version", "completion", "demo", "docs", "login", "logout", "org", "skills", "socrates", "tokens", "update", "whoami", "yak"]);
   });
 });
