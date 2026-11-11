@@ -36,6 +36,9 @@ Flags:
 --output json prints {skills: [{name, path, state, links}]}. See docs/SKILLS.md.
 `;
 
+/** `s` as one POSIX shell word. */
+const shellQuote = (s: string): string => (/^[A-Za-z0-9_./~-]+$/.test(s) ? s : `'${sanitizeDisplay(s).replace(/'/g, `'\\''`)}'`);
+
 /** `~` for the home directory in a printed path. */
 const tilde = (home: string, p: string): string => (p === home || p.startsWith(`${home}/`) ? `~${p.slice(home.length)}` : p);
 
@@ -69,10 +72,10 @@ export const runSkillsInstall: VerbHandler = async (args, ctx) => {
       fn();
     } catch (e) {
       if (e instanceof OccupiedError) {
-        fail("skills-target-occupied", `${tilde(home, e.path)} ${e.holds}; nothing was installed`, `move or remove it, then run the command again:\n  rm -r ${e.path}`);
+        fail("skills-target-occupied", `${sanitizeDisplay(tilde(home, e.path))} ${sanitizeDisplay(e.holds)}; nothing was installed`, `move or remove it, then run the command again:\n  rm -r ${shellQuote(e.path)}`);
       }
-      if (e instanceof InstallError) fail("skills-install-failed", `could not write ${tilde(home, e.path)}: ${sanitizeDisplay(e.reason)}`, "check that you can write ~/.agents and ~/.claude, then run the command again");
-      throw e;
+      const path = e instanceof InstallError ? `${tilde(home, e.path)}: ${e.reason}` : e instanceof Error ? e.message : String(e);
+      fail("skills-install-failed", `could not install: ${sanitizeDisplay(path)}`, "check that you can write ~/.agents and ~/.claude, then run the command again; installed skills stay unchanged on a rerun");
     }
   };
 

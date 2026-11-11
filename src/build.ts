@@ -216,7 +216,12 @@ export async function build(opts: BuildOptions): Promise<BuildResult> {
   for (const skill of publishedSkills(skillRoots).values()) {
     for (const f of skill.files) {
       const key = join("skills", skill.name, f);
-      if (!Object.hasOwn(assets, key)) assets[key] = readFileSync(join(skill.dir, f), "utf8");
+      if (Object.hasOwn(assets, key)) continue;
+      const bytes = readFileSync(join(skill.dir, f));
+      const text = bytes.toString("utf8");
+      // Assets are text: a file that does not survive the round trip would ship corrupted.
+      if (!Buffer.from(text, "utf8").equals(bytes)) throw new Error(`skill file ${key} is not UTF-8 text; the binary carries text assets only`);
+      assets[key] = text;
     }
   }
   const sorted = Object.fromEntries(Object.keys(assets).sort().map((k) => [k, assets[k]!]));

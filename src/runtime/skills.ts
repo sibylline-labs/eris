@@ -15,17 +15,18 @@
  * relative symlink to it. It does not write the skills CLI's own
  * `~/.agents/.skill-lock.json`: that file is the skills CLI's state.
  *
- * A target is replaced only when it is recognisably this skill: a directory at
- * the canonical path, a symlink at the Claude Code path that already resolves to
- * it, or a directory there whose SKILL.md is named for it (a copy-mode install).
- * Anything else is an `OccupiedError`. The write is race-safe as
+ * A target is replaced only when it is recognisably this skill: a directory whose
+ * SKILL.md is named for it (at the canonical path, or a copy-mode install at the
+ * Claude Code path), or a link at the Claude Code path that already resolves to the
+ * canonical copy. Anything else, a parent that is not a directory included, is an
+ * `OccupiedError`, raised before anything is written. The write is race-safe as
  * src/runtime/home.ts's is: the tree goes to a private dot directory beside the
  * target and is renamed into place.
  */
 
 import { randomBytes } from "node:crypto";
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
 
 /** A skill name: the directory name, as the skills CLI's `--skill` takes it. */
 const NAME = /^[a-z0-9][a-z0-9-]*$/;
@@ -104,17 +105,6 @@ export function targetsOf(home: string, name: string): { canonical: string; clau
   return { canonical: join(home, ".agents", "skills", name), claudeDir: join(home, ".claude"), claudeLink: join(home, ".claude", "skills", name) };
 }
 
-/** The relative link target `npx skills add -g` writes from `~/.claude/skills/<name>`. */
-export const linkTarget = (name: string): string => join("..", "..", ".agents", "skills", name);
-
-const isDir = (p: string): boolean => {
-  try {
-    return lstatSync(p).isDirectory();
-  } catch {
-    return false;
-  }
-};
-
 /** A directory, following a symlink: `~/.claude` may itself be one. */
 const isDirFollowed = (p: string): boolean => {
   try {
@@ -133,16 +123,38 @@ const exists = (p: string): boolean => {
   }
 };
 
-/** Whether directory `dir` holds exactly `skill`'s files, byte for byte. */
+/** `p` with its deepest existing ancestor resolved through symlinks: where the OS will find it. */
+function realish(p: string): string {
+  const abs = resolve(p);
+  for (let dir = abs, rest = ""; ; rest = rest === "" ? basename(dir) : join(basename(dir), rest), dir = dirname(dir)) {
+    try {
+      return join(realpathSync(dir), rest);
+    } catch {
+      if (dirname(dir) === dir) return abs;
+    }
+  }
+}
+
+/**
+ * The relative target of Claude Code's link: from the link's real directory to the
+ * canonical copy's. With `~/.claude` a plain directory it is `../../.agents/skills/<name>`,
+ * the link `npx skills add -g` writes; a symlinked `~/.claude` gets the path that resolves
+ * from where it really is.
+ */
+export const linkTarget = (link: string, canonical: string): string => relative(realish(dirname(link)), realCanonical(canonical));
+
+/** The canonical path through its parent's real directory: stable while a peer swaps the skill directory itself. */
+const realCanonical = (canonical: string): string => join(realish(dirname(canonical)), basename(canonical));
+
+/** Whether directory `dir` holds exactly `skill`'s files, byte for byte; any read error is "no". */
 function sameTree(dir: string, skill: PublishedSkill): boolean {
-  let files: string[];
   try {
-    files = filesUnder(dir);
+    const files = filesUnder(dir);
+    if (files.length !== skill.files.length || files.some((f, i) => f !== skill.files[i])) return false;
+    return files.every((f) => readFileSync(join(dir, f)).equals(readFileSync(join(skill.dir, f))));
   } catch {
     return false;
   }
-  if (files.length !== skill.files.length || files.some((f, i) => f !== skill.files[i])) return false;
-  return files.every((f) => readFileSync(join(dir, f)).equals(readFileSync(join(skill.dir, f))));
 }
 
 /** The `name:` of a SKILL.md's frontmatter, or undefined. */
@@ -163,10 +175,35 @@ function frontmatterName(file: string): string | undefined {
   return undefined;
 }
 
-/** What the Claude Code path holds, judged against `canonical`. */
-type ClaudeOccupant = { kind: "absent" } | { kind: "ours" } | { kind: "copy" } | { kind: "foreign"; holds: string };
+/** What a target path holds: nothing, this skill (`ours`: the canonical copy or the link to it), a copy-mode install, or something else. */
+type Occupant = { kind: "absent" } | { kind: "ours" } | { kind: "copy" } | { kind: "foreign"; holds: string };
 
-function claudeOccupant(link: string, canonical: string, name: string): ClaudeOccupant {
+/** A directory is this skill when its SKILL.md is named for it. */
+const namedFor = (dir: string, name: string): boolean => frontmatterName(join(dir, "SKILL.md")) === name;
+
+/** A concurrent install swaps the directory between the stat and the SKILL.md read: a foreign
+ *  directory verdict is re-read a bounded number of times before it stands. */
+function canonicalOccupant(canonical: string, name: string): Occupant {
+  let o = canonicalOccupantOnce(canonical, name);
+  for (let n = 1; n < 3 && o.kind === "foreign" && o.holds.startsWith("is a directory"); n++) {
+    o = canonicalOccupantOnce(canonical, name);
+  }
+  return o;
+}
+
+function canonicalOccupantOnce(canonical: string, name: string): Occupant {
+  let st;
+  try {
+    st = lstatSync(canonical);
+  } catch {
+    return { kind: "absent" };
+  }
+  if (st.isSymbolicLink()) return { kind: "foreign", holds: `is a symlink to ${readlinkSync(canonical)}` };
+  if (!st.isDirectory()) return { kind: "foreign", holds: "is a file" };
+  return namedFor(canonical, name) ? { kind: "ours" } : { kind: "foreign", holds: `is a directory that is not the ${name} skill` };
+}
+
+function claudeOccupant(link: string, canonical: string, name: string): Occupant {
   let st;
   try {
     st = lstatSync(link);
@@ -175,20 +212,27 @@ function claudeOccupant(link: string, canonical: string, name: string): ClaudeOc
   }
   if (st.isSymbolicLink()) {
     const to = readlinkSync(link);
-    return resolve(dirname(link), to) === canonical ? { kind: "ours" } : { kind: "foreign", holds: `is a symlink to ${to}` };
+    return resolve(realish(dirname(link)), to) === realCanonical(canonical) ? { kind: "ours" } : { kind: "foreign", holds: `is a symlink to ${to}` };
   }
-  if (st.isDirectory()) {
-    return frontmatterName(join(link, "SKILL.md")) === name ? { kind: "copy" } : { kind: "foreign", holds: `is a directory that is not the ${name} skill` };
-  }
+  if (st.isDirectory()) return namedFor(link, name) ? { kind: "copy" } : { kind: "foreign", holds: `is a directory that is not the ${name} skill` };
   return { kind: "foreign", holds: "is a file" };
+}
+
+/** A path on the way to a target that exists but is not a directory. */
+function blockedParent(target: string, stop: string): string | undefined {
+  for (let dir = dirname(target); dir.startsWith(stop) && dir !== stop; dir = dirname(dir)) {
+    if (exists(dir) && !isDirFollowed(dir)) return dir;
+  }
+  return undefined;
 }
 
 /** Refuse, before anything is written, any target `skill` would not recognise as its own. */
 export function checkTargets(home: string, skill: PublishedSkill): void {
   const t = targetsOf(home, skill.name);
-  if (exists(t.canonical) && !isDir(t.canonical)) {
-    throw new OccupiedError(t.canonical, lstatSync(t.canonical).isSymbolicLink() ? `is a symlink to ${readlinkSync(t.canonical)}` : "is a file");
-  }
+  const parent = blockedParent(t.canonical, home) ?? (isDirFollowed(t.claudeDir) ? blockedParent(t.claudeLink, t.claudeDir) : undefined);
+  if (parent !== undefined) throw new OccupiedError(parent, "is not a directory");
+  const c = canonicalOccupant(t.canonical, skill.name);
+  if (c.kind === "foreign") throw new OccupiedError(t.canonical, c.holds);
   if (isDirFollowed(t.claudeDir)) {
     const o = claudeOccupant(t.claudeLink, t.canonical, skill.name);
     if (o.kind === "foreign") throw new OccupiedError(t.claudeLink, o.holds);
@@ -201,44 +245,70 @@ const failed = (path: string, e: unknown): InstallError => new InstallError(path
 
 const code = (e: unknown): string | undefined => (typeof e === "object" && e !== null ? (e as { code?: string }).code : undefined);
 
-/** Write `skill` to its canonical directory; `unchanged` when it already holds the same tree. */
+/** Cleanup that never masks the error being reported. */
+function quietly(fn: () => void): void {
+  try {
+    fn();
+  } catch {
+    // the outcome is already decided; a leftover dot directory is harmless
+  }
+}
+
+/**
+ * Write `skill` to its canonical directory; `unchanged` when it already holds the same tree.
+ * A recognised install is replaced whole, local edits included. Concurrent installs of the
+ * same skill end with this skill's tree in place, whichever wins the rename.
+ */
 function writeCanonical(canonical: string, skill: PublishedSkill): SkillState {
-  const had = isDir(canonical);
+  const had = exists(canonical);
   if (had && sameTree(canonical, skill)) return "unchanged";
   const parent = dirname(canonical);
   const tmp = scratchName(parent, skill.name, "tmp");
-  const old = scratchName(parent, skill.name, "old");
+  const olds: string[] = [];
+  /** Move whatever is at the canonical path aside; a peer may already have. */
+  const moveAside = (): void => {
+    const old = scratchName(parent, skill.name, "old");
+    try {
+      renameSync(canonical, old);
+      olds.push(old);
+    } catch (e) {
+      if (code(e) !== "ENOENT") throw e;
+    }
+  };
   try {
     mkdirSync(parent, { recursive: true });
     for (const f of skill.files) {
       mkdirSync(dirname(join(tmp, f)), { recursive: true });
       cpSync(join(skill.dir, f), join(tmp, f));
     }
-    if (had) {
+    if (had) moveAside();
+    // A concurrent install of the same skill can land its tree between our move and rename:
+    // its tree stands if it is this one, else it is moved aside too. Bounded.
+    for (let attempt = 1; ; attempt++) {
       try {
-        renameSync(canonical, old);
+        renameSync(tmp, canonical);
+        return had ? "updated" : "installed";
       } catch (e) {
-        if (code(e) !== "ENOENT") throw e;
+        if (code(e) !== "EEXIST" && code(e) !== "ENOTEMPTY") throw e;
+        if (sameTree(canonical, skill)) return "unchanged";
+        if (attempt === RENAME_ATTEMPTS) throw e;
+        moveAside();
       }
     }
-    try {
-      renameSync(tmp, canonical);
-    } catch (e) {
-      // A concurrent install won the rename: its tree stands if it is this one.
-      if (code(e) !== "EEXIST" && code(e) !== "ENOTEMPTY") throw e;
-      if (!sameTree(canonical, skill)) throw e;
-      return "unchanged";
-    }
-    return had ? "updated" : "installed";
   } catch (e) {
     // Put the previous install back rather than leave the skill missing.
-    if (!exists(canonical) && exists(old)) renameSync(old, canonical);
+    quietly(() => {
+      if (!exists(canonical) && olds[0] !== undefined) renameSync(olds[0], canonical);
+    });
     throw failed(canonical, e);
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
-    rmSync(old, { recursive: true, force: true });
+    quietly(() => rmSync(tmp, { recursive: true, force: true }));
+    for (const old of olds) quietly(() => rmSync(old, { recursive: true, force: true }));
   }
 }
+
+/** How many times a rename that lost to a concurrent install is retried. */
+const RENAME_ATTEMPTS = 8;
 
 /** Point Claude Code's `~/.claude/skills/<name>` at the canonical copy. */
 function writeClaudeLink(t: ReturnType<typeof targetsOf>, name: string): LinkState {
@@ -251,19 +321,20 @@ function writeClaudeLink(t: ReturnType<typeof targetsOf>, name: string): LinkSta
     mkdirSync(parent, { recursive: true });
     if (o.kind === "copy") renameSync(t.claudeLink, old);
     try {
-      symlinkSync(linkTarget(name), t.claudeLink);
+      symlinkSync(linkTarget(t.claudeLink, t.canonical), t.claudeLink);
     } catch (e) {
-      if (code(e) !== "EEXIST") throw e;
       // A concurrent install linked it first: keep it if it is ours.
-      if (claudeOccupant(t.claudeLink, t.canonical, name).kind !== "ours") throw e;
+      if (code(e) !== "EEXIST" || claudeOccupant(t.claudeLink, t.canonical, name).kind !== "ours") throw e;
       return "unchanged";
     }
     return o.kind === "copy" ? "replaced" : "linked";
   } catch (e) {
-    if (!exists(t.claudeLink) && exists(old)) renameSync(old, t.claudeLink);
+    quietly(() => {
+      if (!exists(t.claudeLink) && exists(old)) renameSync(old, t.claudeLink);
+    });
     throw failed(t.claudeLink, e);
   } finally {
-    rmSync(old, { recursive: true, force: true });
+    quietly(() => rmSync(old, { recursive: true, force: true }));
   }
 }
 

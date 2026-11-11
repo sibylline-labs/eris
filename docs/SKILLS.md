@@ -28,10 +28,13 @@ eris does not write the skills CLI's own `~/.agents/.skill-lock.json`; that file
 CLI's state. `npx skills remove -g <skill>`, or `rm -r` of the two paths, removes a skill.
 
 A rerun is safe. A skill whose files already match prints `unchanged`; one whose files differ is
-replaced (`updated`). A copy-mode install at `~/.claude/skills/<skill>` (a directory whose
+replaced whole (`updated`), local edits and extra files inside it included. A directory at
+`~/.agents/skills/<skill>` counts as this skill only when its `SKILL.md` is named `<skill>`. When
+`~/.claude` is itself a symlink, the link's relative path is computed from where `~/.claude` really
+is, so it resolves. A copy-mode install at `~/.claude/skills/<skill>` (a directory whose
 `SKILL.md` is named `<skill>`, as `npx skills add -a claude-code` leaves it) is replaced by the
-link. Anything else at either path (a file, a symlink elsewhere, a different directory) is never
-overwritten: the command refuses before writing anything
+link. Anything else at either path (a file, a symlink elsewhere, a different directory, or a
+`skills` parent that is not a directory) is never overwritten: the command refuses before writing anything
 ([`skills-target-occupied`](ERRORS.md#skills-target-occupied)).
 
 Text output, one block per skill:

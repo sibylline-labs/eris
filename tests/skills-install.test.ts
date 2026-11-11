@@ -93,7 +93,7 @@ describe("eris skills install (every skill), and a rerun", () => {
     /** When an install compares nothing, or refuses the directory `npx skills add -a claude-code` leaves, an upgrade keeps the old skill text: observed at the states printed and the files after. */
     setup();
     mkdirSync(canonical("eris-socrates"), { recursive: true });
-    writeFileSync(join(canonical("eris-socrates"), "SKILL.md"), "stale\n");
+    writeFileSync(join(canonical("eris-socrates"), "SKILL.md"), "---\nname: eris-socrates\ndescription: stale\n---\nold text\n");
     writeFileSync(join(canonical("eris-socrates"), "extra.md"), "left over\n");
     mkdirSync(claudeLink("eris-socrates"), { recursive: true });
     writeFileSync(join(claudeLink("eris-socrates"), "SKILL.md"), "---\nname: eris-socrates\ndescription: old copy\n---\n");
@@ -103,6 +103,23 @@ describe("eris skills install (every skill), and a rerun", () => {
     expect(tree(canonical("eris-socrates"))).toEqual(tree(join(SKILLS, "eris-socrates")));
     expect(readlinkSync(claudeLink("eris-socrates"))).toBe("../../.agents/skills/eris-socrates");
     expect(readdirSync(join(sb.home, ".agents", "skills"))).toEqual(["eris-socrates"]);
+  });
+});
+
+describe("eris skills install with a symlinked ~/.claude", () => {
+  // admits: a relative link computed from the unresolved path dangles when ~/.claude lives elsewhere, and is reported linked.
+  it("writes a link that resolves from where ~/.claude really is, and a rerun finds it", async () => {
+    /** When the link target is computed against $HOME/.claude rather than its real directory, Claude Code sees a dangling link while eris reports `linked` then `unchanged`: observed by reading SKILL.md through the link. */
+    setup(false);
+    const real = join(sb.dir, "elsewhere", "deep", "claude");
+    mkdirSync(real, { recursive: true });
+    symlinkSync(real, join(sb.home, ".claude"));
+    const r = await sb.run(["skills", "install", "eris-yaks"]);
+    expect({ status: r.status, stderr: r.stderr }).toEqual({ status: 0, stderr: "" });
+    expect(r.stdout).toContain("  claude-code: ~/.claude/skills/eris-yaks (linked)\n");
+    expect(readFileSync(join(claudeLink("eris-yaks"), "SKILL.md"), "utf8")).toBe(readFileSync(join(SKILLS, "eris-yaks", "SKILL.md"), "utf8"));
+    const again = await sb.run(["skills", "install", "eris-yaks"]);
+    expect(again.stdout).toContain("  claude-code: ~/.claude/skills/eris-yaks (unchanged)\n");
   });
 });
 
@@ -142,6 +159,29 @@ describe("eris skills install refusals", () => {
   });
 
   // admits: a file where the skill directory goes would be deleted by a blind replace.
+
+  // admits: replacing any directory named like a skill deletes whatever the user kept there.
+  it("a directory at the canonical path that is not this skill is refused, its files kept", async () => {
+    /** When every directory at ~/.agents/skills/<name> is treated as a prior install, a user's own files there are deleted and the run reports `updated`: observed at the exit, the slug and the file left behind. */
+    setup();
+    mkdirSync(canonical("eris-yaks"), { recursive: true });
+    writeFileSync(join(canonical("eris-yaks"), "my-notes.txt"), "precious\n");
+    const r = await sb.run(["skills", "install", "eris-yaks"]);
+    expect({ status: r.status, stdout: r.stdout }).toEqual({ status: 1, stdout: "" });
+    expect(r.stderr).toContain("ERROR ~/.agents/skills/eris-yaks is a directory that is not the eris-yaks skill; nothing was installed\nslug: skills-target-occupied\n");
+    expect(readFileSync(join(canonical("eris-yaks"), "my-notes.txt"), "utf8")).toBe("precious\n");
+  });
+
+  // admits: a ~/.claude/skills that is a file made the install write half and crash without a slug.
+  it("a ~/.claude/skills that is not a directory is refused before anything is written", async () => {
+    /** When the parent of the link is a file, the canonical copy is written and the link step fails with a raw error: observed at the exit, the slug and ~/.agents. */
+    setup();
+    writeFileSync(join(sb.home, ".claude", "skills"), "x\n");
+    const r = await sb.run(["skills", "install", "eris-yaks"]);
+    expect({ status: r.status, stdout: r.stdout }).toEqual({ status: 1, stdout: "" });
+    expect(r.stderr).toContain("ERROR ~/.claude/skills is not a directory; nothing was installed\nslug: skills-target-occupied\n");
+    expect(existsSync(join(sb.home, ".agents"))).toBe(false);
+  });
 
   it("a file at the canonical path is refused", async () => {
     /** When the canonical path holds a file and the install removes it, user data under ~/.agents is lost: observed at the exit, the slug and the file. */
