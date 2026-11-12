@@ -16,11 +16,11 @@ import { SocratesProblem, SocratesSubmitReceipt, SocratesSubmitRequest, Socrates
 import { runSocrates } from "../plugins/socrates/submit";
 import { REDACTION_CLASSES } from "../packages/outbound-scan/src/index";
 import * as Verbs from "../plugins/socrates/socrates-contract.v1.verbs";
-import { RUBRIC_V1, RUBRIC_V2 } from "../packages/socrates-core/src/index";
+import { RUBRICS } from "../packages/socrates-core/src/index";
 import type { ZodTypeAny } from "zod";
 import { CliExit } from "../src/cli/ts-verb";
 import { expectFailBlock, type Sandbox, sandbox } from "./helpers/blackbox";
-import { answers, H1, ORG_V2, PASSING, policyResult } from "./helpers/socrates-fake";
+import { answers, H1, ORG_POLICY, PASSING, policyResult } from "./helpers/socrates-fake";
 
 const REPO = resolve(import.meta.dir, "..");
 const TOKEN = ["sib", "01HZX3K5Q8W2N4R6T8V0Y2B4D6", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
@@ -86,7 +86,7 @@ describe("the contract v1 routes beyond submit, against the shared golden file",
   it("classify: every answer of every published rubric decodes", () => {
     /** Published rubrics are frozen, so an answer spelling the wire refuses can never be sent. */
     const candidate = { kind: "decision", title: "t", statement: "s", source: "https://example.com" };
-    for (const [version, rubric] of [["rubric@v1", RUBRIC_V1], ["rubric@v2", RUBRIC_V2]] as const) {
+    for (const [version, rubric] of Object.entries(RUBRICS)) {
       for (const [gate, question] of Object.entries(rubric.questions)) {
         for (const answer of question.answers) {
           const raw = { schema_version: "1.0.0", rubric_version: version, candidate, answers: { [gate]: answer } };
@@ -119,7 +119,7 @@ beforeEach(() => {
   answer = () => Response.json({ candidate_id: "cand_1", deduped: false, contract_version: "1.0.0" });
   home = realpathSync(mkdtempSync(join(tmpdir(), "eris-socrates-home-")));
   mkdirSync(join(home, ".eris"));
-  writeFileSync(join(home, ".eris", "socrates-policy.json"), JSON.stringify({ ...policyResult(H1, ORG_V2), fetched_at: new Date().toISOString() }));
+  writeFileSync(join(home, ".eris", "socrates-policy.json"), JSON.stringify({ ...policyResult(H1, ORG_POLICY), fetched_at: new Date().toISOString() }));
 });
 afterEach(() => rmSync(home, { recursive: true, force: true }));
 
@@ -175,7 +175,7 @@ describe("eris socrates submit", () => {
         body: {
           schema_version: "1.0.0",
           candidate: { kind: "decision", title: "Errors use problem+json", statement: "Every 4xx/5xx is RFC 7807.", source: "https://example.com/pr/14", project: "platform" },
-          classification: { rubric_version: "rubric@v2", policy_hash: H1, answers: PASSING },
+          classification: { rubric_version: "rubric@v3", policy_hash: H1, answers: PASSING },
         },
       },
     ]);
@@ -372,7 +372,7 @@ describe("eris socrates submit --allow-redaction, through the eris entrypoint", 
         const path = new URL(req.url).pathname;
         seen.push({ path, body: req.method === "GET" ? undefined : ((await req.json()) as Record<string, unknown>) });
         if (path === "/v1/yaks") return Response.json({ id: "yak_1", idempotency_key: "k", replay: false, contract_version: "2.0.0" });
-        if (path === "/v1/socrates/policy") return Response.json(policyResult(H1, ORG_V2));
+        if (path === "/v1/socrates/policy") return Response.json(policyResult(H1, ORG_POLICY));
         return Response.json({ candidate_id: "cand_1", deduped: false, contract_version: "1.0.0" });
       },
     });

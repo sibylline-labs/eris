@@ -39,18 +39,18 @@ link to where it was decided. Never invent one. A session that decided nothing e
 eris socrates consult --brief --project <name>
 ```
 
-An entry that already says it means the candidate is already recorded; one that later settled it
-the other way makes it stale (skip it). A current entry, Canon rule or PRD row that says otherwise
-makes it a conflict. Then, for each candidate:
+An entry or Canon row that already says it means the candidate is already recorded; one that later
+settled it the other way makes it stale (skip it). A current entry, Canon rule or PRD row that says
+otherwise makes it a conflict. Then, for each candidate:
 
 ```sh
 eris socrates classify --help
 eris socrates classify --title <title> --statement <statement> --source <url> --project <name>
 ```
 
-Answer every question the help asks, from what you observed, and do what the `next:` line says.
-Write the statement before you classify and never reword it to change the verdict; if you think a
-gate misread it, say so to your user and leave it unfiled. Three shapes take no questions:
+Answer the help's questions from this candidate's own statement, never one answer set reused
+across candidates, and do what `next:` says. Write the statement first and never reword it to change
+the verdict; if a gate misread it, tell your user and leave it unfiled. Three shapes take no questions:
 
 - A PRD the session wrote or extended files once, never one entry per decision in it:
   `eris socrates classify --kind prd --title <title> --statement <grammar> --source <url> --project <name>`.
