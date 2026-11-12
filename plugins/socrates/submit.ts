@@ -60,7 +60,7 @@ import { isRedactionClass, prepareOutbound, REDACTION_CLASSES, redact, type Over
 import { CURRENT_RUBRIC, extractFeatures, issueEntryOf } from "eris/socrates-core";
 import { groupArgs, readArgs, renderWarnLines, runErisVerb, type VerbContext } from "../../src/cli/plugin";
 import { ANSWER_FIX, answersOf, issues, OVERRIDE_FIX, overridesOf, pairs } from "./answers";
-import { fail, postSocrates, printable, refuse, sendSocrates, type SocratesDeps, type SocratesEndpoint, socratesEndpoint } from "./client";
+import { fail, heldLine, postSocrates, printable, refuse, sendSocrates, type SocratesDeps, type SocratesEndpoint, socratesEndpoint } from "./client";
 import plugin from "./index";
 import { localPolicy, readFreshPolicy, readRepoPolicy, refreshPolicyAfterSubmit } from "./policy";
 import { readFragments } from "./fragment";
@@ -101,7 +101,8 @@ export const SUBMIT_USAGE = `Usage: eris socrates submit --title <text> --statem
 
 Send one candidate to the Socrates endpoint and print its receipt:
 'submitted: <id>', or 'already submitted: <id>' when the endpoint already
-holds it, then '  verdict: <verdict> (<rubric>, policy <hash>)' when the
+holds it, then '  held by the verbosity cap until <Mon-DD HH:MMZ>' when the review
+Epic's cap holds the candidate, then '  verdict: <verdict> (<rubric>, policy <hash>)' when the
 candidate was stamped with answers; when it was sent as unfit, '  filed for an
 answer: needs-input', or, when the endpoint already held an equal candidate that
 is no longer waiting, '  not stored: ...' (the hypothesis and evidence were not
@@ -385,12 +386,14 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
       ...(classified !== undefined ? { classification: classified } : {}),
       ...(asUnfit && reply.unfit !== undefined ? { unfit: reply.unfit } : {}),
       ...(stored.length > 0 ? { evidence: stored } : {}),
+      ...(reply.held_until === undefined ? {} : { held_until: reply.held_until, held_reason: reply.held_reason }),
       redactions: outbound.redactions,
       overrides: [...overridden].sort(),
     };
     ctx.stdout.write(`${JSON.stringify(record)}\n`);
   } else {
     ctx.stdout.write(`${reply.deduped ? "already submitted" : "submitted"}: ${printable(reply.candidate_id)}\n`);
+    if (reply.held_until !== undefined) ctx.stdout.write(`  ${heldLine(reply.held_until)}\n`);
     if (classified !== undefined) ctx.stdout.write(`  verdict: ${classified.verdict} (${classified.rubric_version}, policy ${classified.policy_hash.slice(0, 12)})\n`);
     if (asUnfit && reply.unfit !== undefined) ctx.stdout.write(`${unfitLine(reply.deduped, reply.unfit.state)}\n`);
     for (const f of stored) ctx.stdout.write(`  evidence: ${printable(f.fragment_id)} ${printable(f.provenance)}\n`);
