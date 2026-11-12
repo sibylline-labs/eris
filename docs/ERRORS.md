@@ -1,6 +1,6 @@
 # eris failure model
 
-Hard failures go through `renderFailureBlock` / `emitFailureAndExit`
+Hard failures go through `renderFailureBlock` / `reportFailure`
 (`ts/lib/eris-fail.ts`), which print one
 actionable block and exit `1` immediately — a first failure never cascades
 into follow-on ERROR lines. Output is one-line-per-field with stable prefixes
@@ -1221,8 +1221,8 @@ or accept the window.
 
 ## Adding a new slug
 
-Call `emitFailureAndExit({ slug, what, fix, docs })` (or `reportFailure`, to
-return 1 instead of exiting) from `ts/lib/eris-fail.ts` at the callsite (`docs`
+Call `reportFailure({ slug, what, fix, docs })` (it writes the block and
+returns 1) from `ts/lib/eris-fail.ts` at the callsite (`docs`
 defaults to `docs/ERRORS.md#<slug>`), then add a `### <slug>` heading here. A
 plugin calls `renderFailureBlock` from the SDK (`src/cli/plugin.ts`). Slugs are
 lowercase kebab-case, stable once shipped.

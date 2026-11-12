@@ -45,18 +45,7 @@ import {
   nonBlank,
 } from "./socrates-contract.v1";
 
-export {
-  SOCRATES_DOC_KINDS,
-  SOCRATES_EVIDENCE_MAX_LENGTH,
-  SOCRATES_KEY_MAX_LENGTH,
-  SOCRATES_OVERRIDE_REASON_MAX_LENGTH,
-  SocratesCandidateState,
-  SocratesDocKind,
-  SocratesEvidenceKind,
-  SocratesOverride,
-  SocratesRepoPolicy,
-  SocratesVerdict,
-} from "./socrates-contract.v1";
+export { SocratesDocKind, SocratesOverride } from "./socrates-contract.v1";
 
 /** Every route, so a verb never spells a path or method by hand. */
 export const SOCRATES_ROUTES = {

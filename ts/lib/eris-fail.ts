@@ -7,8 +7,8 @@
  * a **contract**: consumers line-prefix-parse it, and a re-implementation is
  * required to *reproduce* the grammar, never to re-derive it.
  * `tests/eris-fail.test.ts` proves byte-identity against what that Bash
- * implementation printed, captured in a real bash subprocess and frozen
- * (tests/helpers/frozen-oracle.ts) — not by eyeballing the two
+ * implementation printed, captured in a real bash subprocess and recorded
+ * in the test (`BASH_REPORTS`) — not by eyeballing the two
  * implementations side by side.
  *
  * The grammar (docs/OUTPUT-CONTRACT.md §4), reproduced here exactly:
@@ -136,8 +136,7 @@ export interface FailureSink {
 /**
  * The TS `eris::report`: write the block and RETURN 1
  * instead of exiting, for a caller that owns something which must run after
- * the failure (e.g. a failed WAL result after a failed write). Prefer
- * `emitFailureAndExit`; the caller of this adds its own summary.
+ * the failure (e.g. a failed WAL result after a failed write); the caller adds its own summary.
  * `tests/eris-fail-golden.test.ts` pins it against every documented slug.
  */
 export function reportFailure(
@@ -147,19 +146,6 @@ export function reportFailure(
 ): 1 {
   sink.write(renderFailureBlock(input, home));
   return 1;
-}
-
-/** Write the block to stderr and exit 1 — the TS `eris::fail` equivalent.
- *  Stdout is never touched (§1 of the output contract: a failure writes
- *  nothing to stdout). */
-export function emitFailureAndExit(
-  input: ErisFailureInput,
-  home: string = erisHome(),
-  sink: FailureSink = process.stderr,
-  exit: (code: number) => never = (code) => process.exit(code),
-): never {
-  sink.write(renderFailureBlock(input, home));
-  return exit(1);
 }
 
 /**
@@ -173,8 +159,4 @@ export function emitFailureAndExit(
  */
 export function renderWarnLines(reason: string, slug: string): string {
   return `WARN ${reason}\nslug: ${slug}\n`;
-}
-
-export function emitWarn(reason: string, slug: string): void {
-  process.stderr.write(renderWarnLines(reason, slug));
 }

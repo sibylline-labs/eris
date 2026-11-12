@@ -80,17 +80,10 @@ export {
   resolveOrgBearer,
   resolveOrgSelection,
   resolveUrl,
-  selectOrgConfig,
-  tokenOrg,
   writeYaksFileConfig,
   yaksConfigPath,
   yaksTokenSource,
-  type OrgBearer,
-  type OrgSelection,
   type YaksBearer,
-  type YaksFileConfig,
-  type YaksTokenSource,
-  type YaksUrlSource,
 } from "../../src/cli/plugin";
 
 // --- Paths ------------------------------------------------------------------
