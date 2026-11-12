@@ -1,5 +1,6 @@
 /**
- * Every slug eris raises has a `### <slug>` heading in docs/ERRORS.md.
+ * Every slug eris raises has a `### <slug>` heading in docs/ERRORS.md, and every
+ * heading there has a raiser.
  *
  * The slugs are harvested from the source, never listed by hand: a hand list
  * silently stops covering the next slug somebody adds (eighteen once shipped
@@ -11,13 +12,14 @@
  *
  *   shell  printf 'slug: %s\n' <slug>        the shim's own block (eris)
  *   TS     slug: "<slug>"                    the renderFailureBlock / outcome shape
+ *          fail("<slug>", …)                 a command's local `fail` helper
  *          type …Slug… = | "<slug>" …        a union of every slug an engine emits
  *          renderWarnLines(…, "<slug>")      a warn block's slug argument
  *          the yak engine: a lone `"<slug>",` line (an argument list)
  *
- * Forward direction only: every raised slug needs a heading. A heading with no
- * raiser is allowed — documenting a slug before its raiser lands is the safe
- * order.
+ * Both directions: every raised slug needs a heading, and every heading needs a
+ * raiser. A slug whose raiser is gone loses its heading in the same change, so
+ * ERRORS.md never documents a failure nothing can print.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -43,6 +45,7 @@ export function harvestSlugs(sources: readonly Source[]): Set<string> {
   for (const { path, text } of sources) {
     if (path.endsWith(".ts")) {
       add(new RegExp(`slug: "(${KEBAB})"`, "g"), text);
+      add(new RegExp(`\\bfail\\(\\s*"(${KEBAB})"`, "g"), text);
       for (const u of text.matchAll(/type \w*Slug\w*\s*=([^;]*);/g)) add(new RegExp(`"(${KEBAB})"`, "g"), u[1]!);
       add(new RegExp(`renderWarnLines\\([^;]*?,\\s*"(${KEBAB})"\\s*\\)`, "g"), text);
       if (LONE_LITERAL_FILES.has(path)) add(new RegExp(`^\\s*"(${KEBAB})",?\\s*$`, "gm"), text);
@@ -56,6 +59,11 @@ export function harvestSlugs(sources: readonly Source[]): Set<string> {
 export function undocumented(slugs: Iterable<string>, errorsMd: string): string[] {
   const headings = new Set([...errorsMd.matchAll(/^### (\S+)$/gm)].map((m) => m[1]!));
   return [...slugs].filter((s) => !headings.has(s)).sort();
+}
+
+export function unraised(slugs: Iterable<string>, errorsMd: string): string[] {
+  const raised = new Set(slugs);
+  return [...errorsMd.matchAll(/^### (\S+)$/gm)].map((m) => m[1]!).filter((h) => !raised.has(h)).sort();
 }
 
 function walk(dir: string, keep: (p: string) => boolean): string[] {
@@ -88,7 +96,9 @@ describe("docs/ERRORS.md covers every shipped slug", () => {
     const fromTs = harvestSlugs(ts);
     const md = readFileSync(join(REPO, "docs/ERRORS.md"), "utf8");
     expect(undocumented(new Set([...fromBash, ...fromTs]), md)).toEqual([]);
-    // Floors just under the measured counts (shell 1, TS 38):
+    /** When a slug's raiser is deleted and its heading stays, ERRORS.md documents a failure nothing can print: observed as a `### <slug>` heading no harvested raiser matches. */
+    expect(unraised(new Set([...fromBash, ...fromTs]), md)).toEqual([]);
+    // Floors just under the measured counts (shell 1, TS 134):
     // a pattern that stops matching would otherwise pass vacuously.
     expect(fromTs.size).toBeGreaterThan(35);
     expect(fromBash.has("eris-bun-missing")).toBe(true);
@@ -105,5 +115,17 @@ describe("docs/ERRORS.md covers every shipped slug", () => {
     const slugs = harvestSlugs(sources);
     expect([...slugs].sort()).toEqual(["made-up-five", "made-up-four", "made-up-one", "made-up-three", "made-up-two"]);
     expect(undocumented(slugs, "### made-up-one\n### made-up-two\n")).toEqual(["made-up-five", "made-up-four", "made-up-three"]);
+  });
+
+  it("a heading with no raiser is reported, and a raiser clears it", () => {
+    /** When the reverse check stops seeing a heading or a raiser shape, a retired slug's heading stays in ERRORS.md unflagged: observed at the headings left once the harvested slugs are removed. */
+    const slugs = harvestSlugs([
+      { path: "src/a.ts", text: 'die({ slug: "kept-one", what: "w", fix: "f" });' },
+      { path: "src/b.ts", text: 'fail("kept-two", "w", "f");' },
+    ]);
+    const md = "### kept-one\n### kept-two\n### retired-one\n### retired-two\n";
+    expect([...slugs].sort()).toEqual(["kept-one", "kept-two"]);
+    expect(unraised(slugs, md)).toEqual(["retired-one", "retired-two"]);
+    expect(unraised([...slugs, "retired-one", "retired-two"], md)).toEqual([]);
   });
 });

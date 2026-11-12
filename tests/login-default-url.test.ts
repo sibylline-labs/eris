@@ -57,7 +57,7 @@ afterEach(() => {
 
 describe("eris login — which endpoint", () => {
   it("with no --url, no ERIS_YAKS_URL and no yaks.json, opens a tunnel to the default host and writes nothing", async () => {
-    /** When the default is missing or wrong, a fresh machine's `eris login` fails login-url-unresolved or signs in somewhere else — observed at the CONNECT the proxy received and the host stderr names. */
+    /** When the default is missing or wrong, a fresh machine's `eris login` finds no endpoint or signs in somewhere else — observed at the CONNECT the proxy received and the host stderr names. */
     sb = sandbox();
     const r = await sb.run(["login", "--no-browser"], { env: { HTTPS_PROXY: proxyUrl } });
     expect({ rc: r.status, stdout: r.stdout }).toEqual({ rc: 1, stdout: "" });

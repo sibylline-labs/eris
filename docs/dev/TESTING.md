@@ -47,12 +47,13 @@ throws before bundling stays in-process.
 | Black-box CLI | the real `eris` entrypoint as a subprocess, through `tests/helpers/blackbox.ts`: stdout and stderr captured separately, files and modes left on disk, PATH-fake argv | `tests/output-contract.test.ts`, `tests/exit-codes-cli.test.ts` |
 | In-process | `main` driven with a composed CLI, the seam every command line crosses | `tests/plugins.test.ts` |
 | Handler / engine | a handler or a pure module called with injected deps | `tests/yak.test.ts`, `tests/cli-args.test.ts` |
-| Golden | bytes compared to a committed capture, often of the deleted Bash | `tests/eris-fail.test.ts` against `tests/helpers/frozen-oracle.ts` |
+| Golden | bytes compared to a committed capture, often of the deleted Bash | `tests/eris-fail.test.ts` against its `BASH_REPORTS` table |
 | Policy | a scan over the tree | `tests/source-is-text.test.ts` (FREEZE, the banned quadratic idiom), `tests/compile-safe.test.ts`, `tests/errors-doc.test.ts` |
 
-`tests/helpers/frozen-oracle.ts` answers for the earlier Bash implementation from
-`tests/fixtures/yaml-parity/oracle-goldens.json`. A call with no recorded answer
-throws; it never falls back to a live tool.
+The recorded Bash answers sit in the tests that compare against them (`BASH_REPORTS` in
+`tests/eris-fail.test.ts`, `BASH_ANSWERS` in `tests/cli-router.test.ts`). They cannot be
+regenerated: a change to the TS output is a change to the contract
+(`docs/OUTPUT-CONTRACT.md`), never a reason to edit an entry.
 
 ## Fakes
 

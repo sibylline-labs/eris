@@ -69,8 +69,16 @@ export const HANDLERS: Readonly<Record<string, () => Promise<VerbHandler>>> = {
   skills: async () => (await import("./cli/commands/skills")).runSkills,
 };
 
-/** Core composed with the build's plugin list. */
-export const CLI: Cli = composeCli(REGISTRY, HANDLERS, PLUGINS);
+let composed: Cli | undefined;
+
+/**
+ * Core composed with the build's plugin list, on first call. Lazy so that a
+ * distribution importing `eris/sdk` and composing its own CLI never pays for this
+ * one: nothing at module evaluation may call it.
+ */
+export function defaultCli(): Cli {
+  return (composed ??= composeCli(REGISTRY, HANDLERS, PLUGINS));
+}
 
 /** The handler an unknown verb reaches, after the global pre-pass. */
 export const UNKNOWN_VERB = "\0unknown";
@@ -83,7 +91,7 @@ const unknownCommand =
   };
 
 export interface MainOptions {
-  /** The composed commands; `CLI` when absent. */
+  /** The composed commands; `defaultCli()` when absent. */
   cli?: Cli;
   /** The products this workspace has bought; `NO_ENTITLEMENTS` when absent. */
   entitlements?: ReadonlySet<string>;
@@ -151,7 +159,7 @@ export async function main(
   if (erisDir === null) return 1;
   for (const k of SHIM_ENV) delete env[k];
 
-  const cli = opts.cli ?? CLI;
+  const cli = opts.cli ?? defaultCli();
   const session: Session = { cli, entitled: opts.entitlements ?? NO_ENTITLEMENTS };
   const r = route(argv, opts.table ?? cli.table);
 

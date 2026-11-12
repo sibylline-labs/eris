@@ -5,7 +5,7 @@
  * verb the table does not know is `unknown` (the router's own
  * "Unknown command" refusal). The TS pre-pass (src/cli/output.ts) must accept,
  * refuse and strip exactly as the Bash pre-pass it replaced did, whose
- * answers are frozen in tests/fixtures/yaml-parity/oracle-goldens.json.
+ * answers are recorded as literals in the `BASH_ANSWERS` table below.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -13,7 +13,6 @@ import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { GlobalFlagError, locateVerb, parseGlobal } from "../src/cli/args";
 import { implOf, JSON_SURFACES, REGISTRY, route, subsOf, TABLE, UNSUPPORTED_FIX } from "./helpers/build-cli";
-import { bashRepo } from "./helpers/frozen-oracle";
 import { ERIS } from "./helpers/blackbox";
 
 const REPO = resolve(import.meta.dir, "..");
@@ -123,31 +122,33 @@ describe("route()", () => {
   });
 });
 
-describe("global pre-pass matches the frozen Bash answers", () => {
-  // The recorded script, verbatim: it is part of each golden's key.
-  const BASH_PARSE = `source lib/output.sh
-output::parse_global "$@"
-printf '%s\\n' "$ERIS_OUTPUT"
-printf '<%s>' "\${ERIS_ARGV[@]}"`;
+describe("global pre-pass matches the recorded Bash answers", () => {
+  /**
+   * What the earlier Bash pre-pass (`output::parse_global`, then printing `$ERIS_OUTPUT` and
+   * each remaining argument as `<arg>`) answered for each argv, recorded before that
+   * implementation was deleted. They cannot be regenerated, so a change to the TS output
+   * is a change to the contract (docs/OUTPUT-CONTRACT.md), never a reason to edit a row.
+   * `<ERIS>` stands for the checkout.
+   */
+  const BASH_ANSWERS: { argv: string[]; status: number; stdout: string; stderr: string }[] = [
+    { argv: [], status: 0, stdout: "text\n<>", stderr: "" },
+    { argv: ["audit","x"], status: 0, stdout: "text\n<audit><x>", stderr: "" },
+    { argv: ["--output","json","node","show"], status: 0, stdout: "json\n<node><show>", stderr: "" },
+    { argv: ["node","show","--output=text"], status: 0, stdout: "text\n<node><show>", stderr: "" },
+    { argv: ["--output","text","--output","json","vars"], status: 0, stdout: "json\n<vars>", stderr: "" },
+    { argv: ["--output=bogus","a"], status: 1, stdout: "", stderr: "ERROR --output takes 'text' or 'json' (got 'bogus')\nslug: output-format-unknown\nfix: eris --output json <command>     machine rendering (JSON on stdout)\nfix: eris --output text <command>     human rendering (the default)\ndocs: <ERIS>/docs/OUTPUT-CONTRACT.md#2-the-flag\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/OUTPUT-CONTRACT.md#2-the-flag\n" },
+    { argv: ["--output","bogus\u0007x","a"], status: 1, stdout: "", stderr: "ERROR --output takes 'text' or 'json' (got 'bogusx')\nslug: output-format-unknown\nfix: eris --output json <command>     machine rendering (JSON on stdout)\nfix: eris --output text <command>     human rendering (the default)\ndocs: <ERIS>/docs/OUTPUT-CONTRACT.md#2-the-flag\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/OUTPUT-CONTRACT.md#2-the-flag\n" },
+    { argv: ["--output","","a"], status: 1, stdout: "", stderr: "ERROR --output takes 'text' or 'json'\nslug: output-format-unknown\nfix: eris --output json <command>     machine rendering (JSON on stdout)\nfix: eris --output text <command>     human rendering (the default)\ndocs: <ERIS>/docs/OUTPUT-CONTRACT.md#2-the-flag\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/OUTPUT-CONTRACT.md#2-the-flag\n" },
+    { argv: ["a","--output"], status: 1, stdout: "", stderr: "ERROR --output takes 'text' or 'json'\nslug: output-format-unknown\nfix: eris --output json <command>     machine rendering (JSON on stdout)\nfix: eris --output text <command>     human rendering (the default)\ndocs: <ERIS>/docs/OUTPUT-CONTRACT.md#2-the-flag\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/OUTPUT-CONTRACT.md#2-the-flag\n" },
+    { argv: ["--output=","a"], status: 0, stdout: "text\n<a>", stderr: "" },
+    { argv: ["a","--","--output","json"], status: 0, stdout: "text\n<a><--output><json>", stderr: "" },
+    { argv: ["--","--"], status: 0, stdout: "text\n<-->", stderr: "" },
+  ];
 
   it("parses, strips and refuses the flag identically", () => {
-    const cases: string[][] = [
-      [],
-      ["audit", "x"],
-      ["--output", "json", "node", "show"],
-      ["node", "show", "--output=text"],
-      ["--output", "text", "--output", "json", "vars"],
-      ["--output=bogus", "a"],
-      ["--output", "bogus\u0007x", "a"],
-      ["--output", "", "a"],
-      ["a", "--output"],
-      ["--output=", "a"],
-      ["a", "--", "--output", "json"],
-      ["--", "--"],
-    ];
-    for (const argv of cases) {
-      // The Bash pre-pass's answer, frozen (tests/helpers/frozen-oracle.ts).
-      const b = bashRepo(BASH_PARSE, argv);
+    /** When the TS pre-pass drifts from the recorded Bash answer for any argv, a script that relied on the flag's parse, strip or refusal changes behaviour: observed as the (status, stdout, stderr) triple per argv. */
+    for (const b of BASH_ANSWERS) {
+      const argv = b.argv;
       let ts: { status: number; stdout: string; stderr: string };
       try {
         const p = parseGlobal(argv, REPO);
@@ -156,11 +157,9 @@ printf '<%s>' "\${ERIS_ARGV[@]}"`;
         if (!(e instanceof GlobalFlagError)) throw e;
         ts = { status: 1, stdout: "", stderr: e.block };
       }
-      expect({ argv, ...ts }).toEqual({ argv, status: b.status ?? -1, stdout: b.stdout, stderr: b.stderr });
+      expect({ argv, ...ts }).toEqual({ argv, status: b.status, stdout: b.stdout, stderr: b.stderr.replaceAll("<ERIS>", REPO) });
     }
   });
-
-
 });
 
 /** Every `--output json` surface in the registry, as `group` or `group sub`. */

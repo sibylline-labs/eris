@@ -241,12 +241,7 @@ function maxOperands(row: Row): number {
   return pos.some((p) => p.endsWith("...")) ? Number.POSITIVE_INFINITY : pos.length;
 }
 
-/** Parse `argv` (everything after the verb's path) against `path`'s row. Pure. */
-export function parseVerbArgs<P extends VerbPath>(path: P, argv: readonly string[]): Parsed<P> {
-  return parseRow(rowOf(path), argv) as Parsed<P>;
-}
-
-/** The row-driven parse, for a row given directly (tests, and `parseVerbArgs`). */
+/** The row-driven parse, for a row given directly. Pure. */
 export function parseRow(row: Row, argv: readonly string[]): Parsed<VerbPath> {
   const end = argv.indexOf("--");
   const flagged = end === -1 ? argv : argv.slice(0, end);

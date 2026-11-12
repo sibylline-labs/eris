@@ -30,7 +30,8 @@
  *   - the runtime: subprocesses (the only way eris spawns), the bounded pool
  *     (`runPool`, and the `ERIS_BATCH_*` readers), the diagnostics, the
  *     install root, and the build's identity (`BUILD_ID`, `releaseRepo()`, the
- *     `DistributionIdentity` that `build()` and `runProgram` take);
+ *     `DistributionIdentity` that `build()` and `runProgram` take, and `VERSION`,
+ *     the version `eris --version` prints);
  *   - `build()`, which compiles a distribution (src/build.ts), loaded on its
  *     first call so a plugin manifest importing this module stays light on the
  *     completion path.
@@ -60,7 +61,7 @@ export { childEnv, nodeRunner, runMany, signalTree } from "./runtime/process";
 export { resolveConcurrency, resolveDeadlineMs, runPool } from "../ts/lib/pool";
 export { info, ok, warn } from "./runtime/logging";
 export type { DistributionIdentity } from "./runtime/home";
-export { BUILD_ID, installRoot, installRootIsUnwritten, isCompiled, releaseRepo } from "./runtime/home";
+export { BUILD_ID, installRoot, installRootIsUnwritten, isCompiled, releaseRepo, VERSION } from "./runtime/home";
 export type { ErisFailureInput } from "../ts/lib/eris-fail";
 export type { BuildOptions, BuildResult, BuildStub } from "./build";
 

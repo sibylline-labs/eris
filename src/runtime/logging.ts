@@ -34,7 +34,7 @@ export function ok(msg: string, sink: LogSink = process.stderr): void {
   sink.write(`INFO ✓ ${msg}\n`);
 }
 
-/** `eris::die` — the ERROR line, then exit 1. Prefer `emitFailureAndExit`
+/** `eris::die` — the ERROR line, then exit 1. Prefer `renderFailureBlock`
  *  (ts/lib/eris-fail.ts) for anything an operator must act on: an unslugged
  *  die carries no `slug:`/`docs:` pointer. */
 export function die(msg: string, sink: LogSink = process.stderr, exit: ExitFn = defaultExit): never {

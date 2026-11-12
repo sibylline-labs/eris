@@ -5,14 +5,13 @@
  * the earlier Bash `eris::report`'s stderr output for the same inputs
  * (docs/OUTPUT-CONTRACT.md §4 — consumers line-prefix-parse this block). This
  * file proves that against what the real bash implementation printed in a
- * subprocess, frozen before it was deleted (tests/helpers/frozen-oracle.ts) —
+ * subprocess, recorded before it was deleted (`BASH_REPORTS` below) —
  * never by asserting the TS output looks right in isolation, which would
  * only prove the TS side agrees with itself.
  */
 
 import { describe, it, expect } from "bun:test";
 import { join } from "node:path";
-import { errorsReport } from "./helpers/frozen-oracle";
 import {
   erisHome,
   splitFixLines,
@@ -27,18 +26,29 @@ const GITHUB_BLOB = "https://github.com/sibylline-labs/eris/blob/main";
 
 /**
  * What the REAL Bash `eris::report` printed in a bash subprocess for
- * the given inputs. `eris::report` RETURNED 1 rather than
+ * the given inputs, recorded before that implementation was deleted. `eris::report` RETURNED 1 rather than
  * exiting (the non-exiting sibling of `eris::fail`), so it could run with `set -e` still active in the caller's
  * shell without aborting the script. Positional args map 1:1 onto
- * `eris::report <slug> <what> [<fix>] [<docs>]`.
+ * `eris::report <slug> <what> [<fix>] [<docs>]`; each key is the JSON of those args.
+ * The answers cannot be regenerated: a change to the block is a change to the contract
+ * (docs/OUTPUT-CONTRACT.md), never a reason to edit an entry. `<ERIS>` stands for the checkout.
  */
+const BASH_REPORTS = new Map<string, { status: number; stderr: string }>([
+  ["[\"demo-slug\",\"something broke\",\"line one\\nline two\",\"docs/GRAPH.md#configuration\"]", { status: 1, stderr: "ERROR something broke\nslug: demo-slug\nfix: line one\nfix: line two\ndocs: <ERIS>/docs/GRAPH.md#configuration\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/GRAPH.md#configuration\n" }],
+  ["[\"my-slug\",\"broke\"]", { status: 1, stderr: "ERROR broke\nslug: my-slug\ndocs: <ERIS>/docs/ERRORS.md#my-slug\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/ERRORS.md#my-slug\n" }],
+  ["[\"blank-line-slug\",\"broke too\",\"a\\n\\nb\"]", { status: 1, stderr: "ERROR broke too\nslug: blank-line-slug\nfix: a\nfix: \nfix: b\ndocs: <ERIS>/docs/ERRORS.md#blank-line-slug\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/ERRORS.md#blank-line-slug\n" }],
+  ["[\"trailing-nl-slug\",\"broke thrice\",\"a\\nb\\n\"]", { status: 1, stderr: "ERROR broke thrice\nslug: trailing-nl-slug\nfix: a\nfix: b\nfix: \ndocs: <ERIS>/docs/ERRORS.md#trailing-nl-slug\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/ERRORS.md#trailing-nl-slug\n" }],
+  ["[\"quoting-slug\",\"cannot read \\\"some file\\\": permission denied\",\"chmod 0600 \\\"some file\\\"\"]", { status: 1, stderr: "ERROR cannot read \"some file\": permission denied\nslug: quoting-slug\nfix: chmod 0600 \"some file\"\ndocs: <ERIS>/docs/ERRORS.md#quoting-slug\ndocs: https://github.com/sibylline-labs/eris/blob/main/docs/ERRORS.md#quoting-slug\n" }],
+
+]);
+
 function realErisReport(slug: string, what: string, fix?: string, docs?: string): { stderr: string; status: number } {
   const args = [slug, what];
   if (fix !== undefined || docs !== undefined) args.push(fix ?? "");
   if (docs !== undefined) args.push(docs);
-  // What eris::report printed, frozen (tests/helpers/frozen-oracle.ts).
-  const r = errorsReport(args);
-  return { stderr: r.stderr, status: r.status };
+  const r = BASH_REPORTS.get(JSON.stringify(args));
+  if (r === undefined) throw new Error(`no recorded Bash answer for ${JSON.stringify(args)}; test an input BASH_REPORTS holds`);
+  return { stderr: r.stderr.replaceAll("<ERIS>", REPO_ROOT), status: r.status };
 }
 
 const REPO_HOME = erisHome({ ERIS_DIR: REPO_ROOT });

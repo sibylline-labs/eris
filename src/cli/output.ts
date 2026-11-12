@@ -6,8 +6,8 @@
  *
  * The refusal blocks are the contract in docs/OUTPUT-CONTRACT.md §2–§4;
  * `tests/cli-router.test.ts` holds them against the earlier Bash
- * implementation's answers, frozen in
- * tests/fixtures/yaml-parity/oracle-goldens.json.
+ * implementation's answers, recorded in
+ * its `BASH_ANSWERS` table.
  */
 
 import { renderFailureBlock } from "../../ts/lib/eris-fail";
