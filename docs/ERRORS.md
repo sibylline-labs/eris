@@ -824,14 +824,6 @@ a unique name. Exit 1.
 `eris yak discover` was given a section it does not have. Use one of `teams`,
 `projects`, `states` and `labels`, or none for all four. Exit 1.
 
-### login-url-unresolved
-
-No longer raised. `eris login` always has an endpoint: `--url`, then
-`ERIS_YAKS_URL`, then the `"url"` in `~/.eris/yaks.json`, then the default
-`https://api.sibylline.group`. An empty `--url` is refused as
-[`flag-value-missing`](#flag-value-missing). An older eris raised this slug when
-none of the first three was set; with this one, run `eris login`.
-
 ### login-unreachable
 
 The endpoint could not be reached when the device login started, or stopped
@@ -1230,10 +1222,12 @@ lowercase kebab-case, stable once shipped.
 `tests/errors-doc.test.ts` asserts that every slug has a heading here, and it
 **derives** the slug list from the raisers rather than carrying a copy: in the
 `eris` shim, its `printf 'slug: …'` block; in every TypeScript tree (`src/`,
-`ts/lib/`, `plugins/`), `slug: "…"` literals, the members of every `…Slug`
-union, and `renderWarnLines(…, "<slug>")` arguments. So a new slug is covered
-the moment it is raised — but it also fails the suite until its heading exists,
-which is the point.
+`ts/lib/`, `plugins/`), `slug: "…"` literals, `fail("…", …)` calls, the members
+of every `…Slug` union, and `renderWarnLines(…, "<slug>")` arguments. So a new
+slug is covered the moment it is raised — but it also fails the suite until its
+heading exists, which is the point. The check runs both ways: a heading whose
+slug nothing raises fails the suite too, so delete the heading in the change
+that removes the last raiser.
 
 ### skills-unknown
 
