@@ -217,4 +217,50 @@ describe("eris socrates classify steers the agent", () => {
     }
     expect(fetches).toEqual([]);
   });
+
+  // admits: when classify passes a title over 80 chars, multi-line, or holding an unbackticked dotted token, the agent gets `next: submit it` locally and is refused at submit; runtime string rules are invisible to tsc and ast-grep.
+  it("refuses titles the submit endpoint refuses, states the rules in --help, and accepts the advised fixes", async () => {
+    /** When classify accepts a title over 80 chars, multi-line, or with an unbackticked dotted token, the caller scores load-bearing locally and loses the candidate on submit. Observed at the exit code, slug, fix line, and --help. */
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+    const bad: [string, string[], RegExp][] = [
+      ["decision over 80 chars", ["--title", "x".repeat(81), "--statement", "Every 4xx is RFC 7807.", "--source", "https://example.com/pr/14", ...answers()], /<= 80 characters/],
+      ["practice over 80 chars", ["--kind", "practice", "--title", "y".repeat(82), "--statement", "Plans precede code.", "--source", "https://example.com/pr/14", ...answers({ practice: "how-people-work" })], /<= 80 characters/],
+      ["prd over 66 chars", ["--kind", "prd", "--title", "z".repeat(67), "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"], /<= 66 characters/],
+      ["unbackticked dotted identifier", ["--title", "Routes declare staticData.page as canvas", "--statement", "Every 4xx is RFC 7807.", "--source", "https://example.com/pr/14", ...answers()], /backticks/],
+      ["unbackticked file path", ["--title", "Document slugs in docs/ERRORS.md", "--statement", "Every 4xx is RFC 7807.", "--source", "https://example.com/pr/14", ...answers()], /backticks/],
+      ["multi-line title", ["--title", "Line one\nLine two", "--statement", "Every 4xx is RFC 7807.", "--source", "https://example.com/pr/14", ...answers()], /single-line/],
+      ["trailing newline title", ["--title", "Trailing newline\n", "--statement", "Every 4xx is RFC 7807.", "--source", "https://example.com/pr/14", ...answers()], /single-line/],
+      [
+        "--request with unbackticked dotted token",
+        ["--request", JSON.stringify({ candidate: { kind: "decision", title: "Call HeraCli.verb for commands", statement: "Every 4xx is RFC 7807.", source: "https://example.com/pr/14" }, answers: PASSING })],
+        /backticks/,
+      ],
+    ];
+    for (const [label, args, fixRe] of bad) {
+      const r = await drive(args);
+      expect({ label, rc: r.rc, slug: r.slug, stdout: r.stdout }).toEqual({ label, rc: 1, slug: "socrates-candidate-invalid", stdout: "" });
+      expect({ label, stderr: r.stderr }).toEqual({ label, stderr: expect.stringMatching(fixRe) });
+    }
+
+    const help = await drive(["--help"]);
+    expect(help.stdout).toContain("<= 80 chars");
+    expect(help.stdout).toContain("backticks");
+
+    // Round-trip survival: applying each advised fix (80 chars, 66-char prd, backticks, markdown link, single line) passes.
+    expect(await json(["--title", "x".repeat(80), "--statement", "Every 4xx is RFC 7807.", "--source", "https://example.com/pr/14", ...answers()])).toMatchObject({
+      verdict: "load-bearing",
+      rubric_version: CURRENT_RUBRIC.version,
+    });
+    expect(await json(["--kind", "prd", "--title", "z".repeat(66), "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"])).toMatchObject({
+      verdict: "prd",
+      rubric_version: CURRENT_RUBRIC.version,
+    });
+    expect(await json(["--title", "Routes declare `staticData.page` as canvas", "--statement", "Every 4xx is RFC 7807.", "--source", "https://example.com/pr/14", ...answers()])).toMatchObject({
+      verdict: "load-bearing",
+    });
+    expect(await json(["--title", "See [ERRORS.md](https://example.com/docs) for slugs", "--statement", "Every 4xx is RFC 7807.", "--source", "https://example.com/pr/14", ...answers()])).toMatchObject({
+      verdict: "load-bearing",
+    });
+    expect(fetches).toEqual([]);
+  });
 });

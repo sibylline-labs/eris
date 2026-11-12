@@ -24,6 +24,7 @@
 
 import { scanStrings } from "eris/outbound-scan";
 import { readArgs, type VerbContext } from "../../src/cli/plugin";
+import { checkEntryTitle } from "./answers";
 import { fail, postSocrates, printable, type SocratesDeps, socratesEndpoint } from "./client";
 import plugin from "./index";
 import { SOCRATES_CONTRACT_VERSION } from "./socrates-contract.v1";
@@ -53,8 +54,9 @@ contract_version}.
                             {"title"?: <text>, "statement"?: <text>,
                              "target"?: ${SOCRATES_AMEND_TARGETS.join(" | ")},
                              "source_comment"?: <comment id>}
-                          at least one of title, statement or target. target
-                          reroutes the entry to Load-Bearing Decisions, Key
+                          at least one of title, statement or target (title:
+                          single line <= 80 chars, dotted tokens in backticks).
+                          target reroutes the entry to Load-Bearing Decisions, Key
                           Assumptions or Practices. Only a decision a person
                           marked Done can be amended; the endpoint refuses
                           every other child before writing anything.
@@ -105,6 +107,9 @@ async function readAmendments(ctx: VerbContext, deps: SocratesDeps, args: readon
     if (!fields.success) {
       const why = fields.error.issues.map((i) => `${i.path.join(".") || "file"}: ${i.message}`).join("; ");
       fail(ctx, "socrates-amend-invalid", `${printable(path)} is not an amendment (${printable(why)})`, AMEND_FIX);
+    }
+    if (fields.data.title !== undefined) {
+      checkEntryTitle(ctx, fields.data.title, "socrates-amend-invalid");
     }
     amendments.push({ child, ...fields.data });
   }

@@ -406,3 +406,40 @@ describe("eris socrates submit --allow-redaction, through the eris entrypoint", 
     expect(seen).toEqual([]);
   });
 });
+
+describe("eris socrates submit entry-title preflight", () => {
+  // admits: when submit lets an over-long, multi-line, or unbackticked dotted-token title past preflight, it fetches policy and sends a POST the endpoint refuses; runtime string bounds and call ordering require a seam test.
+  it("refuses invalid entry titles locally before any HTTP call, states <= 80 and backticks in --help, and checks the post-redaction title", async () => {
+    /** When submit only checks the 200-char wire schema, stamped and unfit submits send invalid titles over HTTP and --help misleads callers with `<= 200 chars`. Observed at the loopback request log and stderr. */
+    requests.length = 0;
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+    const bad: [string, string[], RegExp][] = [
+      ["stamped > 80 chars", ["submit", "--title", "x".repeat(81), "--statement", "s", "--source", "https://example.com/pr/14", ...answers()], /<= 80 characters/],
+      ["unfit > 80 chars", ["submit", "--title", "x".repeat(85), "--statement", "s", "--source", "https://example.com/pr/14", "--unfit", "--hypothesis", "h"], /<= 80 characters/],
+      ["prd > 66 chars", ["submit", "--kind", "prd", "--title", "z".repeat(67), "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"], /<= 66 characters/],
+      ["unbackticked dotted token", ["submit", "--title", "Adopt request.signal in handlers", "--statement", "s", "--source", "https://example.com/pr/14", ...answers()], /backticks/],
+      ["multi-line title", ["submit", "--title", "One\nTwo", "--statement", "s", "--source", "https://example.com/pr/14", ...answers()], /single-line/],
+      ["trailing newline title", ["submit", "--title", "Trailing\n", "--statement", "s", "--source", "https://example.com/pr/14", ...answers()], /single-line/],
+    ];
+    for (const [label, args, fixRe] of bad) {
+      const r = await drive(args);
+      expect({ label, rc: r.rc, slug: r.slug, stdout: r.stdout }).toEqual({ label, rc: 1, slug: "socrates-candidate-invalid", stdout: "" });
+      expect({ label, stderr: r.stderr }).toEqual({ label, stderr: expect.stringMatching(fixRe) });
+    }
+    expect(requests).toEqual([]);
+
+    const help = await drive(["submit", "--help"]);
+    expect(help.rc).toBe(0);
+    expect(help.stdout).toContain("<= 80 chars");
+    expect(help.stdout).toContain("backticks");
+    expect(help.stdout).not.toMatch(/--title <text>\s+required, <= 200 chars/);
+
+    // Boundary & redaction order: 80 chars, backticked dotted token, and a >80 raw title that redacts below 80 all pass.
+    answer = () => Response.json({ candidate_id: "cand_1", deduped: false, contract_version: "1.0.0" });
+    const sib = ["sib", "01HZX3K5Q8W2N4R6T8V0Y2B4D6", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
+    expect(await drive(["submit", "--title", "x".repeat(80), "--statement", "s", "--source", "https://example.com/pr/14", ...answers()])).toMatchObject({ rc: 0 });
+    expect(await drive(["submit", "--title", "Adopt `request.signal` in handlers", "--statement", "s", "--source", "https://example.com/pr/14", ...answers()])).toMatchObject({ rc: 0 });
+    expect(await drive(["submit", "--title", `Token in title ${sib}`, "--statement", "s", "--source", "https://example.com/pr/14", ...answers()])).toMatchObject({ rc: 0 });
+    expect(requests).toHaveLength(3);
+  });
+});
