@@ -22,6 +22,8 @@ import {
   SocratesCandidate,
   SocratesCandidateState,
   SocratesDocKind,
+  SocratesHeldReason,
+  SocratesHeldUntil,
   SocratesEvidenceContent as EvidenceContent,
   SocratesEvidenceKind,
   SocratesKey as Key,
@@ -242,7 +244,9 @@ export const SocratesStatusResult = z.object({
   policy_hash: PolicyHash,
   pending_candidates: NonNegativeInt,
   open_epics: z.array(z.object({ epic: Id, project: ProjectHint, url: Url, open_children: NonNegativeInt })),
-  candidate: z.object({ candidate_id: Id, state: SocratesCandidateState, issue_url: Url.optional() }).optional(),
+  candidate: z
+    .object({ candidate_id: Id, state: SocratesCandidateState, issue_url: Url.optional(), held_until: SocratesHeldUntil.optional(), held_reason: SocratesHeldReason.optional() })
+    .optional(),
   contract_version: Version,
 });
 export type SocratesStatusResult = z.infer<typeof SocratesStatusResult>;

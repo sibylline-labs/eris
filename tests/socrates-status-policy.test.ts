@@ -54,6 +54,20 @@ describe("eris socrates status", () => {
     expect(requests()).toEqual(["GET /v1/socrates/status?candidate_id=cand_1"]);
   });
 
+  // admits: a held candidate reads as plain `pending`, so its submitter cannot tell a hold from a stall; also an old client schema (no held fields) failing to decode the new answer.
+  it("says a candidate the verbosity cap holds is held, and until when", async () => {
+    const held = { ...CANDIDATE_STATUS, state: "pending", held_until: "2026-11-12T00:00:00.000Z", held_reason: "verbosity_cap" };
+    fake.answer.status = () => Response.json({ ...STATUS, candidate: held });
+    const r = await fake.drive(["status", "--candidate", "cand_1"]);
+    expect(r).toMatchObject({ rc: 0, stderr: "" });
+    expect(r.stdout).toContain("candidate cand_1: pending\n  issue: https://linear.example/issue/abc\n  held by the verbosity cap until Nov-12 00:00Z\n");
+    const json = await fake.drive(["status", "--candidate", "cand_1"], { format: "json" });
+    expect(JSON.parse(json.stdout).candidate).toMatchObject({ held_until: "2026-11-12T00:00:00.000Z", held_reason: "verbosity_cap" });
+
+    fake.answer.status = () => Response.json({ ...STATUS, candidate: CANDIDATE_STATUS });
+    expect((await fake.drive(["status", "--candidate", "cand_1"])).stdout).not.toContain("held");
+  });
+
   // admits: the json form reshapes the decoded record, or text drops it; a script reading `candidate.state` breaks. Observed at stdout, byte for byte, against what the endpoint answered.
   it("prints the decoded record under --output json", async () => {
     fake.answer.status = () => Response.json({ ...STATUS, candidate: CANDIDATE_STATUS });
