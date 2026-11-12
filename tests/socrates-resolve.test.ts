@@ -209,4 +209,32 @@ describe("eris socrates resolve", () => {
     expect(r.stderr).not.toContain(ghp);
     expect(requests).toEqual([]);
   });
+
+  // admits: when resolve --amend lets an over-long, multi-line, or unbackticked dotted-token title past preflight, the server refuses the whole resolve with 422; runtime string contents in JSON files cannot be checked by tsc or ast-grep.
+  it("refuses an amended title that exceeds 80 chars, spans lines, or holds an unbackticked dotted token before sending", async () => {
+    /** When an --amend title breaks the entry-title rule, sending it causes a server 422 instead of an immediate local socrates-amend-invalid refusal; observed as rc 1, slug, and zero HTTP requests. */
+    const bad: [string, string, RegExp][] = [
+      ["over 80 chars", "x".repeat(81), /<= 80 characters/],
+      ["unbackticked dotted token", "Use staticData.page for canvas routes", /backticks/],
+      ["multi-line", "Line 1\nLine 2", /single-line/],
+      ["trailing newline", "Trailing\n", /single-line/],
+    ];
+    for (const [label, title, fixRe] of bad) {
+      const f = amendFile(`bad-${label.replace(/\s+/g, "-")}.json`, { title });
+      const r = await drive(["resolve", "epic_412", "--amend", `epic_413=${f}`]);
+      expect({ label, rc: r.rc, slug: r.slug, stdout: r.stdout }).toEqual({ label, rc: 1, slug: "socrates-amend-invalid", stdout: "" });
+      expect({ label, stderr: r.stderr }).toEqual({ label, stderr: expect.stringMatching(fixRe) });
+      expect(r.stderr).toContain(f);
+    }
+    expect(requests).toEqual([]);
+
+    const help = await drive(["resolve", "--help"]);
+    expect(help.stdout).toContain("<= 80 chars");
+    expect(help.stdout).toContain("backticks");
+
+    answer = () => Response.json({ ...RECEIPT, amended: ["epic_413"] });
+    const good = amendFile("good-title.json", { title: "Use `staticData.page` for canvas routes" });
+    expect(await drive(["resolve", "epic_412", "--amend", `epic_413=${good}`])).toMatchObject({ rc: 0 });
+    expect(requests).toHaveLength(1);
+  });
 });

@@ -927,9 +927,10 @@ comment prints the command.
 `eris socrates resolve --amend <child>=<path>` could not build an amendment:
 the value is not `<child>=<path>`, the same child is amended twice, the file
 cannot be read or is not JSON, or it is not an amendment. The file must be one
-JSON object with at least one of `title` (one line, up to 200 characters),
-`statement` (up to 4000), `target` (`lbd`, `ka` or `practices`), and
-optionally `source_comment`; any other key is refused. At most 250 children
+JSON object with at least one of `title` (one line, up to 80 characters, with
+file names, domains and dotted identifiers in backticks so Linear does not
+autolink them), `statement` (up to 4000), `target` (`lbd`, `ka` or `practices`),
+and optionally `source_comment`; any other key is refused. At most 250 children
 can be amended in one resolve. Nothing was sent. Fix: correct the named
 `--amend`, or drop it.
 
@@ -946,13 +947,18 @@ hand.
 
 ### socrates-candidate-invalid
 
-The candidate does not match the contract: a field is blank or over
-its bound (title 200, statement 4000, project 200 characters), `--source` is
-not an absolute `http(s)` URL, or `--kind` is not one of `decision`,
-`practice`, `prd` or `conflict`. The `ERROR` line names each field. Nothing
-was sent. `classify` also raises it when `--request` is not a JSON object, or
-names a `rubric_version` this build does not score. Fix: correct the named
-fields.
+The candidate does not match the contract or entry-title rules: a field is
+blank or over its bound (`--title` is a single line of at most 80 characters, or
+at most 66 characters for `--kind prd` where `'PRD authored: <title>'` must fit
+in 80 characters; `--statement` 4000; `--project` 200 characters), `--title`
+contains an unbackticked dotted token Linear autolinks, `--source` is not an
+absolute `http(s)` URL, `--kind` is not one of `decision`, `practice`, `prd` or
+`conflict`, or a `prd` or `conflict` statement does not fit its grammar. The
+`ERROR` line names the problem. Nothing was sent. `classify` also raises it
+when `--request` is not a JSON object, or names a `rubric_version` this build
+does not score. Fix: correct the named fields (wrap file names, domains and
+dotted identifiers in backticks in `--title`, and keep it single-line within the
+character limit).
 
 ### socrates-answers-invalid
 

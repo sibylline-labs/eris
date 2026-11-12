@@ -35,10 +35,10 @@
  */
 
 import { homedir } from "node:os";
-import { CURRENT_RUBRIC, extractFeatures, issueEntryOf, type RejectGateId, rubricFor, scoreUnderPolicy, type Verdict } from "eris/socrates-core";
+import { CURRENT_RUBRIC, extractFeatures, issueEntryOf, type RejectGateId, rubricFor, scoreUnderPolicy, type Title, type Verdict } from "eris/socrates-core";
 import { z } from "zod";
 import { readArgs, readYaksFileConfig, resolveOrgSelection, resolveUrl, selectOrgConfig, type VerbContext } from "../../src/cli/plugin";
-import { ANSWER_FIX, answersOf, issues, OVERRIDE_FIX, type Override, overridesOf, pairs, type Rubric } from "./answers";
+import { ANSWER_FIX, answersOf, checkCandidateTitle, issues, OVERRIDE_FIX, type Override, overridesOf, pairs, type Rubric } from "./answers";
 import plugin from "./index";
 import { type LocalPolicy, localPolicy, policyLine, readPolicyCache, readRepoPolicy } from "./policy";
 import { SocratesCandidate, SocratesPolicyHash, SocratesRepoPolicy } from "./socrates-contract.v1";
@@ -77,8 +77,12 @@ A rejection names the gate, the answer or statement wording that fired it, and
 why, plus an override link for that gate. An override needs a one-line reason
 and bypasses only the gate it names.
 
-  --title, --statement, --source, --kind, --project
-                       the candidate, as 'eris socrates submit' takes it
+  --title <text>       required, single line <= 80 chars (<= 66 for --kind
+                       prd); wrap file names, domains and dotted identifiers
+                       in backticks so Linear does not autolink them
+  --statement, --source, --kind, --project
+                       the rest of the candidate, as 'eris socrates submit'
+                       takes it
   --answer <question>=<answer>
                        repeatable, one per rubric question; answer each from
                        what you observed:
@@ -240,7 +244,7 @@ function text(r: ClassifyReport): string {
 }
 
 /** A `prd` or `conflict` candidate: the statement must file, and nothing is scored or overridden. */
-function issueVerdict(ctx: VerbContext, rubric: Rubric, candidate: { kind: "prd" | "conflict"; title: string; statement: string; source: string }, input: ClassifyInput): number {
+function issueVerdict(ctx: VerbContext, rubric: Rubric, candidate: { kind: "prd" | "conflict"; title: Title; statement: string; source: string }, input: ClassifyInput): number {
   const given = (v: unknown) => v !== undefined && (Array.isArray(v) ? v.length > 0 : typeof v !== "object" || v === null || Object.keys(v).length > 0);
   if (given(input.answers)) fail(ctx, "socrates-answers-invalid", `a ${candidate.kind} entry is not scored, so it takes no rubric answers`, "drop --answer");
   if (given(input.overrides)) fail(ctx, "socrates-override-invalid", `a ${candidate.kind} entry has no gate to override`, "drop --override");
@@ -272,13 +276,14 @@ export async function runClassify(args: string[], ctx: VerbContext, deps: Socrat
   }
 
   const rubric = rubricOf(ctx, input.rubricVersion);
-  const candidate = SocratesCandidate.safeParse(input.candidate);
-  if (!candidate.success) fail(ctx, "socrates-candidate-invalid", `the candidate does not match the contract (${printable(issues(candidate.error, "candidate"))})`, "run 'eris socrates classify --help' for each flag's bounds");
-  const { kind } = candidate.data;
-  if (kind === "prd" || kind === "conflict") return issueVerdict(ctx, rubric, { ...candidate.data, kind }, input);
+  const parsedCandidate = SocratesCandidate.safeParse(input.candidate);
+  if (!parsedCandidate.success) fail(ctx, "socrates-candidate-invalid", `the candidate does not match the contract (${printable(issues(parsedCandidate.error, "candidate"))})`, "run 'eris socrates classify --help' for each flag's bounds");
+  const candidate = checkCandidateTitle(ctx, parsedCandidate.data);
+  const { kind } = candidate;
+  if (kind === "prd" || kind === "conflict") return issueVerdict(ctx, rubric, { ...candidate, kind }, input);
   const answers = answersOf(ctx, rubric, input.answers);
   // No living-doc entries are read locally, so `already_recorded` fires only on its answer here; the server reclassifies.
-  const features = extractFeatures(rubric, candidate.data.statement, { recorded: [] });
+  const features = extractFeatures(rubric, candidate.statement, { recorded: [] });
   const local = localPolicy(ctx, rubric, await readPolicyCache(ctx, deps), await readRepoPolicy(ctx, deps.cwd ?? process.cwd()));
   const overrides = overridesOf(ctx, rubric, local.policy, input.overrides, answers, features);
 

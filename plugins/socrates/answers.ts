@@ -1,8 +1,11 @@
 /**
- * answers.ts — the rubric answers and gate overrides `eris socrates classify`
- * and `submit` read, parsed the same way for both.
+ * answers.ts — the entry-title, rubric-answer and gate-override checks
+ * `eris socrates classify`, `submit` and `resolve` share.
  *
  * Invariants:
+ *   - Every entry title is one line of 1–80 characters with no unbackticked
+ *     autolinkable dotted token (`parseTitle` + raw line-break guard); a `prd`
+ *     title also fits within 80 characters after `'PRD authored: '`.
  *   - The answers are the rubric's own enums (`answersSchema`); each override
  *     is the contract's `SocratesOverride` (a one-line reason).
  *   - An override names a reject-routed gate that fires on these answers and
@@ -10,11 +13,11 @@
  *     fires, so there is nothing to override.
  */
 
-import { answersSchema, type Answers, CURRENT_RUBRIC, disabledGates, type Features, type GateId, gateFiring, type ScoringPolicy } from "eris/socrates-core";
+import { answersSchema, type Answers, CURRENT_RUBRIC, disabledGates, ENTRY_TITLE_MAX_LENGTH, type Features, type GateId, gateFiring, parseTitle, type ScoringPolicy, type Title } from "eris/socrates-core";
 import { z } from "zod";
 import type { VerbContext } from "../../src/cli/plugin";
 import { fail, printable } from "./client";
-import { SocratesOverride } from "./socrates-contract.v1";
+import { type SocratesCandidate, SocratesOverride } from "./socrates-contract.v1";
 
 export type Rubric = typeof CURRENT_RUBRIC;
 export type Override = z.infer<typeof SocratesOverride>;
@@ -65,4 +68,52 @@ export function overridesOf(ctx: VerbContext, rubric: Rubric, policy: ScoringPol
     seen.add(gate);
   }
   return parsed.data;
+}
+
+const LINE_BREAK = /[\r\n\u2028\u2029]/;
+const PRD_PREFIX = "PRD authored: ";
+export const PRD_TITLE_MAX_LENGTH = ENTRY_TITLE_MAX_LENGTH - PRD_PREFIX.length;
+
+/** Validate an entry title against the living-doc / review-issue rule (`parseTitle` + raw line breaks). */
+export function checkEntryTitle(ctx: VerbContext, raw: string, slug: "socrates-candidate-invalid" | "socrates-amend-invalid", prefix = ""): Title {
+  if (LINE_BREAK.test(raw)) {
+    fail(ctx, slug, `${prefix}entry title must be a single line of at most ${ENTRY_TITLE_MAX_LENGTH} characters`, `pass a single-line title of <= ${ENTRY_TITLE_MAX_LENGTH} characters`);
+  }
+  const parsed = parseTitle(raw);
+  if (parsed.ok) return parsed.title;
+  const reason = parsed.refusal.kind === "bad-title" ? parsed.refusal.reason : "too-long";
+  if (reason === "multi-line") {
+    fail(ctx, slug, `${prefix}entry title must be a single line of at most ${ENTRY_TITLE_MAX_LENGTH} characters`, `pass a single-line title of <= ${ENTRY_TITLE_MAX_LENGTH} characters`);
+  }
+  if (reason === "autolinkable") {
+    fail(
+      ctx,
+      slug,
+      `${prefix}entry title (max ${ENTRY_TITLE_MAX_LENGTH} characters) contains an unbackticked dotted token Linear autolinks`,
+      "wrap file names, domains and dotted identifiers in backticks",
+    );
+  }
+  if (reason === "too-long") {
+    fail(
+      ctx,
+      slug,
+      `${prefix}entry title must be at most ${ENTRY_TITLE_MAX_LENGTH} characters (got ${raw.trim().length})`,
+      `shorten the title to <= ${ENTRY_TITLE_MAX_LENGTH} characters`,
+    );
+  }
+  fail(ctx, slug, `${prefix}entry title must be a non-empty single line of at most ${ENTRY_TITLE_MAX_LENGTH} characters`, `pass a non-empty single-line title of <= ${ENTRY_TITLE_MAX_LENGTH} characters`);
+}
+
+/** Validate a candidate's entry title (and `'PRD authored: <title>' <= 80` for `--kind prd`) before scoring or sending. */
+export function checkCandidateTitle<T extends Pick<SocratesCandidate, "kind" | "title">>(ctx: VerbContext, candidate: T): T & { readonly title: Title } {
+  const title = checkEntryTitle(ctx, candidate.title, "socrates-candidate-invalid");
+  if (candidate.kind === "prd" && !parseTitle(`${PRD_PREFIX}${title}`).ok) {
+    fail(
+      ctx,
+      "socrates-candidate-invalid",
+      `PRD entry title '${PRD_PREFIX}<title>' must be at most ${ENTRY_TITLE_MAX_LENGTH} characters (got ${PRD_PREFIX.length + title.length})`,
+      `shorten --title to <= ${PRD_TITLE_MAX_LENGTH} characters so '${PRD_PREFIX}<title>' fits in ${ENTRY_TITLE_MAX_LENGTH} characters`,
+    );
+  }
+  return { ...candidate, title };
 }
