@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { helpJson, usageLine } from "../src/cli/args";
-import { CLI } from "../src/main";
+import { defaultCli } from "../src/main";
 import { REPO, sandbox } from "./helpers/blackbox";
 
 describe("eris docs", () => {
@@ -19,7 +19,7 @@ describe("eris docs", () => {
       const doc = JSON.parse(r.stdout) as { schema: string; version: string; commands: { path: string }[] };
       expect(doc.schema).toBe("eris-docs/1");
       expect(typeof doc.version).toBe("string");
-      const rows = CLI.registry;
+      const rows = defaultCli().registry;
       expect(doc.commands).toEqual([helpJson("", undefined, rows), ...Object.keys(rows).map((p) => helpJson(p, rows[p], rows))]);
       expect(doc.commands.map((c) => c.path)).toContain("socrates submit");
 
@@ -39,7 +39,7 @@ describe("eris docs", () => {
     try {
       const r = await sb.run(["docs"], { cwd: REPO });
       expect({ status: r.status, stderr: r.stderr }).toEqual({ status: 0, stderr: "" });
-      for (const [path, row] of Object.entries(CLI.registry)) expect(r.stdout).toContain(`${usageLine(path, row)}\n  ${row.summary}\n`);
+      for (const [path, row] of Object.entries(defaultCli().registry)) expect(r.stdout).toContain(`${usageLine(path, row)}\n  ${row.summary}\n`);
     } finally {
       sb.cleanup();
     }

@@ -9,7 +9,7 @@
  * program is a distribution's menu says so in the last line.
  */
 
-import { CLI, type CliContext } from "../../main";
+import { type CliContext, defaultCli } from "../../main";
 import { type Cli, commandLines, NO_ENTITLEMENTS, type Session } from "../compose";
 
 const HEADER = `Usage: eris <command> [args]
@@ -60,9 +60,9 @@ export function usageText(session: Session): string {
 }
 
 /** This build's top-level usage (core plus plugins/index.ts), default entitlements. */
-export const ERIS_USAGE = usageText({ cli: CLI, entitled: NO_ENTITLEMENTS });
+export const erisUsage = (): string => usageText({ cli: defaultCli(), entitled: NO_ENTITLEMENTS });
 
 export async function runUsage(_args: string[], ctx: CliContext & { session?: Session }): Promise<number> {
-  ctx.stdout.write(ctx.session === undefined ? ERIS_USAGE : usageText(ctx.session));
+  ctx.stdout.write(ctx.session === undefined ? erisUsage() : usageText(ctx.session));
   return 0;
 }

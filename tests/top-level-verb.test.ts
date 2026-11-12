@@ -6,7 +6,7 @@
 import { describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { ERIS_USAGE } from "../src/cli/commands/usage";
+import { erisUsage } from "../src/cli/commands/usage";
 import { ERIS } from "./helpers/blackbox";
 
 const REPO = resolve(import.meta.dir, "..");
@@ -31,17 +31,17 @@ describe("eris -h / --help / bare, through the shim", () => {
     try {
       for (const tool of ["bash", "bun"]) symlinkSync(Bun.which(tool)!, join(bin, tool));
       for (const argv of [["--help"], ["-h"], ["--output", "text", "--help"], [], ["--output", "text"]]) {
-        expect({ argv, ...(await eris(argv, `${bin}:/usr/bin:/bin`)) }).toEqual({ argv, rc: 0, stdout: ERIS_USAGE, stderr: "" });
+        expect({ argv, ...(await eris(argv, `${bin}:/usr/bin:/bin`)) }).toEqual({ argv, rc: 0, stdout: erisUsage(), stderr: "" });
       }
     } finally {
       rmSync(bin, { recursive: true, force: true });
     }
-    for (const group of ["completion", "yak"]) expect(ERIS_USAGE).toContain(`\n  ${group} `);
+    for (const group of ["completion", "yak"]) expect(erisUsage()).toContain(`\n  ${group} `);
   });
 
   it("every command's summary starts in one column, core and plugin groups alike", () => {
-    /** When core and plugin command lines are padded separately, `eris --help` staggers its summaries — observed at ERIS_USAGE. */
-    const block = ERIS_USAGE.split("Commands:\n")[1]!.split("\n\n")[0]!.split("\n");
+    /** When core and plugin command lines are padded separately, `eris --help` staggers its summaries — observed at erisUsage(). */
+    const block = erisUsage().split("Commands:\n")[1]!.split("\n\n")[0]!.split("\n");
     const columns = block.map((line) => line.match(/^ {2}\S+ +/)![0].length);
     expect(block.length).toBeGreaterThanOrEqual(2);
     expect(new Set(columns).size).toBe(1);

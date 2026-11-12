@@ -12,7 +12,7 @@ bin/eris.ts             # the package's `eris` command (package.json `bin`, for 
 package.json            # @sibylline-labs/eris: `bin`, `exports`, and `files`, the allow-list of what the npm
                         #   tarball holds (tests/package.test.ts reads `npm pack --dry-run`)
 src/                    # The TS program the shim and the bin run
-├── main.ts             #   the entry: composes core with the build's plugins (CLI), HANDLERS, main, runProgram
+├── main.ts             #   the entry: composes core with the build's plugins (defaultCli), HANDLERS, main, runProgram
 ├── sdk.ts              #   `eris/sdk`, the one module through which another repository reaches core (package.json exports):
 │                       #   the plugin SDK, composition, runProgram, the runtime, build()
 ├── build.ts            #   build(): compiles a distribution's entry into one binary (eris:assets, stubs,

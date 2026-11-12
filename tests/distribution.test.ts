@@ -26,7 +26,7 @@ import { build } from "../src/build";
 import { composeCli, PluginCompositionError } from "../src/cli/compose";
 import type { ErisPlugin } from "../src/cli/plugin";
 import { REGISTRY } from "../src/cli/registry";
-import { CLI, HANDLERS, main } from "../src/main";
+import { defaultCli, HANDLERS, main } from "../src/main";
 import { DEFAULT_DOCS_BASE, DEFAULT_RELEASE_REPO } from "../src/runtime/home";
 import { checkoutOnly, ERIS, oracleEnv, REPO, type Sandbox, sandbox } from "./helpers/blackbox";
 import { erisPaths } from "./helpers/tsconfig-paths";
@@ -80,6 +80,7 @@ describe("the package's exports", () => {
       "PluginCompositionError",
       "REGISTRY",
       "RELEASE_UPDATE",
+      "VERSION",
       "addOrgLogin",
       "argErrorWhat",
       "asksForHelp",
@@ -155,6 +156,19 @@ describe("the package's exports", () => {
     expect(deep).toBe("ERR_MODULE_NOT_FOUND");
   });
 
+  it("eris/sdk exports VERSION, the version `eris --version` prints", async () => {
+    /** When the SDK's VERSION is not the binding the version verb reads (a copy, or a different module's constant), a distribution that reports its eris version says something `eris --version` does not: observed by comparing the SDK's export with the version in the verb's JSON output. */
+    const { VERSION } = await import("eris/sdk");
+    const r = await run(["--output", "json", "--version"]);
+    expect({ rc: r.rc, version: (JSON.parse(r.stdout) as { version: string }).version }).toEqual({ rc: 0, version: VERSION });
+  });
+
+  it("importing eris/sdk composes no CLI of its own: a distribution's entry is the only composeCli call", () => {
+    /** When src/main.ts (or a module it reaches at import, such as the usage text) composes the build's CLI at module evaluation, every distribution pays a second composeCli pass on each start whose result it never uses: observed as the composeCli call count in a fresh process after importing the example distribution's entry. */
+    const r = spawnSync(process.execPath, ["--no-env-file", "--config=/dev/null", join(import.meta.dir, "helpers", "compose-count.ts")], { encoding: "utf8", timeout: 60_000 });
+    expect({ status: r.status, stdout: r.stdout, stderr: r.stderr }).toEqual({ status: 0, stdout: "1\n", stderr: "" });
+  });
+
   it("a distribution entry outside the router parses and refuses `--output` with the SDK's own parseGlobal and GlobalFlagError", async () => {
     /** When the SDK's GlobalFlagError is not the class its parseGlobal throws (a copy, or a re-export of another module), a standalone entry's `catch` never matches and a bad `--output` ends as a stack trace instead of the `output-format-unknown` block: observed through the package specifier, as such an entry imports it. */
     const { parseGlobal, GlobalFlagError } = await import("eris/sdk");
@@ -209,8 +223,8 @@ describe("the package's exports", () => {
 describe("this build's composition", () => {
   it("is core's rows plus the yak and socrates plugins', exactly", () => {
     /** When a distribution's plugin or the example plugins leak into this build's list, the public binary ships verbs it neither documents nor tests: observed at the composed registry and at the top-level help of the program under test. */
-    expect(Object.keys(CLI.registry).sort()).toEqual([...Object.keys(REGISTRY), ...Object.keys(yak.rows), ...Object.keys(socrates.rows)].sort());
-    expect(CLI.groups.map((g) => [g.group, g.plugin])).toEqual([
+    expect(Object.keys(defaultCli().registry).sort()).toEqual([...Object.keys(REGISTRY), ...Object.keys(yak.rows), ...Object.keys(socrates.rows)].sort());
+    expect(defaultCli().groups.map((g) => [g.group, g.plugin])).toEqual([
       ["yak", "yak"],
       ["login", "yak"],
       ["logout", "yak"],

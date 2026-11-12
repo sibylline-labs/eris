@@ -1,7 +1,7 @@
 /**
  * Every command path answers `--help` with its own usage.
  *
- * The walk covers every key of the composed registry (`CLI.registry`) plus the
+ * The walk covers every key of the composed registry (`defaultCli().registry`) plus the
  * bare program, driven through `main` in process: per path, `--help` and `-h`
  * exit 0 with stdout's first line naming `eris <path>` and stderr empty, and
  * `--help --json` prints one help document of the `eris-help/1` schema
@@ -16,7 +16,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { CLI, main } from "../src/main";
+import { defaultCli, main } from "../src/main";
 import { ERIS, oracleEnv, REPO } from "./helpers/blackbox";
 
 /** A port nothing listens on. */
@@ -39,6 +39,8 @@ async function run(argv: string[]): Promise<{ rc: number; stdout: string; stderr
   });
   return { rc, stdout, stderr };
 }
+
+const CLI = defaultCli();
 
 /** The bare program, then every registered path. */
 const PATHS: readonly string[] = ["", ...Object.keys(CLI.registry)];

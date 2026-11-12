@@ -1,5 +1,5 @@
 /**
- * This build's composed CLI (src/main.ts `CLI`: core's registry plus
+ * This build's composed CLI (src/main.ts `defaultCli()`: core's registry plus
  * plugins/index.ts) under the names core's modules export for core alone.
  *
  * A suite that holds "every eris verb" against a golden (the routing table,
@@ -11,7 +11,9 @@
 
 import * as core from "../../src/cli/registry";
 import { route as coreRoute, type Route } from "../../src/cli/router";
-import { CLI } from "../../src/main";
+import { defaultCli } from "../../src/main";
+
+const CLI = defaultCli();
 
 type Rows = Readonly<Record<string, core.Row>>;
 
