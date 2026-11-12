@@ -224,6 +224,7 @@ describe("eris socrates resolve", () => {
       const r = await drive(["resolve", "epic_412", "--amend", `epic_413=${f}`]);
       expect({ label, rc: r.rc, slug: r.slug, stdout: r.stdout }).toEqual({ label, rc: 1, slug: "socrates-amend-invalid", stdout: "" });
       expect({ label, stderr: r.stderr }).toEqual({ label, stderr: expect.stringMatching(fixRe) });
+      expect(r.stderr).toContain(f);
     }
     expect(requests).toEqual([]);
 

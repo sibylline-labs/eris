@@ -75,21 +75,21 @@ const PRD_PREFIX = "PRD authored: ";
 export const PRD_TITLE_MAX_LENGTH = ENTRY_TITLE_MAX_LENGTH - PRD_PREFIX.length;
 
 /** Validate an entry title against the living-doc / review-issue rule (`parseTitle` + raw line breaks). */
-export function checkEntryTitle(ctx: VerbContext, raw: string, slug: "socrates-candidate-invalid" | "socrates-amend-invalid"): Title {
+export function checkEntryTitle(ctx: VerbContext, raw: string, slug: "socrates-candidate-invalid" | "socrates-amend-invalid", prefix = ""): Title {
   if (LINE_BREAK.test(raw)) {
-    fail(ctx, slug, `entry title must be a single line of at most ${ENTRY_TITLE_MAX_LENGTH} characters`, `pass a single-line title of <= ${ENTRY_TITLE_MAX_LENGTH} characters`);
+    fail(ctx, slug, `${prefix}entry title must be a single line of at most ${ENTRY_TITLE_MAX_LENGTH} characters`, `pass a single-line title of <= ${ENTRY_TITLE_MAX_LENGTH} characters`);
   }
   const parsed = parseTitle(raw);
   if (parsed.ok) return parsed.title;
   const reason = parsed.refusal.kind === "bad-title" ? parsed.refusal.reason : "too-long";
   if (reason === "multi-line") {
-    fail(ctx, slug, `entry title must be a single line of at most ${ENTRY_TITLE_MAX_LENGTH} characters`, `pass a single-line title of <= ${ENTRY_TITLE_MAX_LENGTH} characters`);
+    fail(ctx, slug, `${prefix}entry title must be a single line of at most ${ENTRY_TITLE_MAX_LENGTH} characters`, `pass a single-line title of <= ${ENTRY_TITLE_MAX_LENGTH} characters`);
   }
   if (reason === "autolinkable") {
     fail(
       ctx,
       slug,
-      `entry title (max ${ENTRY_TITLE_MAX_LENGTH} characters) contains an unbackticked dotted token Linear autolinks`,
+      `${prefix}entry title (max ${ENTRY_TITLE_MAX_LENGTH} characters) contains an unbackticked dotted token Linear autolinks`,
       "wrap file names, domains and dotted identifiers in backticks",
     );
   }
@@ -97,11 +97,11 @@ export function checkEntryTitle(ctx: VerbContext, raw: string, slug: "socrates-c
     fail(
       ctx,
       slug,
-      `entry title must be at most ${ENTRY_TITLE_MAX_LENGTH} characters (got ${raw.trim().length})`,
+      `${prefix}entry title must be at most ${ENTRY_TITLE_MAX_LENGTH} characters (got ${raw.trim().length})`,
       `shorten the title to <= ${ENTRY_TITLE_MAX_LENGTH} characters`,
     );
   }
-  fail(ctx, slug, `entry title must be a non-empty single line of at most ${ENTRY_TITLE_MAX_LENGTH} characters`, `pass a non-empty single-line title of <= ${ENTRY_TITLE_MAX_LENGTH} characters`);
+  fail(ctx, slug, `${prefix}entry title must be a non-empty single line of at most ${ENTRY_TITLE_MAX_LENGTH} characters`, `pass a non-empty single-line title of <= ${ENTRY_TITLE_MAX_LENGTH} characters`);
 }
 
 /** Validate a candidate's entry title (and `'PRD authored: <title>' <= 80` for `--kind prd`) before scoring or sending. */

@@ -109,7 +109,7 @@ async function readAmendments(ctx: VerbContext, deps: SocratesDeps, args: readon
       fail(ctx, "socrates-amend-invalid", `${printable(path)} is not an amendment (${printable(why)})`, AMEND_FIX);
     }
     if (fields.data.title !== undefined) {
-      checkEntryTitle(ctx, fields.data.title, "socrates-amend-invalid");
+      checkEntryTitle(ctx, fields.data.title, "socrates-amend-invalid", `${printable(path)}: `);
     }
     amendments.push({ child, ...fields.data });
   }
