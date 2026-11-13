@@ -201,9 +201,24 @@ describe("gatherProvenance — repo: a raw single-file peek, not a config merge"
       const inner = join(outer, "inner-checkout");
       await mkdir(join(inner, "src"), { recursive: true });
       await mkdir(join(inner, ".git"), { recursive: true }); // marks inner as its own repo root
+      await writeFile(join(inner, ".git", "HEAD"), "ref: refs/heads/main\n");
 
       const provenance = await gatherProvenance({ cwd: join(inner, "src"), env: {}, run: stubRunner({}) });
       expect("repo" in provenance).toBe(false);
+    },
+  );
+
+  it(
+    "walks past a stray `.git` directory with no HEAD to the manifest above it — " +
+      "observed at provenance.repo carrying the outer service",
+    async () => {
+      const outer = await freshDir("yak-ctx-repo-stray-");
+      await writeFile(join(outer, "eris.yaml"), "service: outer-service\nenvs: {}\n");
+      const stray = join(outer, "services", "api");
+      await mkdir(join(stray, ".git"), { recursive: true });
+
+      const provenance = await gatherProvenance({ cwd: stray, env: {}, run: stubRunner({}) });
+      expect(provenance.repo).toEqual({ service: "outer-service" });
     },
   );
 

@@ -50,6 +50,7 @@ beforeEach(() => {
   home = realpathSync(mkdtempSync(join(tmpdir(), "eris-socrates-home-")));
   cwd = realpathSync(mkdtempSync(join(tmpdir(), "eris-socrates-repo-")));
   mkdirSync(join(cwd, ".git"));
+  writeFileSync(join(cwd, ".git", "HEAD"), "ref: refs/heads/main\n");
   mkdirSync(join(home, ".eris"));
   calls = [];
   serverPolicy = policyResult(H1, ORG_V2);
