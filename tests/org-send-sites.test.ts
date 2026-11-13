@@ -44,9 +44,11 @@ beforeAll(() => {
   writeFileSync(join(home, ".eris", "yaks.json"), JSON.stringify({ url: URL_A, token: TOKEN_A, orgs: { [ORG_B]: { url: URL_B, token: TOKEN_B } } }), { mode: 0o600 });
   repoB = join(sandbox, "repo-b");
   mkdirSync(join(repoB, ".git"), { recursive: true });
+  writeFileSync(join(repoB, ".git", "HEAD"), "ref: refs/heads/main\n");
   writeFileSync(join(repoB, "eris.yaml"), `service: b\nrepo:\n  org: ${ORG_B}\n`);
   repoDefault = join(sandbox, "repo-default");
   mkdirSync(join(repoDefault, ".git"), { recursive: true });
+  writeFileSync(join(repoDefault, ".git", "HEAD"), "ref: refs/heads/main\n");
   writeFileSync(join(repoDefault, "eris.yaml"), "service: a\n");
 });
 afterAll(() => rmSync(sandbox, { recursive: true, force: true }));

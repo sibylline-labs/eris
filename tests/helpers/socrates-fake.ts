@@ -85,6 +85,7 @@ export function socratesFake(): SocratesFake {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "eris-socrates-home-")));
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), "eris-socrates-repo-")));
   mkdirSync(join(cwd, ".git"));
+  writeFileSync(join(cwd, ".git", "HEAD"), "ref: refs/heads/main\n");
   mkdirSync(join(home, ".eris"));
   const fake: SocratesFake = {
     home,

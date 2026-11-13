@@ -34,9 +34,10 @@
  *     and never throws.
  */
 
-import { existsSync, promises as fs, readFileSync, statSync } from "node:fs";
+import { promises as fs, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
+import { isGitCheckoutRoot } from "./git-checkout";
 
 /** `{ value }` on success, `{ reason, slug }` on failure: `"reason" in outcome` tells them apart. */
 export type CredentialOutcome<T, TSlug extends string> = { value: T } | { reason: string; slug: TSlug };
@@ -368,7 +369,7 @@ export function resolveOrgSelectionSync(env: Record<string, string | undefined>,
         return { reason: `repo.org in ${path} is not an org id (26 uppercase Crockford base32 characters)`, slug: "org-selector-invalid", fix: `set repo.org in ${path} to the org id 'eris whoami' prints, or remove it` };
       }
     }
-    if (existsSync(join(dir, ".git"))) break;
+    if (isGitCheckoutRoot(dir)) break;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;

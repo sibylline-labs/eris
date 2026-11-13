@@ -81,6 +81,7 @@ const stored = () => JSON.parse(readFileSync(yaksJson(), "utf8")) as Record<stri
 function checkout(name: string, org?: string): string {
   const path = join(root, name);
   mkdirSync(join(path, ".git"), { recursive: true });
+  writeFileSync(join(path, ".git", "HEAD"), "ref: refs/heads/main\n");
   writeFileSync(join(path, "eris.yaml"), org === undefined ? `service: ${name}\n` : `service: ${name}\nrepo:\n  org: ${org}\n`);
   return path;
 }

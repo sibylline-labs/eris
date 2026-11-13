@@ -51,6 +51,7 @@ beforeEach(() => {
 function checkout(dir: string, yaml?: string): string {
   const path = join(root, dir);
   mkdirSync(join(path, ".git"), { recursive: true });
+  writeFileSync(join(path, ".git", "HEAD"), "ref: refs/heads/main\n");
   if (yaml !== undefined) writeFileSync(join(path, "eris.yaml"), yaml);
   return path;
 }
@@ -105,6 +106,28 @@ describe("resolveOrgSelection", () => {
     mkdirSync(join(root, "plain"), { recursive: true });
     const found = await resolveOrgSelection({}, join(root, "plain"));
     expect("value" in found && found.value.org).toBe(ORG_B);
+  });
+
+  // Fails (red) when a stray empty `.git` directory halts the walk: the repo.org above it is then never found, so the command acts as the default org. Observed in the org resolution result.
+  // admits: a manifest above a stray `.git` selecting the org; the marker is a filesystem fact
+  it("walks past a `.git` that is not a checkout (no HEAD, no gitdir:) to the manifest above", async () => {
+    const repo = checkout("outer", `service: outer\nrepo:\n  org: ${ORG_B}\n`);
+    const stray = join(repo, "services", "api");
+    mkdirSync(join(stray, ".git"), { recursive: true });
+    const want = { value: { org: ORG_B, source: "eris.yaml" as const, path: join(repo, "eris.yaml") } };
+    expect(await resolveOrgSelection({}, stray)).toEqual(want);
+    expect(resolveOrgSelectionSync({}, stray)).toEqual(want);
+    // A bogus `.git` file (no gitdir: prefix) is no checkout either.
+    const bogus = join(repo, "services", "web");
+    mkdirSync(bogus, { recursive: true });
+    writeFileSync(join(bogus, ".git"), "not a pointer\n");
+    expect(await resolveOrgSelection({}, bogus)).toEqual(want);
+    // A worktree-style `.git` file with a gitdir: pointer is a checkout root.
+    const wt = join(repo, "services", "wt");
+    mkdirSync(wt, { recursive: true });
+    writeFileSync(join(wt, ".git"), "gitdir: /elsewhere/.git/worktrees/wt\n");
+    expect(await resolveOrgSelection({}, wt)).toEqual({ value: { org: null, source: "default" } });
+    expect(resolveOrgSelectionSync({}, wt)).toEqual({ value: { org: null, source: "default" } });
   });
 
   // admits: a manifest above or at home selecting the org; walk results depend on files on disk

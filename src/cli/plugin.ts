@@ -148,8 +148,8 @@ const ERIS_YAML_WALK_MAX_DEPTH = 64;
 /**
  * The nearest `eris.yaml` at or above `startDir`, parsed but never merged
  * (no root/leaf merge, no excludes or overrides): its path and its YAML value.
- * The walk stops at the enclosing git checkout's root (a `.git` entry, file or
- * directory), so it never reads a sibling repo's manifest above this one, and
+ * The walk stops at the enclosing git checkout's root (a `.git` directory holding
+ * `HEAD`, or a `.git` file starting `gitdir:`; a stray empty `.git` is not one), so it never reads a sibling repo's manifest above this one, and
  * at a hard depth bound. The nearest manifest wins even when it is unreadable
  * or not YAML: that is `{ok: false, path, error}`, never a throw, and the walk
  * does not go past it, so a caller that must not ignore a broken manifest can
@@ -161,7 +161,7 @@ export type NearestErisYaml =
   | { readonly ok: false; readonly path: string; readonly error: string };
 
 export async function nearestErisYaml(startDir: string): Promise<NearestErisYaml | undefined> {
-  const [{ promises: fs }, { dirname, join }] = await Promise.all([import("node:fs"), import("node:path")]);
+  const [{ promises: fs }, { dirname, join }, { isGitCheckoutRoot }] = await Promise.all([import("node:fs"), import("node:path"), import("../runtime/git-checkout")]);
   let dir = startDir;
   for (let i = 0; i < ERIS_YAML_WALK_MAX_DEPTH; i++) {
     const path = join(dir, "eris.yaml");
@@ -179,12 +179,7 @@ export async function nearestErisYaml(startDir: string): Promise<NearestErisYaml
         return { ok: false, path, error: `not YAML (${err instanceof Error ? err.message : "parse failed"})` };
       }
     }
-    try {
-      await fs.access(join(dir, ".git"));
-      return undefined;
-    } catch {
-      // not the checkout root: keep walking
-    }
+    if (isGitCheckoutRoot(dir)) return undefined;
     const parent = dirname(dir);
     if (parent === dir) return undefined;
     dir = parent;
