@@ -64,7 +64,7 @@ plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consul
                         #   socrates-contract.v1.verbs.ts (classify, policy, evidence, consult, resolve,
                         #   status, settings); their golden file is tests/fixtures/socrates-contract-v1.json
 plugins/yak/            # `eris yak` as a plugin: index.ts (the manifest: rows + handler thunks), handlers.ts
-                        #   (the dispatcher), yak.ts (the core), yak-{identity,context,submit}.ts,
+                        #   (the dispatcher), yak.ts (the core), yak-{identity,context,submit}.ts, yak-reports.ts (`eris yak reports`, the org's own vendor reports with their Linear state),
                         #   login.ts (`eris login`/`logout`, the device-code client), whoami.ts (`eris whoami`, the org a directory acts as), tokens.ts (`eris tokens ls|create|revoke`, an org's API tokens), org.ts (`eris org members [deactivate <id>]`, `eris org connect-linear` and `eris org delete --confirm|--cancel`, over the gateway's bearer `/v1/org/members`, `/v1/org/linear/connect`, `/v1/org/me` and `/v1/org/deletion` routes), yak-setup.ts (mints the bearer; docs/YAK.md); the wire contract is packages/yak-contract, imported by name
 packages/outbound-scan/ # what runs over text before it leaves the machine, `eris/outbound-scan`: src/redact.ts
                         #   (our redaction classes; imports nothing; package.json also exports it as `eris/yak-redact`),

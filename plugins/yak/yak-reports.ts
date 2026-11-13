@@ -42,7 +42,7 @@ const VendorReports = z.object({
   ),
 });
 
-/** The server's `error.code` when it is a short snake_case word: anything else is not echoed. */
+/** The server's problem `code` when it is a short snake_case word: anything else is not echoed. */
 const safeCode = (code: string | undefined): string | undefined => (code !== undefined && /^[a-z][a-z_]{0,39}$/.test(code) ? code : undefined);
 
 function refusal(status: number, code: string | undefined, target: string): Failure {

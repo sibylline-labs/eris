@@ -37,7 +37,8 @@ const report = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 const body = (reports: unknown[] = [report(), report({ id: "obs_2", issue_identifier: "vr-13", state: { name: "Unknown", type: "unknown" }, summary: "second report" })]) => ({ reports });
-const problem = (status: number, code: string) => Response.json({ type: "about:blank", status, error: { code } }, { status, headers: { "content-type": "application/problem+json" } });
+const problem = (status: number, code: string) =>
+  Response.json({ type: `urn:hera:error:${code}`, title: "refused", status, detail: "refused", code }, { status, headers: { "content-type": "application/problem+json" } });
 
 beforeAll(() => {
   mkdirSync(join(REPO, ".scratch"), { recursive: true });
@@ -148,6 +149,17 @@ describe("eris yak reports", () => {
       const r = await reports();
       expect({ status, rc: r.rc, stdout: r.stdout, slug: r.stderr.includes(`slug: ${slug}`) }).toEqual({ status, rc: 1, stdout: "", slug: true });
     }
+  });
+
+  it("the server's code is named on the block, and a code that is not a short snake_case word is not echoed", async () => {
+    /** When the top-level problem code is dropped the block loses the server's reason, and when an unsanitised code is echoed a hostile endpoint writes control bytes to the terminal: observed on stderr. */
+    answer = () => problem(404, "not_found");
+    expect((await reports()).stderr).toContain("answered 404 not_found for");
+    answer = () => problem(500, "Bad\u001b[31m code");
+    const r = await reports();
+    expect(r.stderr).toContain("slug: yak-reports-unavailable");
+    expect(r.stderr).toContain("answered 500 for");
+    expect(r.stderr).not.toContain("\u001b[31m");
   });
 
   it("a body that does not match the contract is refused, not printed", async () => {
