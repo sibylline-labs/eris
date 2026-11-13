@@ -272,7 +272,8 @@ and runs. Copy its shape.
    included, for an entry that runs outside the router, and the help renderers
    `helpText`, `helpJson`, `resolveHelpPath` and `asksForHelp`), the runtime
    (subprocesses, the bounded pool `runPool`, logging, the install root,
-   `BUILD_ID`, `releaseRepo()`, the `DistributionIdentity` type) and `build`. The package's
+   `BUILD_ID`, `releaseRepo()`, the `DistributionIdentity` type), the skill-kind
+   lint (`lintSkills`, `readSkillKind`, `SKILL_KINDS`) and `build`. The package's
    `exports` map refuses any deeper path (`eris/src/...`), so a core refactor
    never breaks a distribution that compiles today. A distribution's plugin
    manifests import `eris/sdk` too, and load handler code lazily as above.
