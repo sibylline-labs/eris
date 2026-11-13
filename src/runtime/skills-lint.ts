@@ -129,6 +129,8 @@ function skillFiles(root: string): string[] {
     if (!isDir(base)) return [];
     return readdirSync(base)
       .sort(byCodePoint)
+      // `*/SKILL.md`: only directories (symlinked ones followed) hold a skill
+      .filter((name) => isDir(join(base, name)))
       .map((name) => join(base, name, "SKILL.md"))
       // lstat, so a dangling SKILL.md symlink is listed and reported rather than skipped
       .filter((p) => lstatSync(p, { throwIfNoEntry: false }) !== undefined);

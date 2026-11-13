@@ -392,6 +392,7 @@ describe("unreadable skills and name order", () => {
     skill(root, "calm", "mode");
     mkdirSync(join(root, "skills", "gone"), { recursive: true });
     symlinkSync(join(root, "nowhere.md"), join(root, "skills", "gone", "SKILL.md"));
+    writeFileSync(join(root, "skills", ".gitignore"), "x\n");
     const res = lintSkills(root);
     expect(res.skills).toBe(2);
     expect(pairs(root)).toEqual([["gone", "skill-unreadable"]]);
