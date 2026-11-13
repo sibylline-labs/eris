@@ -45,7 +45,7 @@
 // no `files` entry of its own for the declaration.
 
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import pkg from "../../package.json";
@@ -182,14 +182,59 @@ function safeRel(rel: string): boolean {
 
 const errCode = (e: unknown) => (typeof e === "object" && e !== null ? (e as { code?: unknown }).code : undefined);
 
+/** Complete homes kept in the cache base, the active build's included. */
+export const KEEP_HOMES = 5;
+
+/** A home used within this long is never evicted: a peer may be writing or running from it. */
+export const EVICT_GRACE_MS = 24 * 3_600_000;
+
+export interface EvictionOptions {
+  readonly keep?: number;
+  readonly graceMs?: number;
+}
+
+/**
+ * Removes the least recently used complete homes under `base` beyond `keep`, the
+ * active one counted. A home's last use is its marker's mtime (`materializeHome`
+ * refreshes it). Never touches the active home, a home used within `graceMs`, a
+ * dir without the marker (a peer still writing), a temp dir or a stray file.
+ * Each victim is renamed aside before it is deleted, so a peer sees either the
+ * complete home or none (it then rewrites it). Best effort: a failure leaves the
+ * home for the next run.
+ */
+function evictHomes(base: string, active: string, { keep = KEEP_HOMES, graceMs = EVICT_GRACE_MS }: EvictionOptions): void {
+  const now = Date.now();
+  const aged: { name: string; used: number }[] = [];
+  for (const name of readdirSync(base)) {
+    if (name === active || name.includes(".tmp-") || name.includes(".evict-")) continue;
+    try {
+      const used = statSync(join(base, name, HOME_MARKER)).mtimeMs;
+      if (now - used >= graceMs) aged.push({ name, used });
+    } catch {
+      // Not a complete home (no marker, or not a directory): not ours to remove.
+    }
+  }
+  aged.sort((a, b) => b.used - a.used || (a.name < b.name ? -1 : 1));
+  for (const { name } of aged.slice(Math.max(0, keep - 1))) {
+    const aside = join(base, `${name}.evict-${process.pid}-${randomBytes(4).toString("hex")}`);
+    try {
+      renameSync(join(base, name), aside);
+    } catch {
+      continue;
+    }
+    rmSync(aside, { recursive: true, force: true });
+  }
+}
+
 /**
  * `<base>/<buildId>/`, holding `assets` (relative path → text) and the marker.
- * Returns the home. Writes nothing when the marker is already there.
+ * Returns the home. Writes nothing but the marker's mtime when the marker is already there.
+ * Marks the home used, and after writing a new one evicts the cache's old homes (`evictHomes`).
  */
-export function materializeHome(base: string, buildId: string, assets: Readonly<Record<string, string>>): string {
+export function materializeHome(base: string, buildId: string, assets: Readonly<Record<string, string>>, eviction: EvictionOptions = {}): string {
   const home = join(base, buildId);
   const marker = join(home, HOME_MARKER);
-  if (existsSync(marker)) return home;
+  if (existsSync(marker)) return touched(marker, home);
   mkdirSync(base, { recursive: true });
   const tmp = `${home}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
   try {
@@ -201,6 +246,11 @@ export function materializeHome(base: string, buildId: string, assets: Readonly<
     }
     writeFileSync(join(tmp, HOME_MARKER), `${buildId}\n`);
     renameSync(tmp, home);
+    try {
+      evictHomes(base, buildId, eviction);
+    } catch {
+      // An unreadable base: the home is written, pruning waits for the next run.
+    }
     return home;
   } catch (e) {
     rmSync(tmp, { recursive: true, force: true });
@@ -208,8 +258,19 @@ export function materializeHome(base: string, buildId: string, assets: Readonly<
     if (code !== "EEXIST" && code !== "ENOTEMPTY") throw e;
   }
   // A peer renamed its copy into place first.
-  if (existsSync(marker)) return home;
+  if (existsSync(marker)) return touched(marker, home);
   throw new Error(`${home} exists but is not a complete eris asset home (no ${HOME_MARKER}) — remove it and run eris again`);
+}
+
+/** `home`, its marker's mtime set to now: the home was just used. */
+function touched(marker: string, home: string): string {
+  try {
+    const now = new Date();
+    utimesSync(marker, now, now);
+  } catch {
+    // A read-only cache still serves the home; it just ages sooner.
+  }
+  return home;
 }
 
 let compiledRoot: string | undefined;

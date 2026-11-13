@@ -8,7 +8,7 @@
 
 import { afterEach, describe, expect, it } from "bun:test";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HOME_MARKER, materializeHome } from "../src/runtime/home";
 
@@ -78,5 +78,52 @@ describe("materializeHome", () => {
     writeFileSync(join(base, "build-2", HOME_MARKER), "build-2\n");
     expect(materializeHome(base, "build-2", { "patterns/a.yml": "a" })).toBe(join(base, "build-2"));
     expect(existsSync(join(base, "build-2", "patterns", "a.yml"))).toBe(false);
+  });
+});
+
+describe("materializeHome eviction", () => {
+  const HOUR = 3_600_000;
+  const OPTS = { keep: 3, graceMs: HOUR };
+
+  /** A home last used `ageMs` ago; `complete: false` leaves the marker out. */
+  function home(base: string, name: string, ageMs: number, complete = true): void {
+    const dir = join(base, name);
+    mkdirSync(join(dir, "patterns"), { recursive: true });
+    writeFileSync(join(dir, "patterns", "a.yml"), "a");
+    if (complete) writeFileSync(join(dir, HOME_MARKER), `${name}\n`);
+    const at = new Date(Date.now() - ageMs);
+    if (complete) utimesSync(join(dir, HOME_MARKER), at, at);
+    utimesSync(dir, at, at);
+  }
+
+  it("When more builds are cached than the cap, this keeps the active build and the most recently used ones, and removes the rest", () => {
+    /** When nothing prunes the cache, every build leaves a home behind for good (338 dirs, 426 MB on one host): observed at the cache base's entries after a materialize. */
+    const base = scratch();
+    for (let i = 1; i <= 6; i++) home(base, `old-${i}`, (10 + i) * HOUR);
+    materializeHome(base, "active", { "patterns/a.yml": "a" }, OPTS);
+    expect(readdirSync(base).sort()).toEqual(["active", "old-1", "old-2"]);
+  });
+
+  it("When a home is recent, incomplete or not a build home, this leaves it alone and counts only complete aged homes against the cap", () => {
+    /** When eviction takes a home a concurrent process wrote moments ago or is still writing, that process loses its files mid-run: observed at the entries that survive. */
+    const base = scratch();
+    home(base, "recent", HOUR / 2);
+    home(base, "partial", 50 * HOUR, false);
+    for (let i = 1; i <= 4; i++) home(base, `old-${i}`, (10 + i) * HOUR);
+    mkdirSync(join(base, "active.tmp-1-ab"));
+    writeFileSync(join(base, "stray-file"), "x");
+    materializeHome(base, "active", { "patterns/a.yml": "a" }, OPTS);
+    expect(readdirSync(base).sort()).toEqual(["active", "active.tmp-1-ab", "old-1", "old-2", "partial", "recent", "stray-file"]);
+  });
+
+  it("When the active home already exists, this marks it as just used so a later build's eviction keeps it", () => {
+    /** When a build that is still in use ages out by its first write, the next newer builds evict it under a running process: observed at the marker's age and at what survives. */
+    const base = scratch();
+    home(base, "active", 30 * HOUR);
+    for (let i = 1; i <= 4; i++) home(base, `old-${i}`, (10 + i) * HOUR);
+    materializeHome(base, "active", {}, OPTS);
+    expect(Date.now() - Bun.file(join(base, "active", HOME_MARKER)).lastModified).toBeLessThan(HOUR);
+    materializeHome(base, "newer", { "patterns/a.yml": "a" }, { keep: 2, graceMs: 0 });
+    expect(readdirSync(base).sort()).toEqual(["active", "newer"]);
   });
 });
