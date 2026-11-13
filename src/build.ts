@@ -73,6 +73,12 @@ const SOURCE_FILES = ["package.json", "bun.lock", "bun.lockb"];
 /** A doc the source names: `docs/ERRORS.md#slug`, `docs/YAK.md`, ... */
 const DOC_REF = /docs\/[A-Za-z0-9_./-]+\.md/g;
 
+/** Contributor docs: named in comments and guides, never carried to a user's machine. */
+const DEV_DOC = /^docs\/dev\//;
+
+/** Parses TS/TSX, so a comment is dropped and a string or regex literal that looks like one is kept. */
+const TRANSPILERS = { ts: new Bun.Transpiler({ loader: "ts" }), tsx: new Bun.Transpiler({ loader: "tsx" }) };
+
 const TAG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export interface BuildStub {
@@ -163,10 +169,14 @@ function sourcesOf(root: string, entry: string, given: readonly string[] | undef
   return [...out].map(([abs, key]) => ({ key, abs }));
 }
 
-/** Each `docs/*.md` the source names, from the first doc root that has it. */
-function namedDocs(sources: readonly { abs: string }[], docRoots: readonly string[]): Record<string, string> {
+/** Each `docs/*.md` the source's code names (not its comments, not `docs/dev/`), from the first doc root that has it. */
+export function namedDocs(sources: readonly { abs: string }[], docRoots: readonly string[]): Record<string, string> {
   const named = new Set<string>();
-  for (const s of sources) if (isSource(s.abs)) for (const m of readFileSync(s.abs, "utf8").matchAll(DOC_REF)) named.add(m[0]);
+  for (const s of sources) {
+    if (!isSource(s.abs)) continue;
+    const code = TRANSPILERS[s.abs.endsWith("x") ? "tsx" : "ts"].transformSync(readFileSync(s.abs, "utf8"));
+    for (const m of code.matchAll(DOC_REF)) if (!DEV_DOC.test(m[0])) named.add(m[0]);
+  }
   const docs: Record<string, string> = {};
   const missing: string[] = [];
   for (const doc of [...named].sort()) {
