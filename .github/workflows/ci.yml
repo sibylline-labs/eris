@@ -5,6 +5,8 @@ name: ci
 
 on:
   pull_request:
+    # `edited` re-runs the gates when a title or body changes: scrub-check reads both.
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 

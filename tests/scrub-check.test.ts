@@ -11,7 +11,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { denylistRule, scan } from "../scripts/scrub-check";
+import { denylistRule, prMetadata, scan } from "../scripts/scrub-check";
 
 const SCRIPT = resolve(import.meta.dir, "..", "scripts", "scrub-check.ts");
 
@@ -117,5 +117,56 @@ describe("denylistRule", () => {
     /** When a short term matches inside ordinary words, the denylist run is too noisy to keep clean — observed at scan() with the rule. */
     expect([denied("acmeish zorkle"), denied("a comment")]).toEqual([0, 0]);
     expect(denylistRule(["# only comments", ""])).toBeUndefined();
+  });
+});
+
+describe("the pull request scan", () => {
+  const event = (over: { ref?: string; title?: string; body?: string | null }) => ({
+    pull_request: { number: 7, title: "fix(x): a clean title", body: "A clean body.", head: { ref: "fix/a-clean-slug", repo: { full_name: "sibyl" + "line-labs/eris" } }, ...over, ...(over.ref ? { head: { ref: over.ref, repo: { full_name: "sibyl" + "line-labs/eris" } } } : {}) },
+  });
+  const run = (payload: unknown) => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "scrub-pr-")));
+    try {
+      const repo = join(dir, "repo");
+      mkdirSync(repo);
+      writeFileSync(join(repo, "README.md"), "a clean file\n");
+      const git = (...args: string[]) => Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: repo });
+      git("init", "-q");
+      git("add", "README.md");
+      git("commit", "-q", "-m", "init");
+      const file = join(dir, "event.json");
+      writeFileSync(file, JSON.stringify(payload));
+      const r = Bun.spawnSync(["bun", SCRIPT, "--pr-event", file], { cwd: repo });
+      return { rc: r.exitCode, stdout: r.stdout.toString() };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it("fails a pull request whose branch slug, title or body carries a private reference", () => {
+    /** When the pull request's own text is not scanned, a tracker key in the branch slug lands in main's merge subject and the history gate goes red after merge — observed at the CLI's exit and output. */
+    const key = "QR" + "X-1100";
+    const out = [
+      run(event({ ref: `dan/${key.toLowerCase()}-fix` })),
+      run(event({ title: `fix(x): a thing (${key})` })),
+      run(event({ body: `Fixes ${key}\nsee https://linear` + `.app/${ORG}/issue/${key}` })),
+    ];
+    expect(out.map((o) => o.rc)).toEqual([1, 1, 1]);
+    expect(out[0]!.stdout).toContain("pull request merge subject");
+    expect(out[1]!.stdout).toContain("pull request title");
+    expect(out[2]!.stdout).toContain("pull request body");
+  });
+
+  it("passes a clean pull request, and refuses a payload with no pull request", () => {
+    /** When a clean pull request fails the gate, or a payload it cannot read passes it, CI blocks good merges or waves leaks through — observed at the CLI's exit. */
+    expect([run(event({})).rc, run(event({ body: null })).rc, run({ push: {} }).rc]).toEqual([0, 0, 2]);
+  });
+});
+
+describe("prMetadata", () => {
+  it("builds the merge subject GitHub defaults to from the head owner and ref", () => {
+    /** When the subject drops the head ref, the branch slug escapes the scan that exists to read it — observed at prMetadata(). */
+    const parts = prMetadata({ pull_request: { number: 7, title: "t", body: "b", head: { ref: "fix/x", repo: { full_name: "o/r" } } } });
+    expect([parts?.[0]?.where, parts?.[0]?.text]).toEqual(["pull request merge subject", "Merge pull request #7 from o/fix/x"]);
   });
 });
