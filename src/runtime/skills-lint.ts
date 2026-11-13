@@ -76,6 +76,23 @@ function splitLines(text: string): string[] {
 /** A file as Python's `read_text()` sees it: `\r\n` and a lone `\r` read as `\n`. */
 const readText = (path: string): string => readFileSync(path, "utf8").replace(/\r\n?/g, "\n");
 
+/** `readText`, or null for a file that cannot be read (a dangling symlink, a directory named SKILL.md). */
+const tryRead = (path: string): string | null => {
+  try {
+    return readText(path);
+  } catch {
+    return null;
+  }
+};
+
+/** Python's `sorted()` order for names: by code point, not by UTF-16 unit. */
+const byCodePoint = (a: string, b: string): number => {
+  const x = Array.from(a, (c) => c.codePointAt(0)!);
+  const y = Array.from(b, (c) => c.codePointAt(0)!);
+  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i]! - y[i]!;
+  return x.length - y.length;
+};
+
 const dropBom = (text: string): string => text.replace(/^\ufeff+/, "");
 
 function frontmatter(text: string): string | null {
@@ -111,16 +128,17 @@ function skillFiles(root: string): string[] {
     const base = join(root, rel);
     if (!isDir(base)) return [];
     return readdirSync(base)
-      .sort()
+      .sort(byCodePoint)
       .map((name) => join(base, name, "SKILL.md"))
-      .filter((p) => existsSync(p));
+      // lstat, so a dangling SKILL.md symlink is listed and reported rather than skipped
+      .filter((p) => lstatSync(p, { throwIfNoEntry: false }) !== undefined);
   });
 }
 
 /** `Path.rglob("*.md")` (Python 3.13+): every entry named `*.md` at any depth, symlinked dirs not descended. */
 function mdFiles(dir: string): string[] {
   return readdirSync(dir)
-    .sort()
+    .sort(byCodePoint)
     .flatMap((name) => {
       const p = join(dir, name);
       const here = name.endsWith(".md") ? [p] : [];
@@ -148,11 +166,11 @@ function hasNumberedProcedure(text: string): boolean {
 function preloads(root: string): Set<string> {
   const agents = AGENT_ROOTS.flatMap((rel) => {
     const base = join(root, rel);
-    return isDir(base) ? readdirSync(base).filter((n) => n.endsWith(".md")).sort().map((n) => join(base, n)) : [];
+    return isDir(base) ? readdirSync(base).filter((n) => n.endsWith(".md")).sort(byCodePoint).map((n) => join(base, n)) : [];
   });
   const out = new Set<string>();
   for (const path of [...agents, ...skillFiles(root)]) {
-    for (const line of splitLines(frontmatter(readText(path)) ?? "")) {
+    for (const line of splitLines(frontmatter(tryRead(path) ?? "") ?? "")) {
       if (!line.startsWith("skills:")) continue;
       const raw = stripChars(pyStrip(line.slice(line.indexOf(":") + 1)), "[]");
       for (const s of raw.split(",")) if (pyStrip(s) !== "") out.add(stripChars(pyStrip(s), `"'`));
@@ -182,7 +200,12 @@ export function lintSkills(root: string): { readonly skills: number; readonly fi
   const findings: SkillFinding[] = [];
   const kinds = new Map<string, SkillKind>();
   for (const file of files) {
-    const read = readSkillKind(readText(file));
+    const text = tryRead(file);
+    if (text === null) {
+      findings.push(finding(skillName(file), "skill-unreadable", "SKILL.md cannot be read (a dangling symlink, or not a file)"));
+      continue;
+    }
+    const read = readSkillKind(text);
     if (read.kind === null) findings.push(finding(skillName(file), read.error, `declare one of ${KIND_LIST}`));
     else kinds.set(file, read.kind);
   }

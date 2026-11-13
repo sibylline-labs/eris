@@ -116,6 +116,7 @@ Each finding has one of these rule ids:
 | `rubric-too-long` | a `rubric` over 60 lines |
 | `rubric-no-producer` | a `rubric` no agent or skill preloads |
 | `rubric-no-judge` | a `rubric` no `gate` skill names |
+| `skill-unreadable` | a `SKILL.md` that cannot be read: a dangling symlink, or not a file |
 
 Text output is one line per finding on stdout, and the count on stderr:
 

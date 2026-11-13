@@ -384,3 +384,24 @@ describe("eris skills lint (CLI)", () => {
     expect(r.stderr).toContain("slug: skills-lint-unreadable\n");
   });
 });
+
+describe("unreadable skills and name order", () => {
+  // admits: a dangling SKILL.md symlink silently dropping a skill from the gate, so a broken tree reads clean.
+  it("reports a dangling SKILL.md symlink instead of skipping it", () => {
+    const root = tree();
+    skill(root, "calm", "mode");
+    mkdirSync(join(root, "skills", "gone"), { recursive: true });
+    symlinkSync(join(root, "nowhere.md"), join(root, "skills", "gone", "SKILL.md"));
+    const res = lintSkills(root);
+    expect(res.skills).toBe(2);
+    expect(pairs(root)).toEqual([["gone", "skill-unreadable"]]);
+  });
+
+  // admits: findings ordered by UTF-16 units where the contract (and Python's sorted()) orders names by code point.
+  it("orders skills by code point", () => {
+    const root = tree();
+    skill(root, "\u{1F600}x", "bogus");
+    skill(root, "\uFF21x", "bogus");
+    expect(lintSkills(root).findings.map((f) => f.skill)).toEqual(["\uFF21x", "\u{1F600}x"]);
+  });
+});
