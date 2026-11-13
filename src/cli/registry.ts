@@ -101,12 +101,18 @@ export const VERBS = {
   "completion zsh": { summary: "Emit the zsh completion script" },
   update: { impl: "ts", summary: "Print how to get the latest eris release (npx, bunx)", json: true },
   docs: { impl: "ts", summary: "Print the verb reference: every command, its flags and summary", json: true },
-  skills: { impl: "ts", summary: "Install the agent skills this build publishes" },
+  skills: { impl: "ts", summary: "Install the agent skills this build publishes, and lint skills against their kind" },
   "skills install": {
     summary: "Install published skills for your coding agents (every skill when none is named)",
     pos: ["skill..."],
     json: true,
     example: "eris skills install eris-socrates",
+  },
+  "skills lint": {
+    summary: "Check every skill under a directory against its kind's contract",
+    pos: ["dir?"],
+    json: true,
+    example: "eris skills lint .",
   },
 } as const satisfies Readonly<Record<string, Row>>;
 

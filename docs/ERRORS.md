@@ -1252,3 +1252,9 @@ previous copy is put back; when only its Claude Code link failed, the new copy s
 missing. Fix the cause the error names and run the command again: a rerun leaves installed skills
 `unchanged` and finishes the rest.
 
+### skills-lint-unreadable
+
+`eris skills lint` was given a path that does not exist or is not a directory, so nothing was
+linted: a mistyped path is refused rather than reported clean. Name the directory that holds
+`skills/` or `.claude/skills/`, or run the command from it with no argument. See
+[SKILLS.md](SKILLS.md#eris-skills-lint-dir).

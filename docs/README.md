@@ -16,7 +16,7 @@ Start with the [repo README](../README.md) for install and quickstart; come here
 |-----|----------|-----------|
 | [YAK.md](YAK.md) | `eris yak …`, `eris login`, `eris logout`, `eris whoami`, `eris tokens`, `eris org members`, `eris org connect-linear`, `eris org delete` | Land a durable, deduplicated observation with a Yaks endpoint |
 | [COMPLETION.md](COMPLETION.md) | `eris completion bash\|zsh` | Shell tab completion: install and the derived command tree |
-| [SKILLS.md](SKILLS.md) | `eris skills install`, `eris docs` | Install the agent skills this build publishes; print the verb reference (`--json` for agents) |
+| [SKILLS.md](SKILLS.md) | `eris skills install`, `eris skills lint`, `eris docs` | Install the agent skills this build publishes; check skills against their kind's contract; print the verb reference (`--json` for agents) |
 | [UPDATE.md](UPDATE.md) | `eris --version`, `eris update` | Which build this is, and replacing a binary with the newest release after checking it |
 
 ## Developing Eris

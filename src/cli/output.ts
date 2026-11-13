@@ -42,7 +42,7 @@ export function jsonFixLine(path: string, shape: string): string {
  *  line per json row. A json row or argv shape added to core is named here too
  *  (tests/cli-router.test.ts holds the two together). */
 export const UNSUPPORTED_FIX_SURFACES = `the surfaces that accept --output json are:
-${jsonFixLine("--version", "{version, release_repo, build_id, extra}")}${jsonFixLine("update", "{current, latest, update_available, updated}")}${jsonFixLine("docs", "{schema, version, commands}")}${jsonFixLine("skills install", "{skills: [{name, path, state, links}]}")}`;
+${jsonFixLine("--version", "{version, release_repo, build_id, extra}")}${jsonFixLine("update", "{current, latest, update_available, updated}")}${jsonFixLine("docs", "{schema, version, commands}")}${jsonFixLine("skills install", "{skills: [{name, path, state, links}]}")}${jsonFixLine("skills lint", "{skills, findings: [{skill, rule, message}]}")}`;
 
 /** The fix text with `lines` (each ending in a newline) after the header. The
  *  last newline is dropped: a trailing one renders as an empty `fix:` line. */

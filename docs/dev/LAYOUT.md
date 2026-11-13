@@ -35,13 +35,14 @@ src/                    # The TS program the shim and the bin run
 │                       #   release.ts the verb, github.ts the releases API and the download,
 │                       #   replace.ts the staged rename and its restore, semver.ts), docs.ts (eris docs:
 │                       #   the verb reference from the composed rows), skills.ts + skills/install.ts
-│                       #   (eris skills install, docs/SKILLS.md)
+│                       #   + skills/lint.ts (eris skills install|lint, docs/SKILLS.md)
 └── runtime/            #   logging, process (the one spawn adapter), settings (~/.eris/settings.json),
                         #   env (readEnv), credentials (~/.eris/yaks.json and the url/token
                         #   resolvers every bearer client shares), home (the install root: the checkout, a distribution's own root
                         #   when its entry names one, or a compiled binary's
                         #   per-build asset home), skills (the skills an install root publishes,
-                        #   and installing one where `npx skills add -g` does)
+                        #   and installing one where `npx skills add -g` does), skills-lint (the
+                        #   skill-kind contract check, exported from the SDK)
 ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN lines
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)

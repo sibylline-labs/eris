@@ -60,6 +60,7 @@ describe("router table", () => {
       docs: "ts",
       skills: "ts",
       "skills install": "ts",
+      "skills lint": "ts",
       yak: "ts",
       "yak config": "ts",
       "yak discover": "ts",
@@ -177,7 +178,7 @@ describe("the --output json surfaces, from the registry", () => {
       org: ["members", "connect-linear", "delete"],
       update: true,
       docs: true,
-      skills: ["install"],
+      skills: ["install", "lint"],
       whoami: true,
       yak: ["fatal", "issue", "suggest", "status", "ready", "discover", "config"],
     });
