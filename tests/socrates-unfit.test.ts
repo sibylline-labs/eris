@@ -9,7 +9,7 @@
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
-import { answers, CANDIDATE, fixOf, GHP, H1, H2, ORG_V2, PASSING, policyResult, socratesFake, type SocratesFake, TOKEN } from "./helpers/socrates-fake";
+import { answers, CANDIDATE, fixOf, GHP, H1, H2, ORG_POLICY, PASSING, policyResult, socratesFake, type SocratesFake, TOKEN } from "./helpers/socrates-fake";
 import { type Sandbox, sandbox } from "./helpers/blackbox";
 
 const RECEIPT_UNFIT = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", unfit: { state: "needs_input" } };
@@ -38,13 +38,13 @@ describe("eris socrates submit --unfit", () => {
     expect(sent()).toEqual({
       schema_version: "1.0.0",
       candidate: { kind: "decision", title: "Errors use problem+json", statement: "Every 4xx/5xx is RFC 7807.", source: "https://example.com/pr/14" },
-      unfit: { rubric_version: "rubric@v2", policy_hash: H1, hypothesis: HYPOTHESIS, evidence: [] },
+      unfit: { rubric_version: "rubric@v3", policy_hash: H1, hypothesis: HYPOTHESIS, evidence: [] },
     });
   });
 
   // admits: the --output json record loses the echo, so a script cannot tell a filed-for-an-answer candidate from a judged one; observed at stdout, byte for byte.
   it("prints the receipt's unfit echo in the json record", async () => {
-    fake.writeCache(policyResult(H1, ORG_V2));
+    fake.writeCache(policyResult(H1, ORG_POLICY));
     const r = await fake.drive(["submit", ...CANDIDATE, ...UNFIT], { format: "json" });
     expect(r).toMatchObject({ rc: 0, stderr: "" });
     expect(r.stdout).toBe('{"candidate_id":"cand_1","deduped":false,"contract_version":"1.0.0","unfit":{"state":"needs_input"},"redactions":{"count":0,"classes":[]},"overrides":[]}\n');
@@ -67,7 +67,7 @@ describe("eris socrates submit --unfit", () => {
 
   // admits: the unfit stamp reads the repo's eris.yaml like the answers stamp does, so a repo layer rides on a body the server does not score, or a looser layer blocks a submit that scores nothing; observed at the body, and at the answers form refusing under the same layer.
   it("does not read the repo's eris.yaml", async () => {
-    fake.writeCache(policyResult(H1, ORG_V2));
+    fake.writeCache(policyResult(H1, ORG_POLICY));
     fake.erisYaml("socrates:\n  policy:\n    threshold: 4\n");
     expect(await fake.drive(["submit", ...CANDIDATE, ...answers()])).toMatchObject({ rc: 1, slug: "socrates-repo-policy-looser" });
     expect(fake.calls).toEqual([]);
@@ -275,8 +275,8 @@ describe("the policy a stamp carries is at most an hour old", () => {
     for (const [when, ageMs] of [["fetched two hours ago", 2 * HOUR], ["dated an hour ahead of the clock", -HOUR]] as const) {
       // admits: a cache older than an hour (or dated in the future, by a clock set back) is stamped as it stands, so the server reclassifies a stamp that was one GET from current; observed at the requests (a GET before the POST) and the hash in the body.
       it(`${name}: refetches a cache ${when} before stamping`, async () => {
-        fake.writeCache(policyResult(H1, ORG_V2), ageMs);
-        fake.answer.policy = () => Response.json(policyResult(H2, ORG_V2));
+        fake.writeCache(policyResult(H1, ORG_POLICY), ageMs);
+        fake.answer.policy = () => Response.json(policyResult(H2, ORG_POLICY));
         expect(await fake.drive(["submit", ...CANDIDATE, ...flags])).toMatchObject({ rc: 0 });
         expect(fake.calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /v1/socrates/policy", "POST /v1/socrates/submit"]);
         expect(hashOf(sent())).toBe(H2);
@@ -286,8 +286,8 @@ describe("the policy a stamp carries is at most an hour old", () => {
 
     // admits: every stamp refetches the policy, one extra GET per submit; observed at the requests (only the POST) and the cached hash in the body, though the server's policy has moved.
     it(`${name}: stamps a cache fetched five minutes ago as it stands`, async () => {
-      fake.writeCache(policyResult(H1, ORG_V2), 5 * 60 * 1000);
-      fake.answer.policy = () => Response.json(policyResult(H2, ORG_V2));
+      fake.writeCache(policyResult(H1, ORG_POLICY), 5 * 60 * 1000);
+      fake.answer.policy = () => Response.json(policyResult(H2, ORG_POLICY));
       expect(await fake.drive(["submit", ...CANDIDATE, ...flags])).toMatchObject({ rc: 0 });
       expect(fake.calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /v1/socrates/submit"]);
       expect(hashOf(sent())).toBe(H1);
@@ -308,7 +308,7 @@ describe("eris socrates submit --unfit, through the eris entrypoint", () => {
       async fetch(req) {
         const path = new URL(req.url).pathname;
         seen.push({ method: req.method, path, body: req.method === "GET" ? undefined : await req.json() });
-        return path === "/v1/socrates/policy" ? Response.json(policyResult(H1, ORG_V2)) : Response.json(RECEIPT_UNFIT);
+        return path === "/v1/socrates/policy" ? Response.json(policyResult(H1, ORG_POLICY)) : Response.json(RECEIPT_UNFIT);
       },
     });
   });
@@ -323,6 +323,6 @@ describe("eris socrates submit --unfit, through the eris entrypoint", () => {
     const r = await sb.run(["socrates", "submit", ...CANDIDATE, ...UNFIT, "--evidence-file", "-"], { env, stdin: JSON.stringify(evidence(2)) });
     expect({ status: r.status, stdout: r.stdout, stderr: r.stderr }).toEqual({ status: 0, stdout: "submitted: cand_1\n  filed for an answer: needs-input\n", stderr: "" });
     expect(seen.map((s) => `${s.method} ${s.path}`)).toEqual(["GET /v1/socrates/policy", "POST /v1/socrates/submit"]);
-    expect((seen[1]!.body as { unfit: unknown }).unfit).toEqual({ rubric_version: "rubric@v2", policy_hash: H1, hypothesis: HYPOTHESIS, evidence: evidence(2) });
+    expect((seen[1]!.body as { unfit: unknown }).unfit).toEqual({ rubric_version: "rubric@v3", policy_hash: H1, hypothesis: HYPOTHESIS, evidence: evidence(2) });
   });
 });

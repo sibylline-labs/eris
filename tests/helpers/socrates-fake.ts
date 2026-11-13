@@ -10,7 +10,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { defaultPolicy, RUBRIC_V2 } from "../../packages/socrates-core/src/index";
+import { CURRENT_RUBRIC, defaultPolicy } from "../../packages/socrates-core/src/index";
 import { runSocrates } from "../../plugins/socrates/submit";
 import { CliExit } from "../../src/cli/ts-verb";
 
@@ -37,8 +37,8 @@ export const PASSING: Record<string, string> = {
 };
 export const answers = (over: Record<string, string> = {}) => Object.entries({ ...PASSING, ...over }).flatMap(([q, v]) => ["--answer", `${q}=${v}`]);
 
-export const policyResult = (hash: string, policy: object, rubric_version = "rubric@v2") => ({ rubric_version, policy_hash: hash, policy, contract_version: "1.0.0" });
-export const ORG_V2 = { ...defaultPolicy(RUBRIC_V2), threshold: 5 };
+export const policyResult = (hash: string, policy: object, rubric_version: string = CURRENT_RUBRIC.version) => ({ rubric_version, policy_hash: hash, policy, contract_version: "1.0.0" });
+export const ORG_POLICY = { ...defaultPolicy(CURRENT_RUBRIC), threshold: 5 };
 
 export interface Call {
   method: string;
@@ -92,7 +92,7 @@ export function socratesFake(): SocratesFake {
     cwd,
     calls: [],
     answer: {
-      policy: () => Response.json(policyResult(H1, ORG_V2)),
+      policy: () => Response.json(policyResult(H1, ORG_POLICY)),
       status: () => Response.json({}),
       submit: () => Response.json({ candidate_id: "cand_1", deduped: false, contract_version: "1.0.0" }),
     },

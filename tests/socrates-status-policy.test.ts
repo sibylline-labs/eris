@@ -8,13 +8,13 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { GHP, H1, H2, ORG_V2, policyResult, socratesFake, type SocratesFake } from "./helpers/socrates-fake";
+import { GHP, H1, H2, ORG_POLICY, policyResult, socratesFake, type SocratesFake } from "./helpers/socrates-fake";
 
 const problem = (status: number, code: string, detail: string, extra: Record<string, unknown> = {}) =>
   Response.json({ type: `urn:hera:error:${code}`, title: code, status, detail, code, ...extra }, { status, headers: { "content-type": "application/problem+json" } });
 
 const STATUS = {
-  rubric_version: "rubric@v2",
+  rubric_version: "rubric@v3",
   policy_hash: H1,
   pending_candidates: 3,
   open_epics: [
@@ -126,21 +126,21 @@ describe("eris socrates status", () => {
 });
 
 describe("eris socrates policy", () => {
-  const ORG_HASHED = policyResult(H1, ORG_V2);
+  const ORG_HASHED = policyResult(H1, ORG_POLICY);
 
   // admits: the verb prints without refreshing the cache, so the next stamp carries a stale hash; or prints something other than the served policy. Observed at the cache file and at stdout.
   it("fetches the policy, refreshes the cache and prints the hash, rubric, threshold and enabled gates", async () => {
     const r = await fake.drive(["policy"]);
     expect(r).toMatchObject({ rc: 0, stderr: "" });
-    const gates = Object.keys(ORG_V2.gates).join(", ");
-    expect(r.stdout).toBe(`org policy: ${H1.slice(0, 12)} (rubric@v2)\nthreshold: 5\nenabled gates: ${gates}\nrepo layer: none\n`);
+    const gates = Object.keys(ORG_POLICY.gates).join(", ");
+    expect(r.stdout).toBe(`org policy: ${H1.slice(0, 12)} (rubric@v3)\nthreshold: 5\nenabled gates: ${gates}\nrepo layer: none\n`);
     expect(requests()).toEqual(["GET /v1/socrates/policy"]);
-    expect(JSON.parse(readFileSync(fake.cachePath(), "utf8"))).toMatchObject({ policy_hash: H1, rubric_version: "rubric@v2", policy: ORG_V2 });
+    expect(JSON.parse(readFileSync(fake.cachePath(), "utf8"))).toMatchObject({ policy_hash: H1, rubric_version: "rubric@v3", policy: ORG_POLICY });
   });
 
   // admits: a gate the org turned off is listed as enabled; observed at stdout.
   it("lists only the gates that are on", async () => {
-    fake.answer.policy = () => Response.json(policyResult(H1, { ...ORG_V2, gates: { ...ORG_V2.gates, end_condition: { enabled: false, weight: 0 } } }));
+    fake.answer.policy = () => Response.json(policyResult(H1, { ...ORG_POLICY, gates: { ...ORG_POLICY.gates, end_condition: { enabled: false, weight: 0 } } }));
     const line = (await fake.drive(["policy"])).stdout.split("\n").find((l) => l.startsWith("enabled gates: "))!;
     expect(line).toContain("owning_layer");
     expect(line).not.toContain("end_condition");
@@ -148,9 +148,9 @@ describe("eris socrates policy", () => {
 
   // admits: a policy that moved on the server refreshes the cache silently, so a person cannot see that a stamp they built earlier is stale; observed at the changed line, which is absent when the hash did not move.
   it("shows the previous hash beside the new one when the refresh changed it", async () => {
-    fake.writeCache(policyResult(H2, ORG_V2));
+    fake.writeCache(policyResult(H2, ORG_POLICY));
     const moved = await fake.drive(["policy"]);
-    expect(moved.stdout).toContain(`org policy: ${H1.slice(0, 12)} (rubric@v2)\nchanged: ${H2.slice(0, 12)} -> ${H1.slice(0, 12)}\n`);
+    expect(moved.stdout).toContain(`org policy: ${H1.slice(0, 12)} (rubric@v3)\nchanged: ${H2.slice(0, 12)} -> ${H1.slice(0, 12)}\n`);
     expect(JSON.parse(readFileSync(fake.cachePath(), "utf8"))).toMatchObject({ policy_hash: H1 });
     const same = await fake.drive(["policy"]);
     expect(same).toMatchObject({ rc: 0 });
@@ -171,7 +171,7 @@ describe("eris socrates policy", () => {
 
   // admits: a rubric this build does not score is shown as the rubric's defaults, which is not what the server serves; observed at stdout.
   it("shows the served policy, and says the repo layer was not applied, for a rubric this build does not score", async () => {
-    fake.answer.policy = () => Response.json(policyResult(H1, { ...ORG_V2, threshold: 7 }, "rubric@v99"));
+    fake.answer.policy = () => Response.json(policyResult(H1, { ...ORG_POLICY, threshold: 7 }, "rubric@v99"));
     fake.erisYaml("socrates:\n  policy:\n    threshold: 9\n");
     const r = await fake.drive(["policy"]);
     expect(r.stdout).toContain("org policy: " + H1.slice(0, 12) + " (rubric@v99)\nthreshold: 7\n");
@@ -183,7 +183,7 @@ describe("eris socrates policy", () => {
     fake.writeCache(ORG_HASHED, 3 * 60 * 60 * 1000);
     const r = await fake.drive(["policy", "--cached"], { env: { HOME: fake.home } });
     expect(r).toMatchObject({ rc: 0, stderr: "" });
-    expect(r.stdout).toContain(`org policy: ${H1.slice(0, 12)} (rubric@v2)\n`);
+    expect(r.stdout).toContain(`org policy: ${H1.slice(0, 12)} (rubric@v3)\n`);
     expect(r.stdout).not.toContain("changed:");
     expect(fake.calls).toEqual([]);
   });
@@ -204,17 +204,17 @@ describe("eris socrates policy", () => {
 
   // admits: the json form leaves out a layer or the change, so a script cannot tell which policy a stamp will carry; observed at stdout.
   it("prints the effective policy as one record under --output json", async () => {
-    fake.writeCache(policyResult(H2, ORG_V2));
+    fake.writeCache(policyResult(H2, ORG_POLICY));
     fake.erisYaml("socrates:\n  policy:\n    threshold: 9\n");
     const r = await fake.drive(["policy"], { format: "json" });
     expect(r).toMatchObject({ rc: 0, stderr: "" });
     const record = JSON.parse(r.stdout);
     expect(record).toMatchObject({
-      rubric_version: "rubric@v2",
+      rubric_version: "rubric@v3",
       policy_hash: H1,
       cached: false,
       changed: { from: H2, to: H1 },
-      org_policy: ORG_V2,
+      org_policy: ORG_POLICY,
       policy: { threshold: 9 },
       repo_policy: { threshold: 9 },
       repo_policy_path: `${fake.cwd}/eris.yaml`,
