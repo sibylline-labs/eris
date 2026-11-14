@@ -209,7 +209,7 @@ describe("splices", () => {
   });
 
   it.each(["\u2028", "\u2029"])("refuses a replacement row holding the line separator %j", (sep) => {
-    // admits: boundary-io: a row with U+2028/U+2029 inside is runtime data no type or lint rule sees; accepted, it splits the register row when Linear or a renderer breaks the line.
+    /** When a register row carries U+2028 or U+2029 the splice accepts it and Linear or a renderer later breaks the row in two; observed as `bad-row`. */
     const row = `| \`ABC-102\` | two${sep}lines |`;
     expect(applyOps(REGISTER, [{ op: "replace_register_row", decisionId: "ABC-102", rowMd: row }], identity)).toMatchObject({ ok: false, refusal: { kind: "bad-row" } });
   });
