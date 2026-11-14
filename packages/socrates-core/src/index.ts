@@ -31,17 +31,19 @@ export * from "./rubric/policy";
 export { RUBRIC_V1, type RubricV1 } from "./rubric/v1";
 export { RUBRIC_V2, type RubricV2 } from "./rubric/v2";
 export { RUBRIC_V3, type RubricV3 } from "./rubric/v3";
+export { RUBRIC_V4, type RubricV4 } from "./rubric/v4";
 
 import type { RubricVersion } from "./rubric/definition";
 import { RUBRIC_V1 } from "./rubric/v1";
 import { RUBRIC_V2 } from "./rubric/v2";
 import { RUBRIC_V3 } from "./rubric/v3";
+import { RUBRIC_V4 } from "./rubric/v4";
 
 /** Every published rubric, by version: what a server reclassifies a stamped submission with. */
-export const RUBRICS = { [RUBRIC_V1.version]: RUBRIC_V1, [RUBRIC_V2.version]: RUBRIC_V2, [RUBRIC_V3.version]: RUBRIC_V3 } as const;
+export const RUBRICS = { [RUBRIC_V1.version]: RUBRIC_V1, [RUBRIC_V2.version]: RUBRIC_V2, [RUBRIC_V3.version]: RUBRIC_V3, [RUBRIC_V4.version]: RUBRIC_V4 } as const;
 
 /** The rubric a new classification is scored with: the latest published version. */
-export const CURRENT_RUBRIC = RUBRIC_V3;
+export const CURRENT_RUBRIC = RUBRIC_V4;
 
 export type PublishedRubricVersion = keyof typeof RUBRICS;
 

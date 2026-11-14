@@ -14,7 +14,7 @@ const problem = (status: number, code: string, detail: string, extra: Record<str
   Response.json({ type: `urn:hera:error:${code}`, title: code, status, detail, code, ...extra }, { status, headers: { "content-type": "application/problem+json" } });
 
 const STATUS = {
-  rubric_version: "rubric@v3",
+  rubric_version: "rubric@v4",
   policy_hash: H1,
   pending_candidates: 3,
   open_epics: [
@@ -145,9 +145,9 @@ describe("eris socrates policy", () => {
     const r = await fake.drive(["policy"]);
     expect(r).toMatchObject({ rc: 0, stderr: "" });
     const gates = Object.keys(ORG_POLICY.gates).join(", ");
-    expect(r.stdout).toBe(`org policy: ${H1.slice(0, 12)} (rubric@v3)\nthreshold: 5\nenabled gates: ${gates}\nrepo layer: none\n`);
+    expect(r.stdout).toBe(`org policy: ${H1.slice(0, 12)} (rubric@v4)\nthreshold: 5\nenabled gates: ${gates}\nrepo layer: none\n`);
     expect(requests()).toEqual(["GET /v1/socrates/policy"]);
-    expect(JSON.parse(readFileSync(fake.cachePath(), "utf8"))).toMatchObject({ policy_hash: H1, rubric_version: "rubric@v3", policy: ORG_POLICY });
+    expect(JSON.parse(readFileSync(fake.cachePath(), "utf8"))).toMatchObject({ policy_hash: H1, rubric_version: "rubric@v4", policy: ORG_POLICY });
   });
 
   // admits: a gate the org turned off is listed as enabled; observed at stdout.
@@ -162,7 +162,7 @@ describe("eris socrates policy", () => {
   it("shows the previous hash beside the new one when the refresh changed it", async () => {
     fake.writeCache(policyResult(H2, ORG_POLICY));
     const moved = await fake.drive(["policy"]);
-    expect(moved.stdout).toContain(`org policy: ${H1.slice(0, 12)} (rubric@v3)\nchanged: ${H2.slice(0, 12)} -> ${H1.slice(0, 12)}\n`);
+    expect(moved.stdout).toContain(`org policy: ${H1.slice(0, 12)} (rubric@v4)\nchanged: ${H2.slice(0, 12)} -> ${H1.slice(0, 12)}\n`);
     expect(JSON.parse(readFileSync(fake.cachePath(), "utf8"))).toMatchObject({ policy_hash: H1 });
     const same = await fake.drive(["policy"]);
     expect(same).toMatchObject({ rc: 0 });
@@ -195,7 +195,7 @@ describe("eris socrates policy", () => {
     fake.writeCache(ORG_HASHED, 3 * 60 * 60 * 1000);
     const r = await fake.drive(["policy", "--cached"], { env: { HOME: fake.home } });
     expect(r).toMatchObject({ rc: 0, stderr: "" });
-    expect(r.stdout).toContain(`org policy: ${H1.slice(0, 12)} (rubric@v3)\n`);
+    expect(r.stdout).toContain(`org policy: ${H1.slice(0, 12)} (rubric@v4)\n`);
     expect(r.stdout).not.toContain("changed:");
     expect(fake.calls).toEqual([]);
   });
@@ -222,7 +222,7 @@ describe("eris socrates policy", () => {
     expect(r).toMatchObject({ rc: 0, stderr: "" });
     const record = JSON.parse(r.stdout);
     expect(record).toMatchObject({
-      rubric_version: "rubric@v3",
+      rubric_version: "rubric@v4",
       policy_hash: H1,
       cached: false,
       changed: { from: H2, to: H1 },

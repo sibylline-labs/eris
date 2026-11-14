@@ -64,7 +64,7 @@ export function overridesOf(ctx: VerbContext, rubric: Rubric, policy: ScoringPol
     if (q.route !== "reject") fail(ctx, "socrates-override-invalid", `${gate} routes the candidate (${q.route}) rather than rejecting it, so it cannot be overridden`, "answer the gate as it is; a reroute is not a rejection");
     if (seen.has(gate)) fail(ctx, "socrates-override-invalid", `${gate} is overridden twice`, fix);
     if (off.has(gate)) fail(ctx, "socrates-override-invalid", `${gate} is turned off by the policy, so there is nothing to override`, fix);
-    if (gateFiring(rubric, gate as GateId<Rubric>, answers, features) === undefined) fail(ctx, "socrates-override-invalid", `${gate} does not reject these answers, so there is nothing to override`, fix);
+    if (gateFiring(rubric, gate as GateId<Rubric>, answers, features, [...off] as GateId<Rubric>[]) === undefined) fail(ctx, "socrates-override-invalid", `${gate} does not reject these answers, so there is nothing to override`, fix);
     seen.add(gate);
   }
   return parsed.data;

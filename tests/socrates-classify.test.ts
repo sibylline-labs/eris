@@ -90,7 +90,7 @@ describe("eris socrates classify", () => {
     expect(second.stdout).toBe(first.stdout);
     expect(JSON.parse(first.stdout)).toEqual({
       verdict: "load-bearing",
-      rubric_version: "rubric@v3",
+      rubric_version: "rubric@v4",
       score: 3,
       threshold: 3,
       breakdown: { consequence: 3 },
@@ -101,7 +101,7 @@ describe("eris socrates classify", () => {
       meta: { _links: {} },
     });
     expect((await drive([...CANDIDATE, ...answers()])).stdout).toBe(
-      "load-bearing: score 3 of 3 (rubric@v3)\n  policy: rubric defaults\n  next: submit it: eris socrates submit with the same flags and answers\n",
+      "load-bearing: score 3 of 3 (rubric@v4)\n  policy: rubric defaults\n  next: submit it: eris socrates submit with the same flags and answers\n",
     );
     expect(fetches).toEqual([]);
   });
@@ -109,13 +109,13 @@ describe("eris socrates classify", () => {
   it("says which gate rejected the candidate and why, with a typed override link for that gate", async () => {
     /** When a rejection omits the gate, the reason or the link, the agent cannot tell what failed or how to override it. */
     const r = await json([...CANDIDATE, ...answers({ end_condition: "has-end-condition" })]);
-    expect(r).toMatchObject({ verdict: "rejected", rubric_version: "rubric@v3", gate: "end_condition", answer: "has-end-condition" });
+    expect(r).toMatchObject({ verdict: "rejected", rubric_version: "rubric@v4", gate: "end_condition", answer: "has-end-condition" });
     expect(r.reason).toContain("end condition");
     expect(r.meta).toEqual({
       _links: { override: [{ href: `${ENDPOINT}/v1/socrates/classify`, method: "POST", gate: "end_condition", title: "eris socrates classify … --override end_condition=<one-line reason>" }] },
     });
     const text = await drive([...CANDIDATE, ...answers({ end_condition: "has-end-condition" })]);
-    expect(text.stdout).toContain("rejected: end_condition (rubric@v3)\n");
+    expect(text.stdout).toContain("rejected: end_condition (rubric@v4)\n");
     expect(text.stdout).toContain("--override end_condition=<one-line reason>");
   });
 
@@ -123,7 +123,7 @@ describe("eris socrates classify", () => {
     /** When a feature-fired rejection reads as the agent's answer, the agent changes a correct answer instead of the statement. */
     const r = await json(["--title", "t", "--statement", "We pin v2 for now.", "--source", "https://example.com/pr/14", ...answers()]);
     expect(r).toMatchObject({ verdict: "rejected", gate: "end_condition", answer: "none", feature: "end_condition_wording" });
-    expect(r.reason).toContain("temporary, until, for now or right now");
+    expect(r.reason).toContain("temporary, for now or right now");
   });
 
   it("bypasses only the gate an override names", async () => {
@@ -189,7 +189,7 @@ describe("eris socrates classify", () => {
     const prd = ["--kind", "prd", "--title", "PRD — Acme Billing", "--source", "https://docs.example.com/acme/document/billing", "--statement", "Decisions: `ACME-K1`–`ACME-K57`\nConfirmed by: dana"];
     expect(await json(prd)).toEqual({
       verdict: "prd",
-      rubric_version: "rubric@v3",
+      rubric_version: "rubric@v4",
       route: "review-issue",
       reason: "files as one review issue: PRD authored: PRD — Acme Billing",
       overrides: [],
@@ -197,7 +197,7 @@ describe("eris socrates classify", () => {
       meta: { _links: {} },
     });
     const conflict = ["--kind", "conflict", "--title", "Two sources disagree", "--source", "https://example.com/pr/14", "--statement", "S.\n\nAuthoritative sites:\n- `ACME-K11` in [Doc](https://docs.example.com/a)\n- [Code](https://code.example.com/b)"];
-    expect((await drive(conflict)).stdout).toBe("conflict: one review issue (rubric@v3) -> review-issue\n  why: files as one review issue: Two sources disagree\n  next: submit it: eris socrates submit --kind conflict with the same flags\n");
+    expect((await drive(conflict)).stdout).toBe("conflict: one review issue (rubric@v4) -> review-issue\n  why: files as one review issue: Two sources disagree\n  next: submit it: eris socrates submit --kind conflict with the same flags\n");
     expect(await drive([...conflict.slice(0, -1), "S. with no sites"])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-candidate-invalid" });
     expect(await drive([...prd, ...answers()])).toMatchObject({ rc: 1, slug: "socrates-answers-invalid" });
     expect(await drive([...prd, "--override", "end_condition=a"])).toMatchObject({ rc: 1, slug: "socrates-override-invalid" });
