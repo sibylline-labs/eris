@@ -1078,7 +1078,9 @@ with the org policy hash it had cached, and the server's policy has changed
 since: it scored the stamp under its current policy. The line names the
 current hash, the stamped one, and the server's verdict, which is the one that
 counts. eris refreshes `~/.eris/socrates-policy.json` (or, when that fails,
-removes it so the next stamped submit fetches it). Fix: none needed; run
+removes it so the next stamped submit fetches it), unless the cache holds a
+rubric this build does not know: that cache is left as is and the line says so.
+Fix: none needed; run
 `eris socrates classify` again to see the verdict under the current policy.
 
 ### socrates-repo-policy-invalid
