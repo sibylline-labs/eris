@@ -62,7 +62,7 @@ import { groupArgs, readArgs, renderWarnLines, runErisVerb, type VerbContext } f
 import { ANSWER_FIX, answersOf, checkCandidateTitle, issues, OVERRIDE_FIX, overridesOf, pairs } from "./answers";
 import { fail, heldLine, postSocrates, printable, refuse, sendSocrates, type SocratesDeps, type SocratesEndpoint, socratesEndpoint } from "./client";
 import plugin from "./index";
-import { localPolicy, readFreshPolicy, readRepoPolicy, refreshPolicyAfterSubmit } from "./policy";
+import { defaultPolicyHash, localPolicy, readFreshPolicy, readPolicyCache, readRepoPolicy, refreshPolicyAfterSubmit } from "./policy";
 import { readFragments } from "./fragment";
 import { SOCRATES_CONTRACT_VERSION, SOCRATES_SUBMIT_PATH, SOCRATES_UNFIT_EVIDENCE_MAX_ENTRIES, type SocratesClassificationStamp, SocratesSubmitRequest, SocratesSubmitResponse, SocratesUnfit, type SocratesUnfitEvidence } from "./socrates-contract.v1";
 import { SOCRATES_ROUTES, SocratesEvidenceCreateRequest, SocratesEvidenceCreateResponse } from "./socrates-contract.v1.verbs";
@@ -372,7 +372,10 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   }
   const classified = reply.classification;
   if (classified?.reclassified) {
-    const refreshed = await refreshPolicyAfterSubmit(ctx, deps, endpoint);
+    // A cache for another rubric is the server's current policy already (the stamp named this rubric's own); refetching it every submit changes nothing.
+    const held = await readPolicyCache(ctx, deps);
+    const foreign = held !== undefined && held.rubric_version !== CURRENT_RUBRIC.version;
+    const refreshed = foreign || (await refreshPolicyAfterSubmit(ctx, deps, endpoint));
     const was = classified.stamped_policy_hash?.slice(0, 12) ?? "";
     const slug: SocratesWarnSlug = "socrates-reclassified";
     const cache = refreshed ? "the cached policy is refreshed" : "the cached policy could not be refreshed, so the next stamped submit fetches it";
@@ -452,7 +455,7 @@ async function stamp(ctx: VerbContext, deps: SocratesDeps, endpoint: SocratesEnd
   const overrides = overridesOf(ctx, rubric, local.policy, overridePairs, answers, features);
   return {
     rubric_version: rubric.version,
-    policy_hash: cache.policy_hash,
+    policy_hash: local.policy_hash ?? defaultPolicyHash(rubric),
     answers: answers as Record<string, string>,
     ...(overrides.length > 0 ? { overrides } : {}),
     ...(local.repo_policy !== null ? { repo_policy: local.repo_policy } : {}),

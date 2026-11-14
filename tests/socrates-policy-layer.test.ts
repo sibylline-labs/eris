@@ -38,6 +38,7 @@ const PASSING: Record<string, string> = {
 const answers = (over: Record<string, string> = {}) => Object.entries({ ...PASSING, ...over }).flatMap(([q, v]) => ["--answer", `${q}=${v}`]);
 
 const policyResult = (hash: string, policy: object, rubric_version: string = CURRENT_RUBRIC.version) => ({ rubric_version, policy_hash: hash, policy, contract_version: "1.0.0" });
+const DEFAULT_V3_HASH = "546548a6083a653b05da29d2ed9645d197e3d643f7fb7b56c843c39d27877918";
 const ORG_POLICY = { ...defaultPolicy(CURRENT_RUBRIC), threshold: 5 };
 
 let home: string;
@@ -184,6 +185,17 @@ describe("eris socrates submit --answer", () => {
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /v1/socrates/submit", "GET /v1/socrates/policy"]);
     expect((calls[0]!.body as { classification: { policy_hash: string } }).classification.policy_hash).toBe(H1);
     expect(JSON.parse(readFileSync(cacheFile(), "utf8"))).toMatchObject({ policy_hash: H2 });
+  });
+
+  // admits: a cache holding a newer rubric's policy has its hash stamped onto this rubric, so the server reclassifies and a refetch follows every submit; observed at the stamped hash and at the requests sent.
+  it("stamps this rubric's default hash and skips the refresh when the cache is for another rubric", async () => {
+    writeCache(policyResult(H2, ORG_POLICY, "rubric@v4"));
+    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "pass", rubric_version: "rubric@v3", policy_hash: H1, reclassified: true, stamped_policy_hash: DEFAULT_V3_HASH } };
+    const r = await drive(["submit", ...CANDIDATE, ...answers()]);
+    expect(r.rc).toBe(0);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /v1/socrates/submit"]);
+    expect((calls[0]!.body as { classification: { rubric_version: string; policy_hash: string } }).classification).toMatchObject({ rubric_version: "rubric@v3", policy_hash: DEFAULT_V3_HASH });
+    expect(JSON.parse(readFileSync(cacheFile(), "utf8"))).toMatchObject({ rubric_version: "rubric@v4", policy_hash: H2 });
   });
 
   // admits: rubric answers on a candidate the server never scores reach the wire, or a looser repo layer is sent for the server to find; observed at the slug with no request made.
