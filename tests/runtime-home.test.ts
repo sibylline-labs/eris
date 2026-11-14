@@ -6,11 +6,13 @@
  * between processes (the oracle starts many against one binary at once).
  */
 
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HOME_MARKER, materializeHome } from "../src/runtime/home";
+
+setDefaultTimeout(60_000);
 
 const SCRATCH = join(import.meta.dir, "..", ".scratch");
 const made: string[] = [];

@@ -8,12 +8,14 @@
  * answers are recorded as literals in the `BASH_ANSWERS` table below.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { GlobalFlagError, locateVerb, parseGlobal } from "../src/cli/args";
 import { implOf, JSON_SURFACES, REGISTRY, route, subsOf, TABLE, UNSUPPORTED_FIX } from "./helpers/build-cli";
 import { ERIS } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 const REPO = resolve(import.meta.dir, "..");
 

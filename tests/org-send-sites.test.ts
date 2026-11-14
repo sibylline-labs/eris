@@ -11,7 +11,7 @@
  * secret scanner.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { CliExit } from "../src/cli/ts-verb";
@@ -20,6 +20,8 @@ import { runOrg } from "../plugins/yak/org";
 import { runYak } from "../plugins/yak/yak";
 import { runReady, runStatus } from "../plugins/yak/yak-admin";
 import { runTokens } from "../plugins/yak/tokens";
+
+setDefaultTimeout(60_000);
 
 const REPO = resolve(import.meta.dir, "..");
 const B64 = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE";

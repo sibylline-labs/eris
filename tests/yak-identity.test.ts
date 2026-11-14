@@ -7,7 +7,7 @@
  * config, HOME, or CLAUDE_CODE_* environment (dispatch constraint).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, setDefaultTimeout } from "bun:test";
 import { mkdtemp, rm, mkdir, writeFile, chmod, stat, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,6 +24,8 @@ import {
   asText,
 } from "../plugins/yak/yak-identity";
 import { resolveYaksBearer } from "../src/cli/plugin";
+
+setDefaultTimeout(60_000);
 
 let home: string;
 

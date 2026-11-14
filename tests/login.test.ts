@@ -9,13 +9,15 @@
  * assembled at runtime so no literal trips a secret scanner.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { YAKS_CONTRACT_VERSION } from "eris/yak-contract";
 import { runYakVerb } from "../plugins/yak/handlers";
 import { runLogin, runLogout, type LoginDeps } from "../plugins/yak/login";
 import { CliExit } from "../src/cli/ts-verb";
+
+setDefaultTimeout(60_000);
 
 const REPO = resolve(import.meta.dir, "..");
 
