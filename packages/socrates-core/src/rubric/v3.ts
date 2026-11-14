@@ -14,8 +14,9 @@
  * A dependency pick ("uses @scope/pkg for …") fires the reversibility gate, whose prompt already
  * calls a dependency or vendor pick setting-level.
  *
- * The prompts for owning_layer and already_recorded name types, tests, shared SDK primitives and
- * Canon, so an agent that reads them answers the gate from the statement.
+ * The prompts are v2's, word for word. Reworded prompts that named types, tests, SDK primitives and
+ * Canon moved a model's answers on decisions an operator accepted more than on the ones it rejected,
+ * so the gain here is the features alone, and a replay compares v2 and v3 answer for answer.
  *
  * Published versions are frozen. Changing a question, an answer, a point value, a feature or the
  * threshold is a new version beside this one. The patterns are this version's own.
@@ -40,7 +41,6 @@ const OWNED_ELSEWHERE = [
   String.raw`\b(?:${HOLDER}\s+(?:owns|holds|pins|enforces)\b|(?:held|owned|enforced|pinned) by (?:types|lint|ast-grep|oxlint|CI|error-severity|the |an? |its )|is (?:the |an? )?[\w-]+'s job\b|owns (?:the|a) (?:rule|ban|check)\b)`,
   // A named rule: "lint rule no-x", "lint: no-x", "lint \`no-x\`", "(lint no-x)", "no-x lint rule".
   String.raw`\(${TOOL}\s+["'\`]?${RULE_ID}["'\`]?\)`,
-  String.raw`\b${RULE_ID}["'\`]?\s+${TOOL}\s+rule\b`,
   // A type-level test.
   String.raw`@ts-expect-error|\.test-d\.ts\b|\bexpectTypeOf\b|\b${TYPE_TEST}\b[^.;]{0,50}?\b(?:pins?|refuses|asserts|fails|checks|proves|enforces)\b|\bby an? ${TYPE_TEST}\b`,
   // A test that asserts it, as the subject of a sentence or the agent of a passive.
@@ -59,13 +59,22 @@ const firesUnlessPreceded = (re: RegExp, veto: RegExp) => (s: string) => {
   for (const m of s.matchAll(re)) if (!veto.test(s.slice(0, m.index))) return true;
   return false;
 };
+/**
+ * A rule named before "lint rule" holds the fact, unless the rule is the route a counterexample fails
+ * through ("… fails CI through the no-x lint rule"): there the rule bans one alternative, and the
+ * decision the statement makes is not the rule's.
+ */
+const RULE_BEFORE_TOOL = firesUnlessPreceded(
+  new RegExp(String.raw`["'\`]?\b${RULE_ID}["'\`]?\s+${TOOL}\s+rule\b`, "gi"),
+  /\b(?:through|via)\s+(?:the\s+|an?\s+)?$/i,
+);
 /** A rule named after the tool, with "rule" or a delimiter; not the `eris lint` command. */
 const NAMED_RULE = firesUnlessPreceded(
   new RegExp(String.raw`\b${TOOL}(?:\s+rule[:\s]+["'\`]?|:\s*|\s+["'\`])${RULE_ID}`, "gi"),
   /\beris\s+$/i,
 );
 /** A Canon NFR register row, unless the statement deviates from it. Case-sensitive: the ids are upper case. */
-const NFR_ROW = firesUnlessPreceded(/\bNFR-[A-Z][A-Z0-9]*-\d+\b/g, /\b(?:deviat(?:e|es|ing) from|waiv(?:e|es|ing)|relax(?:es|ing)?|overrid(?:e|es|ing))\s+$/i);
+const NFR_ROW = firesUnlessPreceded(/\bNFR-[A-Z][A-Z0-9]*-\d+\b/g, /\b(?:deviat(?:e|es|ing) from|waiv(?:e|es|ing)|relax(?:es|ing)?|overrid(?:e|es|ing))\s+["'`\u2018\u201c]?$/i);
 /** A scoped package picked for a job; "uses @scope/pkg as its boundary" names an architecture seam instead. */
 const DEPENDENCY_PICK = /\b(?:uses?|depends on|adopts?|relies on)\s+["'`]?@[\w.-]+\/[\w.-]+["'`]?(?:\s+(?:for|to|and)\b|\s*[,;.]|$)/i;
 
@@ -75,7 +84,7 @@ export const RUBRIC_V3 = defineRubric({
   questions: {
     already_recorded: {
       kind: "gate",
-      prompt: "Is this fact already recorded in the living docs or in Canon (an entry, a register row such as an NFR)?",
+      prompt: "Is this fact already recorded as an entry in the living docs?",
       answers: ["new", "already-recorded"],
       passes: ["new"],
       route: "reject",
@@ -91,8 +100,7 @@ export const RUBRIC_V3 = defineRubric({
     },
     owning_layer: {
       kind: "gate",
-      prompt:
-        "Does another layer already own this fact: a lint or ast-grep rule, a type or a type test, a test that asserts it, a shared SDK primitive, a Canon or NFR row, a lockfile, CI or wrangler config, the PRD? Answer from this candidate's statement: if it names what holds it, it is owned elsewhere.",
+      prompt: "Does another layer already own this fact (a lockfile, CI config, wrangler config, a lint rule, the PRD)?",
       answers: ["no-other-owner", "owned-elsewhere"],
       passes: ["no-other-owner"],
       route: "reject",
@@ -160,7 +168,7 @@ export const RUBRIC_V3 = defineRubric({
       description:
         "The statement names what already holds it: a lint or ast-grep rule id, @ts-expect-error or a type test, a test that asserts it, a layer that already owns or provides it, a Canon NFR row, reuse rather than redeclaring, or a gate, kit or types that own, hold, pin or enforce it.",
       points: 0,
-      detect: (s) => OWNED_ELSEWHERE.some((re) => re.test(s)) || NAMED_RULE(s) || NFR_ROW(s),
+      detect: (s) => OWNED_ELSEWHERE.some((re) => re.test(s)) || NAMED_RULE(s) || RULE_BEFORE_TOOL(s) || NFR_ROW(s),
     },
     practice_wording: {
       description: "The statement describes a step people take: a sign-off, something done before code or a merge, its own commit, development work.",
