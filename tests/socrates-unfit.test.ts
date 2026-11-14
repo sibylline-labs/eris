@@ -38,7 +38,7 @@ describe("eris socrates submit --unfit", () => {
     expect(sent()).toEqual({
       schema_version: "1.0.0",
       candidate: { kind: "decision", title: "Errors use problem+json", statement: "Every 4xx/5xx is RFC 7807.", source: "https://example.com/pr/14" },
-      unfit: { rubric_version: "rubric@v3", policy_hash: H1, hypothesis: HYPOTHESIS, evidence: [] },
+      unfit: { rubric_version: "rubric@v4", policy_hash: H1, hypothesis: HYPOTHESIS, evidence: [] },
     });
   });
 
@@ -323,6 +323,6 @@ describe("eris socrates submit --unfit, through the eris entrypoint", () => {
     const r = await sb.run(["socrates", "submit", ...CANDIDATE, ...UNFIT, "--evidence-file", "-"], { env, stdin: JSON.stringify(evidence(2)) });
     expect({ status: r.status, stdout: r.stdout, stderr: r.stderr }).toEqual({ status: 0, stdout: "submitted: cand_1\n  filed for an answer: needs-input\n", stderr: "" });
     expect(seen.map((s) => `${s.method} ${s.path}`)).toEqual(["GET /v1/socrates/policy", "POST /v1/socrates/submit"]);
-    expect((seen[1]!.body as { unfit: unknown }).unfit).toEqual({ rubric_version: "rubric@v3", policy_hash: H1, hypothesis: HYPOTHESIS, evidence: evidence(2) });
+    expect((seen[1]!.body as { unfit: unknown }).unfit).toEqual({ rubric_version: "rubric@v4", policy_hash: H1, hypothesis: HYPOTHESIS, evidence: evidence(2) });
   });
 });

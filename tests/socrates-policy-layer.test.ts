@@ -100,7 +100,7 @@ describe("eris socrates classify under the repo layer and the cached org policy"
     expect(r).toMatchObject({ rc: 0, stderr: "" });
     expect(JSON.parse(r.stdout)).toMatchObject({ verdict: "not-load-bearing", score: 3, threshold: 99, policy_hash: null, repo_policy: { threshold: 99 } });
     expect((await drive(["classify", ...CANDIDATE, ...answers()])).stdout).toBe(
-      "not-load-bearing: score 3 of 99 (rubric@v3)\n  policy: rubric defaults + repo layer\n  next: not filed: submit it only if your user asked for it to be logged\n",
+      "not-load-bearing: score 3 of 99 (rubric@v4)\n  policy: rubric defaults + repo layer\n  next: not filed: submit it only if your user asked for it to be logged\n",
     );
     expect(calls).toEqual([]);
   });
@@ -154,17 +154,17 @@ describe("eris socrates submit --answer", () => {
   // admits: a stamped submit sent without a cached policy carries no hash the server can compare, or a corrupt cache crashes the verb; observed at the requests in order and the body sent.
   it("fetches the org policy first when the cache is absent or corrupt, then sends the stamp", async () => {
     erisYaml("socrates:\n  policy:\n    threshold: 9\n");
-    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "pass", rubric_version: "rubric@v3", policy_hash: H1, reclassified: false } };
-    for (const cache of [undefined, "{not json", JSON.stringify({ rubric_version: "rubric@v3" })]) {
+    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "pass", rubric_version: "rubric@v4", policy_hash: H1, reclassified: false } };
+    for (const cache of [undefined, "{not json", JSON.stringify({ rubric_version: "rubric@v4" })]) {
       calls = [];
       rmSync(cacheFile(), { force: true });
       if (cache !== undefined) writeFileSync(cacheFile(), cache);
       const r = await drive(["submit", ...CANDIDATE, ...answers()]);
-      expect({ cache, ...r }).toMatchObject({ cache, rc: 0, stderr: "", stdout: `submitted: cand_1\n  verdict: pass (rubric@v3, policy ${H1.slice(0, 12)})\n` });
+      expect({ cache, ...r }).toMatchObject({ cache, rc: 0, stderr: "", stdout: `submitted: cand_1\n  verdict: pass (rubric@v4, policy ${H1.slice(0, 12)})\n` });
       expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /v1/socrates/policy", "POST /v1/socrates/submit"]);
       expect(calls[0]!.body).toBeUndefined();
-      expect((calls[1]!.body as { classification: unknown }).classification).toEqual({ rubric_version: "rubric@v3", policy_hash: H1, answers: PASSING, repo_policy: { threshold: 9 } });
-      expect(JSON.parse(readFileSync(cacheFile(), "utf8"))).toMatchObject({ rubric_version: "rubric@v3", policy_hash: H1, policy: ORG_POLICY });
+      expect((calls[1]!.body as { classification: unknown }).classification).toEqual({ rubric_version: "rubric@v4", policy_hash: H1, answers: PASSING, repo_policy: { threshold: 9 } });
+      expect(JSON.parse(readFileSync(cacheFile(), "utf8"))).toMatchObject({ rubric_version: "rubric@v4", policy_hash: H1, policy: ORG_POLICY });
     }
     calls = [];
     expect((await drive(["submit", ...CANDIDATE, ...answers()])).rc).toBe(0);
@@ -175,7 +175,7 @@ describe("eris socrates submit --answer", () => {
   it("warns on a reclassified receipt and refreshes the cache", async () => {
     writeCache(policyResult(H1, ORG_POLICY));
     serverPolicy = policyResult(H2, { ...ORG_POLICY, threshold: 7 });
-    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "fail", rubric_version: "rubric@v3", policy_hash: H2, reclassified: true, stamped_policy_hash: H1 } };
+    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "fail", rubric_version: "rubric@v4", policy_hash: H2, reclassified: true, stamped_policy_hash: H1 } };
     const r = await drive(["submit", ...CANDIDATE, ...answers()], { format: "json" });
     expect(r.rc).toBe(0);
     expect(r.stderr).toContain(`reclassified under ${H2.slice(0, 12)} (was ${H1.slice(0, 12)}): fail`);

@@ -175,7 +175,7 @@ describe("eris socrates submit", () => {
         body: {
           schema_version: "1.0.0",
           candidate: { kind: "decision", title: "Errors use problem+json", statement: "Every 4xx/5xx is RFC 7807.", source: "https://example.com/pr/14", project: "platform" },
-          classification: { rubric_version: "rubric@v3", policy_hash: H1, answers: PASSING },
+          classification: { rubric_version: "rubric@v4", policy_hash: H1, answers: PASSING },
         },
       },
     ]);

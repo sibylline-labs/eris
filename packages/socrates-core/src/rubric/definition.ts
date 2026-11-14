@@ -21,17 +21,22 @@ export type AnswerList = readonly [string, ...string[]];
 /** Where a firing gate sends the candidate instead of scoring it. */
 export type GateRoute = "reject" | "key-assumption" | "practice";
 
+/** For each named question, the answers under which a gate applies. */
+export type AppliesWhen = { readonly [question: string]: readonly string[] | undefined };
+
 /**
  * A gate: any answer outside `passes` stops scoring and routes the candidate, and so does any
- * `firedBy` feature that holds, whatever the answer was.
+ * `firedBy` feature that holds, whatever the answer was. A gate with `appliesWhen` runs only when
+ * every question it names was given one of the answers listed for it; otherwise it passes.
  */
-export interface GateQuestion<A extends AnswerList = AnswerList, F extends string = string> {
+export interface GateQuestion<A extends AnswerList = AnswerList, F extends string = string, W extends AppliesWhen = AppliesWhen> {
   readonly kind: "gate";
   readonly prompt: string;
   readonly answers: A;
   readonly passes: readonly A[number][];
   readonly route: GateRoute;
   readonly firedBy?: readonly F[];
+  readonly appliesWhen?: W;
 }
 
 /** A soft question: each answer adds its fixed points to the score. */
@@ -66,10 +71,23 @@ export interface RubricDefinition {
   readonly features: { readonly [id: string]: Feature };
 }
 
-/** Holds each question's `passes` / `points` keys to its own answers, and `firedBy` to the rubric's features. */
+/** Each question's answers, keyed by question id: what an `appliesWhen` may name. */
+type AnswersByQuestion<Q> = {
+  readonly [J in keyof Q]?: Q[J] extends { readonly answers: infer A extends AnswerList } ? readonly A[number][] : never;
+};
+
+/** A gate's `appliesWhen` checked against the rubric: a key that names no question of it is `never`. */
+type CheckedAppliesWhen<Q, G> = G extends { readonly appliesWhen: infer W }
+  ? AnswersByQuestion<Q> & { readonly [J in Exclude<keyof W, keyof Q>]: never }
+  : AnswersByQuestion<Q>;
+
+/**
+ * Holds each question's `passes` / `points` keys to its own answers, `firedBy` to the rubric's
+ * features, and `appliesWhen` to the rubric's own questions and their answers.
+ */
 type CheckedQuestions<Q, F> = {
   readonly [K in keyof Q]: Q[K] extends { readonly kind: "gate"; readonly answers: infer A extends AnswerList }
-    ? GateQuestion<A, keyof F & string>
+    ? GateQuestion<A, keyof F & string, CheckedAppliesWhen<Q, Q[K]>>
     : Q[K] extends { readonly kind: "soft"; readonly answers: infer A extends AnswerList }
       ? SoftQuestion<A>
       : never;
@@ -160,7 +178,9 @@ export function extractFeatures<R extends RubricDefinition>(rubric: R, statement
  */
 export function gateFiring<R extends RubricDefinition>(rubric: R, gate: GateId<R>, answers: Answers<R>, features: Features<R>): { readonly answer: string; readonly feature?: FeatureId<R> } | undefined {
   const q = rubric.questions[gate] as GateQuestion;
-  const answer = (answers as Readonly<Record<string, string>>)[gate]!;
+  const given = answers as Readonly<Record<string, string>>;
+  const answer = given[gate]!;
+  if (q.appliesWhen !== undefined && !Object.entries(q.appliesWhen).every(([id, when]) => when === undefined || when.includes(given[id]!))) return undefined;
   const feature = q.firedBy?.find((f) => (features as Readonly<Record<string, boolean>>)[f]);
   if (feature === undefined && q.passes.includes(answer)) return undefined;
   return { answer, ...(feature === undefined ? {} : { feature: feature as FeatureId<R> }) };

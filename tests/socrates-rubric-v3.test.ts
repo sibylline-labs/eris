@@ -9,7 +9,6 @@ import { describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 import {
   type Answers,
-  CURRENT_RUBRIC,
   extractFeatures,
   type FeatureContext,
   RUBRIC_V2,
@@ -161,9 +160,8 @@ describe("rubric@v3: a statement that names its owning layer is not load-bearing
 });
 
 describe("rubric@v3 is published beside a frozen rubric@v2", () => {
-  it("is the current rubric, and both resolve by their stamp", () => {
-    /** When v3 is not the current rubric, classify and submit keep stamping v2; when v2 stops resolving, every submission an older client stamped is refused: observed at the package entry. */
-    expect(CURRENT_RUBRIC).toBe(RUBRIC_V3);
+  it("resolves by its stamp, as v2 does", () => {
+    /** When v3 or v2 stops resolving, every submission an older client stamped with it is refused: observed at the package entry. */
     expect(rubricFor("rubric@v3")).toBe(RUBRIC_V3);
     expect(rubricFor("rubric@v2")).toBe(RUBRIC_V2);
   });
