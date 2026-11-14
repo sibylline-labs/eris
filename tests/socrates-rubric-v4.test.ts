@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import {
   type Answers,
   CURRENT_RUBRIC,
+  defaultPolicy,
   defineRubric,
   extractFeatures,
   type FeatureContext,
@@ -21,6 +22,7 @@ import {
   type RubricV4,
   rubricFor,
   score,
+  scoreUnderPolicy,
 } from "../packages/socrates-core/src/index";
 
 const NOTHING_RECORDED: FeatureContext = { recorded: [] };
@@ -78,13 +80,20 @@ const CAUSAL = [
   "Retries never wrap writes in nested blocks until one succeeds.",
   "The writer holds the row lock until the write's transaction ends.",
   "Every read is refused locally until the deadline passes.",
+  "The parser buffers bytes until utf-8 validation completes.",
+  "Frames multiplex until http-2 closes the stream.",
 ];
 /** A flag compared to a value as the statement's own claim: each must still fire. */
 const FLAG_VALUES = [
   'The preview tools are registered only when MAIA_PREVIEW_TOOLS is exactly "true".',
   'Claim links are offered only when the var CLAIM_LINKS is "true".',
   "In production FEATURE_X is false.",
+  "FOO_BAR = false",
+  "FOO_BAR=false",
+  "`FOO_BAR` = true in every environment.",
 ];
+/** A comparison that is not a value: neither fires. */
+const NOT_VALUES = ["Deploys proceed when FOO_BAR != false.", "The check reads FOO_BAR == true literally."];
 /** A conditional clause that opens its sentence: none fires. */
 const CONDITIONALS = [
   "While BILLING_ENABLED is on, every write route answers 402 to an org without an active subscription.",
@@ -115,6 +124,7 @@ describe("rubric@v4: a permanent rule reaches review whatever words it bounds it
     /** When the conditional veto reads past the sentence start, a statement whose claim is a flag's value reaches review: observed at the feature on each flag value and each conditional. */
     for (const s of FLAG_VALUES) expect([s, fired(s).flag]).toEqual([s, true]);
     for (const s of CONDITIONALS) expect([s, fired(s).flag]).toEqual([s, false]);
+    for (const s of NOT_VALUES) expect([s, fired(s).flag]).toEqual([s, false]);
   });
 });
 
@@ -133,6 +143,21 @@ describe("rubric@v4: a key assumption is judged by its premise and its consequen
   it("still rejects an observed fact another layer owns", () => {
     /** When the premise condition disables owning_layer for observed facts too, every owned fact reaches review: observed at the verdict on an observed owned-elsewhere answer. */
     expect(verdictOf(CROSS_REPO, { ...PASSING, owning_layer: "owned-elsewhere" })).toMatchObject({ kind: "rejected", gate: "owning_layer" });
+  });
+
+  // admits: a gate stepping aside for a gate the org policy turned off, so neither catches the candidate; runtime scoring under a policy.
+  it("still rejects an inferred owned-elsewhere claim when the policy turns premise_basis off", () => {
+    /** When owning_layer steps aside on an inferred premise without asking whether premise_basis runs, an org that turns premise_basis off scores a fact another layer owns as load-bearing: observed at the verdict and at gateFiring with the gate bypassed. */
+    const policy = defaultPolicy(RUBRIC_V4);
+    const off = { ...policy, gates: { ...policy.gates, premise_basis: { enabled: false, weight: 0 } } };
+    const owned = "Each server function calls mandateAccess() first (lint org-dash-mandate-guarded).";
+    const features = extractFeatures(RUBRIC_V4, owned, NOTHING_RECORDED);
+    const inferred = { ...PASSING, owning_layer: "owned-elsewhere", premise_basis: "inferred", consequence: "a-security-boundary" } as const;
+    expect(features.owned_elsewhere_wording).toBe(true);
+    expect(scoreUnderPolicy(RUBRIC_V4, off, inferred, features, [])).toMatchObject({ kind: "rejected", gate: "owning_layer" });
+    expect(scoreUnderPolicy(RUBRIC_V4, policy, inferred, features, [])).toMatchObject({ kind: "rerouted", gate: "premise_basis" });
+    expect(gateFiring(RUBRIC_V4, "owning_layer", inferred, features)).toBeUndefined();
+    expect(gateFiring(RUBRIC_V4, "owning_layer", inferred, features, ["premise_basis"])).toMatchObject({ feature: "owned_elsewhere_wording" });
   });
 
   // admits: a key assumption of no consequence being filed; runtime scoring.

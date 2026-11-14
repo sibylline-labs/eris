@@ -29,9 +29,10 @@ import { defineRubric } from "./definition";
 /** The decision's own sunset: a word that bounds it in time. */
 const TEMPORARY = /\b(?:temporar(?:y|ily)|for now|right now|for the time being)\b/i;
 /**
- * "until" that ends the decision: a person or team acts, a marker, a ticket key or version, the next
- * major/release/phase, or up to four words then a change that lands. A causal "until" on runtime
- * state ("until its …", "until each …", "until it merges", "until 30 days") is none of these.
+ * "until" that ends the decision: a person or team acts, a marker, a version, the next
+ * major/release/phase, or up to four words then a change that lands (a ticket key is `UNTIL_TICKET`).
+ * A causal "until" on runtime state ("until its …", "until each …", "until it merges", "until 30
+ * days") is none of these.
  */
 const UNTIL_SUNSET = new RegExp(
   String.raw`\buntil\s+(?:` +
@@ -39,7 +40,6 @@ const UNTIL_SUNSET = new RegExp(
       String.raw`(?:we|I|you|they|someone|somebody)\b`,
       String.raw`(?:an?|the)\s+(?:human|person|reviewer|operator|maintainer|owner|team)s?\b`,
       String.raw`(?:then|further notice|GA|launch|(?:the\s+)?cut-?over|(?:the\s+)?migration)\b`,
-      String.raw`[A-Z][A-Z0-9]+-\d+\b`,
       String.raw`v?\d+\.\d+`,
       String.raw`(?:the\s+)?(?:next|following)\s+(?:major|minor|release|version|phase|milestone|quarter|sprint|cycle)\b`,
       String.raw`(?:[\w./@\`'-]+\s+){0,4}?(?:lands|ships|supports|is\s+(?:migrated|replaced|retired|removed|cut over|deprecated|shipped|released))\b`,
@@ -47,7 +47,9 @@ const UNTIL_SUNSET = new RegExp(
     ")",
   "i",
 );
-const END_CONDITION = (s: string): boolean => TEMPORARY.test(s) || UNTIL_SUNSET.test(s);
+/** "until" then a ticket key. Case-sensitive: keys are upper case, and "until utf-8" or "until http-2" is not one. */
+const UNTIL_TICKET = /\b[Uu]ntil\s+[A-Z][A-Z0-9]+-\d+\b/;
+const END_CONDITION = (s: string): boolean => TEMPORARY.test(s) || UNTIL_SUNSET.test(s) || UNTIL_TICKET.test(s);
 const PRACTICE = /\b(?:sign(?:s|ed|ing)?[- ]off|before (?:any |each |every )?(?:code|commit|merg\w*|review\w*|release\w*|deploy\w*)|(?:its|their) own commit|(?:development|engineering) work)\b/i;
 
 const HOLDER = String.raw`(?:gate|lint|linter|rule|rules|check|checker|kit|types?|tests?|CI|workflow|lockfile|config)`;
@@ -81,12 +83,12 @@ const firesUnlessPreceded = (re: RegExp, veto: RegExp) => (s: string) => {
   return false;
 };
 /**
- * An environment variable compared to a literal flag value, unless a conditional clause opens the
- * sentence before it ("While BILLING_ENABLED is on, ..."): that sentence states the rule under the
- * flag, not the flag's value.
+ * An environment variable compared to a literal flag value ("is", "equals", or "=" straight after the
+ * name, so "!=" and "==" are not values), unless a conditional clause opens the sentence before it
+ * ("While BILLING_ENABLED is on, ..."): that sentence states the rule under the flag, not its value.
  */
 const FLAG_VALUE = firesUnlessPreceded(
-  /\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b[^.;]{0,30}?\b(?:is|equals|=)\s+(?:exactly\s+)?["'`]?(?:true|false|on|off|enabled|disabled)\b/g,
+  /\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b(?:[^.;]{0,30}?\b(?:is|equals)\s+|["'`]?\s*=\s*)(?:exactly\s+)?["'`]?(?:true|false|on|off|enabled|disabled)\b/g,
   /(?:^|[.;:]\s+)(?:while|when|whenever|if|as long as)\s+(?:the\s+)?["'`]?$/i,
 );
 /**

@@ -38,7 +38,7 @@ const PASSING: Record<string, string> = {
 const answers = (over: Record<string, string> = {}) => Object.entries({ ...PASSING, ...over }).flatMap(([q, v]) => ["--answer", `${q}=${v}`]);
 
 const policyResult = (hash: string, policy: object, rubric_version: string = CURRENT_RUBRIC.version) => ({ rubric_version, policy_hash: hash, policy, contract_version: "1.0.0" });
-const DEFAULT_V3_HASH = "546548a6083a653b05da29d2ed9645d197e3d643f7fb7b56c843c39d27877918";
+const DEFAULT_V4_HASH = "26b86960199f3c260510ecb9fd8bfc67959b66bae2c98e916af83cc4314357c9";
 const ORG_POLICY = { ...defaultPolicy(CURRENT_RUBRIC), threshold: 5 };
 
 let home: string;
@@ -154,12 +154,12 @@ describe("eris socrates classify under the repo layer and the cached org policy"
 describe("eris socrates submit --unfit under a cache for another rubric", () => {
   // admits: --unfit stamps a newer rubric's cached policy hash onto this rubric, persisting a mismatched pair server-side; observed at the unfit stamp in the body sent.
   it("stamps this rubric's default hash when the cached policy is for another rubric", async () => {
-    writeCache(policyResult(H2, ORG_POLICY, "rubric@v4"));
+    writeCache(policyResult(H2, ORG_POLICY, "rubric@v5"));
     receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", unfit: { state: "needs_input" } };
     const r = await drive(["submit", ...CANDIDATE, "--unfit", "--hypothesis", "A retry-budget invariant."]);
     expect(r.rc).toBe(0);
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /v1/socrates/submit"]);
-    expect((calls[0]!.body as { unfit: unknown }).unfit).toMatchObject({ rubric_version: "rubric@v3", policy_hash: DEFAULT_V3_HASH });
+    expect((calls[0]!.body as { unfit: unknown }).unfit).toMatchObject({ rubric_version: "rubric@v4", policy_hash: DEFAULT_V4_HASH });
   });
 });
 
@@ -201,15 +201,15 @@ describe("eris socrates submit --answer", () => {
 
   // admits: a cache holding a newer rubric's policy has its hash stamped onto this rubric, so the server reclassifies and a refetch follows every submit; observed at the stamped hash and at the requests sent.
   it("stamps this rubric's default hash and skips the refresh when the cache is for another rubric", async () => {
-    writeCache(policyResult(H2, ORG_POLICY, "rubric@v4"));
-    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "pass", rubric_version: "rubric@v3", policy_hash: H1, reclassified: true, stamped_policy_hash: DEFAULT_V3_HASH } };
+    writeCache(policyResult(H2, ORG_POLICY, "rubric@v5"));
+    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "pass", rubric_version: "rubric@v4", policy_hash: H1, reclassified: true, stamped_policy_hash: DEFAULT_V4_HASH } };
     const r = await drive(["submit", ...CANDIDATE, ...answers()]);
     expect(r.rc).toBe(0);
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /v1/socrates/submit"]);
-    expect((calls[0]!.body as { classification: { rubric_version: string; policy_hash: string } }).classification).toMatchObject({ rubric_version: "rubric@v3", policy_hash: DEFAULT_V3_HASH });
-    expect(JSON.parse(readFileSync(cacheFile(), "utf8"))).toMatchObject({ rubric_version: "rubric@v4", policy_hash: H2 });
-    expect(r.stderr).toContain(`reclassified under ${H1.slice(0, 12)} (was ${DEFAULT_V3_HASH.slice(0, 12)}): pass`);
-    expect(r.stderr).toContain("the cached policy is for rubric@v4, which this build does not know, and was left as is");
+    expect((calls[0]!.body as { classification: { rubric_version: string; policy_hash: string } }).classification).toMatchObject({ rubric_version: "rubric@v4", policy_hash: DEFAULT_V4_HASH });
+    expect(JSON.parse(readFileSync(cacheFile(), "utf8"))).toMatchObject({ rubric_version: "rubric@v5", policy_hash: H2 });
+    expect(r.stderr).toContain(`reclassified under ${H1.slice(0, 12)} (was ${DEFAULT_V4_HASH.slice(0, 12)}): pass`);
+    expect(r.stderr).toContain("the cached policy is for rubric@v5, which this build does not know, and was left as is");
     expect(r.stderr).not.toContain("is refreshed");
   });
 
@@ -217,20 +217,20 @@ describe("eris socrates submit --answer", () => {
   it("refreshes a cache held for an older known rubric, stamping this rubric's default hash meanwhile", async () => {
     writeCache(policyResult(H2, ORG_POLICY, "rubric@v2"));
     serverPolicy = policyResult(H1, ORG_POLICY);
-    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "pass", rubric_version: "rubric@v3", policy_hash: H1, reclassified: true, stamped_policy_hash: DEFAULT_V3_HASH } };
+    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "pass", rubric_version: "rubric@v4", policy_hash: H1, reclassified: true, stamped_policy_hash: DEFAULT_V4_HASH } };
     const r = await drive(["submit", ...CANDIDATE, ...answers()]);
     expect(r.rc).toBe(0);
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /v1/socrates/submit", "GET /v1/socrates/policy"]);
-    expect((calls[0]!.body as { classification: { policy_hash: string } }).classification.policy_hash).toBe(DEFAULT_V3_HASH);
-    expect(JSON.parse(readFileSync(cacheFile(), "utf8"))).toMatchObject({ rubric_version: "rubric@v3", policy_hash: H1 });
+    expect((calls[0]!.body as { classification: { policy_hash: string } }).classification.policy_hash).toBe(DEFAULT_V4_HASH);
+    expect(JSON.parse(readFileSync(cacheFile(), "utf8"))).toMatchObject({ rubric_version: "rubric@v4", policy_hash: H1 });
     expect(r.stderr).toContain("the cached policy is refreshed");
   });
 
   // admits: the reclassified path re-reads the cache from disk, so a fetched policy for a rubric this build does not know (the cache write failed) is refetched after the submit; observed at the requests with ~/.eris unwritable.
   it("reads the cache the stamp used, not the disk again, when deciding to refresh", async () => {
     chmodSync(join(home, ".eris"), 0o500);
-    serverPolicy = policyResult(H2, ORG_POLICY, "rubric@v4");
-    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "pass", rubric_version: "rubric@v3", policy_hash: H1, reclassified: true, stamped_policy_hash: DEFAULT_V3_HASH } };
+    serverPolicy = policyResult(H2, ORG_POLICY, "rubric@v5");
+    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "pass", rubric_version: "rubric@v4", policy_hash: H1, reclassified: true, stamped_policy_hash: DEFAULT_V4_HASH } };
     const r = await drive(["submit", ...CANDIDATE, ...answers()]);
     expect(r.rc).toBe(0);
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /v1/socrates/policy", "POST /v1/socrates/submit"]);

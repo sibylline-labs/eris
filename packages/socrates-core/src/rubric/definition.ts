@@ -27,7 +27,9 @@ export type AppliesWhen = { readonly [question: string]: readonly string[] | und
 /**
  * A gate: any answer outside `passes` stops scoring and routes the candidate, and so does any
  * `firedBy` feature that holds, whatever the answer was. A gate with `appliesWhen` runs only when
- * every question it names was given one of the answers listed for it; otherwise it passes.
+ * every question it names was given one of the answers listed for it; otherwise it passes. A
+ * condition naming a gate that does not run (bypassed: overridden, or turned off by the policy)
+ * always holds, so a gate never steps aside for one that will not catch the candidate.
  */
 export interface GateQuestion<A extends AnswerList = AnswerList, F extends string = string, W extends AppliesWhen = AppliesWhen> {
   readonly kind: "gate";
@@ -174,13 +176,21 @@ export function extractFeatures<R extends RubricDefinition>(rubric: R, statement
 
 /**
  * Whether one gate fires on these answers and features: the answer it was given, and the feature
- * that fired it when one did, or undefined when it passes. Pure, and the scorer's own test.
+ * that fired it when one did, or undefined when it passes. `bypass` names the gates that do not run,
+ * as `score` takes them. Pure, and the scorer's own test.
  */
-export function gateFiring<R extends RubricDefinition>(rubric: R, gate: GateId<R>, answers: Answers<R>, features: Features<R>): { readonly answer: string; readonly feature?: FeatureId<R> } | undefined {
+export function gateFiring<R extends RubricDefinition>(
+  rubric: R,
+  gate: GateId<R>,
+  answers: Answers<R>,
+  features: Features<R>,
+  bypass: Iterable<GateId<R>> = [],
+): { readonly answer: string; readonly feature?: FeatureId<R> } | undefined {
   const q = rubric.questions[gate] as GateQuestion;
   const given = answers as Readonly<Record<string, string>>;
   const answer = given[gate]!;
-  if (q.appliesWhen !== undefined && !Object.entries(q.appliesWhen).every(([id, when]) => when === undefined || when.includes(given[id]!))) return undefined;
+  const skipped = new Set<string>(bypass);
+  if (q.appliesWhen !== undefined && !Object.entries(q.appliesWhen).every(([id, when]) => when === undefined || skipped.has(id) || when.includes(given[id]!))) return undefined;
   const feature = q.firedBy?.find((f) => (features as Readonly<Record<string, boolean>>)[f]);
   if (feature === undefined && q.passes.includes(answer)) return undefined;
   return { answer, ...(feature === undefined ? {} : { feature: feature as FeatureId<R> }) };
@@ -196,7 +206,7 @@ export function score<R extends RubricDefinition>(rubric: R, answers: Answers<R>
   const held = features as Readonly<Record<string, boolean>>;
   for (const [id, q] of Object.entries(rubric.questions)) {
     if (q.kind !== "gate" || bypass.has(id)) continue;
-    const fired = gateFiring(rubric, id as GateId<R>, answers, features);
+    const fired = gateFiring(rubric, id as GateId<R>, answers, features, options.bypass);
     if (fired === undefined) continue;
     const firing: GateFiring<R> = { rubric: rubric.version, gate: id as GateId<R>, ...fired };
     switch (q.route) {
