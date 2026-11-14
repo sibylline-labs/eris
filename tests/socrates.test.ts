@@ -198,6 +198,7 @@ describe("eris socrates submit", () => {
     expect(requests.map((r) => (r.body as { now?: unknown }).now)).toEqual([true]);
   });
 
+  // admits: a scope, section or evidence holding U+2028/U+2029 passes the contract, is filed, then renderDecision refuses it at resolve time; the string is runtime data no type or lint rule sees.
   it("sends scope, section, evidence and target when supplied, and refuses invalid values locally", async () => {
     /** When the entry-anatomy flags are dropped or not validated before sending, the server receives a bare candidate or rejects at the door. */
     expect(
@@ -222,6 +223,11 @@ describe("eris socrates submit", () => {
     });
     expect(await drive(["submit", ...STAMPED, "--target", "unknown_doc"])).toMatchObject({ rc: 1, slug: "socrates-candidate-invalid" });
     expect(await drive(["submit", ...STAMPED, "--scope", "repo\norg"])).toMatchObject({ rc: 1, slug: "socrates-candidate-invalid" });
+    for (const flag of ["--scope", "--section", "--evidence"]) {
+      for (const sep of ["\u2028", "\u2029"]) {
+        expect(await drive(["submit", ...STAMPED, flag, `a${sep}b`])).toMatchObject({ rc: 1, slug: "socrates-candidate-invalid" });
+      }
+    }
   });
 
   it("prints a deduped receipt as a bare JSON record under --output json", async () => {
