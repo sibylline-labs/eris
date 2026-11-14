@@ -65,6 +65,23 @@ const json = async (args: string[]) => {
 };
 
 describe("eris socrates classify", () => {
+  // admits: a multi-line decision or practice statement filed past preflight is marked Done and then refuses forever at resolve time; the statement string is runtime data no type or lint rule sees.
+  it("refuses a multi-line decision or practice statement and keeps multi-line prd and conflict statements", async () => {
+    /** When classify scores a decision or practice statement holding a line break it prints a verdict the submit then files and resolve can never write; observed as rc 1 and slug socrates-candidate-invalid, and rc 0 for prd and conflict. */
+    const base = ["--title", "Errors use problem+json", "--source", "https://example.com/pr/14"];
+    for (const kind of ["decision", "practice"]) {
+      for (const statement of ["Line 1\nLine 2", "Trailing\n", "A\r\nB", "A\u2028B"]) {
+        const r = await drive([...base, "--kind", kind, "--statement", statement, ...answers()]);
+        expect({ kind, statement, rc: r.rc, slug: r.slug, stdout: r.stdout }).toEqual({ kind, statement, rc: 1, slug: "socrates-candidate-invalid", stdout: "" });
+        expect(r.stderr).toContain("single line");
+      }
+    }
+    const prd = await drive(["--kind", "prd", "--title", "PRD — Acme Billing", "--source", "https://docs.example.com/acme/document/billing", "--statement", "Decisions: `ACME-K1`–`ACME-K57`\nConfirmed by: dana"]);
+    expect(prd.rc).toBe(0);
+    const help = await drive(["--help"]);
+    expect(help.stdout).toContain("a decision or practice statement is a");
+  });
+
   it("scores the answers locally and prints the same verdict every time", async () => {
     /** When the verdict depends on anything but the answers and the statement, two agents classifying one candidate disagree. Observed at stdout, byte for byte, with no fetch made. */
     const first = await drive([...CANDIDATE, ...answers()], { format: "json" });

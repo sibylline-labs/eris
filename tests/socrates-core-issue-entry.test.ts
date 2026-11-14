@@ -143,4 +143,23 @@ describe("a statement the grammar cannot place is refused with the reason", () =
       if (!result.ok) expect(result.reason).toMatch(reason);
     });
   }
+
+  // admits: When SITE_LINE only accepts DECISION_ID, a v3 doc's 8-hex entry hash is refused as "not a site" and agents drop the entry pointer; the grammar is a runtime regex tsc and ast-grep cannot see.
+  test("a conflict site may cite an 8-hex legacy entry ID, and round-trips", () => {
+    const hash = ["6f2f", "822b"].join("");
+    const statement = [
+      "Two docs disagree.",
+      "",
+      "Authoritative sites:",
+      `- \`${hash}\` in [Load-Bearing Decisions](https://docs.example.com/acme/document/lbd)`,
+      "- [Candidate](https://docs.example.com/acme/issue/99)",
+    ].join("\n");
+    const reparsed = parseConflictStatement(statement, "t");
+    expect(reparsed.ok && reparsed.value.sites[0]).toEqual({ label: "Load-Bearing Decisions", url: "https://docs.example.com/acme/document/lbd", decisions: [hash] });
+    const filed = issueEntryOf({ kind: "conflict", title: "Legacy hash site", statement, source: PRD_URL });
+    expect(filed).toEqual({ ok: true, value: { title: "Legacy hash site", description: `${statement}\n\n${ANSWER_HERE}` } });
+    expect(parseConflictStatement(statement.replace(hash, hash.toUpperCase()), "t").ok).toBe(false);
+    // 7 and 9 hex (a git short SHA) are not entry hashes: the length is exact.
+    for (const odd of [hash.slice(1), `${hash}a`]) expect(parseConflictStatement(statement.replace(hash, odd), "t").ok).toBe(false);
+  });
 });

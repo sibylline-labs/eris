@@ -100,6 +100,10 @@ const HANDLE_ID_EXACT = new RegExp(`^${ENTRY_HANDLE_ID}$`);
 export const DECISION_ID = "[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[A-Z]+-?[1-9][0-9]*";
 const DECISION_ID_EXACT = new RegExp(`^${DECISION_ID}$`);
 
+/** A v3 doc's entry hash: 8 lowercase hex characters. Legacy hashes stay readable as IDs, so a conflict site may cite one. */
+export const LEGACY_ENTRY_ID = "[0-9a-f]{8}";
+const SITE_ID_EXACT = new RegExp(`^(?:${DECISION_ID}|${LEGACY_ENTRY_ID})$`);
+
 /** Single-line review footer for issue entries: the reply lands on this issue, never on a linked one. */
 const ANSWER_HERE = "Answer on this issue. A comment here is authoritative, and Socrates carries it to every linked site.";
 
@@ -167,7 +171,7 @@ export function renderConflictEntry(entry: ConflictEntry): IssueEntry {
 
 function renderSite(site: ConflictSite): string {
   const decisions = (site.decisions ?? []).map((id) => {
-    if (!DECISION_ID_EXACT.test(id)) throw new EntryRenderError("bad-decision", `${JSON.stringify(id)} is not a register ID such as ACME-K11`);
+    if (!SITE_ID_EXACT.test(id)) throw new EntryRenderError("bad-decision", `${JSON.stringify(id)} is not a register ID such as ACME-K11, or an 8-hex legacy entry ID`);
     return `\`${id}\``;
   });
   return decisions.length === 0 ? `- ${renderLink(site)}` : `- ${decisions.join(", ")} in ${renderLink(site)}`;

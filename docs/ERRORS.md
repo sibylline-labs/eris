@@ -921,7 +921,7 @@ the value is not `<child>=<path>`, the same child is amended twice, the file
 cannot be read or is not JSON, or it is not an amendment. The file must be one
 JSON object with at least one of `title` (one line, up to 80 characters, with
 file names, domains and dotted identifiers in backticks so Linear does not
-autolink them), `statement` (up to 4000), `target` (`lbd`, `ka` or `practices`),
+autolink them), `statement` (one line, up to 4000), `target` (`lbd`, `ka` or `practices`),
 and optionally `source_comment`; any other key is refused. At most 250 children
 can be amended in one resolve. Nothing was sent. Fix: correct the named
 `--amend`, or drop it.
@@ -942,7 +942,8 @@ hand.
 The candidate does not match the contract or entry-title rules: a field is
 blank or over its bound (`--title` is a single line of at most 80 characters, or
 at most 66 characters for `--kind prd` where `'PRD authored: <title>'` must fit
-in 80 characters; `--statement` 4000; `--project` 200 characters), `--title`
+in 80 characters; `--statement` 4000, and a single line for `--kind decision` or `practice`;
+`--project` 200 characters), `--title`
 contains an unbackticked dotted token Linear autolinks, `--source` is not an
 absolute `http(s)` URL, `--kind` is not one of `decision`, `practice`, `prd` or
 `conflict`, or a `prd` or `conflict` statement does not fit its grammar. The
@@ -1078,7 +1079,9 @@ with the org policy hash it had cached, and the server's policy has changed
 since: it scored the stamp under its current policy. The line names the
 current hash, the stamped one, and the server's verdict, which is the one that
 counts. eris refreshes `~/.eris/socrates-policy.json` (or, when that fails,
-removes it so the next stamped submit fetches it). Fix: none needed; run
+removes it so the next stamped submit fetches it), unless the cache holds a
+rubric this build does not know: that cache is left as is and the line says so.
+Fix: none needed; run
 `eris socrates classify` again to see the verdict under the current policy.
 
 ### socrates-repo-policy-invalid
