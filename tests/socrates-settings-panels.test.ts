@@ -112,7 +112,7 @@ describe("the read panels", () => {
     expect(requests.every((r) => r.method === "GET" && r.path === "/v1/socrates/settings" && r.auth === `Bearer ${TOKEN}` && r.search === "")).toBe(true);
   });
 
-  // admits: a health read that drops the Linear scopes row, mislabels one of its three states, or fails on a server that omits scopes.
+  // admits: boundary-io: a health read that drops the Linear scopes row, mislabels a state, or fails on a server that sends scopes null or omits it; tsc cannot hold it because the schema decodes a runtime payload no type sees.
   it("prints the Linear scopes row in the dash's three states, and tolerates a server that omits scopes", async () => {
     /** When the row is missing, mislabels a state, or an older server's omitted scopes breaks the read, health parity with the dash is lost; observed on stdout and rc. */
     delete state.served.health.install.scopes;
@@ -120,8 +120,19 @@ describe("the read panels", () => {
     expect(older.rc).toBe(0);
     expect(older.stdout).toContain("linear scopes: not checked yet");
     expect(JSON.parse((await drive(["settings", "health"], { format: "json" })).stdout).health.install.scopes).toBeNull();
+    state.served.health.install.scopes = null;
+    const unread = await drive(["settings", "health"]);
+    expect(unread.rc).toBe(0);
+    expect(unread.stdout).toContain("linear scopes: not checked yet");
+    expect(JSON.parse((await drive(["settings", "health"], { format: "json" })).stdout).health.install.scopes).toBeNull();
     state.served.health.install.scopes = { granted: ["read", "write"], missing: [] };
     expect((await drive(["settings", "health"])).stdout).toContain("linear scopes: all granted (read, write)");
+    state.served.health.install.scopes = { granted: [], missing: [] };
+    expect((await drive(["settings", "health"])).stdout).toMatch(/^linear scopes: all granted$/m);
+    state.served.health.install.scopes = { granted: ["re\u001b[2Jad"], missing: ["wr\u001b[2Jite"] };
+    expect((await drive(["settings", "health"])).stdout).not.toContain("\u001b");
+    state.served.health.install.scopes = { granted: ["read"], missing: [""] };
+    expect((await drive(["settings", "health"])).rc).not.toBe(0);
     state.served.health.install.scopes = { granted: ["read"], missing: ["write", "issues:create"] };
     const missing = await drive(["settings", "health"]);
     expect(missing.stdout).toContain("linear scopes: 2 missing (write, issues:create); a Linear workspace admin can re-install the app to grant them");

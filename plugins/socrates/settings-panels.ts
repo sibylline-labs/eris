@@ -66,9 +66,11 @@ Sign in first with 'eris login'.
 export const HEALTH_USAGE = `Usage: eris socrates settings health
 
 Print the org's Socrates health: the install state and any missing labels, the last webhook
-delivery, the last reconcile, and writes that are stuck.
+delivery, the last reconcile, and writes that are stuck. The install line is followed by the Linear
+scopes the install holds: not checked yet, all granted, or the missing ones.
 
---output json prints {health: {install, webhook, reconcile, stuck}, contract_version}.
+--output json prints {health: {install, webhook, reconcile, stuck}, contract_version}; install
+carries scopes ({granted, missing}, or null when unread).
 
 Sign in first with 'eris login'.
 `;
@@ -133,7 +135,7 @@ export async function runEnrolment(args: string[], ctx: VerbContext, deps: Socra
 /** The Linear scopes row, in the dash Health panel's three states: unread, none missing, or what is missing and the fix. */
 function scopesLine(scopes: { granted: string[]; missing: string[] } | null): string {
   if (scopes === null) return "linear scopes: not checked yet";
-  if (scopes.missing.length === 0) return `linear scopes: all granted (${scopes.granted.map(printable).join(", ")})`;
+  if (scopes.missing.length === 0) return scopes.granted.length === 0 ? "linear scopes: all granted" : `linear scopes: all granted (${scopes.granted.map(printable).join(", ")})`;
   return `linear scopes: ${scopes.missing.length} missing (${scopes.missing.map(printable).join(", ")}); a Linear workspace admin can re-install the app to grant them`;
 }
 

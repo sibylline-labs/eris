@@ -38,6 +38,7 @@ import {
   SocratesVerdict,
   SOCRATES_STATEMENT_MAX_LENGTH,
   SOCRATES_SUBMIT_PATH,
+  SOCRATES_KEY_MAX_LENGTH,
   SOCRATES_TITLE_MAX_LENGTH,
   uniqueGates,
   Url,
@@ -84,6 +85,7 @@ const IsoDatetime = z
   );
 const Id = nonBlank(SOCRATES_ID_MAX_LENGTH);
 const ProjectHint = nonBlank(SOCRATES_PROJECT_MAX_LENGTH);
+const LinearScope = nonBlank(SOCRATES_KEY_MAX_LENGTH);
 const NonNegativeInt = z.number().int().min(0);
 
 // --- classify ---------------------------------------------------------------
@@ -297,7 +299,7 @@ export const SocratesSettingsResult = z.object({
   canon: z.object({ doc_id: Id.nullable() }),
   enrolment: z.object({ projects: z.array(z.object({ id: Id, name: ProjectHint.nullable(), source: z.enum(["label", "stub"]), url: Url.nullable() })) }),
   health: z.object({
-    install: z.object({ state: z.enum(["installed", "provisioned", "needs_labels", "uninstalled"]).nullable(), missing_labels: z.array(ProjectHint), checked_at: IsoDatetime.nullable(), scopes: z.object({ granted: z.array(z.string()), missing: z.array(z.string()) }).nullable().optional() }),
+    install: z.object({ state: z.enum(["installed", "provisioned", "needs_labels", "uninstalled"]).nullable(), missing_labels: z.array(ProjectHint), checked_at: IsoDatetime.nullable(), scopes: z.object({ granted: z.array(LinearScope), missing: z.array(LinearScope) }).nullable().optional() }),
     webhook: z.object({ last_delivery_at: IsoDatetime.nullable() }),
     reconcile: z.object({ last_at: IsoDatetime.nullable(), watermark: IsoDatetime.nullable() }),
     stuck: z.object({ retrying_writes: NonNegativeInt, oldest_retrying_at: IsoDatetime.nullable(), refused_entries: NonNegativeInt }),
