@@ -197,13 +197,18 @@ const BRANCH_TRACKER_KEY: Rule = {
 /** The text of a pull request that lands in `git log` or on the public page: the merge subject GitHub
  *  defaults to (it embeds the head branch), the title (the squash subject) and the body. */
 export function prMetadata(event: unknown): { where: string; text: string; extra?: Rule[] }[] | undefined {
-  const pr = (event as { pull_request?: { number?: number; title?: string; body?: string | null; head?: { ref?: string; repo?: { full_name?: string } | null; user?: { login?: string } | null } } } | null)?.pull_request;
-  if (!pr || typeof pr.head?.ref !== "string") return undefined;
-  const owner = pr.head.repo?.full_name?.split("/")[0] ?? pr.head.user?.login ?? "";
+  type Head = { ref?: unknown; label?: string | null; repo?: { full_name?: string } | null; user?: { login?: string } | null };
+  const pr = (event as { pull_request?: { number?: number; title?: unknown; body?: unknown; head?: Head } } | null)?.pull_request;
+  const head = pr?.head;
+  if (!pr || !head || typeof head.ref !== "string" || head.ref === "") return undefined;
+  const owner = head.repo?.full_name?.split("/")[0] || head.user?.login || head.label?.split(":")[0] || "";
+  if (owner === "") return undefined;
+  const { title, body } = pr;
+  if ((title !== undefined && typeof title !== "string") || (body !== undefined && body !== null && typeof body !== "string")) return undefined;
   return [
-    { where: "pull request merge subject", extra: [BRANCH_TRACKER_KEY], text: `Merge pull request #${pr.number} from ${owner}/${pr.head.ref}` },
-    { where: "pull request title", text: pr.title ?? "" },
-    { where: "pull request body", text: pr.body ?? "" },
+    { where: "pull request merge subject", extra: [BRANCH_TRACKER_KEY], text: `Merge pull request #${pr.number} from ${owner}/${head.ref}` },
+    { where: "pull request title", text: title ?? "" },
+    { where: "pull request body", text: body ?? "" },
   ];
 }
 
@@ -312,7 +317,7 @@ function main(): number {
       return 2;
     }
     if (!scanned) {
-      console.error(`scrub-check: ${eventFile} holds no pull_request with a head ref`);
+      console.error(`scrub-check: ${eventFile} holds no usable pull_request (a head ref, an owner, and a string title and body)`);
       return 2;
     }
     prHits = scanned;
