@@ -13,7 +13,7 @@
  *     fires, so there is nothing to override.
  */
 
-import { answersSchema, type Answers, CURRENT_RUBRIC, disabledGates, ENTRY_TITLE_MAX_LENGTH, type Features, type GateId, gateFiring, LINE_BREAK, parseTitle, type ScoringPolicy, type Title } from "eris/socrates-core";
+import { answersSchema, type Answers, CURRENT_RUBRIC, disabledGates, ENTRY_TITLE_MAX_LENGTH, type Features, type GateId, gateFiring, hasOddTrailingBackslash, LINE_BREAK, parseTitle, type ScoringPolicy, type Title } from "eris/socrates-core";
 import { z } from "zod";
 import type { VerbContext } from "../../src/cli/plugin";
 import { fail, printable } from "./client";
@@ -114,12 +114,15 @@ export function checkCandidateStatement(ctx: VerbContext, candidate: Pick<Socrat
   }
 }
 
-/** Validate a candidate's entry title (and `'PRD authored: <title>' <= 80` and no brackets for `--kind prd`) before scoring or sending. */
+/** Validate a candidate's entry title (and `'PRD authored: <title>' <= 80`, no brackets, and no odd trailing backslash for `--kind prd`) before scoring or sending. */
 export function checkCandidateTitle<T extends Pick<SocratesCandidate, "kind" | "title">>(ctx: VerbContext, candidate: T): T & { readonly title: Title } {
   const title = checkEntryTitle(ctx, candidate.title, "socrates-candidate-invalid");
   if (candidate.kind === "prd") {
     if (/[[\]]/.test(title)) {
       fail(ctx, "socrates-candidate-invalid", "PRD entry title must not contain brackets '[' or ']'", "remove '[' and ']' from --title");
+    }
+    if (hasOddTrailingBackslash(title)) {
+      fail(ctx, "socrates-candidate-invalid", "PRD entry title must not end with an odd number of backslashes", "remove the trailing backslash from --title");
     }
     if (!parseTitle(`${PRD_PREFIX}${title}`).ok) {
       fail(

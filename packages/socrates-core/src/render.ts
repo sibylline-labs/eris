@@ -234,28 +234,40 @@ function singleLine(field: string, value: string): string {
 }
 
 /**
- * A candidate's `source` is any absolute http(s) URL, and RFC 3986 allows ( ) < > in one, but they end or break a Markdown
- * link destination, so they travel percent-encoded. Both doc-entry `source` and PRD-entry `prd` (which `issueEntryOf`
- * builds from `candidate.source`) take this: links embedded inside a `statement` (`crossProject` and `conflict.sites`)
- * are the author's own Markdown, and a stray parenthesis there is a refusal, not a rewrite.
+ * Whether `text` ends with an odd run of backslashes. In CommonMark, a trailing `\` escapes the closing `]` of `[label](url)`,
+ * turning the link into plain text, whereas an even run (`\\`) escapes the backslash itself and leaves `]` intact.
+ */
+export function hasOddTrailingBackslash(text: string): boolean {
+  let count = 0;
+  for (let i = text.length - 1; i >= 0 && text[i] === "\\"; i--) count++;
+  return count % 2 === 1;
+}
+
+/**
+ * A candidate's `source` is any absolute http(s) URL, and RFC 3986 allows ( ) < > in one, while raw `\` and `< >`
+ * break or escape CommonMark link destinations (`\)`, unenclosed destinations). Both doc-entry `source` and PRD-entry
+ * `prd` (which `issueEntryOf` builds from `candidate.source`) percent-encode them idempotently: links embedded inside a
+ * `statement` (`crossProject` and `conflict.sites`) are the author's own Markdown, and raw `( ) < > \` there are a
+ * refusal, not a rewrite.
  */
 function encodeLinkDestination(url: string): string {
-  return url.replace(/[()<>]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return url.replace(/[()<>\\]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
 function renderSourceLink({ label, url }: Link): string {
-  if (!/^https?:\/\/\S+$/.test(url)) {
-    throw new EntryRenderError("bad-link", `link url ${JSON.stringify(url)} must be an http(s) URL with no spaces`);
+  if (!/^https?:\/\/[^\s\u0000-\u001f\u007f]+$/.test(url)) {
+    throw new EntryRenderError("bad-link", `link url ${JSON.stringify(url)} must be an http(s) URL with no spaces or control characters`);
   }
   return renderLink({ label, url: encodeLinkDestination(url) });
 }
 
 function renderLink({ label, url }: Link): string {
-  if (LINE_BREAK.test(label) || /[[\]]/.test(label) || label.trim().length === 0) {
-    throw new EntryRenderError("bad-link", `link label ${JSON.stringify(label)} must be one line with no brackets`);
+  const trimmed = label.trim();
+  if (LINE_BREAK.test(label) || /[[\]]/.test(label) || trimmed.length === 0 || hasOddTrailingBackslash(trimmed)) {
+    throw new EntryRenderError("bad-link", `link label ${JSON.stringify(label)} must be one line with no brackets or odd trailing backslash`);
   }
-  if (!/^https?:\/\/[^\s()<>]+$/.test(url)) {
-    throw new EntryRenderError("bad-link", `link url ${JSON.stringify(url)} must be an http(s) URL with no spaces or parentheses`);
+  if (!/^https?:\/\/[^\s\u0000-\u001f\u007f()<>\\]+$/.test(url)) {
+    throw new EntryRenderError("bad-link", `link url ${JSON.stringify(url)} must be an http(s) URL with no spaces, control characters, backslashes, or parentheses`);
   }
-  return `[${label.trim()}](${url})`;
+  return `[${trimmed}](${url})`;
 }

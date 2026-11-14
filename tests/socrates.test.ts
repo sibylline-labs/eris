@@ -485,4 +485,30 @@ describe("eris socrates submit entry-title preflight", () => {
     expect(badTitle.stderr).not.toContain("prd statement");
     expect(requests).toHaveLength(1);
   });
+
+  // admits: boundary-io: eris socrates submit --kind prd must refuse odd trailing-backslash --title, trailing-backslash --source, and C0/DEL --source locally with field-accurate errors and 0 HTTP requests while accepting even trailing-backslash PRD titles; CLI parsing, Zod validation, title check, and loopback HTTP interact only at runtime.
+  it("refuses odd trailing-backslash PRD --title and backslash or C0/DEL --source locally with 0 HTTP requests", async () => {
+    requests.length = 0;
+    answer = () => Response.json({ candidate_id: "cand_prd_bs", deduped: false, contract_version: "1.0.0" });
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+
+    const evenOk = await drive(["submit", "--kind", "prd", "--title", "PRD — Foo\\\\", "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+    expect(evenOk).toMatchObject({ rc: 0, stdout: "submitted: cand_prd_bs\n", stderr: "" });
+    expect(requests).toHaveLength(1);
+
+    for (const oddTitle of ["PRD — Foo\\", "PRD — Foo\\\\\\", "PRD — Foo\\ "]) {
+      const badTitle = await drive(["submit", "--kind", "prd", "--title", oddTitle, "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+      expect({ oddTitle, rc: badTitle.rc, slug: badTitle.slug }).toEqual({ oddTitle, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(badTitle.stderr).toContain("--title");
+      expect(badTitle.stderr).not.toContain("prd statement");
+    }
+
+    for (const badUrl of ["https://example.com/foo\\", "https://example.com/\u0000nul", "https://example.com/\u0007bell", "https://example.com/\u007fdel"]) {
+      const badSource = await drive(["submit", "--kind", "prd", "--title", "PRD — Foo", "--statement", prdStmt, "--source", badUrl]);
+      expect({ badUrl, rc: badSource.rc, slug: badSource.slug }).toEqual({ badUrl, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(badSource.stderr).toContain("source: must be an absolute http(s) URL");
+      expect(badSource.stderr).not.toContain("prd statement");
+    }
+    expect(requests).toHaveLength(1);
+  });
 });

@@ -329,4 +329,37 @@ describe("eris socrates classify steers the agent", () => {
     expect(badTitle.stderr).not.toContain("prd statement");
     expect(fetches).toEqual([]);
   });
+
+  // admits: boundary-io: eris socrates classify --kind prd must refuse odd trailing-backslash --title, trailing-backslash --source, and C0/DEL --source locally with field-accurate errors instead of emitting broken CommonMark or blaming the prd statement; CLI parsing, Zod validation, and title checks interact only at runtime.
+  it("refuses odd trailing-backslash --title and backslash or C0/DEL --source without blaming the prd statement", async () => {
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+
+    expect(
+      await json([
+        "--kind",
+        "prd",
+        "--title",
+        "PRD — Foo\\\\",
+        "--statement",
+        prdStmt,
+        "--source",
+        "https://docs.example.com/acme/billing",
+      ]),
+    ).toMatchObject({ verdict: "prd", route: "review-issue" });
+
+    for (const oddTitle of ["PRD — Foo\\", "PRD — Foo\\\\\\", "PRD — Foo\\ "]) {
+      const badTitle = await drive(["--kind", "prd", "--title", oddTitle, "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+      expect({ oddTitle, rc: badTitle.rc, slug: badTitle.slug }).toEqual({ oddTitle, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(badTitle.stderr).toContain("--title");
+      expect(badTitle.stderr).not.toContain("prd statement");
+    }
+
+    for (const badUrl of ["https://example.com/foo\\", "https://example.com/\u0000nul", "https://example.com/\u0007bell", "https://example.com/\u007fdel"]) {
+      const badSource = await drive(["--kind", "prd", "--title", "PRD — Foo", "--statement", prdStmt, "--source", badUrl]);
+      expect({ badUrl, rc: badSource.rc, slug: badSource.slug }).toEqual({ badUrl, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(badSource.stderr).toContain("candidate.source");
+      expect(badSource.stderr).not.toContain("prd statement");
+    }
+    expect(fetches).toEqual([]);
+  });
 });
