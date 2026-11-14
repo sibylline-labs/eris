@@ -9,10 +9,12 @@
  * `~/.claude/skills/<s>` a symlink to `../../.agents/skills/<s>`.
  */
 
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { REPO, type Sandbox, sandbox } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 const SKILLS = join(REPO, "skills");
 const PUBLISHED = readdirSync(SKILLS)

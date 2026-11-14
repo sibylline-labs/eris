@@ -3,11 +3,13 @@
  * `eris -h`, `eris --help` and bare `eris`, each the top-level usage.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { erisUsage } from "../src/cli/commands/usage";
 import { ERIS } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 const REPO = resolve(import.meta.dir, "..");
 

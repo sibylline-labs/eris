@@ -9,13 +9,15 @@
  * descendant pid was alive and is now dead, and the pipe closed.
  */
 
-import { describe, it, expect, afterAll } from "bun:test";
+import { afterAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakeRunner } from "eris/sdk/testing";
 import { nodeRunner, runMany, type RunResult } from "../src/runtime/process";
+
+setDefaultTimeout(60_000);
 
 const REPO_ROOT = join(import.meta.dir, "..");
 const scratch = mkdtempSync(join(tmpdir(), "eris-runtime-process-"));

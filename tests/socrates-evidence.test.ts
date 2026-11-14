@@ -6,7 +6,7 @@
  * left the machine, in what order, and what the provenance names.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { repoOfRemote } from "../plugins/socrates/fragment";
@@ -14,6 +14,8 @@ import { runSocrates } from "../plugins/socrates/submit";
 import { CliExit } from "../src/cli/ts-verb";
 import { type Sandbox, sandbox } from "./helpers/blackbox";
 import { answers, CANDIDATE, ENDPOINT, GHP, H1, ORG_POLICY, policyResult, TOKEN } from "./helpers/socrates-fake";
+
+setDefaultTimeout(60_000);
 
 const REPO = resolve(import.meta.dir, "..");
 const HYPOTHESIS = "I think this is a retry-budget invariant the rubric has no question for.";

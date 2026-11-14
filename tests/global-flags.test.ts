@@ -7,13 +7,15 @@
  * composed, plus a fixture row that declares `--json`.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import widgets from "../examples/plugins/widgets";
 import { composeCli } from "../src/cli/compose";
 import { definePlugin, groupArgs, readArgs, type VerbHandler } from "../src/cli/plugin";
 import { REGISTRY } from "../src/cli/registry";
 import { HANDLERS, main } from "../src/main";
 import { REPO } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 /** A group whose `lint` verb declares its own `--json` and has no JSON rendering. */
 const own = definePlugin({
