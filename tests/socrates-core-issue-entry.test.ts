@@ -159,5 +159,7 @@ describe("a statement the grammar cannot place is refused with the reason", () =
     const filed = issueEntryOf({ kind: "conflict", title: "Legacy hash site", statement, source: PRD_URL });
     expect(filed).toEqual({ ok: true, value: { title: "Legacy hash site", description: `${statement}\n\n${ANSWER_HERE}` } });
     expect(parseConflictStatement(statement.replace(hash, hash.toUpperCase()), "t").ok).toBe(false);
+    // 7 and 9 hex (a git short SHA) are not entry hashes: the length is exact.
+    for (const odd of [hash.slice(1), `${hash}a`]) expect(parseConflictStatement(statement.replace(hash, odd), "t").ok).toBe(false);
   });
 });

@@ -28,7 +28,7 @@
  *
  * Invariants:
  *  - Parsing is strict: a line the grammar does not place is refused with the reason, never dropped.
- *  - Every ID is a register ID (`DECISION_ID`), the shape the resolver reads back.
+ *  - Every site ID is a register ID (`DECISION_ID`) or an 8-hex legacy entry ID, the shapes the resolver reads back.
  *  - The answer-here footer is the renderer's: a statement that carries it is refused.
  */
 

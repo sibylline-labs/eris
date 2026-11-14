@@ -79,11 +79,15 @@ describe("eris socrates status", () => {
   });
 
   // admits: --help promises a project name while the server's Epic line may carry only the project id, so an agent reads a UUID as a name; observed at the help text and at the printed Epic line.
-  it("prints the project as the server sent it, and the help says it may be the id", async () => {
+  it("prints the project as the server sent it, a name or a UUID, and the help says so", async () => {
     const r = await fake.drive(["status"]);
     expect(r.stdout).toContain(`  ${STATUS.open_epics[0]!.project}  `);
+    const uuid = "b0bc918e-e2e3-42e3-ae1f-e52a6b102077";
+    fake.answer.status = () => Response.json({ ...STATUS, open_epics: [{ ...STATUS.open_epics[0]!, project: uuid }] });
+    expect((await fake.drive(["status"])).stdout).toContain(`  ${uuid}  `);
     const help = await fake.drive(["status", "--help"]);
-    expect(help.stdout).toMatch(/or the project's id when it has none/);
+    expect(help.stdout).toMatch(/project UUID or name\s+the endpoint reports/);
+    expect(help.stdout).not.toMatch(/when it has none/);
   });
 
   // admits: text the server sent reaches the terminal with its control characters, so a project name can drive the terminal; observed at stdout, which keeps the name and loses the escape.

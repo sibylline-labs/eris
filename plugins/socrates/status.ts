@@ -26,8 +26,8 @@ export const STATUS_USAGE = `Usage: eris socrates status [--candidate <id>]
 
 Ask the Socrates endpoint what is waiting and print it:
 'pending candidates: <n>', 'open review Epics: <n>' and one line per Epic
-('  <epic>  <project>  <n> open  <url>', <project> being the name the endpoint
-reports, or the project's id when it has none). With --candidate, then
+('  <epic>  <project>  <n> open  <url>', <project> being the project UUID or name
+the endpoint reports). With --candidate, then
 'candidate <id>: <state>', the issue it is filed as and, when the review Epic's
 verbosity cap holds it, '  held by the verbosity cap until <Mon-DD HH:MMZ>'. --output json prints
 {rubric_version, policy_hash, pending_candidates, open_epics: [{epic, project,
