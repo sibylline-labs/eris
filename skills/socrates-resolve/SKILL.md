@@ -25,13 +25,19 @@ Read the Epic and every sub-issue with its full comment thread in Linear. A comm
 with **Socrates** is Socrates' own, never a reviewer's. For each sub-issue:
 
 - **Done, no comment:** it applies as filed.
-- **Done, with an edit instruction** (new wording, "this is a practice", "this belongs in Key
-  Assumptions"): apply it with `--amend`. Write the amendment as a JSON file, an object with at
-  least one of `title`, `statement`, `target` (`lbd`, `ka` or `practices`) and optionally
+- **Done decision, with an edit instruction** (new wording, "this is a practice", "this belongs in
+  Key Assumptions"): apply it with `--amend`. Write the amendment as a JSON file, an object with at
+  least one of `title` (a single line of at most 80 characters, with file names, domains and dotted
+  identifiers in backticks), `statement`, `target` (`lbd`, `ka` or `practices`) and optionally
   `source_comment`, then pass `--amend <child>=<path>` (repeatable, once per child). The receipt's
-  `amended:` lists what applied. A `socrates-amend-*` refusal means the entry was already written
-  or the child isn't a Done decision; fix or drop that `--amend`. A split has no amendment: it is a
-  pending edit for the user.
+  `amended:` lists what applied. `--amend` takes only a Done decision. A Done practice or PRD with an
+  edit instruction, and a split, are pending edits for the user: never drop `--amend` and resolve,
+  which would write the unedited entry.
+- **Amend failures:** `socrates-amend-invalid` is local and nothing was sent: fix that `--amend`.
+  An endpoint refusal (the child is already written or is not a Done decision) exits
+  `socrates-refused`: fix or drop that `--amend` only for a decision, else hold it pending. A `WARN`
+  `socrates-amend-ignored` means the Epic is already resolved without that edit and running again
+  changes nothing: fix the named entry in the living docs by hand.
 - **Conflict or supersession:** the reviewer's latest comment is the answer. Resolve carries it,
   word for word, to every site the issue lists under its authoritative sites; with no comment, it
   carries the proposed resolution. So the latest comment must be the settled text itself, fit to
