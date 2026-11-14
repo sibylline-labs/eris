@@ -275,6 +275,66 @@ test("trailing backslashes and C0/DEL control characters never render broken Com
   }
 });
 
+// admits: algorithmic: unmatched backticks and <...> autolinks/HTML in Link.label or raw backticks in Link.url break or nest CommonMark <a> links via Bun.markdown.html; CommonMark inline precedence is invisible to tsc and ast-grep.
+test("unmatched backticks, <...> in Link.label, and raw backticks in Link.url never break or nest CommonMark <a> links", () => {
+  const withBacktickUrl = "https://example.com/a`1";
+  const encodedBacktickUrl = "https://example.com/a%601";
+  const decisionRendered = renderDecision({ ...decision, source: { label: "src `1`", url: withBacktickUrl } });
+  const decisionLine = decisionRendered.split("\n").find((l) => l.startsWith("  - source: "));
+  expect(decisionLine).toBe(`  - source: [src \`1\`](${encodedBacktickUrl})`);
+  expect(Bun.markdown.html(decisionRendered)).toContain(`<a href="${encodedBacktickUrl}">src <code>1</code></a>`);
+
+  // Idempotent on %60 and allows balanced code spans (including multi-backtick spans and escaped backticks).
+  for (const okLabel of ["PRD — `v2`", "PRD — ``v2 ` 3``", "PRD — `a\\`", "PRD — a\\`b"]) {
+    const prdRendered = renderPrdEntry({
+      ...prd,
+      prd: { label: okLabel, url: encodedBacktickUrl },
+      crossProject: [{ decision: "BILL-K4", project: { label: okLabel, url: prd.crossProject[0]!.project.url } }],
+    });
+    const html = Bun.markdown.html(prdRendered.description);
+    expect(html.match(/<a\b/g)?.length).toBe(2);
+    for (const part of html.split("</a>")) expect(part.match(/<a\b/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    expect(html).toContain(`<a href="${encodedBacktickUrl}">`);
+
+    const practiceRendered = renderPractice({ ...practice, source: { label: okLabel, url: withBacktickUrl } });
+    const practiceHtml = Bun.markdown.html(practiceRendered);
+    expect(practiceHtml.match(/<a\b/g)?.length).toBe(1);
+    expect(practiceHtml).toContain(`<a href="${encodedBacktickUrl}">`);
+
+    const conflictRendered = renderConflictEntry({
+      ...conflict,
+      sites: [{ label: okLabel, url: conflict.sites[0]!.url }, conflict.sites[1]!],
+    });
+    const conflictHtml = Bun.markdown.html(conflictRendered.description);
+    expect(conflictHtml.match(/<a\b/g)?.length).toBe(2);
+    for (const part of conflictHtml.split("</a>")) expect(part.match(/<a\b/g)?.length ?? 0).toBeLessThanOrEqual(1);
+  }
+
+  // Unmatched backticks (including escaped-opener \`1` and multi-backtick ``1`) and raw < / > must be refused across all 4 renderers.
+  for (const badLabel of ["PRD `1", "`1", "1`", "PRD \\`1`", "PRD ``1`", "``a`b`", "``", "<http://localhost>", "<mailto:a@b>", '<a href="#">x</a>', "a < b", "a > b", "`<http://localhost>`"]) {
+    for (const fn of [
+      () => renderDecision({ ...decision, source: { ...source, label: badLabel } }),
+      () => renderPractice({ ...practice, source: { ...source, label: badLabel } }),
+      () => renderPrdEntry({ ...prd, prd: { ...prd.prd, label: badLabel } }),
+      () => renderPrdEntry({ ...prd, crossProject: [{ decision: "BILL-K4", project: { label: badLabel, url: prd.crossProject[0]!.project.url } }] }),
+      () => renderConflictEntry({ ...conflict, sites: [{ label: badLabel, url: conflict.sites[0]!.url }, conflict.sites[1]!] }),
+    ]) {
+      let thrown: unknown;
+      try {
+        fn();
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(EntryRenderError);
+      expect((thrown as EntryRenderError).reason).toBe("bad-link");
+    }
+  }
+
+  // Statement links (crossProject, conflict.sites) must refuse raw backticks in URLs rather than rewriting author markdown.
+  expect(() => renderPrdEntry({ ...prd, crossProject: [{ decision: "BILL-K4", project: { label: "Accounts", url: withBacktickUrl } }] })).toThrow(EntryRenderError);
+  expect(() => renderConflictEntry({ ...conflict, sites: [{ label: "A", url: withBacktickUrl }, conflict.sites[1]!] })).toThrow(EntryRenderError);
+});
+
 describe("inputs that would break an entry's shape are refused, not rewritten", () => {
   const cases: [string, () => unknown, EntryRenderReason][] = [
     ["a two-line title", () => renderDecision({ ...decision, title: "one\ntwo" }), "title-multiline"],

@@ -362,4 +362,37 @@ describe("eris socrates classify steers the agent", () => {
     }
     expect(fetches).toEqual([]);
   });
+
+  // admits: boundary-io: eris socrates classify --kind prd must refuse unmatched backticks and <...> in --title on --title itself and raw backticks in --source on candidate.source without blaming the prd statement while accepting balanced code spans; CLI parsing, Zod Url, and title checks interact only at runtime.
+  it("refuses unmatched backticks and <...> in PRD --title and backticks in --source without blaming the prd statement", async () => {
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+
+    expect(
+      await json([
+        "--kind",
+        "prd",
+        "--title",
+        "PRD — `v2`",
+        "--statement",
+        prdStmt,
+        "--source",
+        "https://docs.example.com/acme/billing",
+      ]),
+    ).toMatchObject({ verdict: "prd", route: "review-issue" });
+
+    for (const badTitle of ["PRD `1", "PRD \\`1`", "PRD ``1`", "<http://localhost>", "<mailto:a@b>", '<a href="#">x</a>']) {
+      const res = await drive(["--kind", "prd", "--title", badTitle, "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+      expect({ badTitle, rc: res.rc, slug: res.slug }).toEqual({ badTitle, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(res.stderr).toContain("--title");
+      expect(res.stderr).not.toContain("prd statement");
+    }
+
+    for (const badUrl of ["https://example.com/a`1", "https://ex`ample.com/a", "https://example.com`1"]) {
+      const res = await drive(["--kind", "prd", "--title", "PRD — Foo", "--statement", prdStmt, "--source", badUrl]);
+      expect({ badUrl, rc: res.rc, slug: res.slug }).toEqual({ badUrl, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(res.stderr).toContain("candidate.source");
+      expect(res.stderr).not.toContain("prd statement");
+    }
+    expect(fetches).toEqual([]);
+  });
 });
