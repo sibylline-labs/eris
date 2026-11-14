@@ -244,14 +244,53 @@ export function hasOddTrailingBackslash(text: string): boolean {
 }
 
 /**
- * A candidate's `source` is any absolute http(s) URL, and RFC 3986 allows ( ) < > in one, while raw `\` and `< >`
- * break or escape CommonMark link destinations (`\)`, unenclosed destinations). Both doc-entry `source` and PRD-entry
- * `prd` (which `issueEntryOf` builds from `candidate.source`) percent-encode them idempotently: links embedded inside a
- * `statement` (`crossProject` and `conflict.sites`) are the author's own Markdown, and raw `( ) < > \` there are a
- * refusal, not a rewrite.
+ * Whether `text` contains an unescaped CommonMark backtick run that lacks a matching equal-length closing run.
+ * In CommonMark §6.1, code spans outrank `[label](url)` links, so an unmatched run inside `Link.label` can pair
+ * across `](url)` with a backtick run in `Link.url` or surrounding template text and swallow the link into `<code>`.
+ */
+export function hasUnmatchedBackticks(text: string): boolean {
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === "\\" && i + 1 < text.length) {
+      i += 2;
+      continue;
+    }
+    if (text[i] === "`") {
+      let len = 0;
+      while (i + len < text.length && text[i + len] === "`") len++;
+      let k = i + len;
+      let matched = false;
+      while (k < text.length) {
+        if (text[k] === "`") {
+          let closeLen = 0;
+          while (k + closeLen < text.length && text[k + closeLen] === "`") closeLen++;
+          k += closeLen;
+          if (closeLen === len) {
+            matched = true;
+            break;
+          }
+        } else {
+          k++;
+        }
+      }
+      if (!matched) return true;
+      i = k;
+      continue;
+    }
+    i++;
+  }
+  return false;
+}
+
+/**
+ * A candidate's `source` is any absolute http(s) URL, and RFC 3986 allows ( ) < > ` in one, while raw `\`, `` ` ``,
+ * and `< >` break or escape CommonMark link destinations (`\)`, unenclosed destinations, code spans). Both doc-entry
+ * `source` and PRD-entry `prd` (which `issueEntryOf` builds from `candidate.source`) percent-encode them idempotently:
+ * links embedded inside a `statement` (`crossProject` and `conflict.sites`) are the author's own Markdown, and raw
+ * `( ) < > \ `` ` `` there are a refusal, not a rewrite.
  */
 function encodeLinkDestination(url: string): string {
-  return url.replace(/[()<>\\]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return url.replace(/[()<>\\`]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
 function renderSourceLink({ label, url }: Link): string {
@@ -263,11 +302,23 @@ function renderSourceLink({ label, url }: Link): string {
 
 function renderLink({ label, url }: Link): string {
   const trimmed = label.trim();
-  if (LINE_BREAK.test(label) || /[[\]]/.test(label) || trimmed.length === 0 || hasOddTrailingBackslash(trimmed)) {
-    throw new EntryRenderError("bad-link", `link label ${JSON.stringify(label)} must be one line with no brackets or odd trailing backslash`);
+  if (
+    LINE_BREAK.test(label) ||
+    /[[\]<>]/.test(label) ||
+    trimmed.length === 0 ||
+    hasOddTrailingBackslash(trimmed) ||
+    hasUnmatchedBackticks(trimmed)
+  ) {
+    throw new EntryRenderError(
+      "bad-link",
+      `link label ${JSON.stringify(label)} must be one line with no brackets, angle brackets, unmatched backticks, or odd trailing backslash`,
+    );
   }
-  if (!/^https?:\/\/[^\s\u0000-\u001f\u007f()<>\\]+$/.test(url)) {
-    throw new EntryRenderError("bad-link", `link url ${JSON.stringify(url)} must be an http(s) URL with no spaces, control characters, backslashes, or parentheses`);
+  if (!/^https?:\/\/[^\s\u0000-\u001f\u007f()<>\\`]+$/.test(url)) {
+    throw new EntryRenderError(
+      "bad-link",
+      `link url ${JSON.stringify(url)} must be an http(s) URL with no spaces, control characters, backslashes, backticks, or parentheses`,
+    );
   }
   return `[${trimmed}](${url})`;
 }

@@ -511,4 +511,30 @@ describe("eris socrates submit entry-title preflight", () => {
     }
     expect(requests).toHaveLength(1);
   });
+
+  // admits: boundary-io: eris socrates submit --kind prd must refuse unmatched backticks and <...> in --title and backticks in --source locally with field-accurate errors and 0 HTTP requests while accepting balanced code-span PRD titles; CLI parsing, Zod validation, title check, and loopback HTTP interact only at runtime.
+  it("refuses unmatched backticks and <...> in PRD --title and backticks in --source locally with 0 HTTP requests", async () => {
+    requests.length = 0;
+    answer = () => Response.json({ candidate_id: "cand_prd_bt", deduped: false, contract_version: "1.0.0" });
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+
+    const ok = await drive(["submit", "--kind", "prd", "--title", "PRD — `v2`", "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+    expect(ok).toMatchObject({ rc: 0, stdout: "submitted: cand_prd_bt\n", stderr: "" });
+    expect(requests).toHaveLength(1);
+
+    for (const badTitle of ["PRD `1", "PRD \\`1`", "PRD ``1`", "<http://localhost>", "<mailto:a@b>", '<a href="#">x</a>']) {
+      const res = await drive(["submit", "--kind", "prd", "--title", badTitle, "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+      expect({ badTitle, rc: res.rc, slug: res.slug }).toEqual({ badTitle, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(res.stderr).toContain("--title");
+      expect(res.stderr).not.toContain("prd statement");
+    }
+
+    for (const badUrl of ["https://example.com/a`1", "https://ex`ample.com/a", "https://example.com`1"]) {
+      const res = await drive(["submit", "--kind", "prd", "--title", "PRD — Foo", "--statement", prdStmt, "--source", badUrl]);
+      expect({ badUrl, rc: res.rc, slug: res.slug }).toEqual({ badUrl, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(res.stderr).toContain("source: must be an absolute http(s) URL");
+      expect(res.stderr).not.toContain("prd statement");
+    }
+    expect(requests).toHaveLength(1);
+  });
 });

@@ -148,6 +148,69 @@ describe("a PRD files as one entry", () => {
     }
   });
 
+  // admits: algorithmic: issueEntryOf passes PRD title/source and statement links into renderPrdEntry/renderConflictEntry where unmatched backticks, <...> tags, and raw statement backtick URLs break or nest CommonMark <a> links; Markdown parsing is invisible to tsc and ast-grep.
+  test("issueEntryOf handles balanced vs unmatched backticks, <...>, and backtick URLs without breaking or nesting CommonMark links", () => {
+    const balancedPrd = issueEntryOf({
+      kind: "prd",
+      title: "PRD — `v2`",
+      statement: prdStatement,
+      source: "https://docs.example.com/a`1",
+    });
+    expect(balancedPrd.ok).toBe(true);
+    if (balancedPrd.ok) {
+      const html = Bun.markdown.html(balancedPrd.value.description);
+      expect(html.match(/<a\b/g)?.length).toBe(2);
+      for (const part of html.split("</a>")) expect(part.match(/<a\b/g)?.length ?? 0).toBeLessThanOrEqual(1);
+      expect(html).toContain('<a href="https://docs.example.com/a%601">PRD — <code>v2</code></a>');
+    }
+
+    for (const badTitle of ["PRD `1", "PRD \\`1`", "PRD ``1`", "<http://localhost>", '<a href="#">x</a>']) {
+      const badPrd = issueEntryOf({ kind: "prd", title: badTitle, statement: prdStatement, source: PRD_URL });
+      expect(badPrd.ok).toBe(false);
+      if (!badPrd.ok) expect(badPrd.reason).toMatch(/^bad-link:/);
+    }
+
+    for (const badCrossLabel of ["Accounts `1", "<http://localhost>", "<mailto:a@b>"]) {
+      const res = issueEntryOf({
+        kind: "prd",
+        title: "PRD — Acme",
+        statement: prdStatement.replace("[Accounts]", `[${badCrossLabel}]`),
+        source: PRD_URL,
+      });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.reason).toMatch(/^bad-link:/);
+    }
+
+    const badCrossUrl = issueEntryOf({
+      kind: "prd",
+      title: "PRD — Acme",
+      statement: prdStatement.replace("https://docs.example.com/acme/project/accounts", "https://docs.example.com/a`1"),
+      source: PRD_URL,
+    });
+    expect(badCrossUrl.ok).toBe(false);
+    if (!badCrossUrl.ok) expect(badCrossUrl.reason).toMatch(/^bad-link:/);
+
+    for (const badSiteLabel of ["Review `1", "<http://localhost>", '<a href="#">x</a>']) {
+      const res = issueEntryOf({
+        kind: "conflict",
+        title: "Conflict",
+        statement: conflictStatement.replace("[Review issue]", `[${badSiteLabel}]`),
+        source: PRD_URL,
+      });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.reason).toMatch(/^bad-link:/);
+    }
+
+    const badSiteUrl = issueEntryOf({
+      kind: "conflict",
+      title: "Conflict",
+      statement: conflictStatement.replace("https://tracker.example.com/acme/issue/42", "https://tracker.example.com/a`1"),
+      source: PRD_URL,
+    });
+    expect(badSiteUrl.ok).toBe(false);
+    if (!badSiteUrl.ok) expect(badSiteUrl.reason).toMatch(/^bad-link:/);
+  });
+
   test("one locked decision, written with `..`, names that one decision", () => {
     /** When the one-decision or `..` spelling is refused or mis-ranged, a valid PRD statement cannot be filed. */
     const parsed = parsePrdStatement("Decisions: `ACME-BILL-K3`..`ACME-BILL-K3`\nConfirmed by: dana", { label: "PRD", url: PRD_URL });
