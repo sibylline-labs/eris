@@ -130,16 +130,25 @@ export async function runEnrolment(args: string[], ctx: VerbContext, deps: Socra
   return 0;
 }
 
+/** The Linear scopes row, in the dash Health panel's three states: unread, none missing, or what is missing and the fix. */
+function scopesLine(scopes: { granted: string[]; missing: string[] } | null): string {
+  if (scopes === null) return "linear scopes: not checked yet";
+  if (scopes.missing.length === 0) return `linear scopes: all granted (${scopes.granted.map(printable).join(", ")})`;
+  return `linear scopes: ${scopes.missing.length} missing (${scopes.missing.map(printable).join(", ")}); a Linear workspace admin can re-install the app to grant them`;
+}
+
 /** `settings health`. */
 export async function runHealth(args: string[], ctx: VerbContext, deps: SocratesDeps): Promise<number> {
   if (readArgs(plugin.rows, "socrates settings health", args, ctx, { help: HEALTH_USAGE }) === null) return 0;
   const r = await readSettings(ctx, deps, await socratesEndpoint(ctx, deps));
-  if (ctx.format === "json") return json(ctx, { health: r.health, contract_version: r.contract_version });
   const h = r.health;
+  const scopes = h.install.scopes ?? null;
+  if (ctx.format === "json") return json(ctx, { health: { ...h, install: { ...h.install, scopes } }, contract_version: r.contract_version });
   const labels = h.install.missing_labels.length === 0 ? "" : `; missing labels: ${h.install.missing_labels.map(printable).join(", ")}`;
   ctx.stdout.write(
     [
       `install: ${h.install.state ?? "unknown"}${labels} (checked ${when(h.install.checked_at)})`,
+      scopesLine(scopes),
       `webhook: last delivery ${when(h.webhook.last_delivery_at)}`,
       `reconcile: last ${when(h.reconcile.last_at)}, watermark ${when(h.reconcile.watermark)}`,
       `stuck: ${h.stuck.retrying_writes} retrying write(s)${h.stuck.oldest_retrying_at === null ? "" : ` (oldest ${printable(h.stuck.oldest_retrying_at)})`}, ${h.stuck.refused_entries} refused entr${h.stuck.refused_entries === 1 ? "y" : "ies"}`,

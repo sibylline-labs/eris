@@ -297,7 +297,7 @@ export const SocratesSettingsResult = z.object({
   canon: z.object({ doc_id: Id.nullable() }),
   enrolment: z.object({ projects: z.array(z.object({ id: Id, name: ProjectHint.nullable(), source: z.enum(["label", "stub"]), url: Url.nullable() })) }),
   health: z.object({
-    install: z.object({ state: z.enum(["installed", "provisioned", "needs_labels", "uninstalled"]).nullable(), missing_labels: z.array(ProjectHint), checked_at: IsoDatetime.nullable() }),
+    install: z.object({ state: z.enum(["installed", "provisioned", "needs_labels", "uninstalled"]).nullable(), missing_labels: z.array(ProjectHint), checked_at: IsoDatetime.nullable(), scopes: z.object({ granted: z.array(z.string()), missing: z.array(z.string()) }).nullable().optional() }),
     webhook: z.object({ last_delivery_at: IsoDatetime.nullable() }),
     reconcile: z.object({ last_at: IsoDatetime.nullable(), watermark: IsoDatetime.nullable() }),
     stuck: z.object({ retrying_writes: NonNegativeInt, oldest_retrying_at: IsoDatetime.nullable(), refused_entries: NonNegativeInt }),
