@@ -61,12 +61,15 @@ export const nonBlank = (max: number) =>
     .max(max)
     .refine((s) => s.trim().length > 0, "must not be blank");
 
+/** One line to the renderer too: `renderDecision` refuses the Unicode line separators as well as CR and LF. */
+const SINGLE_LINE = /^[^\r\n\u2028\u2029]*$/;
+
 export const oneLine = (max: number) =>
   z
     .string()
     .min(1)
     .max(max)
-    .regex(/^[^\r\n]*$/, "must be a single line")
+    .regex(SINGLE_LINE, "must be a single line")
     .refine((s) => s.trim().length > 0, "must not be blank");
 
 export const Url = z
@@ -115,7 +118,7 @@ export const SocratesOneLine = z
   .string()
   .min(1)
   .max(SOCRATES_OVERRIDE_REASON_MAX_LENGTH)
-  .regex(/^[^\r\n]*$/, "must be a single line")
+  .regex(SINGLE_LINE, "must be a single line")
   .refine((s) => s.trim().length > 0, "must not be blank");
 
 export const uniqueGates = (items: readonly { gate: string }[]) => new Set(items.map((i) => i.gate)).size === items.length;

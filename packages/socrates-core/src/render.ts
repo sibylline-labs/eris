@@ -126,7 +126,7 @@ function renderDocEntry(entry: PracticeEntry, kindFields: readonly string[]): st
   const fields = [
     singleLine("statement", entry.statement),
     ...kindFields,
-    `source: ${renderLink(entry.source)}`,
+    `source: ${renderLink({ ...entry.source, url: encodeLinkDestination(entry.source.url) })}`,
     formatEntryDate(entry.date),
     `superseded-by: ${entry.supersededBy === undefined ? "-" : singleLine("supersededBy", entry.supersededBy)}`,
     ...("hash" in handle ? [`hash: ${handle.hash}`] : []),
@@ -233,6 +233,15 @@ function checkHandle(handle: EntryHandle): EntryHandle {
 function singleLine(field: string, value: string): string {
   if (LINE_BREAK.test(value)) throw new EntryRenderError("field-multiline", `${field} must be one line`);
   return value.trim();
+}
+
+/**
+ * A candidate's `source` is any absolute http(s) URL, and RFC 3986 allows ( ) < > in one, but they end or break a Markdown
+ * link destination, so they travel percent-encoded. Only the doc entry's source takes this: a link a statement carries
+ * is the author's own Markdown, and a stray parenthesis there is a refusal, not a rewrite.
+ */
+function encodeLinkDestination(url: string): string {
+  return url.replace(/[()<>]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
 function renderLink({ label, url }: Link): string {

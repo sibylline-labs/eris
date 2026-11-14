@@ -182,6 +182,14 @@ test("a backticked dotted name in a title renders", () => {
   expect(renderDecision({ ...decision, title: "Adopt `payload.source` as the key" }).split("\n")[0]).toBe("- `ACME-K2` Adopt `payload.source` as the key");
 });
 
+// admits: algorithmic: a source URL with ( ) < > passes the contract's Url but ends the Markdown link destination early or throws bad-link at resolve time; the rendered string is runtime data no type or lint rule sees.
+test("a source URL with parentheses or angle brackets renders as one percent-encoded link destination", () => {
+  /** When renderLink refuses or leaves ( ) < > raw, a source the CLI accepted never files; observed as the rendered source line. */
+  const url = "https://en.wikipedia.org/wiki/Problem_details_(HTTP)?q=<a>";
+  const line = renderPractice({ ...practice, source: { ...source, url } }).split("\n").find((l) => l.startsWith("  - source: "));
+  expect(line).toBe("  - source: [eris#21](https://en.wikipedia.org/wiki/Problem_details_%28HTTP%29?q=%3Ca%3E)");
+});
+
 describe("inputs that would break an entry's shape are refused, not rewritten", () => {
   const cases: [string, () => unknown, EntryRenderReason][] = [
     ["a two-line title", () => renderDecision({ ...decision, title: "one\ntwo" }), "title-multiline"],
@@ -191,8 +199,10 @@ describe("inputs that would break an entry's shape are refused, not rewritten", 
     ["a conflict title Linear would autolink", () => renderConflictEntry({ ...conflict, title: "install.sh disagrees with the docs" }), "title-autolinkable"],
     ["a statement with a line break", () => renderPractice({ ...practice, statement: "a\nb" }), "field-multiline"],
     ["a scope with a line break", () => renderDecision({ ...decision, scope: "org\r\n- hash: deadbeef" }), "field-multiline"],
+    ["a scope with a Unicode line separator", () => renderDecision({ ...decision, scope: "org\u2028- hash: deadbeef" }), "field-multiline"],
     ["a link label with a bracket", () => renderPractice({ ...practice, source: { ...source, label: "a]b" } }), "bad-link"],
-    ["a link url with a parenthesis", () => renderPractice({ ...practice, source: { ...source, url: "https://x/a)b" } }), "bad-link"],
+    ["a link url with a space", () => renderPractice({ ...practice, source: { ...source, url: "https://x/a b" } }), "bad-link"],
+    ["a prd link url with a parenthesis", () => renderPrdEntry({ ...prd, prd: { ...prd.prd, url: "https://x/a)b" } }), "bad-link"],
     ["a non-http link", () => renderPractice({ ...practice, source: { ...source, url: "javascript:alert(1)" } }), "bad-link"],
     ["February 30th", () => renderPractice({ ...practice, date: { date: "2026-02-30" } }), "bad-date"],
     ["a non-ISO date", () => renderPractice({ ...practice, date: { date: "28/10/2026" } }), "bad-date"],
