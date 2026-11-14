@@ -114,16 +114,21 @@ export function checkCandidateStatement(ctx: VerbContext, candidate: Pick<Socrat
   }
 }
 
-/** Validate a candidate's entry title (and `'PRD authored: <title>' <= 80` for `--kind prd`) before scoring or sending. */
+/** Validate a candidate's entry title (and `'PRD authored: <title>' <= 80` and no brackets for `--kind prd`) before scoring or sending. */
 export function checkCandidateTitle<T extends Pick<SocratesCandidate, "kind" | "title">>(ctx: VerbContext, candidate: T): T & { readonly title: Title } {
   const title = checkEntryTitle(ctx, candidate.title, "socrates-candidate-invalid");
-  if (candidate.kind === "prd" && !parseTitle(`${PRD_PREFIX}${title}`).ok) {
-    fail(
-      ctx,
-      "socrates-candidate-invalid",
-      `PRD entry title '${PRD_PREFIX}<title>' must be at most ${ENTRY_TITLE_MAX_LENGTH} characters (got ${PRD_PREFIX.length + title.length})`,
-      `shorten --title to <= ${PRD_TITLE_MAX_LENGTH} characters so '${PRD_PREFIX}<title>' fits in ${ENTRY_TITLE_MAX_LENGTH} characters`,
-    );
+  if (candidate.kind === "prd") {
+    if (/[[\]]/.test(title)) {
+      fail(ctx, "socrates-candidate-invalid", "PRD entry title must not contain brackets '[' or ']'", "remove '[' and ']' from --title");
+    }
+    if (!parseTitle(`${PRD_PREFIX}${title}`).ok) {
+      fail(
+        ctx,
+        "socrates-candidate-invalid",
+        `PRD entry title '${PRD_PREFIX}<title>' must be at most ${ENTRY_TITLE_MAX_LENGTH} characters (got ${PRD_PREFIX.length + title.length})`,
+        `shorten --title to <= ${PRD_TITLE_MAX_LENGTH} characters so '${PRD_PREFIX}<title>' fits in ${ENTRY_TITLE_MAX_LENGTH} characters`,
+      );
+    }
   }
   return { ...candidate, title };
 }

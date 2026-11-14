@@ -47,6 +47,39 @@ describe("a PRD files as one entry", () => {
     });
   });
 
+  // admits: algorithmic: issueEntryOf passes candidate.source into renderPrdEntry so valid ()<> sources must render percent-encoded while crossProject statement links keep refusing raw () and genuinely invalid source URLs return bad-link without blaming parentheses; runtime regexes and string errors are invisible to tsc and ast-grep.
+  test("a PRD source URL with ()<> encodes on render, cross-project statement links still refuse raw (), and invalid source URLs report bad-link accurately", () => {
+    const filed = issueEntryOf({
+      kind: "prd",
+      title: "PRD — Acme Billing",
+      statement: prdStatement,
+      source: "https://en.wikipedia.org/wiki/Problem_details_(HTTP)?q=<a>",
+    });
+    expect(filed.ok).toBe(true);
+    if (filed.ok) {
+      expect(filed.value.description.split("\n")[0]).toBe(
+        "PRD authored: [PRD — Acme Billing](https://en.wikipedia.org/wiki/Problem_details_%28HTTP%29?q=%3Ca%3E); decisions `ACME-K1`–`ACME-K57` were discussed and confirmed by @dana.",
+      );
+    }
+    const badCross = issueEntryOf({
+      kind: "prd",
+      title: "PRD — Acme Billing",
+      statement: prdStatement.replace("https://docs.example.com/acme/project/accounts", "https://docs.example.com/a)b"),
+      source: PRD_URL,
+    });
+    expect(badCross.ok).toBe(false);
+    if (!badCross.ok) expect(badCross.reason).toMatch(/^bad-link:.*parentheses/);
+    for (const badSource of ["https://x/a b", "javascript:alert(1)"]) {
+      const bad = issueEntryOf({ kind: "prd", title: "PRD — Acme Billing", statement: prdStatement, source: badSource });
+      expect(bad.ok).toBe(false);
+      if (!bad.ok) {
+        expect(bad.reason).toContain("bad-link:");
+        expect(bad.reason).toContain(JSON.stringify(badSource));
+        expect(bad.reason).not.toContain("parentheses");
+      }
+    }
+  });
+
   test("one locked decision, written with `..`, names that one decision", () => {
     /** When the one-decision or `..` spelling is refused or mis-ranged, a valid PRD statement cannot be filed. */
     const parsed = parsePrdStatement("Decisions: `ACME-BILL-K3`..`ACME-BILL-K3`\nConfirmed by: dana", { label: "PRD", url: PRD_URL });

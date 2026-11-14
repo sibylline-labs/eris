@@ -280,4 +280,53 @@ describe("eris socrates classify steers the agent", () => {
     });
     expect(fetches).toEqual([]);
   });
+
+  // admits: boundary-io: eris socrates classify --kind prd must accept Url-valid ()<> in --source while refusing invalid --source and bracketed PRD --title with field-accurate errors instead of blaming the prd statement; CLI parsing, Zod validation, and rendering interact only at runtime.
+  it("accepts ()<> in --source for --kind prd and never blames the prd statement for invalid --source or bracketed --title", async () => {
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+    expect(
+      await json([
+        "--kind",
+        "prd",
+        "--title",
+        "PRD — Problem Details",
+        "--statement",
+        prdStmt,
+        "--source",
+        "https://en.wikipedia.org/wiki/Problem_details_(HTTP)?q=<a>",
+      ]),
+    ).toMatchObject({
+      verdict: "prd",
+      route: "review-issue",
+    });
+
+    const badSource = await drive([
+      "--kind",
+      "prd",
+      "--title",
+      "PRD — Problem Details",
+      "--statement",
+      prdStmt,
+      "--source",
+      "https://example.com/a b",
+    ]);
+    expect({ rc: badSource.rc, slug: badSource.slug }).toEqual({ rc: 1, slug: "socrates-candidate-invalid" });
+    expect(badSource.stderr).toContain("candidate.source");
+    expect(badSource.stderr).not.toContain("prd statement");
+
+    const badTitle = await drive([
+      "--kind",
+      "prd",
+      "--title",
+      "PRD [draft]",
+      "--statement",
+      prdStmt,
+      "--source",
+      "https://docs.example.com/acme/billing",
+    ]);
+    expect({ rc: badTitle.rc, slug: badTitle.slug }).toEqual({ rc: 1, slug: "socrates-candidate-invalid" });
+    expect(badTitle.stderr).toContain("--title");
+    expect(badTitle.stderr).not.toContain("prd statement");
+    expect(fetches).toEqual([]);
+  });
 });

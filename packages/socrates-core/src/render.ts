@@ -125,7 +125,7 @@ function renderDocEntry(entry: PracticeEntry, kindFields: readonly string[]): st
   const fields = [
     singleLine("statement", entry.statement),
     ...kindFields,
-    `source: ${renderLink({ ...entry.source, url: encodeLinkDestination(entry.source.url) })}`,
+    `source: ${renderSourceLink(entry.source)}`,
     formatEntryDate(entry.date),
     `superseded-by: ${entry.supersededBy === undefined ? "-" : singleLine("supersededBy", entry.supersededBy)}`,
     ...("hash" in handle ? [`hash: ${handle.hash}`] : []),
@@ -143,7 +143,7 @@ export function renderPrdEntry(entry: PrdEntry): IssueEntry {
   const range = first === last ? `decision \`${first}\` was` : `decisions \`${first}\`–\`${last}\` were`;
   const title = checkTitle(`PRD authored: ${singleLine("prd.label", entry.prd.label)}`);
   const lines = [
-    `PRD authored: ${renderLink(entry.prd)}; ${range} discussed and confirmed by @${singleLine("confirmedBy", entry.confirmedBy)}.`,
+    `PRD authored: ${renderSourceLink(entry.prd)}; ${range} discussed and confirmed by @${singleLine("confirmedBy", entry.confirmedBy)}.`,
   ];
   if (entry.crossProject.length > 0) {
     lines.push("", "Decisions that touch other projects:");
@@ -235,11 +235,19 @@ function singleLine(field: string, value: string): string {
 
 /**
  * A candidate's `source` is any absolute http(s) URL, and RFC 3986 allows ( ) < > in one, but they end or break a Markdown
- * link destination, so they travel percent-encoded. Only the doc entry's source takes this: a link a statement carries
- * is the author's own Markdown, and a stray parenthesis there is a refusal, not a rewrite.
+ * link destination, so they travel percent-encoded. Both doc-entry `source` and PRD-entry `prd` (which `issueEntryOf`
+ * builds from `candidate.source`) take this: links embedded inside a `statement` (`crossProject` and `conflict.sites`)
+ * are the author's own Markdown, and a stray parenthesis there is a refusal, not a rewrite.
  */
 function encodeLinkDestination(url: string): string {
   return url.replace(/[()<>]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+function renderSourceLink({ label, url }: Link): string {
+  if (!/^https?:\/\/\S+$/.test(url)) {
+    throw new EntryRenderError("bad-link", `link url ${JSON.stringify(url)} must be an http(s) URL with no spaces`);
+  }
+  return renderLink({ label, url: encodeLinkDestination(url) });
 }
 
 function renderLink({ label, url }: Link): string {
