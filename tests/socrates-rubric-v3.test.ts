@@ -95,7 +95,14 @@ const NOT_OWNED_SHAPES = [
   "Cache invalidation is per-tenant rather than duplicating keys per region.",
   "The edge worker uses @example/sdk/authority as its only import boundary into the SDK.",
   "The latest attested contest wins.",
+  "This route deviates from `NFR-LATENCY-3`: p99 is 800ms on the batch path.",
+  "The batch path waives 'NFR-LATENCY-3' because of the queue boundary.",
 ];
+
+// A rule named as the route one counterexample fails: the rule bans an alternative, and the decision
+// the statement makes (which plugin, which entry point) is not the rule's.
+const COUNTEREXAMPLE_ACCEPT =
+  "Consumers test against the SDK through its pytest plugin, loaded by a pytest11 entry point with no conftest; its fixtures give a real context. A hand-rolled context, such as a mock with the context's spec, fails CI through the `no-hand-rolled-context` lint rule.";
 
 const fired = (statement: string) => {
   const f = extractFeatures(RUBRIC_V3, statement, NOTHING_RECORDED);
@@ -143,6 +150,14 @@ describe("rubric@v3: a statement that names its owning layer is not load-bearing
     }
     for (const s of NOT_OWNED_SHAPES) expect([s, fired(s).owned, fired(s).dependency]).toEqual([s, false, false]);
   });
+
+  it("keeps a decision load-bearing when its lint rule is only the route a counterexample fails", () => {
+    /** When the rule-before-'lint rule' shape fires after 'fails CI through', a decision whose rule bans only one alternative is rejected: observed at the feature and verdict of that accept-shaped statement. */
+    expect(fired(COUNTEREXAMPLE_ACCEPT).owned).toBe(false);
+    expect(score(RUBRIC_V3, PASSING, extractFeatures(RUBRIC_V3, COUNTEREXAMPLE_ACCEPT, NOTHING_RECORDED)).kind).toBe("load-bearing");
+    /** When the veto reads more than the route word, a rule that holds the fact stops firing: observed at the same rule cited as the holder. */
+    expect(fired("A hand-rolled context fails the build: the `no-hand-rolled-context` lint rule bans it.").owned).toBe(true);
+  });
 });
 
 describe("rubric@v3 is published beside a frozen rubric@v2", () => {
@@ -167,5 +182,11 @@ describe("rubric@v3 is published beside a frozen rubric@v2", () => {
     /** When a v3 question gains or loses an answer, a stamp built for v2's enums is refused, and a corpus replay cannot compare the versions answer for answer: observed at each question's answers. */
     const answersOf = (r: { questions: Record<string, { answers: readonly string[] }> }) => Object.fromEntries(Object.entries(r.questions).map(([id, q]) => [id, q.answers]));
     expect(answersOf(RUBRIC_V3)).toEqual(answersOf(RUBRIC_V2));
+  });
+
+  it("asks v2's prompts word for word", () => {
+    /** When v3 rewords a prompt, a model answers v3 differently from v2 and a replay can no longer attribute a verdict change to a feature; reworded owning-layer and recorded-entry prompts moved answers on accepted decisions more than on rejected ones: observed at each question's prompt. */
+    const promptsOf = (r: { questions: Record<string, { prompt: string }> }) => Object.fromEntries(Object.entries(r.questions).map(([id, q]) => [id, q.prompt]));
+    expect(promptsOf(RUBRIC_V3)).toEqual(promptsOf(RUBRIC_V2));
   });
 });
