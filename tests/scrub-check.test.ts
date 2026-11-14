@@ -258,8 +258,21 @@ describe("prMetadata", () => {
   });
 
   it.each([
-    ["an empty head ref", { head: { ref: "", repo: null, user: null } }],
+    ["an empty head ref", { head: { ref: "", repo: { full_name: "o/r" } } }],
+    ["a whitespace head ref", { head: { ref: "  ", repo: { full_name: "o/r" } } }],
+    ["a non-string head ref", { head: { ref: 5, repo: { full_name: "o/r" } } }],
+    ["an array head ref", { head: { ref: ["fix/x"], repo: { full_name: "o/r" } } }],
     ["no owner anywhere", { head: { ref: "fix/x", repo: null, user: null } }],
+    ["a non-string full_name", { head: { ref: "fix/x", repo: { full_name: 5 }, user: { login: "o" } } }],
+    ["an array full_name", { head: { ref: "fix/x", repo: { full_name: ["o/r"] } } }],
+    ["a full_name with no slash", { head: { ref: "fix/x", repo: { full_name: "or" }, user: { login: "o" } } }],
+    ["a whitespace full_name owner", { head: { ref: "fix/x", repo: { full_name: " /r" } } }],
+    ["a non-string login", { head: { ref: "fix/x", repo: null, user: { login: 5 } } }],
+    ["a whitespace login", { head: { ref: "fix/x", repo: null, user: { login: " " } } }],
+    ["a non-string label", { head: { ref: "fix/x", repo: null, user: null, label: 5 } }],
+    ["a colon-less label", { head: { ref: "fix/x", repo: null, user: null, label: "o" } }],
+    ["a whitespace label owner", { head: { ref: "fix/x", repo: null, user: null, label: " :fix/x" } }],
+    ["an array repo", { head: { ref: "fix/x", repo: [], user: { login: "o" } } }],
     ["a non-string title", { head: { ref: "fix/x", repo: { full_name: "o/r" } }, title: 123 }],
     ["a non-string body", { head: { ref: "fix/x", repo: { full_name: "o/r" } }, body: {} }],
   ])("refuses a payload with %s", (_name, pull_request) => {

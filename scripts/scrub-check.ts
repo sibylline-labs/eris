@@ -197,12 +197,24 @@ const BRANCH_TRACKER_KEY: Rule = {
 /** The text of a pull request that lands in `git log` or on the public page: the merge subject GitHub
  *  defaults to (it embeds the head branch), the title (the squash subject) and the body. */
 export function prMetadata(event: unknown): { where: string; text: string; extra?: Rule[] }[] | undefined {
-  type Head = { ref?: unknown; label?: string | null; repo?: { full_name?: string } | null; user?: { login?: string } | null };
+  type Head = { ref?: unknown; label?: unknown; repo?: { full_name?: unknown } | null; user?: { login?: unknown } | null };
   const pr = (event as { pull_request?: { number?: number; title?: unknown; body?: unknown; head?: Head } } | null)?.pull_request;
   const head = pr?.head;
-  if (!pr || !head || typeof head.ref !== "string" || head.ref === "") return undefined;
-  const owner = head.repo?.full_name?.split("/")[0] || head.user?.login || head.label?.split(":")[0] || "";
-  if (owner === "") return undefined;
+  if (!pr || !head || typeof head.ref !== "string" || head.ref.trim() === "") return undefined;
+  // A field that is present must be well formed, else the payload is unscannable: null and undefined
+  // mean "absent" (a deleted fork), anything else malformed returns `false`.
+  const ownerOf = (v: unknown, sep?: string): string | null | false => {
+    if (v === undefined || v === null) return null;
+    if (typeof v !== "string") return false;
+    const owner = sep === undefined ? v : v.includes(sep) ? v.split(sep)[0]! : undefined;
+    return owner === undefined || owner.trim() === "" ? false : owner;
+  };
+  const obj = (v: unknown) => v === undefined || v === null || (typeof v === "object" && !Array.isArray(v));
+  if (!obj(head.repo) || !obj(head.user)) return undefined;
+  const found = [ownerOf(head.repo?.full_name, "/"), ownerOf(head.user?.login), ownerOf(head.label, ":")];
+  if (found.includes(false)) return undefined;
+  const owner = found.find((o): o is string => o !== null);
+  if (owner === undefined) return undefined;
   const { title, body } = pr;
   if ((title !== undefined && typeof title !== "string") || (body !== undefined && body !== null && typeof body !== "string")) return undefined;
   return [
