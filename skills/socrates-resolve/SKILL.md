@@ -25,9 +25,22 @@ Read the Epic and every sub-issue with its full comment thread in Linear. A comm
 with **Socrates** is Socrates' own, never a reviewer's. For each sub-issue:
 
 - **Done, no comment:** it applies as filed.
-- **Done, with an edit instruction** (new wording, a split, "this is a practice", "this belongs in
-  Key Assumptions"): a pending edit. `eris socrates resolve` applies the entry as filed and cannot
-  carry an edit or a reroute yet.
+- **Done decision, with an edit instruction** (new wording, "this is a practice", "this belongs in
+  Key Assumptions"): apply it with `--amend`. Write the amendment as a JSON file, an object with at
+  least one of `title` (a single line of at most 80 characters, with file names, domains and dotted
+  identifiers in backticks), `statement` (also a single line, at most 4000 characters), `target` (`lbd`, `ka` or `practices`) and optionally
+  `source_comment`, then pass `--amend <child>=<path>` (repeatable, once per child). The receipt's
+  `amended:` lists what applied. `--amend` takes only a Done decision. A Done practice or PRD with an
+  edit instruction, and a split, are pending edits for the user: never drop `--amend` and resolve,
+  which would write the unedited entry.
+- **Amend failures:** `socrates-amend-invalid` is local and nothing was sent: fix that `--amend`.
+  An endpoint refusal exits `socrates-refused`. If the child is already written or resolved, or is
+  not marked Done by a person, drop that `--amend` and run again. For an unwritten Done conflict,
+  PRD, practice or decision that carries an edit instruction, fix the `--amend` or hold it pending:
+  never drop it and resolve.
+  `socrates-amend-ignored` is an `ERROR` failure (exit 1, empty stdout), never a `WARN`: the Epic is
+  already resolved without that edit and running again changes nothing, so fix the named entry in
+  the living docs by hand.
 - **Conflict or supersession:** the reviewer's latest comment is the answer. Resolve carries it,
   word for word, to every site the issue lists under its authoritative sites; with no comment, it
   carries the proposed resolution. So the latest comment must be the settled text itself, fit to
@@ -40,10 +53,11 @@ with **Socrates** is Socrates' own, never a reviewer's. For each sub-issue:
 Never change a Done or Canceled state, and never close or reopen an issue yourself: those are the
 reviewer's, and resolve propagates what a settled conflict says. Then:
 
-- **Nothing pending:** run the resolve and report its receipt.
+- **Nothing pending, or every edit written as an amendment:** run the resolve and report its
+  receipt, including `amended:`.
 
 ```sh
-eris socrates resolve <epic>
+eris socrates resolve <epic> [--amend <child>=<path>]...
 ```
 
 - **Something pending, your user present:** name each pending entry and what it needs. Run the
@@ -60,8 +74,8 @@ Bare `eris socrates resolve <epic>`, which needs no inference, is the baseline e
   not interpret that comment.
 - It carries open entries, unanswered conflicts and states that automation set to a new review
   Epic.
-- It does **not** apply edit instructions, reroutes or splits, and it does not decide which side
-  of a conflict is right.
+- It does **not** apply edit instructions, reroutes or splits on its own (that takes `--amend`),
+  and it does not decide which side of a conflict is right.
 
 Running it again changes nothing and prints the same receipt. It refuses an Epic that is still
 open. `--help` has the rest:
