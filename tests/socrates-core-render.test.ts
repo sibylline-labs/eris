@@ -190,6 +190,32 @@ test("a source URL with parentheses or angle brackets renders as one percent-enc
   expect(line).toBe("  - source: [eris#21](https://en.wikipedia.org/wiki/Problem_details_%28HTTP%29?q=%3Ca%3E)");
 });
 
+// admits: algorithmic: renderPrdEntry receives candidate.source via entry.prd and must percent-encode ( ) < > idempotently like renderDocEntry while refusing genuinely invalid source URLs with the original URL and without mentioning parentheses; runtime string formatting is invisible to tsc and ast-grep.
+test("a PRD entry percent-encodes ()<> in prd.url and rejects invalid source URLs accurately", () => {
+  const url = "https://en.wikipedia.org/wiki/Problem_details_(HTTP)?q=<a>";
+  const encoded = "https://en.wikipedia.org/wiki/Problem_details_%28HTTP%29?q=%3Ca%3E";
+  const rendered = renderPrdEntry({ ...prd, prd: { ...prd.prd, url } });
+  expect(rendered.description.split("\n")[0]).toBe(
+    `PRD authored: [PRD — Acme Billing](${encoded}); decisions \`BILL-K1\`–\`BILL-K9\` were discussed and confirmed by @dana.`,
+  );
+  // Idempotent on already-encoded URLs.
+  expect(renderPrdEntry({ ...prd, prd: { ...prd.prd, url: encoded } }).description.split("\n")[0]).toBe(
+    `PRD authored: [PRD — Acme Billing](${encoded}); decisions \`BILL-K1\`–\`BILL-K9\` were discussed and confirmed by @dana.`,
+  );
+  for (const invalid of ["javascript:alert(1)", "https://x/a b"]) {
+    let thrown: unknown;
+    try {
+      renderPrdEntry({ ...prd, prd: { ...prd.prd, url: invalid } });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(EntryRenderError);
+    expect((thrown as EntryRenderError).reason).toBe("bad-link");
+    expect((thrown as EntryRenderError).message).toContain(JSON.stringify(invalid));
+    expect((thrown as EntryRenderError).message).not.toContain("parentheses");
+  }
+});
+
 describe("inputs that would break an entry's shape are refused, not rewritten", () => {
   const cases: [string, () => unknown, EntryRenderReason][] = [
     ["a two-line title", () => renderDecision({ ...decision, title: "one\ntwo" }), "title-multiline"],
@@ -202,7 +228,7 @@ describe("inputs that would break an entry's shape are refused, not rewritten", 
     ["a scope with a Unicode line separator", () => renderDecision({ ...decision, scope: "org\u2028- hash: deadbeef" }), "field-multiline"],
     ["a link label with a bracket", () => renderPractice({ ...practice, source: { ...source, label: "a]b" } }), "bad-link"],
     ["a link url with a space", () => renderPractice({ ...practice, source: { ...source, url: "https://x/a b" } }), "bad-link"],
-    ["a prd link url with a parenthesis", () => renderPrdEntry({ ...prd, prd: { ...prd.prd, url: "https://x/a)b" } }), "bad-link"],
+    ["a prd cross-project link url with a parenthesis", () => renderPrdEntry({ ...prd, crossProject: [{ ...prd.crossProject[0]!, project: { ...prd.crossProject[0]!.project, url: "https://x/a)b" } }] }), "bad-link"],
     ["a non-http link", () => renderPractice({ ...practice, source: { ...source, url: "javascript:alert(1)" } }), "bad-link"],
     ["February 30th", () => renderPractice({ ...practice, date: { date: "2026-02-30" } }), "bad-date"],
     ["a non-ISO date", () => renderPractice({ ...practice, date: { date: "28/10/2026" } }), "bad-date"],

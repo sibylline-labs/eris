@@ -459,4 +459,30 @@ describe("eris socrates submit entry-title preflight", () => {
     expect(await drive(["submit", "--title", `Token in title ${sib}`, "--statement", "s", "--source", "https://example.com/pr/14", ...answers()])).toMatchObject({ rc: 0 });
     expect(requests).toHaveLength(3);
   });
+
+  // admits: boundary-io: eris socrates submit --kind prd must forward Url-valid ()<> --source over the real loopback HTTP seam and refuse invalid --source or bracketed PRD --title locally without blaming the prd statement; CLI validation and loopback HTTP wire behavior are invisible to tsc and ast-grep.
+  it("accepts ()<> in --source for --kind prd and refuses invalid --source or bracketed --title without blaming the statement", async () => {
+    requests.length = 0;
+    answer = () => Response.json({ candidate_id: "cand_prd_1", deduped: false, contract_version: "1.0.0" });
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+    const wikiUrl = "https://en.wikipedia.org/wiki/Problem_details_(HTTP)?q=<a>";
+    const ok = await drive(["submit", "--kind", "prd", "--title", "PRD — Problem Details", "--statement", prdStmt, "--source", wikiUrl]);
+    expect(ok).toMatchObject({ rc: 0, stdout: "submitted: cand_prd_1\n", stderr: "" });
+    expect(requests).toHaveLength(1);
+    expect((requests[0]!.body as { candidate: { kind: string; source: string } }).candidate).toMatchObject({
+      kind: "prd",
+      source: wikiUrl,
+    });
+
+    const badSource = await drive(["submit", "--kind", "prd", "--title", "PRD — Problem Details", "--statement", prdStmt, "--source", "https://example.com/a b"]);
+    expect({ rc: badSource.rc, slug: badSource.slug }).toEqual({ rc: 1, slug: "socrates-candidate-invalid" });
+    expect(badSource.stderr).toContain("source: must be an absolute http(s) URL");
+    expect(badSource.stderr).not.toContain("prd statement");
+
+    const badTitle = await drive(["submit", "--kind", "prd", "--title", "PRD [draft]", "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+    expect({ rc: badTitle.rc, slug: badTitle.slug }).toEqual({ rc: 1, slug: "socrates-candidate-invalid" });
+    expect(badTitle.stderr).toContain("--title");
+    expect(badTitle.stderr).not.toContain("prd statement");
+    expect(requests).toHaveLength(1);
+  });
 });
