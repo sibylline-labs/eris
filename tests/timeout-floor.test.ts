@@ -16,6 +16,7 @@ import { join } from "node:path";
 const FLOOR_MS = 60_000;
 const SPAWNS = /Bun\.spawn|spawnSync|\bspawn\(|\bexecFile|helpers\/blackbox/;
 
+// admits: integration — a spawning test file that omits setDefaultTimeout inherits bun's 5s default and flakes under suite concurrency; no type or lint rule sees bun's runtime default, so the source of every test file is read.
 it("every spawning test file sets a default timeout of at least 60s", () => {
   const offenders: string[] = [];
   for (const name of readdirSync(import.meta.dir).filter((f) => f.endsWith(".test.ts") && f !== import.meta.file)) {
