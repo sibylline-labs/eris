@@ -216,6 +216,65 @@ test("a PRD entry percent-encodes ()<> in prd.url and rejects invalid source URL
   }
 });
 
+// admits: algorithmic: trailing backslashes in Link.label or Link.url and ASCII C0/DEL controls in Link.url break CommonMark <a> parsing (\], \), §6.3); CommonMark interaction with rendered runtime strings is invisible to tsc and ast-grep.
+test("trailing backslashes and C0/DEL control characters never render broken CommonMark links", () => {
+  const withBackslashUrl = "https://example.com/foo\\";
+  const encodedBackslashUrl = "https://example.com/foo%5C";
+  const practiceLine = renderPractice({ ...practice, source: { ...source, url: withBackslashUrl } })
+    .split("\n")
+    .find((l) => l.startsWith("  - source: "));
+  expect(practiceLine).toBe(`  - source: [eris#21](${encodedBackslashUrl})`);
+  expect(Bun.markdown.html(practiceLine!)).toContain(`<a href="${encodedBackslashUrl}">eris#21</a>`);
+
+  const decisionRendered = renderDecision({ ...decision, source: { label: "eris\\\\", url: withBackslashUrl } });
+  expect(Bun.markdown.html(decisionRendered)).toContain(`<a href="${encodedBackslashUrl}">eris\\</a>`);
+
+  // Idempotent on %5C and allows even trailing backslashes in label.
+  const prdRendered = renderPrdEntry({
+    ...prd,
+    prd: { label: "PRD — Foo\\\\", url: encodedBackslashUrl },
+    crossProject: [{ decision: "BILL-K4", project: { label: "Accounts\\\\", url: prd.crossProject[0]!.project.url } }],
+  });
+  const prdHtml = Bun.markdown.html(prdRendered.description);
+  expect(prdHtml).toContain(`<a href="${encodedBackslashUrl}">PRD — Foo\\</a>`);
+  expect(prdHtml).toContain(`<a href="${prd.crossProject[0]!.project.url}">Accounts\\</a>`);
+
+  const conflictRendered = renderConflictEntry({
+    ...conflict,
+    sites: [{ label: "Practices\\\\", url: conflict.sites[0]!.url }, conflict.sites[1]!],
+  });
+  expect(Bun.markdown.html(conflictRendered.description)).toContain(`<a href="${conflict.sites[0]!.url}">Practices\\</a>`);
+
+  // Odd trailing backslash in Link.label escapes ']' in CommonMark, so every entry renderer must refuse it.
+  for (const oddLabel of ["PRD — Foo\\", "PRD — Foo\\\\\\", "PRD — Foo\\ ", "\\"]) {
+    expect(() => renderPractice({ ...practice, source: { ...source, label: oddLabel } })).toThrow(EntryRenderError);
+    expect(() => renderPrdEntry({ ...prd, prd: { ...prd.prd, label: oddLabel } })).toThrow(EntryRenderError);
+    expect(() => renderPrdEntry({ ...prd, crossProject: [{ decision: "BILL-K4", project: { ...prd.crossProject[0]!.project, label: oddLabel } }] })).toThrow(EntryRenderError);
+    expect(() => renderConflictEntry({ ...conflict, sites: [{ label: oddLabel, url: conflict.sites[0]!.url }, conflict.sites[1]!] })).toThrow(EntryRenderError);
+  }
+
+  // Statement links (crossProject, conflict.sites) must refuse raw backslashes rather than rewriting author markdown.
+  for (const rawBsUrl of ["https://example.com/foo\\", "https://example.com/foo\\\\"]) {
+    expect(() => renderPrdEntry({ ...prd, crossProject: [{ decision: "BILL-K4", project: { label: "Accounts", url: rawBsUrl } }] })).toThrow(EntryRenderError);
+    expect(() => renderConflictEntry({ ...conflict, sites: [{ label: "A", url: rawBsUrl }, conflict.sites[1]!] })).toThrow(EntryRenderError);
+  }
+
+  // ASCII C0 (0x00-0x1F) and DEL (0x7F) in URLs must be refused across both source links and statement links.
+  for (const ctrlUrl of ["https://example.com/\u0000nul", "https://example.com/\u0007bell", "https://example.com/\u001fus", "https://example.com/\u007fdel"]) {
+    let thrown: unknown;
+    try {
+      renderPrdEntry({ ...prd, prd: { ...prd.prd, url: ctrlUrl } });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(EntryRenderError);
+    expect((thrown as EntryRenderError).reason).toBe("bad-link");
+    expect((thrown as EntryRenderError).message).not.toContain("parentheses");
+    expect(() => renderPractice({ ...practice, source: { ...source, url: ctrlUrl } })).toThrow(EntryRenderError);
+    expect(() => renderConflictEntry({ ...conflict, sites: [{ label: "A", url: ctrlUrl }, conflict.sites[1]!] })).toThrow(EntryRenderError);
+  }
+});
+
 describe("inputs that would break an entry's shape are refused, not rewritten", () => {
   const cases: [string, () => unknown, EntryRenderReason][] = [
     ["a two-line title", () => renderDecision({ ...decision, title: "one\ntwo" }), "title-multiline"],

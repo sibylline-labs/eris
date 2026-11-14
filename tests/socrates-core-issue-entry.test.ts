@@ -80,6 +80,74 @@ describe("a PRD files as one entry", () => {
     }
   });
 
+  // admits: algorithmic: issueEntryOf passes PRD title/source and statement links into renderPrdEntry/renderConflictEntry, where odd trailing backslashes, raw statement backslashes, and C0/DEL URLs break CommonMark <a> rendering unless encoded or refused; runtime Markdown parsing is invisible to tsc and ast-grep.
+  test("issueEntryOf handles trailing backslashes and C0/DEL control characters without breaking CommonMark links", () => {
+    const encodedPrd = issueEntryOf({
+      kind: "prd",
+      title: "PRD — Acme\\\\",
+      statement: prdStatement,
+      source: "https://docs.example.com/prd\\",
+    });
+    expect(encodedPrd.ok).toBe(true);
+    if (encodedPrd.ok) {
+      const html = Bun.markdown.html(encodedPrd.value.description);
+      expect(html).toContain('<a href="https://docs.example.com/prd%5C">PRD — Acme\\</a>');
+    }
+
+    for (const oddTitle of ["PRD — Acme\\", "PRD — Acme\\\\\\", "PRD — Acme\\ "]) {
+      const badTitle = issueEntryOf({ kind: "prd", title: oddTitle, statement: prdStatement, source: PRD_URL });
+      expect(badTitle.ok).toBe(false);
+      if (!badTitle.ok) expect(badTitle.reason).toMatch(/^bad-link:/);
+    }
+
+    for (const ctrlSource of ["https://docs.example.com/\u0000nul", "https://docs.example.com/\u0007bell", "https://docs.example.com/\u007fdel"]) {
+      const badCtrl = issueEntryOf({ kind: "prd", title: "PRD — Acme", statement: prdStatement, source: ctrlSource });
+      expect(badCtrl.ok).toBe(false);
+      if (!badCtrl.ok) {
+        expect(badCtrl.reason).toContain("bad-link:");
+        expect(badCtrl.reason).not.toContain("parentheses");
+      }
+    }
+
+    const badCrossLabel = issueEntryOf({
+      kind: "prd",
+      title: "PRD — Acme",
+      statement: prdStatement.replace("[Accounts]", "[Accounts\\]"),
+      source: PRD_URL,
+    });
+    expect(badCrossLabel.ok).toBe(false);
+    if (!badCrossLabel.ok) expect(badCrossLabel.reason).toMatch(/^bad-link:/);
+
+    const badCrossUrl = issueEntryOf({
+      kind: "prd",
+      title: "PRD — Acme",
+      statement: prdStatement.replace("https://docs.example.com/acme/project/accounts", "https://docs.example.com/a\\"),
+      source: PRD_URL,
+    });
+    expect(badCrossUrl.ok).toBe(false);
+    if (!badCrossUrl.ok) expect(badCrossUrl.reason).toMatch(/^bad-link:/);
+
+    const badSiteLabel = issueEntryOf({
+      kind: "conflict",
+      title: "Conflict",
+      statement: conflictStatement.replace("[Review issue]", "[Review issue\\]"),
+      source: PRD_URL,
+    });
+    expect(badSiteLabel.ok).toBe(false);
+    if (!badSiteLabel.ok) expect(badSiteLabel.reason).toMatch(/^bad-link:/);
+
+    for (const badUrl of ["https://tracker.example.com/a\\", "https://tracker.example.com/\u0007bell", "https://tracker.example.com/\u007fdel"]) {
+      const badSiteUrl = issueEntryOf({
+        kind: "conflict",
+        title: "Conflict",
+        statement: conflictStatement.replace("https://tracker.example.com/acme/issue/42", badUrl),
+        source: PRD_URL,
+      });
+      expect(badSiteUrl.ok).toBe(false);
+      if (!badSiteUrl.ok) expect(badSiteUrl.reason).toMatch(/^bad-link:/);
+    }
+  });
+
   test("one locked decision, written with `..`, names that one decision", () => {
     /** When the one-decision or `..` spelling is refused or mis-ranged, a valid PRD statement cannot be filed. */
     const parsed = parsePrdStatement("Decisions: `ACME-BILL-K3`..`ACME-BILL-K3`\nConfirmed by: dana", { label: "PRD", url: PRD_URL });
