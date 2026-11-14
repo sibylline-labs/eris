@@ -210,6 +210,19 @@ describe("eris socrates resolve", () => {
     expect(requests).toEqual([]);
   });
 
+  // admits: when resolve --amend lets a multi-line statement past preflight, the server refuses the whole resolve with 422 socrates_amend_bad_entry; JSON string contents cannot be checked by tsc or ast-grep.
+  it("refuses an amended statement that spans lines before sending", async () => {
+    /** When an --amend statement holds a line break, sending it causes a server 422 instead of an immediate local socrates-amend-invalid refusal; observed as rc 1, slug, and zero HTTP requests. */
+    for (const statement of ["Line 1\nLine 2", "Trailing\n"]) {
+      const f = amendFile("multi.json", { statement });
+      const r = await drive(["resolve", "epic_412", "--amend", `epic_413=${f}`]);
+      expect({ rc: r.rc, slug: r.slug, stdout: r.stdout }).toEqual({ rc: 1, slug: "socrates-amend-invalid", stdout: "" });
+      expect(r.stderr).toContain("single line");
+    }
+    expect(requests).toEqual([]);
+    expect((await drive(["resolve", "--help"])).stdout).toContain("statement: single line <= 4000 chars");
+  });
+
   // admits: when resolve --amend lets an over-long, multi-line, or unbackticked dotted-token title past preflight, the server refuses the whole resolve with 422; runtime string contents in JSON files cannot be checked by tsc or ast-grep.
   it("refuses an amended title that exceeds 80 chars, spans lines, or holds an unbackticked dotted token before sending", async () => {
     /** When an --amend title breaks the entry-title rule, sending it causes a server 422 instead of an immediate local socrates-amend-invalid refusal; observed as rc 1, slug, and zero HTTP requests. */

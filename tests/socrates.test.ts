@@ -152,6 +152,17 @@ async function drive(args: string[], opts: { format?: "text" | "json"; env?: Rec
 }
 
 describe("eris socrates submit", () => {
+  // admits: a multi-line decision or practice statement filed as a review issue is marked Done and then refuses forever at resolve time; the statement string is runtime data no type or lint rule sees.
+  it("refuses a multi-line decision or practice statement before sending anything", async () => {
+    /** When submit lets a decision or practice statement with a line break through, a review issue is filed that resolve can never write; observed as rc 1, slug socrates-candidate-invalid and zero HTTP requests. */
+    for (const kind of ["decision", "practice"]) {
+      const r = await drive(["submit", "--title", "Errors use problem+json", "--source", "https://example.com/pr/14", "--kind", kind, "--statement", "Line 1\nLine 2", ...answers()]);
+      expect({ kind, rc: r.rc, slug: r.slug }).toEqual({ kind, rc: 1, slug: "socrates-candidate-invalid" });
+    }
+    expect(requests).toEqual([]);
+    expect((await drive(["submit", "--help"])).stdout).toContain("single line");
+  });
+
   // admits: an ambiguity refusal that exits non-zero or drops its candidates.
   it("an ambiguous project name prints its candidates as a WARN and exits 0", async () => {
     /** When a 409 linear_ref_ambiguous on a project name reads as a failure block, the submitter gets exit 1 and no list to choose from; observed as rc, stdout and the WARN on stderr. */
