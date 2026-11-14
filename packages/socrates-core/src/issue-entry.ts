@@ -38,6 +38,7 @@ import {
   DECISION_ID,
   EntryRenderError,
   type IssueEntry,
+  LEGACY_ENTRY_ID,
   type Link,
   type PrdEntry,
   renderConflictEntry,
@@ -51,6 +52,7 @@ export type IssueEntryCandidate = { kind: IssueEntryKind; title: string; stateme
 export type Parsed<T> = { ok: true; value: T } | { ok: false; reason: string };
 
 const ID = `\`(${DECISION_ID})\``;
+const SITE_ID = `\`(${DECISION_ID}|${LEGACY_ENTRY_ID})\``;
 const LINK = String.raw`\[([^\]\r\n]+)\]\((\S+)\)`;
 const DECISIONS_LINE = new RegExp(String.raw`^Decisions:\s*${ID}(?:\s*(?:–|-|\.\.)\s*${ID})?\s*$`);
 const CONFIRMED_LINE = /^Confirmed by:\s*@?(\S.*?)\s*$/;
@@ -58,7 +60,7 @@ const CROSS_HEADING = /^Decisions that touch other projects:\s*$/;
 const CROSS_LINE = new RegExp(String.raw`^[-*+]\s+${ID}:\s*${LINK}\s*$`);
 const SITES_HEADING = /^Authoritative sites:\s*$/;
 const PROPOSED_HEADING = /^Proposed resolution:\s*$/;
-const SITE_LINE = new RegExp(String.raw`^[-*+]\s+(?:(${ID}(?:\s*,\s*${ID})*)\s+in\s+)?${LINK}\s*$`);
+const SITE_LINE = new RegExp(String.raw`^[-*+]\s+(?:(${SITE_ID}(?:\s*,\s*${SITE_ID})*)\s+in\s+)?${LINK}\s*$`);
 const BACKTICKED = /`([^`]+)`/g;
 const FOOTER = /^Answer on this issue\./;
 
@@ -138,7 +140,7 @@ export function parseConflictStatement(statement: string, title: string): Parsed
     if (line === "") continue;
     if (PROPOSED_HEADING.test(line) || FOOTER.test(line)) break;
     const m = SITE_LINE.exec(line);
-    if (m === null) return refuse(`the line ${JSON.stringify(line)} is not a site: - [label](url), or - \`ID\`, \`ID\` in [label](url)`);
+    if (m === null) return refuse(`the line ${JSON.stringify(line)} is not a site: - [label](url), or - \`ID\`, \`ID\` in [label](url) (an ID is a register ID, or an 8-hex legacy entry ID)`);
     if (seen.has(line)) return refuse(`the site ${JSON.stringify(line)} is listed twice`);
     seen.add(line);
     const decisions = m[1] === undefined ? [] : [...m[1].matchAll(BACKTICKED)].map((b) => b[1]!);

@@ -78,6 +78,14 @@ describe("eris socrates status", () => {
     expect(r.stdout.trimEnd().includes("\n")).toBe(false);
   });
 
+  // admits: --help promises a project name while the server's Epic line may carry only the project id, so an agent reads a UUID as a name; observed at the help text and at the printed Epic line.
+  it("prints the project as the server sent it, and the help says it may be the id", async () => {
+    const r = await fake.drive(["status"]);
+    expect(r.stdout).toContain(`  ${STATUS.open_epics[0]!.project}  `);
+    const help = await fake.drive(["status", "--help"]);
+    expect(help.stdout).toMatch(/or the project's id when it has none/);
+  });
+
   // admits: text the server sent reaches the terminal with its control characters, so a project name can drive the terminal; observed at stdout, which keeps the name and loses the escape.
   it("strips terminal control characters from what the server sent", async () => {
     fake.answer.status = () => Response.json({ ...STATUS, open_epics: [{ ...STATUS.open_epics[0]!, project: "Plat\u001b[31mform" }] });
