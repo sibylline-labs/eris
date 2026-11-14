@@ -115,19 +115,54 @@ describe("applyOps no-shrink", () => {
     expect(result).toMatchObject({ ok: false, refusal: { kind: "shrink", missingRowKeys: ["ABC-102"] } });
   });
 
-  // admits: algorithmic: when entryIds splits only on \n, a prose patch or section replace carrying U+2028 or U+2029 breaks a hash-identified entry block in Linear while passing no-shrink locally, clobbering the doc before verify-failed; runtime block parsing over strings is invisible to tsc and ast-grep.
-  it.each(["\u2028", "\u2029"])("aborts a prose patch or section replace whose %j separator orphans an entry's hash", async (sep) => {
-    /** When `entryIds` splits only on `\n`, an unindented continuation behind U+2028 or U+2029 keeps the trailing `hash:` inside the block locally, writes the broken doc to Linear, and fails post-write once Linear breaks the line; observed as pre-write `shrink` and zero writes. */
+  // admits: algorithmic: when entryIds splits on LINE_BREAK or admits a block carrying U+2028/U+2029, prose prefixes, indented continuations, whitespace-only separators, or title-bullet breaks orphan an entry past no-shrink; runtime block parsing is invisible to tsc and ast-grep.
+  it.each(["\u2028", "\u2029"])("aborts a prose patch or section replace whose %j separator orphans an entry's hash or readable ID", async (sep) => {
+    /** When `entryIds` splits on `LINE_BREAK` instead of `\n`, or keeps blocks whose lines hold U+2028/U+2029, or `canonicalizeLinear` collapses `  \u2028  ` to blank, `patch_prose` and `replace_section` return `ok: true` and orphan the entry; observed as pre-write `shrink` and zero writes. */
     const hash = "0c43" + "e7d3";
     const hashId: EntryIdentity = { entryId: (b) => /^ {2}- hash: ([0-9a-f]{8})$/m.exec(b)?.[1] ?? null };
     const hashed = `# Test - Load-Bearing Decisions\n\n## Current\n\n- First decision\n  - statement one\n  - hash: ${hash}\n`;
     const { port, writes, docs } = fakePort({ doc: hashed });
     const patched = await writeDoc(port, "doc", [{ op: "patch_prose", oldString: "statement one", newString: `statement one${sep}unindented break` }], hashId);
     expect(patched).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: [hash] } });
+    const indented = await writeDoc(port, "doc", [{ op: "patch_prose", oldString: "statement one", newString: `statement one${sep}  - injected` }], hashId);
+    expect(indented).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: [hash] } });
+    const blankSep = await writeDoc(port, "doc", [{ op: "patch_prose", oldString: "  - statement one", newString: `  ${sep}  \n  - statement one` }], hashId);
+    expect(blankSep).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: [hash] } });
+    const prefixedPatch = await writeDoc(port, "doc", [{ op: "patch_prose", oldString: "- First decision", newString: `prose${sep}- First decision` }], hashId);
+    expect(prefixedPatch).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: [hash] } });
     const replaced = await writeDoc(port, "doc", [{ op: "replace_section", section: "## Current", bodyMd: `- First decision\n  - statement one${sep}unindented break\n  - hash: ${hash}` }], hashId);
     expect(replaced).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: [hash] } });
+    const prefixedSection = await writeDoc(port, "doc", [{ op: "replace_section", section: "## Current", bodyMd: `prose${sep}- First decision\n  - statement one\n  - hash: ${hash}` }], hashId);
+    expect(prefixedSection).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: [hash] } });
     expect(writes).toHaveLength(0);
     expect(docs.doc).toBe(hashed);
+
+    const readablePort = fakePort({ doc: LBD });
+    const readablePrefixed = await writeDoc(readablePort.port, "doc", [{ op: "patch_prose", oldString: "- ABC-1 First decision", newString: `prose${sep}- ABC-1 First decision` }], identity);
+    expect(readablePrefixed).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: ["ABC-1"] } });
+    const readableSplitTitle = await writeDoc(readablePort.port, "doc", [{ op: "patch_prose", oldString: "First decision", newString: `First${sep}decision` }], identity);
+    expect(readableSplitTitle).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: ["ABC-1"] } });
+    const readableSectionSplit = await writeDoc(
+      readablePort.port,
+      "doc",
+      [{ op: "replace_section", section: "## Current", bodyMd: `- ABC-2 Second decision\n  - statement two\n- ABC-1 First${sep}decision\n  - statement one` }],
+      identity,
+    );
+    expect(readableSectionSplit).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: ["ABC-1"] } });
+    expect(readablePort.writes).toHaveLength(0);
+    expect(readablePort.docs.doc).toBe(LBD);
+  });
+
+  // admits: algorithmic: when rowKeys splits on LINE_BREAK or retains lines carrying U+2028/U+2029, a prose prefix or cell split on a register row passes no-shrink and orphans the row; runtime row key extraction is invisible to tsc and ast-grep.
+  it.each(["\u2028", "\u2029"])("aborts a prose patch whose %j separator prefixes or splits a register row", async (sep) => {
+    /** When `rowKeys` splits on `LINE_BREAK` instead of `\n` or matches a line holding U+2028/U+2029, `patch_prose` prefixing or splitting a register row returns `ok: true` and orphans the row; observed as pre-write `shrink` on `missingRowKeys` and zero writes. */
+    const { port, writes, docs } = fakePort({ doc: REGISTER });
+    const prefixed = await writeDoc(port, "doc", [{ op: "patch_prose", oldString: "| `ABC-102` |", newString: `prose${sep}| \`ABC-102\` |` }], identity);
+    expect(prefixed).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingRowKeys: ["ABC-102"] } });
+    const cellSplit = await writeDoc(port, "doc", [{ op: "patch_prose", oldString: "The second decision.", newString: `The second${sep}decision.` }], identity);
+    expect(cellSplit).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingRowKeys: ["ABC-102"] } });
+    expect(writes).toHaveLength(0);
+    expect(docs.doc).toBe(REGISTER);
   });
 });
 

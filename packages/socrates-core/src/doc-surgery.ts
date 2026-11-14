@@ -171,7 +171,7 @@ export function canonicalizeLinear(body: string): string {
   for (const [rx, repl] of LINEAR_REWRITES) text = text.replace(rx, repl);
   const out: string[] = [];
   for (const line of text.split("\n")) {
-    if (line.trim() === "") {
+    if (!LINE_BREAK.test(line) && line.trim() === "") {
       if (out.length > 0 && out[out.length - 1] !== "") out.push("");
     } else out.push(line);
   }
@@ -274,16 +274,19 @@ function blocks(lines: string[], start: number, end: number): Block[] {
 }
 
 function entryIds(body: string, identity: EntryIdentity): string[] {
-  const lines = canonicalizeLinear(body).split(LINE_BREAK);
+  const lines = canonicalizeLinear(body).split("\n");
   const ids = blocks(lines, 0, lines.length).flatMap((b) => {
-    const id = identity.entryId(lines.slice(b.start, b.end).join("\n"));
+    const blockLines = lines.slice(b.start, b.end);
+    if (blockLines.some((l) => LINE_BREAK.test(l))) return [];
+    const id = identity.entryId(blockLines.join("\n"));
     return id === null ? [] : [id];
   });
   return [...new Set(ids)];
 }
 
 function rowKeys(body: string): string[] {
-  return [...new Set(canonicalizeLinear(body).split(LINE_BREAK).flatMap((line) => {
+  return [...new Set(canonicalizeLinear(body).split("\n").flatMap((line) => {
+    if (LINE_BREAK.test(line)) return [];
     const m = ROW_KEY_RE.exec(line);
     return m ? [m[1]!.trim()] : [];
   }))];
