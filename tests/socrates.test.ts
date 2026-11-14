@@ -198,7 +198,7 @@ describe("eris socrates submit", () => {
     expect(requests.map((r) => (r.body as { now?: unknown }).now)).toEqual([true]);
   });
 
-  // admits: a scope, section or evidence holding U+2028/U+2029 passes the contract, is filed, then renderDecision refuses it at resolve time; the string is runtime data no type or lint rule sees.
+  // admits: boundary-io: a scope, section or evidence holding U+2028/U+2029 passes the contract, is filed, then renderDecision refuses it at resolve time; the string is runtime data no type or lint rule sees.
   it("sends scope, section, evidence and target when supplied, and refuses invalid values locally", async () => {
     /** When the entry-anatomy flags are dropped or not validated before sending, the server receives a bare candidate or rejects at the door. */
     expect(

@@ -182,7 +182,7 @@ test("a backticked dotted name in a title renders", () => {
   expect(renderDecision({ ...decision, title: "Adopt `payload.source` as the key" }).split("\n")[0]).toBe("- `ACME-K2` Adopt `payload.source` as the key");
 });
 
-// admits: a source URL with ( ) < > passes the contract's Url but ends the Markdown link destination early or throws bad-link at resolve time; the rendered string is runtime data no type or lint rule sees.
+// admits: algorithmic: a source URL with ( ) < > passes the contract's Url but ends the Markdown link destination early or throws bad-link at resolve time; the rendered string is runtime data no type or lint rule sees.
 test("a source URL with parentheses or angle brackets renders as one percent-encoded link destination", () => {
   /** When renderLink refuses or leaves ( ) < > raw, a source the CLI accepted never files; observed as the rendered source line. */
   const url = "https://en.wikipedia.org/wiki/Problem_details_(HTTP)?q=<a>";
