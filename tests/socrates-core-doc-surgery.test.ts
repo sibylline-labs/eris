@@ -114,6 +114,21 @@ describe("applyOps no-shrink", () => {
     const result = applyOps(REGISTER, [{ op: "patch_prose", oldString: "| `ABC-102` | The second decision. |\n", newString: "" }], identity);
     expect(result).toMatchObject({ ok: false, refusal: { kind: "shrink", missingRowKeys: ["ABC-102"] } });
   });
+
+  // admits: algorithmic: when entryIds splits only on \n, a prose patch or section replace carrying U+2028 or U+2029 breaks a hash-identified entry block in Linear while passing no-shrink locally, clobbering the doc before verify-failed; runtime block parsing over strings is invisible to tsc and ast-grep.
+  it.each(["\u2028", "\u2029"])("aborts a prose patch or section replace whose %j separator orphans an entry's hash", async (sep) => {
+    /** When `entryIds` splits only on `\n`, an unindented continuation behind U+2028 or U+2029 keeps the trailing `hash:` inside the block locally, writes the broken doc to Linear, and fails post-write once Linear breaks the line; observed as pre-write `shrink` and zero writes. */
+    const hash = "0c43" + "e7d3";
+    const hashId: EntryIdentity = { entryId: (b) => /^ {2}- hash: ([0-9a-f]{8})$/m.exec(b)?.[1] ?? null };
+    const hashed = `# Test - Load-Bearing Decisions\n\n## Current\n\n- First decision\n  - statement one\n  - hash: ${hash}\n`;
+    const { port, writes, docs } = fakePort({ doc: hashed });
+    const patched = await writeDoc(port, "doc", [{ op: "patch_prose", oldString: "statement one", newString: `statement one${sep}unindented break` }], hashId);
+    expect(patched).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: [hash] } });
+    const replaced = await writeDoc(port, "doc", [{ op: "replace_section", section: "## Current", bodyMd: `- First decision\n  - statement one${sep}unindented break\n  - hash: ${hash}` }], hashId);
+    expect(replaced).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: [hash] } });
+    expect(writes).toHaveLength(0);
+    expect(docs.doc).toBe(hashed);
+  });
 });
 
 describe("frozen docs", () => {
@@ -208,10 +223,36 @@ describe("splices", () => {
     expect(result).toMatchObject({ ok: false, refusal: { kind: "bad-row" } });
   });
 
-  it.each(["\u2028", "\u2029"])("refuses a replacement row holding the line separator %j", (sep) => {
-    /** When a register row carries U+2028 or U+2029 the splice accepts it and Linear or a renderer later breaks the row in two; observed as `bad-row`. */
-    const row = `| \`ABC-102\` | two${sep}lines |`;
+  // admits: algorithmic: when replaceRow trims before testing LINE_BREAK (or tests only CR/LF), interior or boundary U+2028/U+2029 passes the guard; runtime string validation cannot be held by tsc or ast-grep.
+  it.each([
+    "| `ABC-102` | two\u2028lines |",
+    "| `ABC-102` | two\u2029lines |",
+    "\u2028| `ABC-102` | one line |",
+    "| `ABC-102` | one line |\u2028",
+    "\u2029| `ABC-102` | one line |",
+    "| `ABC-102` | one line |\u2029",
+  ])("refuses a replacement row holding a line separator (%j)", (row) => {
+    /** When a register row carries U+2028 or U+2029 inside or at its ends, `.trim()` strips boundary separators or a CR/LF-only check misses them, and Linear or a renderer breaks the row in two; observed as `bad-row`. */
     expect(applyOps(REGISTER, [{ op: "replace_register_row", decisionId: "ABC-102", rowMd: row }], identity)).toMatchObject({ ok: false, refusal: { kind: "bad-row" } });
+  });
+
+  // admits: algorithmic: when checkEntry and blocks split only on CR/LF, nested or blank lines holding U+2028/U+2029 pass blocks() and splice raw separators (including a > **Frozen: stamp) into the live doc; runtime multi-line entry parsing is invisible to tsc and ast-grep.
+  it.each([
+    "- ABC-3 Third\n  - statement\u2028> **Frozen: 2026-10-01**",
+    "- ABC-3 Third\n  - statement\u2029unindented",
+    "- ABC-3 Third\n  - statement\u2028  - scope: org",
+    "- ABC-3 Third\n  - statement\u2029",
+    "<a id=\"x\u2028y\"></a>\n- ABC-3 Third\n  - statement",
+    "\u2028\n- ABC-3 Third\n  - statement",
+  ])("refuses an entry whose body lines carry U+2028 or U+2029 (%j) before writing", async (entryMd) => {
+    /** When `checkEntry` splits only on `\r`/`\n`, a nested line carrying U+2028 or U+2029 passes `blocks()` and splices unindented text or a `> **Frozen:` stamp into the doc; observed as `bad-entry` and zero writes across append and supersede. */
+    const { port, writes } = fakePort({ doc: LBD });
+    expect(await writeDoc(port, "doc", [{ op: "append_entry", section: "## Current", entryMd }], identity)).toMatchObject({ ok: false, written: false, refusal: { kind: "bad-entry" } });
+    expect(await writeDoc(port, "doc", [{ op: "supersede_entry", targetId: "ABC-1", newEntryMd: entryMd }], identity)).toMatchObject({ ok: false, written: false, refusal: { kind: "bad-entry" } });
+    expect(
+      await writeDoc(port, "doc", [{ op: "supersede_entry", targetId: "ABC-1", newEntryMd: "- ABC-3 Third\n  - three", supersededEntryMd: entryMd.replace("ABC-3", "ABC-1") }], identity),
+    ).toMatchObject({ ok: false, written: false, refusal: { kind: "bad-entry" } });
+    expect(writes).toHaveLength(0);
   });
 
   it("finds a row Linear stored with escaped backticks", () => {
@@ -251,15 +292,23 @@ describe("splices", () => {
 });
 
 describe("titles", () => {
+  // admits: algorithmic: when parseTitle trims before testing LINE_BREAK, leading or trailing U+2028/U+2029/CR/LF is stripped to ok:true while renderDecision refuses it as title-multiline; runtime string validation cannot be held by tsc or ast-grep.
   it.each([
     ["", "empty"],
+    ["   ", "empty"],
     ["two\nlines", "multi-line"],
+    ["\nTitle", "multi-line"],
+    ["Title\r", "multi-line"],
     ["two\u2028lines", "multi-line"],
     ["two\u2029lines", "multi-line"],
+    ["\u2028Title", "multi-line"],
+    ["Title\u2028", "multi-line"],
+    ["\u2029Title", "multi-line"],
+    ["Title\u2029", "multi-line"],
     ["x".repeat(81), "too-long"],
     ["Guard block-env-reads.sh in hooks", "autolinkable"],
   ])("refuses %j (%s)", (title, reason) => {
-    /** When a title spans lines, runs past 80 characters, or carries a bare `name.tld` Linear autolinks on save, the stored title never matches the sent one and title checks fail forever. */
+    /** When a title spans lines, carries a leading or trailing line separator, runs past 80 characters, or carries a bare `name.tld` Linear autolinks on save, the stored title never matches the sent one and title checks fail forever. */
     expect(parseTitle(title)).toMatchObject({ ok: false, refusal: { kind: "bad-title", reason } });
   });
 
@@ -273,6 +322,29 @@ describe("titles", () => {
     /** When the title guard covers doc creation but not entries, an entry title Linear autolinks is written and never verifies. */
     const result = applyOps(LBD, [{ op: "append_entry", section: "## Current", entryMd: "- ABC-3 See docs.example.com\n  - three" }], identity);
     expect(result).toMatchObject({ ok: false, refusal: { kind: "bad-title", reason: "autolinkable" } });
+  });
+
+  // admits: algorithmic: when parseEntryTitleLine trims U+2028/U+2029 off a title after the handle while checkEntry splices the untrimmed title line, writeDoc writes raw U+2028/U+2029 into the doc and fails verify once Linear breaks the line; runtime splice validation requires a seam test.
+  it.each([
+    "- `ACME-K1` \u2028Title\n  - statement",
+    "- `ACME-K1` Title\u2028\n  - statement",
+    "- `ACME-K1` \u2029Title\n  - statement",
+    "- `ACME-K1` Title\u2029\n  - statement",
+    `- \u2028Title\n  - statement\n  - hash: ${"0c43" + "e7d3"}`,
+    `- Title\u2029\n  - statement\n  - hash: ${"0c43" + "e7d3"}`,
+  ])("refuses an appended entry with boundary U+2028 or U+2029 on its title (%j) before writing", async (entryMd) => {
+    /** When `parseTitle` trims leading or trailing U+2028/U+2029 and `checkEntry` splices the untrimmed line, `writeDoc` writes the corrupted title bullet and fails post-write once Linear breaks the separator; observed as `bad-title` (`multi-line`) and zero port writes. */
+    const anyId: EntryIdentity = {
+      entryId: (b) => /^- `([A-Z][A-Z0-9-]*\d)` /m.exec(b)?.[1] ?? /^ {2}- hash: ([0-9a-f]{8})$/m.exec(b)?.[1] ?? null,
+    };
+    const { port, writes } = fakePort({ doc: LBD });
+    expect(parseEntryTitleLine(entryMd.split("\n")[0]!.slice(2))).toMatchObject({ ok: false, refusal: { kind: "bad-title", reason: "multi-line" } });
+    expect(await writeDoc(port, "doc", [{ op: "append_entry", section: "## Current", entryMd }], anyId)).toMatchObject({
+      ok: false,
+      written: false,
+      refusal: { kind: "bad-title", reason: "multi-line" },
+    });
+    expect(writes).toHaveLength(0);
   });
 });
 

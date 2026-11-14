@@ -126,7 +126,7 @@ const PLACEHOLDER_RE = /^\((?:no entries yet|none)\)$/;
 const H1_RE = /^#\s+\S/;
 const H2_RE = /^##\s+(.+?)\s*$/;
 const TOP_BULLET_RE = /^[-*+][ \t]/;
-const ANCHOR_LINE_RE = /^\s*<a id="[^"]+"><\/a>\s*$/;
+const ANCHOR_LINE_RE = /^[ \t]*<a id="[^"\r\n\u2028\u2029]+"><\/a>[ \t]*$/;
 // A register row: its first cell is a code-spanned ID, backticks possibly escaped.
 const ROW_KEY_RE = /^\|\s*\\?`([^`\\|]+)\\?`\s*\|/;
 
@@ -184,10 +184,10 @@ export function canonicalizeLinear(body: string): string {
 
 /** Parse a doc or entry title. Linear autolinks a bare `name.tld`, after which the stored title never matches the sent one. */
 export function parseTitle(raw: string): { ok: true; title: Title } | Refused {
-  const title = raw.trim();
   const refuse = (reason: Extract<Refusal, { kind: "bad-title" }>["reason"]): Refused => ({ ok: false, refusal: { kind: "bad-title", reason, title: raw } });
+  if (LINE_BREAK.test(raw)) return refuse("multi-line");
+  const title = raw.trim();
   if (title === "") return refuse("empty");
-  if (LINE_BREAK.test(title)) return refuse("multi-line");
   if (title.length > ENTRY_TITLE_MAX_LENGTH) return refuse("too-long");
   if (AUTOLINKABLE_RE.test(title.replace(TITLE_LINK_SAFE_RE, " "))) return refuse("autolinkable");
   return { ok: true, title: title as Title };
@@ -261,9 +261,9 @@ function blocks(lines: string[], start: number, end: number): Block[] {
     } else if (ANCHOR_LINE_RE.test(line)) {
       close();
       cur = { start: i, end: i + 1, anchorOnly: true };
-    } else if (line.trim() === "") {
+    } else if (!LINE_BREAK.test(line) && line.trim() === "") {
       // A blank line neither ends nor extends a block; the next line decides.
-    } else if (cur && (/^[ \t]/.test(line) || line.startsWith("<!--"))) {
+    } else if (cur && !LINE_BREAK.test(line) && (/^[ \t]/.test(line) || line.startsWith("<!--"))) {
       cur.end = i + 1;
     } else {
       close();
@@ -274,7 +274,7 @@ function blocks(lines: string[], start: number, end: number): Block[] {
 }
 
 function entryIds(body: string, identity: EntryIdentity): string[] {
-  const lines = canonicalizeLinear(body).split("\n");
+  const lines = canonicalizeLinear(body).split(LINE_BREAK);
   const ids = blocks(lines, 0, lines.length).flatMap((b) => {
     const id = identity.entryId(lines.slice(b.start, b.end).join("\n"));
     return id === null ? [] : [id];
@@ -283,7 +283,7 @@ function entryIds(body: string, identity: EntryIdentity): string[] {
 }
 
 function rowKeys(body: string): string[] {
-  return [...new Set(canonicalizeLinear(body).split("\n").flatMap((line) => {
+  return [...new Set(canonicalizeLinear(body).split(LINE_BREAK).flatMap((line) => {
     const m = ROW_KEY_RE.exec(line);
     return m ? [m[1]!.trim()] : [];
   }))];
@@ -330,6 +330,7 @@ function checkEntry(entryMd: string, identity: EntryIdentity): { ok: true; id: s
   const titleLine = lines.find((l) => TOP_BULLET_RE.test(l))!;
   const title = parseEntryTitleLine(titleLine.slice(2));
   if (!title.ok) return title;
+  if (lines.some((l) => LINE_BREAK.test(l))) return refuse({ kind: "bad-entry", reason: "an entry is exactly one top-level bullet and its nested lines" });
   const id = identity.entryId(canonicalizeLinear(entryMd));
   if (id === null) return refuse({ kind: "unidentified-entry" });
   return { ok: true, id, lines };
@@ -376,8 +377,8 @@ function replaceSection(body: string, section: string, bodyMd: string): Step {
 }
 
 function replaceRow(body: string, decisionId: string, rowMd: string): Step {
+  if (LINE_BREAK.test(rowMd)) return refuse({ kind: "bad-row", reason: "a register row is one line" });
   const row = rowMd.trim();
-  if (LINE_BREAK.test(row)) return refuse({ kind: "bad-row", reason: "a register row is one line" });
   const key = ROW_KEY_RE.exec(row)?.[1]?.trim();
   if (key !== decisionId) return refuse({ kind: "bad-row", reason: `the row's key is ${key ?? "missing"}, not ${decisionId}` });
   const lines = body.split("\n");
