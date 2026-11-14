@@ -208,6 +208,12 @@ describe("splices", () => {
     expect(result).toMatchObject({ ok: false, refusal: { kind: "bad-row" } });
   });
 
+  it.each(["\u2028", "\u2029"])("refuses a replacement row holding the line separator %j", (sep) => {
+    // admits: boundary-io: a row with U+2028/U+2029 inside is runtime data no type or lint rule sees; accepted, it splits the register row when Linear or a renderer breaks the line.
+    const row = `| \`ABC-102\` | two${sep}lines |`;
+    expect(applyOps(REGISTER, [{ op: "replace_register_row", decisionId: "ABC-102", rowMd: row }], identity)).toMatchObject({ ok: false, refusal: { kind: "bad-row" } });
+  });
+
   it("finds a row Linear stored with escaped backticks", () => {
     /** When the stored table escapes the key's backticks and the matcher wants them bare, every register resolve reports `row-not-found`. */
     const stored = REGISTER.replace("| `ABC-102` |", "| \\`ABC-102\\` |");
@@ -248,6 +254,8 @@ describe("titles", () => {
   it.each([
     ["", "empty"],
     ["two\nlines", "multi-line"],
+    ["two\u2028lines", "multi-line"],
+    ["two\u2029lines", "multi-line"],
     ["x".repeat(81), "too-long"],
     ["Guard block-env-reads.sh in hooks", "autolinkable"],
   ])("refuses %j (%s)", (title, reason) => {

@@ -132,6 +132,9 @@ const ROW_KEY_RE = /^\|\s*\\?`([^`\\|]+)\\?`\s*\|/;
 
 /** The longest entry or doc title, counted on the bare title: an entry's readable-ID handle is not part of it. */
 export const ENTRY_TITLE_MAX_LENGTH = 80;
+
+/** Every character a renderer or a Linear body treats as a line end: a title or row that carries one is not one line. */
+export const LINE_BREAK = /[\r\n\u2028\u2029]/;
 /** A readable entry ID as an entry's title line carries it (`ACME-P3`, `ACME-K10`). */
 export const ENTRY_HANDLE_ID = "[A-Z][A-Z0-9]*-[A-Z]+[1-9][0-9]*";
 const HANDLE_PREFIX_RE = new RegExp(`^\`(${ENTRY_HANDLE_ID})\`[ \t]+`);
@@ -184,7 +187,7 @@ export function parseTitle(raw: string): { ok: true; title: Title } | Refused {
   const title = raw.trim();
   const refuse = (reason: Extract<Refusal, { kind: "bad-title" }>["reason"]): Refused => ({ ok: false, refusal: { kind: "bad-title", reason, title: raw } });
   if (title === "") return refuse("empty");
-  if (/[\r\n]/.test(title)) return refuse("multi-line");
+  if (LINE_BREAK.test(title)) return refuse("multi-line");
   if (title.length > ENTRY_TITLE_MAX_LENGTH) return refuse("too-long");
   if (AUTOLINKABLE_RE.test(title.replace(TITLE_LINK_SAFE_RE, " "))) return refuse("autolinkable");
   return { ok: true, title: title as Title };
@@ -374,7 +377,7 @@ function replaceSection(body: string, section: string, bodyMd: string): Step {
 
 function replaceRow(body: string, decisionId: string, rowMd: string): Step {
   const row = rowMd.trim();
-  if (/[\r\n]/.test(row)) return refuse({ kind: "bad-row", reason: "a register row is one line" });
+  if (LINE_BREAK.test(row)) return refuse({ kind: "bad-row", reason: "a register row is one line" });
   const key = ROW_KEY_RE.exec(row)?.[1]?.trim();
   if (key !== decisionId) return refuse({ kind: "bad-row", reason: `the row's key is ${key ?? "missing"}, not ${decisionId}` });
   const lines = body.split("\n");
