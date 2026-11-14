@@ -91,9 +91,11 @@ export async function resolveEndpoint(env: Record<string, string | undefined>, h
   return { ok: true, value: { url: bearer.value.url.replace(/\/+$/, ""), token: bearer.value.token } };
 }
 
-/** The server's `{error: {code}}`, when the body carries one. */
+/** The problem body's `code`: top level (RFC 7807, as the gateway sends it), else the `{error: {code}}` shape. */
 function errorCode(body: unknown): string | undefined {
   if (typeof body !== "object" || body === null) return undefined;
+  const top = (body as { code?: unknown }).code;
+  if (typeof top === "string") return top;
   const error = (body as { error?: unknown }).error;
   if (typeof error !== "object" || error === null) return undefined;
   const code = (error as { code?: unknown }).code;
