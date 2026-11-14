@@ -34,7 +34,10 @@
  *     fetched (one GET) first when none is cached or it is over an hour old.
  *     A `prd` or `conflict` takes no stamp: its body and exchange carry none.
  *   - A receipt that says the server reclassified the stamp prints a WARN and
- *     refreshes the cached policy, so the next stamp carries the current hash.
+ *     refreshes the cached policy, so the next stamp carries the current hash;
+ *     a cache for a rubric this build does not know is left as is, and the WARN says so.
+ *   - A stamp (answers or unfit) carries the cached policy's hash only when the
+ *     cache is for this rubric, else this rubric's default policy hash.
  *   - A decision or practice is stamped: it carries `--answer` or, for a
  *     decision only, `--unfit`, and a submit with neither is refused
  *     (`socrates-stamp-required`) with nothing sent. A practice is written
@@ -42,7 +45,7 @@
  *     and is never unfit. A policy hash older than an hour is fetched again before it is
  *     stamped (`readFreshPolicy`).
  *   - With `--unfit`, the body carries the unfit stamp instead: the rubric
- *     version and fresh org policy hash, the hypothesis and up to five evidence
+ *     version and its policy hash, the hypothesis and up to five evidence
  *     entries, never answers. The hypothesis and every evidence entry go
  *     through `prepareOutbound` with the other fields, and the stamp does not
  *     read the repo's `eris.yaml`. A receipt without the `unfit` echo means the
@@ -57,12 +60,12 @@
  */
 
 import { isRedactionClass, prepareOutbound, REDACTION_CLASSES, redact, type Override, type RedactionClass, type SecretHit, scanSecrets, scanStrings } from "eris/outbound-scan";
-import { CURRENT_RUBRIC, extractFeatures, issueEntryOf } from "eris/socrates-core";
+import { CURRENT_RUBRIC, extractFeatures, issueEntryOf, rubricFor, type RubricVersion } from "eris/socrates-core";
 import { groupArgs, readArgs, renderWarnLines, runErisVerb, type VerbContext } from "../../src/cli/plugin";
 import { ANSWER_FIX, answersOf, checkCandidateTitle, issues, OVERRIDE_FIX, overridesOf, pairs } from "./answers";
 import { fail, heldLine, postSocrates, printable, refuse, sendSocrates, type SocratesDeps, type SocratesEndpoint, socratesEndpoint } from "./client";
 import plugin from "./index";
-import { defaultPolicyHash, localPolicy, readFreshPolicy, readPolicyCache, readRepoPolicy, refreshPolicyAfterSubmit } from "./policy";
+import { localPolicy, readFreshPolicy, readRepoPolicy, refreshPolicyAfterSubmit, stampedPolicyHash, type PolicyCache } from "./policy";
 import { readFragments } from "./fragment";
 import { SOCRATES_CONTRACT_VERSION, SOCRATES_SUBMIT_PATH, SOCRATES_UNFIT_EVIDENCE_MAX_ENTRIES, type SocratesClassificationStamp, SocratesSubmitRequest, SocratesSubmitResponse, SocratesUnfit, type SocratesUnfitEvidence } from "./socrates-contract.v1";
 import { SOCRATES_ROUTES, SocratesEvidenceCreateRequest, SocratesEvidenceCreateResponse } from "./socrates-contract.v1.verbs";
@@ -324,9 +327,11 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   }
   let body = parsed.data;
   let endpoint: SocratesEndpoint | undefined;
+  let held: PolicyCache | undefined;
   if (answerArgs.length > 0) {
     endpoint = await socratesEndpoint(ctx, deps);
-    const classification = await stamp(ctx, deps, endpoint, candidate.statement, answerPairs, overridePairs);
+    const { classification, cache } = await stamp(ctx, deps, endpoint, candidate.statement, answerPairs, overridePairs);
+    held = cache;
     const stamped = SocratesSubmitRequest.safeParse({ ...parsed.data, classification });
     if (!stamped.success) fail(ctx, "socrates-answers-invalid", `the classification stamp does not match the contract (${printable(stamped.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "))})`, ANSWER_FIX);
     body = stamped.data;
@@ -337,8 +342,8 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
     });
     if (!text.success) fail(ctx, "socrates-unfit-invalid", `the unfit does not match the contract (${printable(issues(text.error, "unfit"))})`, UNFIT_FIX);
     endpoint = await socratesEndpoint(ctx, deps);
-    const cache = await readFreshPolicy(ctx, deps, endpoint);
-    const stamped = SocratesSubmitRequest.safeParse({ ...parsed.data, unfit: { rubric_version: CURRENT_RUBRIC.version, policy_hash: cache.policy_hash, ...text.data } });
+    held = await readFreshPolicy(ctx, deps, endpoint);
+    const stamped = SocratesSubmitRequest.safeParse({ ...parsed.data, unfit: { rubric_version: CURRENT_RUBRIC.version, policy_hash: stampedPolicyHash(CURRENT_RUBRIC, held), ...text.data } });
     if (!stamped.success) fail(ctx, "socrates-unfit-invalid", `the unfit stamp does not match the contract (${printable(issues(stamped.error, "unfit"))})`, UNFIT_FIX);
     body = stamped.data;
   }
@@ -372,14 +377,18 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
   }
   const classified = reply.classification;
   if (classified?.reclassified) {
-    // A cache for another rubric is the server's current policy already (the stamp named this rubric's own); refetching it every submit changes nothing.
-    const held = await readPolicyCache(ctx, deps);
-    const foreign = held !== undefined && held.rubric_version !== CURRENT_RUBRIC.version;
-    const refreshed = foreign || (await refreshPolicyAfterSubmit(ctx, deps, endpoint));
+    // A cache for a rubric this build does not know is the server's policy already, ahead of this build: refetching it every submit changes nothing. An older known rubric's cache is stale, so it refreshes.
+    const aheadOfBuild = held !== undefined && rubricFor(held.rubric_version as RubricVersion) === undefined;
+    const refreshed = aheadOfBuild ? undefined : await refreshPolicyAfterSubmit(ctx, deps, endpoint);
     const was = classified.stamped_policy_hash?.slice(0, 12) ?? "";
     const slug: SocratesWarnSlug = "socrates-reclassified";
-    const cache = refreshed ? "the cached policy is refreshed" : "the cached policy could not be refreshed, so the next stamped submit fetches it";
-    ctx.stderr.write(renderWarnLines(`reclassified under ${classified.policy_hash.slice(0, 12)} (was ${was}): ${classified.verdict}; ${cache}`, slug));
+    const cacheNote =
+      refreshed === undefined
+        ? `the cached policy is for ${held?.rubric_version}, which this build does not know, and was left as is`
+        : refreshed
+          ? "the cached policy is refreshed"
+          : "the cached policy could not be refreshed, so the next stamped submit fetches it";
+    ctx.stderr.write(renderWarnLines(`reclassified under ${classified.policy_hash.slice(0, 12)} (was ${was}): ${classified.verdict}; ${cacheNote}`, slug));
   }
   const stored = await postFragments(ctx, deps, endpoint, reply.candidate_id, linkedClean);
 
@@ -445,7 +454,7 @@ function unfitLine(deduped: boolean, state: string): string {
  * an hour old) merged with the repo layer, which must not loosen it. Nothing of the candidate is
  * sent to build it.
  */
-async function stamp(ctx: VerbContext, deps: SocratesDeps, endpoint: SocratesEndpoint, statement: string, answerPairs: Record<string, string>, overridePairs: { gate: string; reason: string }[]): Promise<SocratesClassificationStamp> {
+async function stamp(ctx: VerbContext, deps: SocratesDeps, endpoint: SocratesEndpoint, statement: string, answerPairs: Record<string, string>, overridePairs: { gate: string; reason: string }[]): Promise<{ classification: SocratesClassificationStamp; cache: PolicyCache }> {
   const rubric = CURRENT_RUBRIC;
   const answers = answersOf(ctx, rubric, answerPairs);
   const features = extractFeatures(rubric, statement, { recorded: [] });
@@ -453,11 +462,12 @@ async function stamp(ctx: VerbContext, deps: SocratesDeps, endpoint: SocratesEnd
   const cache = await readFreshPolicy(ctx, deps, endpoint);
   const local = localPolicy(ctx, rubric, cache, repo);
   const overrides = overridesOf(ctx, rubric, local.policy, overridePairs, answers, features);
-  return {
+  const classification: SocratesClassificationStamp = {
     rubric_version: rubric.version,
-    policy_hash: local.policy_hash ?? defaultPolicyHash(rubric),
+    policy_hash: stampedPolicyHash(rubric, cache),
     answers: answers as Record<string, string>,
     ...(overrides.length > 0 ? { overrides } : {}),
     ...(local.repo_policy !== null ? { repo_policy: local.repo_policy } : {}),
   };
+  return { classification, cache };
 }

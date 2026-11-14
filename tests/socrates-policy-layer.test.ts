@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { CURRENT_RUBRIC, defaultPolicy, RUBRIC_V1 } from "../packages/socrates-core/src/index";
@@ -151,6 +151,18 @@ describe("eris socrates classify under the repo layer and the cached org policy"
   });
 });
 
+describe("eris socrates submit --unfit under a cache for another rubric", () => {
+  // admits: --unfit stamps a newer rubric's cached policy hash onto this rubric, persisting a mismatched pair server-side; observed at the unfit stamp in the body sent.
+  it("stamps this rubric's default hash when the cached policy is for another rubric", async () => {
+    writeCache(policyResult(H2, ORG_POLICY, "rubric@v4"));
+    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", unfit: { state: "needs_input" } };
+    const r = await drive(["submit", ...CANDIDATE, "--unfit", "--hypothesis", "A retry-budget invariant."]);
+    expect(r.rc).toBe(0);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /v1/socrates/submit"]);
+    expect((calls[0]!.body as { unfit: unknown }).unfit).toMatchObject({ rubric_version: "rubric@v3", policy_hash: DEFAULT_V3_HASH });
+  });
+});
+
 describe("eris socrates submit --answer", () => {
   // admits: a stamped submit sent without a cached policy carries no hash the server can compare, or a corrupt cache crashes the verb; observed at the requests in order and the body sent.
   it("fetches the org policy first when the cache is absent or corrupt, then sends the stamp", async () => {
@@ -196,6 +208,34 @@ describe("eris socrates submit --answer", () => {
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /v1/socrates/submit"]);
     expect((calls[0]!.body as { classification: { rubric_version: string; policy_hash: string } }).classification).toMatchObject({ rubric_version: "rubric@v3", policy_hash: DEFAULT_V3_HASH });
     expect(JSON.parse(readFileSync(cacheFile(), "utf8"))).toMatchObject({ rubric_version: "rubric@v4", policy_hash: H2 });
+    expect(r.stderr).toContain(`reclassified under ${H1.slice(0, 12)} (was ${DEFAULT_V3_HASH.slice(0, 12)}): pass`);
+    expect(r.stderr).toContain("the cached policy is for rubric@v4, which this build does not know, and was left as is");
+    expect(r.stderr).not.toContain("is refreshed");
+  });
+
+  // admits: a cache for an older, known rubric (right after an update) suppresses the refresh and is stamped across rubrics, so the next hour of submits all reclassify; observed at the GET after the POST, the rewritten cache and the WARN's claim.
+  it("refreshes a cache held for an older known rubric, stamping this rubric's default hash meanwhile", async () => {
+    writeCache(policyResult(H2, ORG_POLICY, "rubric@v2"));
+    serverPolicy = policyResult(H1, ORG_POLICY);
+    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "pass", rubric_version: "rubric@v3", policy_hash: H1, reclassified: true, stamped_policy_hash: DEFAULT_V3_HASH } };
+    const r = await drive(["submit", ...CANDIDATE, ...answers()]);
+    expect(r.rc).toBe(0);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /v1/socrates/submit", "GET /v1/socrates/policy"]);
+    expect((calls[0]!.body as { classification: { policy_hash: string } }).classification.policy_hash).toBe(DEFAULT_V3_HASH);
+    expect(JSON.parse(readFileSync(cacheFile(), "utf8"))).toMatchObject({ rubric_version: "rubric@v3", policy_hash: H1 });
+    expect(r.stderr).toContain("the cached policy is refreshed");
+  });
+
+  // admits: the reclassified path re-reads the cache from disk, so a fetched policy for a rubric this build does not know (the cache write failed) is refetched after the submit; observed at the requests with ~/.eris unwritable.
+  it("reads the cache the stamp used, not the disk again, when deciding to refresh", async () => {
+    chmodSync(join(home, ".eris"), 0o500);
+    serverPolicy = policyResult(H2, ORG_POLICY, "rubric@v4");
+    receipt = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", classification: { verdict: "pass", rubric_version: "rubric@v3", policy_hash: H1, reclassified: true, stamped_policy_hash: DEFAULT_V3_HASH } };
+    const r = await drive(["submit", ...CANDIDATE, ...answers()]);
+    expect(r.rc).toBe(0);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /v1/socrates/policy", "POST /v1/socrates/submit"]);
+    expect(r.stderr).toContain("was left as is");
+    chmodSync(join(home, ".eris"), 0o700);
   });
 
   // admits: rubric answers on a candidate the server never scores reach the wire, or a looser repo layer is sent for the server to find; observed at the slug with no request made.

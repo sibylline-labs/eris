@@ -169,6 +169,11 @@ export function defaultPolicyHash(rubric: RubricDefinition): string {
   return createHash("sha256").update(canonicalJson({ rubric_version: rubric.version, policy: defaultPolicy(rubric) })).digest("hex");
 }
 
+/** The hash a stamp for `rubric` carries: the cached policy's when it belongs to `rubric`, else the rubric's own default. */
+export function stampedPolicyHash(rubric: RubricDefinition, cache: PolicyCache | undefined): string {
+  return cache !== undefined && cache.rubric_version === rubric.version ? cache.policy_hash : defaultPolicyHash(rubric);
+}
+
 /** One line naming the policy a verdict was scored under. */
 export function policyLine(p: Pick<LocalPolicy, "policy_hash" | "repo_policy">): string {
   return `policy: ${p.policy_hash === null ? "rubric defaults" : `org ${p.policy_hash.slice(0, 12)}`}${p.repo_policy === null ? "" : " + repo layer"}`;
