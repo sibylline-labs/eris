@@ -11,9 +11,12 @@ import { describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { denylistRule, scan } from "../scripts/scrub-check";
+import { denylistRule, prMetadata, scan } from "../scripts/scrub-check";
 
 const SCRIPT = resolve(import.meta.dir, "..", "scripts", "scrub-check.ts");
+
+/** The runner's own event variables would turn a plain CLI run into a pull-request run; each spawn pins them. */
+const PINNED = { GITHUB_EVENT_NAME: "push", GITHUB_EVENT_PATH: "" };
 
 const rules = (path: string, text: string) => scan(path, text).map((h) => h.rule);
 const ORG = "sibyl" + "line";
@@ -96,7 +99,7 @@ describe("the tree scan", () => {
       git("commit", "-q", "-m", "init");
       symlinkSync(join(repo, "sub"), join(repo, "dir-link"));
       symlinkSync(join(outside, "leak.txt"), join(repo, "file-link"));
-      const r = Bun.spawnSync(["bun", SCRIPT], { cwd: repo });
+      const r = Bun.spawnSync(["bun", SCRIPT], { cwd: repo, env: { ...process.env, ...PINNED } });
       expect({ rc: r.exitCode, stdout: r.stdout.toString(), stderr: r.stderr.toString() }).toEqual({ rc: 0, stdout: "", stderr: "scrub-check: clean\n" });
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -117,5 +120,127 @@ describe("denylistRule", () => {
     /** When a short term matches inside ordinary words, the denylist run is too noisy to keep clean — observed at scan() with the rule. */
     expect([denied("acmeish zorkle"), denied("a comment")]).toEqual([0, 0]);
     expect(denylistRule(["# only comments", ""])).toBeUndefined();
+  });
+});
+
+const run = (payload: unknown, opts: { args?: string[]; env?: Record<string, string>; raw?: string; noFile?: boolean; commitSha?: boolean; denylist?: string } = {}) => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "scrub-pr-")));
+  try {
+    const repo = join(dir, "repo");
+    mkdirSync(repo);
+    writeFileSync(join(repo, "README.md"), "a clean file\n");
+    const git = (...args: string[]) => Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: repo });
+    git("init", "-q");
+    git("add", "README.md");
+    git("commit", "-q", "-m", "init");
+    const head = git("rev-parse", "HEAD").stdout.toString().trim();
+    const file = join(dir, "event.json");
+    writeFileSync(file, opts.raw ?? JSON.stringify(typeof payload === "function" ? (payload as (sha: string) => unknown)(head) : payload));
+    const deny = join(dir, "deny.txt");
+    writeFileSync(deny, opts.denylist ?? "");
+    const args = opts.args ?? (opts.noFile ? [] : ["--pr-event", file]);
+    const r = Bun.spawnSync(["bun", SCRIPT, ...args.map((a) => a.replace("$FILE", file).replace("$DENY", deny))], { cwd: repo, env: Object.fromEntries(Object.entries({ ...process.env, ...PINNED, ...opts.env }).filter(([, v]) => v !== "__unset__")) as Record<string, string> });
+    return { rc: r.exitCode, stdout: r.stdout.toString(), stderr: r.stderr.toString(), file };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+describe("the pull request scan", () => {
+  const event = (over: { ref?: string; title?: string; body?: string | null }) => ({
+    pull_request: { number: 7, title: "fix(x): a clean title", body: "A clean body.", head: { ref: "fix/a-clean-slug", repo: { full_name: "sibyl" + "line-labs/eris" } }, ...over, ...(over.ref ? { head: { ref: over.ref, repo: { full_name: "sibyl" + "line-labs/eris" } } } : {}) },
+  });
+  it("fails a pull request whose branch slug, title or body carries a private reference", () => {
+    /** When the pull request's own text is not scanned, a tracker key in the branch slug lands in main's merge subject and the history gate goes red after merge — observed at the CLI's exit and output. */
+    const key = "QR" + "X-1100";
+    const out = [
+      run(event({ ref: `dan/${key.toLowerCase()}-fix` })),
+      run(event({ title: `fix(x): a thing (${key})` })),
+      run(event({ body: `Fixes ${key}\nsee https://linear` + `.app/${ORG}/issue/${key}` })),
+    ];
+    expect(out.map((o) => o.rc)).toEqual([1, 1, 1]);
+    expect(out[0]!.stdout).toContain("pull request merge subject");
+    expect(out[1]!.stdout).toContain("pull request title");
+    expect(out[2]!.stdout).toContain("pull request body");
+  });
+
+  it("passes a clean pull request, and refuses a payload with no pull request", () => {
+    /** When a clean pull request fails the gate, or a payload it cannot read passes it, CI blocks good merges or waves leaks through — observed at the CLI's exit. */
+    expect([run(event({})).rc, run(event({ body: null })).rc, run({ push: {} }).rc]).toEqual([0, 0, 2]);
+  });
+});
+
+describe("the pull request scan, fail-closed and false-positive guards", () => {
+  const base = { number: 7, title: "fix(x): clean", body: "clean", head: { ref: "fix/a-clean-slug", repo: { full_name: "sibyl" + "line-labs/eris" } } };
+  const withHead = (head: unknown) => ({ pull_request: { ...base, head } });
+
+  it("does not flag a commit SHA the repository itself holds in the title or body", () => {
+    /** When the pull request scan runs without the known SHAs, a PR that cites this repo's own commit fails with a false [private-sha] and blocks a clean merge — observed at the CLI's exit. */
+    const rc = run((sha: string) => ({ pull_request: { ...base, title: `revert ${sha}`, body: `see ${sha}` } })).rc;
+    expect(rc).toBe(0);
+  });
+
+  it("flags a SHA the repository does not hold", () => {
+    /** When known SHAs are passed too liberally, a foreign SHA in a PR body lands in public history — observed at the CLI's exit. */
+    const r = run({ pull_request: { ...base, body: `see ${FOREIGN_SHA}` } });
+    expect([r.rc, r.stdout]).toEqual([1, expect.stringContaining("pull request body")]);
+  });
+
+  it("exits 2 on a pull_request run whose GITHUB_EVENT_PATH is unset or empty", () => {
+    /** When the env default fails open, the CI mechanism (no --pr-event flag) waves every pull request through unscanned — observed at the CLI's exit. */
+    const r = (path: string) => run({}, { noFile: true, env: { GITHUB_EVENT_NAME: "pull_request", GITHUB_EVENT_PATH: path } }).rc;
+    expect([r(""), r("__unset__"), r("/nonexistent/event.json")]).toEqual([2, 2, 2]);
+  });
+
+  it("reads the payload from GITHUB_EVENT_PATH on a pull_request run", () => {
+    /** When the env default is not read, the one mechanism ci.yml uses scans nothing — observed at the CLI's output. */
+    const dirty = { pull_request: { ...base, title: "fix(x): " + "QR" + "X-1100" } };
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "scrub-env-")));
+    try {
+      const f = join(dir, "e.json");
+      writeFileSync(f, JSON.stringify(dirty));
+      const r = run(dirty, { noFile: true, env: { GITHUB_EVENT_NAME: "pull_request", GITHUB_EVENT_PATH: f } });
+      expect([r.rc, r.stdout]).toEqual([1, expect.stringContaining("pull request title")]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("exits 2, not a stack trace, on a malformed or unreadable payload", () => {
+    /** When a bad payload throws, CI sees exit 1 and a stack trace instead of "cannot scan what was asked" — observed at the CLI's exit. */
+    const bad = run({}, { raw: "{bad json" });
+    const dir = run({}, { args: ["--pr-event", "."] });
+    expect([bad.rc, bad.stderr.includes("at ")]).toEqual([2, false]);
+    expect(dir.rc).toBe(2);
+  });
+
+  it("takes the owner from head.user.login when the head repo is deleted", () => {
+    /** When a null head repo yields an empty owner, a private org login in the merge subject escapes the scan — observed at the CLI's exit. */
+    const r = run(withHead({ ref: "fix/clean", repo: null, user: { login: ORG + "-advisory" } }));
+    expect([r.rc, r.stdout]).toEqual([1, expect.stringContaining("pull request merge subject")]);
+  });
+
+  it.each(["dan/qrx-1100/cleanup", "dan/qrx-1100_fix", "dan/qrx-1100"])("flags a tracker key leading a segment of the head ref: %s", (ref) => {
+    /** When the lookahead stops at `-`, a key followed by `/` or `_` slips into the merge subject — observed at the CLI's exit. */
+    expect(run(withHead({ ref, repo: { full_name: "o/r" } })).rc).toBe(1);
+  });
+
+  it.each(["fix/utf-8-bom", "fix/rfc-6761", "fix/sha-256_sum"])("allows a standard prefix in the head ref: %s", (ref) => {
+    /** When the branch rule ignores the standard-prefix allowlist, ordinary slugs fail the gate — observed at the CLI's exit. */
+    expect(run(withHead({ ref, repo: { full_name: "o/r" } })).rc).toBe(0);
+  });
+
+  it("applies --denylist to the pull request's own text", () => {
+    /** When the denylist is not passed to the pull request scan, a maintainer's private term in a title ships green — observed at the CLI's exit. */
+    const r = run({ pull_request: { ...base, title: "mention zorkword here" } }, { args: ["--pr-event", "$FILE", "--denylist", "$DENY"], denylist: "zorkword\n" });
+    expect([r.rc, r.stdout]).toEqual([1, expect.stringContaining("pull request title")]);
+  });
+});
+
+describe("prMetadata", () => {
+  it("builds the merge subject GitHub defaults to from the head owner and ref", () => {
+    /** When the subject drops the head ref, the branch slug escapes the scan that exists to read it — observed at prMetadata(). */
+    const parts = prMetadata({ pull_request: { number: 7, title: "t", body: "b", head: { ref: "fix/x", repo: { full_name: "o/r" } } } });
+    expect([parts?.[0]?.where, parts?.[0]?.text]).toEqual(["pull request merge subject", "Merge pull request #7 from o/fix/x"]);
   });
 });

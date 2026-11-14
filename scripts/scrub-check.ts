@@ -13,6 +13,12 @@
  *                                                 from HEAD; refuses a shallow
  *                                                 clone, whose history is cut
  *   bun scripts/scrub-check.ts --denylist FILE    also flag each term in FILE
+ *   bun scripts/scrub-check.ts --pr-event FILE    also scan the pull request in the
+ *                                                 GitHub event payload FILE: its title,
+ *                                                 body and the merge subject GitHub
+ *                                                 would default to, branch slug and all.
+ *                                                 On a `pull_request` run it defaults to
+ *                                                 $GITHUB_EVENT_PATH
  *
  * Exits 1 and prints `path:line: [rule] text` for each hit; exits 0 when clean;
  * exits 2 when it cannot scan what was asked.
@@ -180,6 +186,41 @@ export function scan(path: string, text: string, opts: ScanOptions = {}): Hit[] 
   return hits;
 }
 
+/** A branch slug is lowercase (`user/abc-123-title`), which the case-sensitive `tracker-label` rule misses:
+ *  a tracker key leading a path segment of the head ref, in any case. */
+const BRANCH_TRACKER_KEY: Rule = {
+  id: "tracker-label",
+  re: /(?<=\/)([a-z]{2,6})-\d+(?=[-_/]|\s|$)/gi,
+  allow: (m) => STANDARD_PREFIXES.has(m[1]!.toUpperCase()),
+};
+
+/** The text of a pull request that lands in `git log` or on the public page: the merge subject GitHub
+ *  defaults to (it embeds the head branch), the title (the squash subject) and the body. */
+export function prMetadata(event: unknown): { where: string; text: string; extra?: Rule[] }[] | undefined {
+  const pr = (event as { pull_request?: { number?: number; title?: string; body?: string | null; head?: { ref?: string; repo?: { full_name?: string } | null; user?: { login?: string } | null } } } | null)?.pull_request;
+  if (!pr || typeof pr.head?.ref !== "string") return undefined;
+  const owner = pr.head.repo?.full_name?.split("/")[0] ?? pr.head.user?.login ?? "";
+  return [
+    { where: "pull request merge subject", extra: [BRANCH_TRACKER_KEY], text: `Merge pull request #${pr.number} from ${owner}/${pr.head.ref}` },
+    { where: "pull request title", text: pr.title ?? "" },
+    { where: "pull request body", text: pr.body ?? "" },
+  ];
+}
+
+class Unscannable extends Error {}
+
+function scanPullRequest(file: string, extra: readonly Rule[], known: KnownShas): Hit[] | undefined {
+  let event: unknown;
+  try {
+    event = JSON.parse(readFileSync(file, "utf8"));
+  } catch (e) {
+    throw new Unscannable(`cannot read ${file} as JSON: ${(e as Error).message}`);
+  }
+  const parts = prMetadata(event);
+  // path "" is a commit message's allowlist: the title and merge subject become commits.
+  return parts?.flatMap((p) => scan("", p.text, { where: p.where, known, extra: [...extra, ...(p.extra ?? [])] }));
+}
+
 function git(...args: string[]): string {
   const r = spawnSync("git", args, { encoding: "utf8", maxBuffer: 1 << 30 });
   if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
@@ -233,7 +274,7 @@ function scanHistory(known: KnownShas, extra: readonly Rule[]): Hit[] {
 function main(): number {
   const { values } = parseArgs({
     args: Bun.argv.slice(2),
-    options: { history: { type: "boolean", default: false }, denylist: { type: "string" } },
+    options: { history: { type: "boolean", default: false }, denylist: { type: "string" }, "pr-event": { type: "string" } },
     strict: true,
   });
   if (values.history && git("rev-parse", "--is-shallow-repository").trim() === "true") {
@@ -249,8 +290,34 @@ function main(): number {
     const rule = denylistRule(readFileSync(values.denylist, "utf8").split("\n"));
     if (rule) extra.push(rule);
   }
+  const onPullRequest = Bun.env.GITHUB_EVENT_NAME === "pull_request";
+  const eventFile = values["pr-event"] ?? (onPullRequest ? Bun.env.GITHUB_EVENT_PATH : undefined);
+  if (onPullRequest && !eventFile) {
+    console.error("scrub-check: this is a pull_request run but GITHUB_EVENT_PATH is unset or empty, so the pull request cannot be scanned");
+    return 2;
+  }
   const known = knownShas();
-  const hits = values.history ? [...scanTree(known, extra), ...scanHistory(known, extra)] : scanTree(known, extra);
+  let prHits: Hit[] = [];
+  if (eventFile !== undefined) {
+    if (!existsSync(eventFile)) {
+      console.error(`scrub-check: no event payload at ${eventFile}`);
+      return 2;
+    }
+    let scanned: Hit[] | undefined;
+    try {
+      scanned = scanPullRequest(eventFile, extra, known);
+    } catch (e) {
+      if (!(e instanceof Unscannable)) throw e;
+      console.error(`scrub-check: ${e.message}`);
+      return 2;
+    }
+    if (!scanned) {
+      console.error(`scrub-check: ${eventFile} holds no pull_request with a head ref`);
+      return 2;
+    }
+    prHits = scanned;
+  }
+  const hits = [...prHits, ...(values.history ? [...scanTree(known, extra), ...scanHistory(known, extra)] : scanTree(known, extra))];
   for (const h of hits) console.log(`${h.where}: [${h.rule}] ${h.text}`);
   console.error(hits.length ? `scrub-check: ${hits.length} hit(s)` : "scrub-check: clean");
   return hits.length ? 1 : 0;
