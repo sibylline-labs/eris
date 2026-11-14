@@ -4,6 +4,7 @@ export {
   ENTRY_HANDLE_ID,
   ensureDoc,
   entryTitleLine,
+  LINE_BREAK,
   parseEntryTitleLine,
   parseTitle,
   writeDoc,

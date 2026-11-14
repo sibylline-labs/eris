@@ -9,7 +9,7 @@
  * render as `{ title, description }`: `prd` and `conflict`.
  */
 
-import { ENTRY_HANDLE_ID, ENTRY_TITLE_MAX_LENGTH, entryTitleLine, parseTitle, type Title } from "./doc-surgery";
+import { ENTRY_HANDLE_ID, ENTRY_TITLE_MAX_LENGTH, LINE_BREAK, entryTitleLine, parseTitle, type Title } from "./doc-surgery";
 
 /**
  * How a doc entry is identified. Either a readable ID, which goes in the title line (`` - `ACME-P3` Title ``), or
@@ -89,7 +89,6 @@ export { ENTRY_TITLE_MAX_LENGTH };
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"] as const;
 
-const LINE_BREAK = /[\r\n\u2028\u2029]/;
 const HANDLE_ID_EXACT = new RegExp(`^${ENTRY_HANDLE_ID}$`);
 
 /**
@@ -202,7 +201,6 @@ function daysInMonth(year: number, month: number): number {
 
 /** The entry-title rule `applyOps` and the submit server enforce (`parseTitle`), raised as an `EntryRenderError`. */
 function checkTitle(title: string): Title {
-  if (LINE_BREAK.test(title)) throw new EntryRenderError("title-multiline", "an entry title is one line");
   const parsed = parseTitle(title);
   if (parsed.ok) return parsed.title;
   const reason = parsed.refusal.kind === "bad-title" ? parsed.refusal.reason : "too-long";

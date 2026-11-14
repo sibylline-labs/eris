@@ -4,7 +4,7 @@
  *
  * Invariants:
  *   - Every entry title is one line of 1–80 characters with no unbackticked
- *     autolinkable dotted token (`parseTitle` + raw line-break guard); a `prd`
+ *     autolinkable dotted token (`parseTitle`); a `prd`
  *     title also fits within 80 characters after `'PRD authored: '`.
  *   - The answers are the rubric's own enums (`answersSchema`); each override
  *     is the contract's `SocratesOverride` (a one-line reason).
@@ -13,7 +13,7 @@
  *     fires, so there is nothing to override.
  */
 
-import { answersSchema, type Answers, CURRENT_RUBRIC, disabledGates, ENTRY_TITLE_MAX_LENGTH, type Features, type GateId, gateFiring, parseTitle, type ScoringPolicy, type Title } from "eris/socrates-core";
+import { answersSchema, type Answers, CURRENT_RUBRIC, disabledGates, ENTRY_TITLE_MAX_LENGTH, type Features, type GateId, gateFiring, LINE_BREAK, parseTitle, type ScoringPolicy, type Title } from "eris/socrates-core";
 import { z } from "zod";
 import type { VerbContext } from "../../src/cli/plugin";
 import { fail, printable } from "./client";
@@ -70,15 +70,11 @@ export function overridesOf(ctx: VerbContext, rubric: Rubric, policy: ScoringPol
   return parsed.data;
 }
 
-const LINE_BREAK = /[\r\n\u2028\u2029]/;
 const PRD_PREFIX = "PRD authored: ";
 export const PRD_TITLE_MAX_LENGTH = ENTRY_TITLE_MAX_LENGTH - PRD_PREFIX.length;
 
-/** Validate an entry title against the living-doc / review-issue rule (`parseTitle` + raw line breaks). */
+/** Validate an entry title against the living-doc / review-issue rule (`parseTitle`). */
 export function checkEntryTitle(ctx: VerbContext, raw: string, slug: "socrates-candidate-invalid" | "socrates-amend-invalid", prefix = ""): Title {
-  if (LINE_BREAK.test(raw)) {
-    fail(ctx, slug, `${prefix}entry title must be a single line of at most ${ENTRY_TITLE_MAX_LENGTH} characters`, `pass a single-line title of <= ${ENTRY_TITLE_MAX_LENGTH} characters`);
-  }
   const parsed = parseTitle(raw);
   if (parsed.ok) return parsed.title;
   const reason = parsed.refusal.kind === "bad-title" ? parsed.refusal.reason : "too-long";
