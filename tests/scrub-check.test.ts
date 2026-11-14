@@ -7,7 +7,7 @@
  * no literal the gate itself would flag.
  */
 
-import { describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -123,27 +123,33 @@ describe("denylistRule", () => {
   });
 });
 
-const run = (payload: unknown, opts: { args?: string[]; env?: Record<string, string>; raw?: string; noFile?: boolean; commitSha?: boolean; denylist?: string } = {}) => {
+/** Each run spawns bun, and on a contended host three of them in one test pass bun's 5s default. */
+setDefaultTimeout(60_000);
+
+/** One clean repo for every run: the scan only reads it, so a call writes only its own event.json and deny.txt. */
+let fixture: { dir: string; repo: string; head: string };
+beforeAll(() => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "scrub-pr-")));
-  try {
-    const repo = join(dir, "repo");
-    mkdirSync(repo);
-    writeFileSync(join(repo, "README.md"), "a clean file\n");
-    const git = (...args: string[]) => Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: repo });
-    git("init", "-q");
-    git("add", "README.md");
-    git("commit", "-q", "-m", "init");
-    const head = git("rev-parse", "HEAD").stdout.toString().trim();
-    const file = join(dir, "event.json");
-    writeFileSync(file, opts.raw ?? JSON.stringify(typeof payload === "function" ? (payload as (sha: string) => unknown)(head) : payload));
-    const deny = join(dir, "deny.txt");
-    writeFileSync(deny, opts.denylist ?? "");
-    const args = opts.args ?? (opts.noFile ? [] : ["--pr-event", file]);
-    const r = Bun.spawnSync(["bun", SCRIPT, ...args.map((a) => a.replace("$FILE", file).replace("$DENY", deny))], { cwd: repo, env: Object.fromEntries(Object.entries({ ...process.env, ...PINNED, ...opts.env }).filter(([, v]) => v !== "__unset__")) as Record<string, string> });
-    return { rc: r.exitCode, stdout: r.stdout.toString(), stderr: r.stderr.toString(), file };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  const repo = join(dir, "repo");
+  mkdirSync(repo);
+  writeFileSync(join(repo, "README.md"), "a clean file\n");
+  const git = (...args: string[]) => Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: repo });
+  git("init", "-q");
+  git("add", "README.md");
+  git("commit", "-q", "-m", "init");
+  fixture = { dir, repo, head: git("rev-parse", "HEAD").stdout.toString().trim() };
+});
+afterAll(() => rmSync(fixture.dir, { recursive: true, force: true }));
+
+const run = (payload: unknown, opts: { args?: string[]; env?: Record<string, string>; raw?: string; noFile?: boolean; commitSha?: boolean; denylist?: string } = {}) => {
+  const { dir, repo, head } = fixture;
+  const file = join(dir, "event.json");
+  writeFileSync(file, opts.raw ?? JSON.stringify(typeof payload === "function" ? (payload as (sha: string) => unknown)(head) : payload));
+  const deny = join(dir, "deny.txt");
+  writeFileSync(deny, opts.denylist ?? "");
+  const args = opts.args ?? (opts.noFile ? [] : ["--pr-event", file]);
+  const r = Bun.spawnSync(["bun", SCRIPT, ...args.map((a) => a.replace("$FILE", file).replace("$DENY", deny))], { cwd: repo, env: Object.fromEntries(Object.entries({ ...process.env, ...PINNED, ...opts.env }).filter(([, v]) => v !== "__unset__")) as Record<string, string> });
+  return { rc: r.exitCode, stdout: r.stdout.toString(), stderr: r.stderr.toString(), file };
 };
 
 describe("the pull request scan", () => {
@@ -210,7 +216,8 @@ describe("the pull request scan, fail-closed and false-positive guards", () => {
     /** When a bad payload throws, CI sees exit 1 and a stack trace instead of "cannot scan what was asked" — observed at the CLI's exit. */
     const bad = run({}, { raw: "{bad json" });
     const dir = run({}, { args: ["--pr-event", "."] });
-    expect([bad.rc, bad.stderr.includes("at ")]).toEqual([2, false]);
+    const typed = run({ pull_request: { head: { ref: "fix/x", repo: { full_name: "o/r" } }, title: 123 } });
+    expect([bad.rc, bad.stderr.includes("at "), typed.rc, typed.stderr.includes("at ")]).toEqual([2, false, 2, false]);
     expect(dir.rc).toBe(2);
   });
 
@@ -242,5 +249,34 @@ describe("prMetadata", () => {
     /** When the subject drops the head ref, the branch slug escapes the scan that exists to read it — observed at prMetadata(). */
     const parts = prMetadata({ pull_request: { number: 7, title: "t", body: "b", head: { ref: "fix/x", repo: { full_name: "o/r" } } } });
     expect([parts?.[0]?.where, parts?.[0]?.text]).toEqual(["pull request merge subject", "Merge pull request #7 from o/fix/x"]);
+  });
+
+  it("takes the owner from the head label when the head repo and user are both gone", () => {
+    /** When the label fallback is ignored, a deleted fork's owner is dropped and the merge subject reads "from /ref" — observed at prMetadata(). */
+    const parts = prMetadata({ pull_request: { number: 7, head: { ref: "fix/x", repo: null, user: null, label: "o:fix/x" } } });
+    expect(parts?.[0]?.text).toBe("Merge pull request #7 from o/fix/x");
+  });
+
+  it.each([
+    ["an empty head ref", { head: { ref: "", repo: { full_name: "o/r" } } }],
+    ["a whitespace head ref", { head: { ref: "  ", repo: { full_name: "o/r" } } }],
+    ["a non-string head ref", { head: { ref: 5, repo: { full_name: "o/r" } } }],
+    ["an array head ref", { head: { ref: ["fix/x"], repo: { full_name: "o/r" } } }],
+    ["no owner anywhere", { head: { ref: "fix/x", repo: null, user: null } }],
+    ["a non-string full_name", { head: { ref: "fix/x", repo: { full_name: 5 }, user: { login: "o" } } }],
+    ["an array full_name", { head: { ref: "fix/x", repo: { full_name: ["o/r"] } } }],
+    ["a full_name with no slash", { head: { ref: "fix/x", repo: { full_name: "or" }, user: { login: "o" } } }],
+    ["a whitespace full_name owner", { head: { ref: "fix/x", repo: { full_name: " /r" } } }],
+    ["a non-string login", { head: { ref: "fix/x", repo: null, user: { login: 5 } } }],
+    ["a whitespace login", { head: { ref: "fix/x", repo: null, user: { login: " " } } }],
+    ["a non-string label", { head: { ref: "fix/x", repo: null, user: null, label: 5 } }],
+    ["a colon-less label", { head: { ref: "fix/x", repo: null, user: null, label: "o" } }],
+    ["a whitespace label owner", { head: { ref: "fix/x", repo: null, user: null, label: " :fix/x" } }],
+    ["an array repo", { head: { ref: "fix/x", repo: [], user: { login: "o" } } }],
+    ["a non-string title", { head: { ref: "fix/x", repo: { full_name: "o/r" } }, title: 123 }],
+    ["a non-string body", { head: { ref: "fix/x", repo: { full_name: "o/r" } }, body: {} }],
+  ])("refuses a payload with %s", (_name, pull_request) => {
+    /** When a corrupted payload is scanned anyway, it throws (rc 1, a stack trace) or passes clean (rc 0) instead of exiting 2 — observed at prMetadata(). */
+    expect(prMetadata({ pull_request: { number: 7, ...pull_request } })).toBeUndefined();
   });
 });
