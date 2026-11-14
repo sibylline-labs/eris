@@ -107,6 +107,7 @@ A conflict statement:
   Authoritative sites:                     two or more, one per line:
   - [Label](https://...)
   - \`ACME-K11\`, \`ACME-K12\` in [Doc](https://...)
+  - \`<8 lowercase hex>\` in [Doc](https://...)   (a legacy entry hash)
 
   Proposed resolution:                     optional, then its text
 `;
