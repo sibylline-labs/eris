@@ -35,8 +35,9 @@ with **Socrates** is Socrates' own, never a reviewer's. For each sub-issue:
   which would write the unedited entry.
 - **Amend failures:** `socrates-amend-invalid` is local and nothing was sent: fix that `--amend`.
   An endpoint refusal exits `socrates-refused`. If the child is already written or resolved, or is
-  not a human-Done decision, drop that `--amend` and run again. For an unwritten Done decision that
-  carries an edit instruction, fix the `--amend` or hold it pending: never drop it and resolve.
+  not marked Done by a person, drop that `--amend` and run again. For an unwritten Done conflict,
+  PRD, practice or decision that carries an edit instruction, fix the `--amend` or hold it pending:
+  never drop it and resolve.
   `socrates-amend-ignored` is an `ERROR` failure (exit 1, empty stdout), never a `WARN`: the Epic is
   already resolved without that edit and running again changes nothing, so fix the named entry in
   the living docs by hand.
