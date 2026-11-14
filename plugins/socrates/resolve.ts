@@ -24,7 +24,7 @@
 
 import { scanStrings } from "eris/outbound-scan";
 import { readArgs, type VerbContext } from "../../src/cli/plugin";
-import { checkEntryTitle } from "./answers";
+import { checkEntryStatement, checkEntryTitle } from "./answers";
 import { fail, postSocrates, printable, type SocratesDeps, socratesEndpoint } from "./client";
 import plugin from "./index";
 import { SOCRATES_CONTRACT_VERSION } from "./socrates-contract.v1";
@@ -55,7 +55,8 @@ contract_version}.
                              "target"?: ${SOCRATES_AMEND_TARGETS.join(" | ")},
                              "source_comment"?: <comment id>}
                           at least one of title, statement or target (title:
-                          single line <= 80 chars, dotted tokens in backticks).
+                          single line <= 80 chars, dotted tokens in backticks;
+                          statement: single line <= 4000 chars).
                           target reroutes the entry to Load-Bearing Decisions, Key
                           Assumptions or Practices. Only a decision a person
                           marked Done can be amended; the endpoint refuses
@@ -70,7 +71,7 @@ Sign in first with 'eris login'.
 
 const refusalFix = (status: number): string | undefined => {
   if (status === 404) return "check the Epic's identifier: the Epic's Socrates comment prints the command to run";
-  if (status === 422) return "fix or drop the --amend the message names, then run the command again";
+  if (status === 422) return "fix the --amend the message names, then run the command again; dropping it files the Done decision unedited, and a decision that needs the edit must be corrected first";
   if (status === 409) return "follow the step named above (resolve also needs the review Epic closed in Linear), then run the command again";
   return undefined;
 };
@@ -110,6 +111,9 @@ async function readAmendments(ctx: VerbContext, deps: SocratesDeps, args: readon
     }
     if (fields.data.title !== undefined) {
       checkEntryTitle(ctx, fields.data.title, "socrates-amend-invalid", `${printable(path)}: `);
+    }
+    if (fields.data.statement !== undefined) {
+      checkEntryStatement(ctx, fields.data.statement, "socrates-amend-invalid", `${printable(path)}: `);
     }
     amendments.push({ child, ...fields.data });
   }

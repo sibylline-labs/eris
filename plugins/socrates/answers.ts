@@ -104,6 +104,20 @@ export function checkEntryTitle(ctx: VerbContext, raw: string, slug: "socrates-c
   fail(ctx, slug, `${prefix}entry title must be a non-empty single line of at most ${ENTRY_TITLE_MAX_LENGTH} characters`, `pass a non-empty single-line title of <= ${ENTRY_TITLE_MAX_LENGTH} characters`);
 }
 
+/** A decision or practice statement renders as one line of its living-doc entry, so a line break would file a review issue that later refuses at resolve time. */
+export function checkEntryStatement(ctx: VerbContext, raw: string, slug: "socrates-candidate-invalid" | "socrates-amend-invalid", prefix = ""): void {
+  if (LINE_BREAK.test(raw)) {
+    fail(ctx, slug, `${prefix}statement must be a single line`, "put the statement on one line of at most 4000 characters");
+  }
+}
+
+/** Refuse a multi-line `decision` or `practice` statement; `prd` and `conflict` statements parse their own multi-line grammars. */
+export function checkCandidateStatement(ctx: VerbContext, candidate: Pick<SocratesCandidate, "kind" | "statement">): void {
+  if (candidate.kind === "decision" || candidate.kind === "practice") {
+    checkEntryStatement(ctx, candidate.statement, "socrates-candidate-invalid", `${candidate.kind} `);
+  }
+}
+
 /** Validate a candidate's entry title (and `'PRD authored: <title>' <= 80` for `--kind prd`) before scoring or sending. */
 export function checkCandidateTitle<T extends Pick<SocratesCandidate, "kind" | "title">>(ctx: VerbContext, candidate: T): T & { readonly title: Title } {
   const title = checkEntryTitle(ctx, candidate.title, "socrates-candidate-invalid");

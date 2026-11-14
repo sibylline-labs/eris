@@ -62,7 +62,7 @@
 import { isRedactionClass, prepareOutbound, REDACTION_CLASSES, redact, type Override, type RedactionClass, type SecretHit, scanSecrets, scanStrings } from "eris/outbound-scan";
 import { CURRENT_RUBRIC, extractFeatures, issueEntryOf, rubricFor, type RubricVersion } from "eris/socrates-core";
 import { groupArgs, readArgs, renderWarnLines, runErisVerb, type VerbContext } from "../../src/cli/plugin";
-import { ANSWER_FIX, answersOf, checkCandidateTitle, issues, OVERRIDE_FIX, overridesOf, pairs } from "./answers";
+import { ANSWER_FIX, answersOf, checkCandidateStatement, checkCandidateTitle, issues, OVERRIDE_FIX, overridesOf, pairs } from "./answers";
 import { fail, heldLine, postSocrates, printable, refuse, sendSocrates, type SocratesDeps, type SocratesEndpoint, socratesEndpoint } from "./client";
 import plugin from "./index";
 import { localPolicy, readFreshPolicy, readRepoPolicy, refreshPolicyAfterSubmit, stampedPolicyHash, type PolicyCache } from "./policy";
@@ -124,7 +124,8 @@ what they match with «redacted:<class>» and print a WARN.
   --title <text>       required, single line <= 80 chars (<= 66 for --kind
                        prd); wrap file names, domains and dotted identifiers
                        in backticks so Linear does not autolink them
-  --statement <text>   required, <= 4000 chars
+  --statement <text>   required, <= 4000 chars; a decision or practice
+                       statement is a single line
   --source <url>       required, an absolute http(s) link to where it was decided
   --kind <kind>        decision (default), practice, prd or conflict; a prd or
                        conflict statement follows the grammar in
@@ -317,6 +318,7 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
     fail(ctx, "socrates-candidate-invalid", `the candidate does not match the contract (${problems})`, "run 'eris socrates submit --help' for each flag's bounds");
   }
   const candidate = checkCandidateTitle(ctx, parsed.data.candidate);
+  checkCandidateStatement(ctx, candidate);
   if (candidate.kind === "prd" || candidate.kind === "conflict") {
     const entry = issueEntryOf({ ...candidate, kind: candidate.kind });
     if (!entry.ok) fail(ctx, "socrates-candidate-invalid", `the ${candidate.kind} statement cannot be filed (${printable(entry.reason)})`, "run 'eris socrates classify --help' for the statement grammar");
