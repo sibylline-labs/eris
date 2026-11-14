@@ -142,6 +142,10 @@ describe("applyOps no-shrink", () => {
     expect(readablePrefixed).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: ["ABC-1"] } });
     const readableSplitTitle = await writeDoc(readablePort.port, "doc", [{ op: "patch_prose", oldString: "First decision", newString: `First${sep}decision` }], identity);
     expect(readableSplitTitle).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: ["ABC-1"] } });
+    const readableNested = await writeDoc(readablePort.port, "doc", [{ op: "patch_prose", oldString: "statement one", newString: `statement one${sep}  - injected` }], identity);
+    expect(readableNested).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: ["ABC-1"] } });
+    const readableBlank = await writeDoc(readablePort.port, "doc", [{ op: "patch_prose", oldString: "  - statement one", newString: `  ${sep}  \n  - statement one` }], identity);
+    expect(readableBlank).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: ["ABC-1"] } });
     const readableSectionSplit = await writeDoc(
       readablePort.port,
       "doc",
@@ -149,8 +153,21 @@ describe("applyOps no-shrink", () => {
       identity,
     );
     expect(readableSectionSplit).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: ["ABC-1"] } });
+    const readableSectionNested = await writeDoc(
+      readablePort.port,
+      "doc",
+      [{ op: "replace_section", section: "## Current", bodyMd: `- ABC-2 Second decision\n  - statement two\n- ABC-1 First decision\n  - statement one${sep}  - injected` }],
+      identity,
+    );
+    expect(readableSectionNested).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: ["ABC-1"] } });
     expect(readablePort.writes).toHaveLength(0);
     expect(readablePort.docs.doc).toBe(LBD);
+
+    const anchoredLbd = LBD.replace("- ABC-1 First decision", '<a id="abc-1"></a>\n- ABC-1 First decision');
+    const anchoredPort = fakePort({ doc: anchoredLbd });
+    const readableAnchor = await writeDoc(anchoredPort.port, "doc", [{ op: "patch_prose", oldString: 'id="abc-1"', newString: `id="abc${sep}1"` }], identity);
+    expect(readableAnchor).toMatchObject({ ok: false, written: false, refusal: { kind: "shrink", missingIds: ["ABC-1"] } });
+    expect(anchoredPort.writes).toHaveLength(0);
   });
 
   // admits: algorithmic: when rowKeys splits on LINE_BREAK or retains lines carrying U+2028/U+2029, a prose prefix or cell split on a register row passes no-shrink and orphans the row; runtime row key extraction is invisible to tsc and ast-grep.
@@ -199,6 +216,32 @@ describe("frozen docs", () => {
     /** When a doc keeps its visible `> **Frozen:` stamp but has lost the marker comment and only the marker is checked, the doc reads as writable. */
     const stampOnly = FROZEN.replace(/<!-- socrates-freeze:[^>]*-->/, "");
     expect(applyOps(stampOnly, [EVERY_OP.append_entry], identity)).toMatchObject({ ok: false, refusal: { kind: "frozen" } });
+  });
+
+  // admits: algorithmic: when applyOps checks unwritable only on the input body and not on the spliced body, patch_prose or replace_section can inject a > **Frozen: stamp or truncation marker that locks out or truncates every later write; runtime post-splice state cannot be held by tsc or ast-grep.
+  it("refuses a prose patch or section replace that would land on a frozen or truncated body", async () => {
+    /** When `unwritable` runs only before splicing, an op introducing `> **Frozen:` (after `\n`, U+2028, or U+2029) or `[...]` writes a self-freezing or truncated body to Linear; observed as `frozen` or `truncated` and zero port writes. */
+    const { port, writes } = fakePort({ doc: REGISTER });
+    for (const sep of ["\n", "\u2028", "\u2029"]) {
+      expect(await writeDoc(port, "doc", [{ op: "patch_prose", oldString: "Closing prose.", newString: `Closing prose.${sep}> **Frozen: 2026-10-01**` }], identity)).toMatchObject({
+        ok: false,
+        written: false,
+        refusal: { kind: "frozen" },
+      });
+    }
+    expect(await writeDoc(port, "doc", [{ op: "patch_prose", oldString: "Closing prose.", newString: "Closing prose.\n[...]" }], identity)).toMatchObject({
+      ok: false,
+      written: false,
+      refusal: { kind: "truncated" },
+    });
+    const lbdPort = fakePort({ doc: LBD });
+    expect(await writeDoc(lbdPort.port, "doc", [{ op: "replace_section", section: "## Open conflicts", bodyMd: "> **Frozen: 2026-10-01**" }], identity)).toMatchObject({
+      ok: false,
+      written: false,
+      refusal: { kind: "frozen" },
+    });
+    expect(writes).toHaveLength(0);
+    expect(lbdPort.writes).toHaveLength(0);
   });
 });
 
@@ -313,6 +356,73 @@ describe("splices", () => {
     /** When an anchor matches twice, the patch edits a site nobody chose; when it matches zero times (a bare key Linear turned into a chip), the patch silently does nothing. */
     expect(applyOps(LBD, [{ op: "patch_prose", oldString: "scope: project", newString: "scope: org" }], identity)).toMatchObject({ ok: false, refusal: { kind: "ambiguous-anchor", count: 2 } });
     expect(applyOps(LBD, [{ op: "patch_prose", oldString: "absent text", newString: "x" }], identity)).toMatchObject({ ok: false, refusal: { kind: "anchor-not-found" } });
+  });
+
+  // admits: algorithmic: when patch_prose and replace_section allow U+2028/U+2029 outside entry-id/row-key lines, column-0 nested breaks, section-header prefixes, and prose separators reach VerifiedBody and corrupt section boundaries; runtime input validation cannot be held by tsc or ast-grep.
+  it.each(["\u2028", "\u2029"])("refuses patch_prose and replace_section inputs carrying %j while accepting clean '\\n' splices", async (sep) => {
+    /** When `patch_prose` (`newString`) or `replace_section` (`bodyMd`) admits U+2028/U+2029 where no ID shrinks, `prose\u2028## Current` destroys section headers and `\u2028  - statement` severs nested lines from their readable-ID bullet; observed as `bad-entry` and zero writes. */
+    const { port, writes } = fakePort({ doc: LBD, reg: REGISTER });
+    expect(await writeDoc(port, "doc", [{ op: "patch_prose", oldString: "  - statement one", newString: `${sep}  - statement one` }], identity)).toMatchObject({
+      ok: false,
+      written: false,
+      refusal: { kind: "bad-entry" },
+    });
+    expect(await writeDoc(port, "doc", [{ op: "patch_prose", oldString: "## Current", newString: `prose${sep}## Current` }], identity)).toMatchObject({
+      ok: false,
+      written: false,
+      refusal: { kind: "bad-entry" },
+    });
+    expect(await writeDoc(port, "reg", [{ op: "patch_prose", oldString: "Closing prose.", newString: `Closing${sep}prose.` }], identity)).toMatchObject({
+      ok: false,
+      written: false,
+      refusal: { kind: "bad-entry" },
+    });
+    expect(await writeDoc(port, "doc", [{ op: "replace_section", section: "## Open conflicts", bodyMd: `- a conflict${sep}continued` }], identity)).toMatchObject({
+      ok: false,
+      written: false,
+      refusal: { kind: "bad-entry" },
+    });
+    expect(writes).toHaveLength(0);
+
+    const clean = applyOps(
+      LBD,
+      [
+        { op: "replace_section", section: "## Open conflicts", bodyMd: "- first conflict\n- second conflict" },
+        { op: "patch_prose", oldString: "statement one", newString: "statement one\n  - resolved" },
+      ],
+      identity,
+    );
+    expect(clean).toMatchObject({ ok: true });
+    if (clean.ok) {
+      expect(clean.body).toContain("- first conflict\n- second conflict");
+      expect(clean.body).toContain("  - statement one\n  - resolved");
+    }
+  });
+
+  // admits: algorithmic: when patchProse leaves CR/CRLF unnormalized while canonicalizeLinear replaces \r\n? with \n, a CR before an entry bullet or register row passes no-shrink and orphans the entry or row on the single \n line; runtime line-ending normalization cannot be held by tsc or ast-grep.
+  it("normalizes CR and CRLF in patch_prose so spliced lines stay aligned with canonicalizeLinear", () => {
+    /** When `patchProse` splices raw `\r` while `canonicalizeLinear` splits `\r\n?` to `\n`, `prose\r- First decision` and `prose\r| \`ABC-102\` |` pass `no-shrink` and then fail `supersede_entry` (`entry-not-found`) and `replace_register_row` (`row-not-found`). */
+    const hash = "0c43" + "e7d3";
+    const nextHash = "1111" + "2222";
+    const hashId: EntryIdentity = { entryId: (b) => /^ {2}- hash: ([0-9a-f]{8})$/m.exec(b)?.[1] ?? null };
+    const hashed = `# Test - Load-Bearing Decisions\n\n## Current\n\n- First decision\n  - statement one\n  - hash: ${hash}\n\n## Superseded\n\n(no entries yet)\n`;
+    const patchedEntry = applyOps(hashed, [{ op: "patch_prose", oldString: "- First decision", newString: "one\r\ntwo\r- First decision" }], hashId);
+    expect(patchedEntry).toMatchObject({ ok: true });
+    if (!patchedEntry.ok) return;
+    expect(patchedEntry.body).not.toContain("\r");
+    expect(patchedEntry.body).toContain("one\ntwo\n- First decision");
+    expect(
+      applyOps(patchedEntry.body, [{ op: "supersede_entry", targetId: hash, newEntryMd: `- Second decision\n  - statement two\n  - hash: ${nextHash}` }], hashId),
+    ).toMatchObject({ ok: true });
+
+    const patchedRow = applyOps(REGISTER, [{ op: "patch_prose", oldString: "| `ABC-102` |", newString: "one\r\ntwo\r| `ABC-102` |" }], identity);
+    expect(patchedRow).toMatchObject({ ok: true });
+    if (!patchedRow.ok) return;
+    expect(patchedRow.body).not.toContain("\r");
+    expect(patchedRow.body).toContain("one\ntwo\n| `ABC-102` |");
+    expect(applyOps(patchedRow.body, [{ op: "replace_register_row", decisionId: "ABC-102", rowMd: "| `ABC-102` | Updated second decision. |" }], identity)).toMatchObject({
+      ok: true,
+    });
   });
 
   it("refuses an entry it cannot identify", () => {

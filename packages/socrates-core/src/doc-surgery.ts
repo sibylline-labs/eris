@@ -126,7 +126,7 @@ const PLACEHOLDER_RE = /^\((?:no entries yet|none)\)$/;
 const H1_RE = /^#\s+\S/;
 const H2_RE = /^##\s+(.+?)\s*$/;
 const TOP_BULLET_RE = /^[-*+][ \t]/;
-const ANCHOR_LINE_RE = /^[ \t]*<a id="[^"\r\n\u2028\u2029]+"><\/a>[ \t]*$/;
+const ANCHOR_LINE_RE = /^\s*<a id="[^"]+"><\/a>\s*$/;
 // A register row: its first cell is a code-spanned ID, backticks possibly escaped.
 const ROW_KEY_RE = /^\|\s*\\?`([^`\\|]+)\\?`\s*\|/;
 
@@ -135,6 +135,7 @@ export const ENTRY_TITLE_MAX_LENGTH = 80;
 
 /** Every character a renderer or a Linear body treats as a line end: a title or row that carries one is not one line. */
 export const LINE_BREAK = /[\r\n\u2028\u2029]/;
+const UNICODE_LINE_BREAK = /[\u2028\u2029]/;
 /** A readable entry ID as an entry's title line carries it (`ACME-P3`, `ACME-K10`). */
 export const ENTRY_HANDLE_ID = "[A-Z][A-Z0-9]*-[A-Z]+[1-9][0-9]*";
 const HANDLE_PREFIX_RE = new RegExp(`^\`(${ENTRY_HANDLE_ID})\`[ \t]+`);
@@ -261,9 +262,9 @@ function blocks(lines: string[], start: number, end: number): Block[] {
     } else if (ANCHOR_LINE_RE.test(line)) {
       close();
       cur = { start: i, end: i + 1, anchorOnly: true };
-    } else if (!LINE_BREAK.test(line) && line.trim() === "") {
+    } else if (line.trim() === "") {
       // A blank line neither ends nor extends a block; the next line decides.
-    } else if (cur && !LINE_BREAK.test(line) && (/^[ \t]/.test(line) || line.startsWith("<!--"))) {
+    } else if (cur && (/^[ \t]/.test(line) || line.startsWith("<!--"))) {
       cur.end = i + 1;
     } else {
       close();
@@ -398,7 +399,7 @@ function patchProse(body: string, oldString: string, newString: string): Step {
   if (count === 0) return refuse({ kind: "anchor-not-found" });
   if (count > 1) return refuse({ kind: "ambiguous-anchor", count });
   const at = body.indexOf(oldString);
-  return { ok: true, body: body.slice(0, at) + newString + body.slice(at + oldString.length) };
+  return { ok: true, body: body.slice(0, at) + newString.replace(/\r\n?/g, "\n") + body.slice(at + oldString.length) };
 }
 
 /**
@@ -472,6 +473,13 @@ export function applyOps(body: string, ops: readonly SurgeryOp[], identity: Entr
   const missingIds = minus(entryIds(body, identity), entryIds(cur, identity));
   const missingRowKeys = minus(rowKeys(body), rowKeys(cur));
   if (missingIds.length > 0 || missingRowKeys.length > 0) return refuse({ kind: "shrink", missingIds, missingRowKeys });
+  const afterStop = unwritable(cur);
+  if (afterStop) return refuse(afterStop);
+  for (const op of ops) {
+    if ((op.op === "patch_prose" && UNICODE_LINE_BREAK.test(op.newString)) || (op.op === "replace_section" && UNICODE_LINE_BREAK.test(op.bodyMd))) {
+      return refuse({ kind: "bad-entry", reason: "prose patches and section replacements cannot carry Unicode line separators" });
+    }
+  }
   return { ok: true, body: cur, applied, skipped };
 }
 
