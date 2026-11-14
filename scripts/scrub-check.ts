@@ -190,16 +190,16 @@ export function scan(path: string, text: string, opts: ScanOptions = {}): Hit[] 
  *  a tracker key leading a path segment of the head ref, in any case. */
 const BRANCH_TRACKER_KEY: Rule = {
   id: "tracker-label",
-  re: /(?<=\/)([a-z]{2,6})-\d+(?=-|\s|$)/gi,
+  re: /(?<=\/)([a-z]{2,6})-\d+(?=[-_/]|\s|$)/gi,
   allow: (m) => STANDARD_PREFIXES.has(m[1]!.toUpperCase()),
 };
 
 /** The text of a pull request that lands in `git log` or on the public page: the merge subject GitHub
  *  defaults to (it embeds the head branch), the title (the squash subject) and the body. */
 export function prMetadata(event: unknown): { where: string; text: string; extra?: Rule[] }[] | undefined {
-  const pr = (event as { pull_request?: { number?: number; title?: string; body?: string | null; head?: { ref?: string; repo?: { full_name?: string } | null } } } | null)?.pull_request;
+  const pr = (event as { pull_request?: { number?: number; title?: string; body?: string | null; head?: { ref?: string; repo?: { full_name?: string } | null; user?: { login?: string } | null } } } | null)?.pull_request;
   if (!pr || typeof pr.head?.ref !== "string") return undefined;
-  const owner = pr.head.repo?.full_name?.split("/")[0] ?? "";
+  const owner = pr.head.repo?.full_name?.split("/")[0] ?? pr.head.user?.login ?? "";
   return [
     { where: "pull request merge subject", extra: [BRANCH_TRACKER_KEY], text: `Merge pull request #${pr.number} from ${owner}/${pr.head.ref}` },
     { where: "pull request title", text: pr.title ?? "" },
@@ -207,10 +207,18 @@ export function prMetadata(event: unknown): { where: string; text: string; extra
   ];
 }
 
-function scanPullRequest(file: string, extra: readonly Rule[]): Hit[] | undefined {
-  const parts = prMetadata(JSON.parse(readFileSync(file, "utf8")));
+class Unscannable extends Error {}
+
+function scanPullRequest(file: string, extra: readonly Rule[], known: KnownShas): Hit[] | undefined {
+  let event: unknown;
+  try {
+    event = JSON.parse(readFileSync(file, "utf8"));
+  } catch (e) {
+    throw new Unscannable(`cannot read ${file} as JSON: ${(e as Error).message}`);
+  }
+  const parts = prMetadata(event);
   // path "" is a commit message's allowlist: the title and merge subject become commits.
-  return parts?.flatMap((p) => scan("", p.text, { where: p.where, extra: [...extra, ...(p.extra ?? [])] }));
+  return parts?.flatMap((p) => scan("", p.text, { where: p.where, known, extra: [...extra, ...(p.extra ?? [])] }));
 }
 
 function git(...args: string[]): string {
@@ -282,21 +290,33 @@ function main(): number {
     const rule = denylistRule(readFileSync(values.denylist, "utf8").split("\n"));
     if (rule) extra.push(rule);
   }
-  const eventFile = values["pr-event"] ?? (Bun.env.GITHUB_EVENT_NAME === "pull_request" ? Bun.env.GITHUB_EVENT_PATH : undefined);
+  const onPullRequest = Bun.env.GITHUB_EVENT_NAME === "pull_request";
+  const eventFile = values["pr-event"] ?? (onPullRequest ? Bun.env.GITHUB_EVENT_PATH : undefined);
+  if (onPullRequest && !eventFile) {
+    console.error("scrub-check: this is a pull_request run but GITHUB_EVENT_PATH is unset or empty, so the pull request cannot be scanned");
+    return 2;
+  }
+  const known = knownShas();
   let prHits: Hit[] = [];
   if (eventFile !== undefined) {
     if (!existsSync(eventFile)) {
       console.error(`scrub-check: no event payload at ${eventFile}`);
       return 2;
     }
-    const scanned = scanPullRequest(eventFile, extra);
+    let scanned: Hit[] | undefined;
+    try {
+      scanned = scanPullRequest(eventFile, extra, known);
+    } catch (e) {
+      if (!(e instanceof Unscannable)) throw e;
+      console.error(`scrub-check: ${e.message}`);
+      return 2;
+    }
     if (!scanned) {
       console.error(`scrub-check: ${eventFile} holds no pull_request with a head ref`);
       return 2;
     }
     prHits = scanned;
   }
-  const known = knownShas();
   const hits = [...prHits, ...(values.history ? [...scanTree(known, extra), ...scanHistory(known, extra)] : scanTree(known, extra))];
   for (const h of hits) console.log(`${h.where}: [${h.rule}] ${h.text}`);
   console.error(hits.length ? `scrub-check: ${hits.length} hit(s)` : "scrub-check: clean");

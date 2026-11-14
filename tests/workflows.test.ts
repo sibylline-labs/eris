@@ -27,6 +27,7 @@ interface Job {
   steps: Step[];
 }
 interface Workflow {
+  on?: { pull_request?: { types?: string[] } };
   permissions?: Record<string, string>;
   jobs: Record<string, Job>;
 }
@@ -53,6 +54,11 @@ describe.skipIf(checkoutOnly("reads the checkout's workflow files"))("the workfl
   it.each(files)("%s defaults to read-only contents", (f) => {
     /** When the workflow-wide permissions grow, every job, including ones that run repo code, can write. */
     expect(parsed(f).permissions).toEqual({ contents: "read" });
+  });
+
+  it("ci.yml re-runs on an edited pull request", () => {
+    /** When `edited` leaves the pull_request types, a title or body change after the first run is never re-scanned by scrub-check — observed in the parsed trigger. */
+    expect(parsed("ci.yml").on?.pull_request?.types).toEqual(expect.arrayContaining(["opened", "synchronize", "reopened", "edited"]));
   });
 
   it("only the publish job can write contents, and only the npm job can mint an OIDC token", () => {
