@@ -14,7 +14,13 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const FLOOR_MS = 60_000;
-const SPAWNS = /Bun\.spawn|spawnSync|\bspawn\(|\bexecFile|helpers\/blackbox/;
+// Raw primitives, the repo's spawning helpers and the SDK runners: a file reaching a
+// subprocess only through a helper still inherits bun's 5s default.
+const SPAWNS =
+  /Bun\.spawn|Bun\.\$|spawnSync|\bspawn\(|\bexecFile|(?<![.\w])exec\(|\bexecSync\(|\bfork\(|child_process|helpers\/blackbox|\b(?:runBounded|runYak|runYakVerb|nodeRunner|runMany|buildInChild|runCommand|runSelf)\b/;
+
+// Comments cannot call anything: strip them before reading the calls.
+const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
 
 // admits: integration — a spawning test file that omits setDefaultTimeout inherits bun's 5s default and flakes under suite concurrency; no type or lint rule sees bun's runtime default, so the source of every test file is read.
 it("every spawning test file sets a default timeout of at least 60s", () => {
@@ -22,8 +28,11 @@ it("every spawning test file sets a default timeout of at least 60s", () => {
   for (const name of readdirSync(import.meta.dir).filter((f) => f.endsWith(".test.ts") && f !== import.meta.file)) {
     const src = readFileSync(join(import.meta.dir, name), "utf8");
     if (!SPAWNS.test(src)) continue;
-    const ms = [...src.matchAll(/setDefaultTimeout\(\s*([\d_]+)\s*\)/g)].map((m) => Number(m[1]!.replaceAll("_", "")));
-    if (!ms.some((v) => v >= FLOOR_MS)) offenders.push(name);
+    const ms = [...stripComments(src).matchAll(/setDefaultTimeout\(\s*([\d_]+)\s*\)/g)].map((m) =>
+      Number(m[1]!.replaceAll("_", "")),
+    );
+    // Every call must clear the floor: a later lower call wins for the file.
+    if (!(ms.length > 0 && ms.every((v) => v >= FLOOR_MS))) offenders.push(name);
   }
   expect(offenders).toEqual([]);
 });
