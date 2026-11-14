@@ -31,7 +31,7 @@ export const SETTINGS_USAGE = `Usage: eris socrates settings <command>
 Commands:
   policy     Show the org's scoring policy, or change it (an org admin's); --preview shows a change first
   enrolment  List the enrolled projects and their Linear links
-  health     Print the install, webhook, reconcile and stuck-write health
+  health     Print the install (with its Linear scopes), webhook, reconcile and stuck-write health
   usage      Print the no-credit usage figures
   canon      Show or choose the org's Canon doc (an org admin's)
   team       Set or clear the Linear team a project's review Epics file on (an org admin's)
