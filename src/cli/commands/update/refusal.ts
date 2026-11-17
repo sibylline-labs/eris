@@ -17,5 +17,5 @@ export class Refusal extends Error {
 export function reasonOf(e: unknown): string {
   const code = typeof e === "object" && e !== null ? (e as { code?: unknown }).code : undefined;
   const message = e instanceof Error ? e.message : String(e);
-  return sanitizeDisplay(`${typeof code === "string" ? `${code}: ` : ""}${message}`).replace(/\s+/g, " ").slice(0, 200);
+  return sanitizeDisplay(`${typeof code === "string" ? `${code}: ` : ""}${message}`.replace(/\s+/g, " ")).slice(0, 200);
 }
