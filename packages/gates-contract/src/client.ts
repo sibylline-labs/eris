@@ -16,16 +16,43 @@
  *   - No failure carries the bearer.
  */
 
-import type * as Schema from "effect/Schema";
+import * as Schema from "effect/Schema";
 import { computeGatesBundleSha, type GatesBundleSha, type GatesOrgBundle, GatesPolicyReply, type GatesSettings, GatesSettingsReply } from "./bundle";
 import { decodeResult } from "./decode";
 import { type ContractFailure, fail, type Outcome, succeed } from "./failure";
 
 export const POLICY_PATH = "/v1/gates/policy";
 export const SETTINGS_PATH = "/v1/gates/settings";
+export const RECEIPTS_PATH = "/v1/gates/receipts";
+export const ASSETS_PATH = "/v1/gates/assets";
+export const ARTIFACTS_PATH = "/v1/gates/artifacts";
+export const ASKS_PATH = "/v1/asks";
+
+/** The contract version each receipt-route reply carries: receipts v1, assets v1.1, artifacts v1.2. */
+export const GATES_RECEIPTS_CONTRACT_VERSION = "gates-contract/v1";
+export const GATES_ASSETS_CONTRACT_VERSION = "gates-contract/v1.1";
+export const GATES_ARTIFACTS_CONTRACT_VERSION = "gates-contract/v1.2";
+
+/** The request header naming the bundle this machine pulled, and the reply headers that judge it. */
+export const X_ERIS_POLICY_SHA = "x-eris-policy-sha";
+export const X_GATES_POLICY_SHA = "x-gates-policy-sha";
+export const X_GATES_POLICY_STALE = "x-gates-policy-stale";
+
+/** The host every stored asset URL names; the store refuses any other, and so does this client. */
+export const GATES_ASSET_HOST = ["uploads", "linear", "app"].join(".");
 
 const TIMEOUT_MS = 20_000;
 const POLICY_REPLY_MAX_BYTES = 1024 * 1024;
+/** The server reads at most 500 comments; a listing of receipts with inline evidence stays well under this. */
+const LIST_MAX_BYTES = 8 * 1024 * 1024;
+const RECORD_REPLY_MAX_BYTES = 64 * 1024;
+/** An upload or digest moves up to 25 MiB through the store's asset storage. */
+const ASSET_TIMEOUT_MS = 120_000;
+const ASSET_REPLY_MAX_BYTES = 64 * 1024;
+/** A stored copy is at most 1 MiB decoded (the server's cap), so its base64 reply stays under this. */
+const ARTIFACT_REPLY_MAX_BYTES = 4 * 1024 * 1024;
+const ASKS_REPLY_MAX_BYTES = 1024 * 1024;
+const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 /** Where the gates API is and the bearer it takes; made only by `gatesEndpoint`. */
 export interface GatesEndpoint {
@@ -33,16 +60,37 @@ export interface GatesEndpoint {
   readonly token: string;
   readonly fetch: typeof globalThis.fetch;
   readonly timeoutMs: number;
+  /** Sent as `x-eris-policy-sha` on the receipt routes; absent for an org not yet pulled. */
+  readonly policySha?: string | undefined;
+  readonly onStale?: ((liveSha: string | null) => void) | undefined;
+  /** Whether `onStale` has fired: it fires once per endpoint, however many receipt calls run. */
+  readonly stale: { told: boolean };
 }
 
 export interface GatesEndpointOptions {
   /** The fetch every request goes through (a test's loopback server); the global fetch when absent. */
   readonly fetch?: typeof globalThis.fetch;
   readonly timeoutMs?: number;
+  /** The pulled bundle's sha, sent as `x-eris-policy-sha` on the receipt routes. */
+  readonly policySha?: string | undefined;
+  /** Told once when a receipt reply carries `x-gates-policy-stale: soft|hard`, with the live sha when the reply names one. */
+  readonly onStale?: ((liveSha: string | null) => void) | undefined;
 }
 
 /** The `docs/ERRORS.md` slugs the client returns (`tests/errors-doc.test.ts`). */
-export type GatesClientSlug = "login-url-refused" | "eris-login-required" | "gate-store-forbidden" | "gate-store-unreachable" | "gate-contract-mismatch";
+export type GatesClientSlug =
+  | "login-url-refused"
+  | "eris-login-required"
+  | "gate-store-forbidden"
+  | "gate-store-unreachable"
+  | "gate-contract-mismatch"
+  | "doctrine-out-of-date"
+  | "linear-issue-not-found"
+  | "linear-rate-limited"
+  | "asks-store-forbidden"
+  | "asks-store-unreachable"
+  | "asks-contract-mismatch"
+  | "asks-rate-limited";
 
 const failure = (slug: GatesClientSlug, what: string, fix: string): ContractFailure => ({ slug, what, fix, docs: `docs/ERRORS.md#${slug}`, exit: 3 });
 
@@ -59,7 +107,15 @@ export function gatesEndpoint(url: string, token: string, opts: GatesEndpointOpt
     parsed = null;
   }
   if (parsed !== null && (parsed.protocol === "https:" || (parsed.protocol === "http:" && LOOPBACK_HOSTS.has(parsed.hostname)))) {
-    return succeed({ base: url.replace(/\/+$/, ""), token, fetch: opts.fetch ?? globalThis.fetch, timeoutMs: opts.timeoutMs ?? TIMEOUT_MS });
+    return succeed({
+      base: url.replace(/\/+$/, ""),
+      token,
+      fetch: opts.fetch ?? globalThis.fetch,
+      timeoutMs: opts.timeoutMs ?? TIMEOUT_MS,
+      policySha: opts.policySha,
+      onStale: opts.onStale,
+      stale: { told: false },
+    });
   }
   const what =
     parsed === null
@@ -72,55 +128,126 @@ export function gatesEndpoint(url: string, token: string, opts: GatesEndpointOpt
 
 const unreachable = (what: string) => failure("gate-store-unreachable", what, "Re-run once the gateway answers; ERIS_YAKS_URL (or yaks.json's url) names the host when it is not the default.");
 const mismatch = (what: string) => failure("gate-contract-mismatch", what, "Update eris ('eris update'); if it persists, the gateway and this client disagree on the gates contract.");
+const loginRequired = (what: string) => failure("eris-login-required", what, "Run 'eris login' once on this machine (or set ERIS_YAKS_TOKEN to a sib_ service token), then re-run.");
 
-/** The problem+json `code` of a refusal, else `HTTP <status>`; never the body text itself. */
+/** The problem+json `code` of a refusal, else the router envelope's `error.code`, else `HTTP <status>`; never the body text itself. */
 function problemCode(body: unknown, status: number): string {
   if (body !== null && typeof body === "object") {
-    const code = (body as { code?: unknown }).code;
-    if (typeof code === "string" && /^[a-z0-9_.-]{1,64}$/i.test(code)) return code;
+    const b = body as { code?: unknown; error?: { code?: unknown } | null };
+    for (const code of [b.code, b.error?.code]) if (typeof code === "string" && /^[a-z0-9_.-]{1,64}$/i.test(code)) return code;
   }
   return `HTTP ${status}`;
 }
 
-/** One GET of `path`, its 2xx body decoded through `schema`; every other outcome mapped to its slug. */
-async function getJson<S extends Schema.Top>(ep: GatesEndpoint, path: string, what: string, schema: S, maxBytes: number): Promise<Outcome<S["Type"]>> {
-  const url = `${ep.base}${path}`;
+/** `Retry-After` as milliseconds: delta-seconds or an HTTP date; null when absent or unreadable. */
+function retryAfterMs(header: string | null): number | null {
+  if (header === null) return null;
+  const t = header.trim();
+  if (/^\d+$/.test(t)) return Number(t) * 1000;
+  const at = Date.parse(t);
+  return Number.isNaN(at) ? null : Math.max(0, at - Date.now());
+}
+
+/** What the gateway answered: its status, its body parsed as JSON (or undefined), its headers and the URL asked. */
+interface Answer {
+  readonly url: string;
+  readonly status: number;
+  readonly body: unknown;
+  readonly code: string;
+  readonly headers: Headers;
+}
+
+interface Exchange {
+  readonly method: "GET" | "POST";
+  readonly path: string;
+  readonly what: string;
+  readonly maxBytes: number;
+  readonly timeoutMs?: number;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly body?: string | Uint8Array;
+  /** Who is unreachable when the exchange fails: the gates store (default) or the asks API. */
+  readonly unreachable?: (what: string) => ContractFailure;
+}
+
+/** One request, its reply read under the cap and parsed; a timeout, network error or oversize reply is a failure. */
+async function exchange(ep: GatesEndpoint, x: Exchange): Promise<Outcome<Answer>> {
+  const url = `${ep.base}${x.path}`;
+  const down = x.unreachable ?? unreachable;
   let status: number;
   let text: string;
+  let headers: Headers;
   try {
     const res = await ep.fetch(url, {
-      method: "GET",
-      headers: { authorization: `Bearer ${ep.token}`, accept: "application/json, application/problem+json" },
-      signal: AbortSignal.timeout(ep.timeoutMs),
+      method: x.method,
+      headers: { authorization: `Bearer ${ep.token}`, accept: "application/json, application/problem+json", ...x.headers },
+      ...(x.body !== undefined ? { body: typeof x.body === "string" ? x.body : new Uint8Array(x.body) } : {}),
+      signal: AbortSignal.timeout(x.timeoutMs ?? ep.timeoutMs),
     });
     status = res.status;
+    headers = res.headers;
     const declared = Number(res.headers.get("content-length") ?? "0");
-    if (declared > maxBytes) {
+    if (declared > x.maxBytes) {
       await res.body?.cancel();
-      return fail(mismatch(`${url} answered ${what} with ${declared} bytes, over the ${maxBytes}-byte cap`));
+      return fail(mismatch(`${url} answered ${x.what} with ${declared} bytes, over the ${x.maxBytes}-byte cap`));
     }
     text = await res.text();
   } catch (err) {
     const name = (err as { name?: unknown }).name;
-    const why = name === "TimeoutError" || name === "AbortError" ? `no answer within ${ep.timeoutMs / 1000}s` : "a network error";
-    return fail(unreachable(`cannot reach ${url} for ${what} (${why})`));
+    const why = name === "TimeoutError" || name === "AbortError" ? `no answer within ${(x.timeoutMs ?? ep.timeoutMs) / 1000}s` : "a network error";
+    return fail(down(`cannot reach ${url} for ${x.what} (${why})`));
   }
-  if (new TextEncoder().encode(text).length > maxBytes) return fail(mismatch(`${url} answered ${what} with a reply over the ${maxBytes}-byte cap`));
+  if (new TextEncoder().encode(text).length > x.maxBytes) return fail(mismatch(`${url} answered ${x.what} with a reply over the ${x.maxBytes}-byte cap`));
   let body: unknown;
   try {
     body = JSON.parse(text);
   } catch {
     body = undefined;
   }
-  if (status === 401) return fail(failure("eris-login-required", `the gateway rejected the stored login token (${problemCode(body, status)})`, "Run 'eris login' once on this machine (or set ERIS_YAKS_TOKEN to a sib_ service token), then re-run."));
+  return succeed({ url, status, body, code: problemCode(body, status), headers });
+}
+
+/** A 2xx body decoded through `schema` (keys it does not name are dropped), else `gate-contract-mismatch`. */
+function decoded<S extends Schema.Top>(a: Answer, what: string, schema: S, contract = "the gates contract", wrong = mismatch): Outcome<S["Type"]> {
+  const d = decodeResult(schema, a.body);
+  return d._tag === "Success" ? succeed(d.success) : fail(wrong(`${a.url} answered ${what} with a body ${contract} does not describe (${d.failure.message})`));
+}
+
+/** The gates store's refusal for a non-2xx answer: login, entitlement, outage, rate limit, else a contract mismatch. */
+function storeRefusal(a: Answer, what: string, opts: { receipt?: boolean; issue?: boolean } = {}): ContractFailure {
+  const { status, code } = a;
+  if (status === 401) return loginRequired(`the gateway rejected the stored login token (${code})`);
   if (status === 402 || status === 403) {
-    return fail(failure("gate-store-forbidden", `the gateway refused the token for ${what} (${problemCode(body, status)})`, "Sign in with an account whose org has Gates ('eris login'), or ask the org admin to grant it."));
+    return failure("gate-store-forbidden", `the gateway refused the token for ${what} (${code})`, "Sign in with an account whose org has Gates ('eris login'), or ask the org admin to grant it.");
   }
-  if (status >= 500) return fail(unreachable(`the gateway failed ${what} (HTTP ${status}, ${problemCode(body, status)})`));
-  if (status < 200 || status > 299) return fail(mismatch(`the gateway refused ${what} (HTTP ${status}, ${problemCode(body, status)})`));
-  const decoded = decodeResult(schema, body);
-  if (decoded._tag !== "Success") return fail(mismatch(`${url} answered ${what} with a body the gates contract does not describe (${decoded.failure.message})`));
-  return succeed(decoded.success);
+  if (status === 429 && opts.receipt === true) {
+    const ms = retryAfterMs(a.headers.get("retry-after"));
+    return {
+      ...failure("linear-rate-limited", `the gate receipt store rate-limited ${what} (HTTP 429)`, ms !== null ? `Wait ${Math.ceil(ms / 1000)}s and re-run.` : "Wait a minute and re-run."),
+      retryAfterMs: ms,
+    };
+  }
+  if (opts.issue === true && status === 404 && code === "issue_not_found") {
+    return failure("linear-issue-not-found", "the tracker has no such issue visible to your org", "Check the issue key (e.g. ABC-123) and that it is not archived.");
+  }
+  if (opts.receipt === true && status === 409 && code === "doctrine_out_of_date") {
+    return failure(
+      "doctrine-out-of-date",
+      "the gateway refused the receipt: this machine's copy of the org's policy is not the live one, and the org requires it (staleness: hard)",
+      "Run 'eris doctrine pull', then re-run the command. Nothing was recorded.",
+    );
+  }
+  if (opts.receipt === true && status === 409 && (code === "linear_disconnected" || code === "org_not_found")) return unreachable(`the gateway has no tracker connection for your org (${code})`);
+  if (status >= 500) return unreachable(`the gateway failed ${what} (HTTP ${status}, ${code})`);
+  return mismatch(`the gateway refused ${what} (HTTP ${status}, ${code})`);
+}
+
+const ok2xx = (a: Answer): boolean => a.status >= 200 && a.status <= 299;
+
+/** One GET of `path`, its 2xx body decoded through `schema`; every other outcome mapped to its slug. */
+async function getJson<S extends Schema.Top>(ep: GatesEndpoint, path: string, what: string, schema: S, maxBytes: number): Promise<Outcome<S["Type"]>> {
+  const a = await exchange(ep, { method: "GET", path, what, maxBytes });
+  if (!a.ok) return a;
+  return ok2xx(a.value) ? decoded(a.value, what, schema) : fail(storeRefusal(a.value, what));
 }
 
 /** The org's policy bundle and settings, as one sha-verified pair. */
@@ -153,4 +280,260 @@ export async function fetchOrgPolicy(ep: GatesEndpoint): Promise<Outcome<PulledP
     return succeed({ bundle: policy.value.bundle, settings: settings.value.settings, bundle_sha: sha });
   }
   return fail(unreachable("the org's policy could not be read as one bundle"));
+}
+
+// --- the receipt routes ---------------------------------------------------------------------------
+
+const ReceiptListing = Schema.Struct({
+  issue: Schema.String,
+  receipts: Schema.Array(
+    Schema.Struct({
+      comment_id: Schema.String,
+      created_at: Schema.String,
+      marker_version: Schema.Literals(["v1", "v2"]),
+      payload: Schema.Unknown,
+      source: Schema.optionalKey(Schema.Literals(["olympus", "marker"])),
+      record_sha256: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    }),
+  ),
+  invalid: Schema.Number,
+  contract_version: Schema.Literal(GATES_RECEIPTS_CONTRACT_VERSION),
+});
+
+const RecordReply = Schema.Struct({
+  comment_id: Schema.String,
+  issue: Schema.String,
+  gate: Schema.String,
+  created_at: Schema.String,
+  record_sha256: Schema.optionalKey(Schema.String),
+  contract_version: Schema.Literal(GATES_RECEIPTS_CONTRACT_VERSION),
+});
+
+const UploadReply = Schema.Struct({ assetUrl: Schema.String, sha256: Schema.String, bytes: Schema.Number, contract_version: Schema.Literal(GATES_ASSETS_CONTRACT_VERSION) });
+const DigestReply = Schema.Struct({ sha256: Schema.String, bytes: Schema.Number, contentType: Schema.String, contract_version: Schema.Literal(GATES_ASSETS_CONTRACT_VERSION) });
+const ArtifactReply = Schema.Struct({
+  sha256: Schema.String,
+  encoding: Schema.Literal("gzip+base64"),
+  content: Schema.String,
+  bytes: Schema.Number,
+  contract_version: Schema.Literal(GATES_ARTIFACTS_CONTRACT_VERSION),
+});
+
+/** One stored record on an issue: the comment it was published as, when, its marker version, and its payload undecoded. */
+export interface ListedReceipt {
+  readonly id: string;
+  /** The server's timestamp: the only clock receipts are ordered by. */
+  readonly createdAt: string;
+  readonly version: "v1" | "v2";
+  readonly payload: unknown;
+}
+
+export interface ReceiptListingRead {
+  readonly receipts: ReadonlyArray<ListedReceipt>;
+  /** Records the store itself could not read as a marker. */
+  readonly invalid: number;
+}
+
+/** The headers a receipt route sends: the bearer's, plus the pulled bundle's sha when there is one. */
+const receiptHeaders = (ep: GatesEndpoint): Record<string, string> => (ep.policySha !== undefined ? { [X_ERIS_POLICY_SHA]: ep.policySha } : {});
+
+/** Tell the caller, once per endpoint, that a receipt reply marked this machine's policy stale. */
+function noteStale(ep: GatesEndpoint, headers: Headers): void {
+  const stale = headers.get(X_GATES_POLICY_STALE);
+  if (ep.stale.told || ep.onStale === undefined || (stale !== "soft" && stale !== "hard")) return;
+  ep.stale.told = true;
+  const live = headers.get(X_GATES_POLICY_SHA);
+  ep.onStale(live !== null && /^[0-9a-f]{12}$/.test(live) ? live : null);
+}
+
+/** Every receipt record on `issue` (`GET /v1/gates/receipts?issue=`), payloads undecoded: `decodePayload` reads each. */
+export async function listReceipts(ep: GatesEndpoint, issue: string): Promise<Outcome<ReceiptListingRead>> {
+  const what = "the receipt listing";
+  const a = await exchange(ep, { method: "GET", path: `${RECEIPTS_PATH}?issue=${encodeURIComponent(issue)}`, what, maxBytes: LIST_MAX_BYTES, headers: receiptHeaders(ep) });
+  if (!a.ok) return a;
+  if (!ok2xx(a.value)) return fail(storeRefusal(a.value, what, { receipt: true, issue: true }));
+  noteStale(ep, a.value.headers);
+  const d = decoded(a.value, what, ReceiptListing);
+  if (!d.ok) return d;
+  return succeed({
+    receipts: d.value.receipts.map((r) => ({ id: r.comment_id, createdAt: r.created_at, version: r.marker_version, payload: r.payload })),
+    invalid: d.value.invalid,
+  });
+}
+
+/** What `appendReceipt` sends: the caller's comment id (the gateway dedupes a retried write on it), the receipt and its prose. */
+export interface ReceiptAppend {
+  readonly commentId: string;
+  readonly issue: string;
+  readonly receipt: unknown;
+  readonly prose: string;
+}
+
+export interface AppendedReceipt {
+  readonly id: string;
+  readonly createdAt: string;
+  /** The sha256 the store keyed the record under, when the reply names it. */
+  readonly recordSha256?: string;
+}
+
+/** Store one receipt and publish its comment (`POST /v1/gates/receipts`). One attempt: a retry is the caller's, with the same comment id. */
+export async function appendReceipt(ep: GatesEndpoint, append: ReceiptAppend): Promise<Outcome<AppendedReceipt>> {
+  const what = "the receipt write";
+  const body = JSON.stringify({ comment_id: append.commentId, issue: append.issue, receipt: append.receipt, prose: append.prose });
+  const a = await exchange(ep, {
+    method: "POST",
+    path: RECEIPTS_PATH,
+    what,
+    maxBytes: RECORD_REPLY_MAX_BYTES,
+    headers: { ...receiptHeaders(ep), "content-type": "application/json" },
+    body,
+  });
+  if (!a.ok) return a;
+  if (!ok2xx(a.value)) return fail(storeRefusal(a.value, what, { receipt: true, issue: true }));
+  noteStale(ep, a.value.headers);
+  const d = decoded(a.value, what, RecordReply);
+  if (!d.ok) return d;
+  return succeed({ id: d.value.comment_id, createdAt: d.value.created_at, ...(d.value.record_sha256 !== undefined ? { recordSha256: d.value.record_sha256 } : {}) });
+}
+
+/** True for an https URL on exactly the asset host, with no userinfo or port. */
+function onAssetHost(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:" && u.hostname === GATES_ASSET_HOST && u.port === "" && u.username === "" && u.password === "";
+  } catch {
+    return false;
+  }
+}
+
+export interface AssetUpload {
+  readonly name: string;
+  readonly contentType: string;
+  readonly bytes: Uint8Array;
+}
+
+export interface StoredAsset {
+  readonly assetUrl: string;
+  readonly sha256: string;
+  readonly bytes: number;
+}
+
+/** Upload one media file (`POST /v1/gates/assets`, raw bytes). Never retried: the store keeps every upload as a new asset. */
+export async function uploadAsset(ep: GatesEndpoint, file: AssetUpload): Promise<Outcome<StoredAsset>> {
+  const what = `the upload of ${file.name}`;
+  const a = await exchange(ep, {
+    method: "POST",
+    path: ASSETS_PATH,
+    what,
+    maxBytes: ASSET_REPLY_MAX_BYTES,
+    timeoutMs: ASSET_TIMEOUT_MS,
+    headers: { "content-type": file.contentType, "x-filename": file.name },
+    body: file.bytes,
+  });
+  if (!a.ok) return a;
+  if (!ok2xx(a.value)) return fail(storeRefusal(a.value, what, { receipt: true }));
+  const d = decoded(a.value, what, UploadReply);
+  if (!d.ok) return d;
+  if (!onAssetHost(d.value.assetUrl)) return fail(mismatch(`the store returned an asset URL for ${file.name} outside ${GATES_ASSET_HOST}`));
+  return succeed({ assetUrl: d.value.assetUrl, sha256: d.value.sha256, bytes: d.value.bytes });
+}
+
+/** A stored asset's digest, or `Gone` when the store holds no asset at the URL. */
+export type AssetDigest =
+  | { readonly _tag: "Digest"; readonly sha256: string; readonly bytes: number; readonly contentType: string }
+  | { readonly _tag: "Gone"; readonly why: string };
+
+/** The digest of the asset stored at `assetUrl` (`GET /v1/gates/assets/digest?url=`); 404 `asset_not_found` is `Gone`. */
+export async function assetDigest(ep: GatesEndpoint, assetUrl: string): Promise<Outcome<AssetDigest>> {
+  const what = "the asset digest read";
+  const a = await exchange(ep, { method: "GET", path: `${ASSETS_PATH}/digest?url=${encodeURIComponent(assetUrl)}`, what, maxBytes: ASSET_REPLY_MAX_BYTES, timeoutMs: ASSET_TIMEOUT_MS });
+  if (!a.ok) return a;
+  if (a.value.status === 404 && a.value.code === "asset_not_found") return succeed({ _tag: "Gone", why: "the store holds no asset at its URL (asset_not_found)" });
+  if (!ok2xx(a.value)) return fail(storeRefusal(a.value, what, { receipt: true }));
+  const d = decoded(a.value, what, DigestReply);
+  return d.ok ? succeed({ _tag: "Digest", sha256: d.value.sha256, bytes: d.value.bytes, contentType: d.value.contentType }) : d;
+}
+
+/** An artifact copy the store holds under its sha256, or `NotStored`. */
+export type StoredCopyRead =
+  | { readonly _tag: "Stored"; readonly copy: { readonly sha256: string; readonly encoding: "gzip+base64"; readonly content: string; readonly bytes: number } }
+  | { readonly _tag: "NotStored"; readonly why: string };
+
+/** The artifact copy stored under `sha256` (`GET /v1/gates/artifacts/<sha256>`); 404 `artifact_not_found` is `NotStored`. */
+export async function artifactCopy(ep: GatesEndpoint, sha256: string): Promise<Outcome<StoredCopyRead>> {
+  if (!SHA256_HEX.test(sha256)) return succeed({ _tag: "NotStored", why: "the receipt's sha256 is not 64 lowercase hex" });
+  const what = "the artifact copy read";
+  const a = await exchange(ep, { method: "GET", path: `${ARTIFACTS_PATH}/${sha256}`, what, maxBytes: ARTIFACT_REPLY_MAX_BYTES });
+  if (!a.ok) return a;
+  if (a.value.status === 404 && a.value.code === "artifact_not_found") return succeed({ _tag: "NotStored", why: "the store holds no copy under its sha256 (artifact_not_found)" });
+  if (!ok2xx(a.value)) return fail(storeRefusal(a.value, what, { receipt: true }));
+  const d = decoded(a.value, what, ArtifactReply);
+  if (!d.ok) return d;
+  if (d.value.sha256 !== sha256) return fail(mismatch(`the store answered the artifact copy for ${sha256.slice(0, 12)} with ${d.value.sha256.slice(0, 12)}'s`));
+  return succeed({ _tag: "Stored", copy: { sha256: d.value.sha256, encoding: d.value.encoding, content: d.value.content, bytes: d.value.bytes } });
+}
+
+// --- the asks route --------------------------------------------------------------------------------
+
+/** The most rows one asks listing returns; the route has no cursor, so a full page may be partial. */
+export const ASKS_LIST_MAX = 100;
+
+export const ASK_DOORS = ["one-way", "two-way"] as const;
+export const ASK_STATES = ["open", "answered", "expired", "withdrawn"] as const;
+
+/** The fields of an `ask@1` record the gate verbs read; the rest of the record is not decoded. */
+export const AskRow = Schema.Struct({
+  id: Schema.String,
+  question: Schema.String,
+  door: Schema.Literals(ASK_DOORS),
+  blocking: Schema.Boolean,
+  state: Schema.Literals(ASK_STATES),
+  binds: Schema.Struct({
+    issue: Schema.String,
+    pr: Schema.optionalKey(Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1))),
+  }),
+});
+export type AskRow = typeof AskRow.Type;
+
+const AskListing = Schema.Struct({ asks: Schema.Array(AskRow) });
+
+/** A listing filter; an absent member does not filter. */
+export interface AskQuery {
+  readonly issue?: string | undefined;
+  readonly state?: (typeof ASK_STATES)[number] | undefined;
+  readonly blocking?: boolean | undefined;
+  readonly limit?: number | undefined;
+}
+
+const asksUnreachable = (what: string) =>
+  failure("asks-store-unreachable", what, "Re-run once the asks API answers. A create that timed out may still have landed: list the issue's asks before asking again.");
+const asksMismatch = (what: string) => failure("asks-contract-mismatch", what, "Update eris ('eris update'); if it persists, the asks API and this client disagree on the ask@1 contract.");
+
+/** The asks matching `q` (`GET /v1/asks?issue=&state=&blocking=&limit=`). */
+export async function listAsks(ep: GatesEndpoint, q: AskQuery): Promise<Outcome<ReadonlyArray<AskRow>>> {
+  const what = "the asks listing";
+  const params = new URLSearchParams();
+  if (q.issue !== undefined) params.set("issue", q.issue);
+  if (q.state !== undefined) params.set("state", q.state);
+  if (q.blocking !== undefined) params.set("blocking", String(q.blocking));
+  if (q.limit !== undefined) params.set("limit", String(q.limit));
+  const qs = params.toString();
+  const a = await exchange(ep, { method: "GET", path: qs === "" ? ASKS_PATH : `${ASKS_PATH}?${qs}`, what, maxBytes: ASKS_REPLY_MAX_BYTES, unreachable: asksUnreachable });
+  if (!a.ok) return a.failure.slug === "gate-contract-mismatch" ? fail(asksMismatch(a.failure.what)) : a;
+  const { status, code } = a.value;
+  if (status === 401) return fail(loginRequired(`the asks API rejected the stored login token (${code})`));
+  if (status === 402 || status === 403) {
+    return fail(failure("asks-store-forbidden", `the asks API refused the token (${code})`, "Sign in with an account whose org may raise asks ('eris login'), or ask the org admin to grant it."));
+  }
+  if (status === 429) {
+    const ms = retryAfterMs(a.value.headers.get("retry-after"));
+    return fail({
+      ...failure("asks-rate-limited", "the asks API rate-limited the call (HTTP 429)", ms !== null ? `Wait ${Math.ceil(ms / 1000)}s and re-run.` : "Wait a minute and re-run."),
+      retryAfterMs: ms,
+    });
+  }
+  if (status >= 500) return fail(asksUnreachable(`the asks API failed ${what} (HTTP ${status}, ${code})`));
+  if (!ok2xx(a.value)) return fail(asksMismatch(`the asks API refused ${what} (HTTP ${status}, ${code})`));
+  const d = decoded(a.value, what, AskListing, "ask@1", asksMismatch);
+  return d.ok ? succeed(d.value.asks) : d;
 }

@@ -29,3 +29,6 @@ export * from "./policy";
 export * from "./profile";
 export * from "./schema";
 export * from "./surfaces";
+export * from "./grants";
+export * from "./receipt";
+export * from "./review-report";

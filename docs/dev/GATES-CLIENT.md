@@ -26,6 +26,10 @@ The failure map, by what the gateway answered:
 | HTTP 5xx | `gate-store-unreachable` |
 | any other status, a body that does not decode, a reply over the cap, or a `bundle_sha` the values do not hash to | `gate-contract-mismatch` |
 | `/policy` and `/settings` name different `bundle_sha`s twice running | `gate-store-unreachable` |
+| a receipt route: HTTP 409 `doctrine_out_of_date` (the org's staleness is `hard`) | `doctrine-out-of-date` |
+| a receipt route: HTTP 404 `issue_not_found` | `linear-issue-not-found` |
+| a receipt, asset or artifact route: HTTP 429 (the failure carries `retryAfterMs` from `Retry-After`) | `linear-rate-limited` |
+| the asks route: 402/403, no answer or 5xx, 429, anything else | `asks-store-forbidden`, `asks-store-unreachable`, `asks-rate-limited`, `asks-contract-mismatch` |
 
 ## Routes
 

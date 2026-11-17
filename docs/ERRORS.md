@@ -1296,6 +1296,48 @@ contract), a reply over the size cap, or a policy bundle whose values do not has
 back is also this slug. Nothing was written. Update eris (`eris update`); if it persists, the gateway
 and this client disagree on the gates contract. Exit 3.
 
+### doctrine-out-of-date
+
+The gateway refused a receipt write (HTTP 409 `doctrine_out_of_date`): the org requires every writer to
+hold its live policy (staleness `hard`), and this machine's pulled copy is not it. Nothing was
+recorded. Run `eris doctrine pull`, then re-run the command. With staleness `soft` the write lands and
+the verb prints one `WARN` naming `eris doctrine pull` instead. Exit 3.
+
+### linear-issue-not-found
+
+The gateway's tracker connection has no issue with this key visible to your org (HTTP 404
+`issue_not_found`) on a receipt read or write. Check the issue key and that the issue is not archived.
+Exit 3.
+
+### linear-rate-limited
+
+The gate receipt store answered HTTP 429 and the verb's bounded retry (it waits the reply's
+`Retry-After`, capped, then a fixed backoff) ran out. Nothing past the refused call was read or
+written; a write that was retried reused its comment id, so it was never stored twice. Wait the time
+the block names and re-run. Exit 3.
+
+### asks-store-unreachable
+
+The asks API (`GET /v1/asks`) gave no answer within the deadline, the network failed, or it answered
+with a `5xx`. `eris gate check` never reads an unreadable asks API as "no asks": it fails instead. Retry
+once the gateway answers. Exit 3.
+
+### asks-store-forbidden
+
+The asks API accepted the bearer but refused it (HTTP 402 or 403): the org may not raise or read asks
+on this token. Sign in with an account whose org may, or ask the org's admin. Exit 3.
+
+### asks-contract-mismatch
+
+The asks API answered with a status the route does not answer with, a body that is not an `ask@1`
+listing, or a reply over the size cap. Update eris (`eris update`); if it persists, the asks API and
+this client disagree on the contract. Exit 3.
+
+### asks-rate-limited
+
+The asks API answered HTTP 429. The block names the wait when the reply carried `Retry-After`. Wait and
+re-run. Exit 3.
+
 ### doctrine-usage
 
 `eris doctrine effect` read stdin that is not one JSON object of the shape
