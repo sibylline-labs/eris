@@ -49,11 +49,12 @@ plugins/index.ts        # the plugins this build compiles in, composed by src/ma
 plugins/doctrine/       # `eris doctrine check|schema|gates|effect|pull|path`: index.ts (the manifest, and doctrinePlugin(defaults), the
                         #   same plugin reading a distribution's doctrine and profiles files), doctrine.ts (the
                         #   handlers), pull.ts (pull and path, and freshTree, the tree the loop verbs read), org-tree.ts (the pulled tree: write, verify, swap); the contract is packages/gates-contract, imported by name (docs/DOCTRINE.md)
-plugins/loop/           # `eris loop list|resolve`: index.ts (the manifest, and loopPlugin(defaults): the org's verified
+plugins/loop/           # `eris loop list|resolve|launch|resume|stop|hand-back`: index.ts (the manifest, and loopPlugin(defaults): the org's verified
                         #   tree a build supplies), handlers.ts (the dispatch and the one failure render), help.ts, deps.ts (the
                         #   endpoint, the child env and the subprocess seam), names.ts (operand normalisers), target.ts (key or
                         #   yak id), claims.ts (the claim and its ledger), body.ts (a body from the verified tree), prompt.ts
-                        #   (the header) (docs/LOOP.md)
+                        #   (the header), claude.ts (the background-job runtime: ~/.claude/jobs, claude --bg, stop, agents),
+                        #   transitions.ts (In Progress and Todo moves), launch.ts, hand-back.ts, stop.ts, resume.ts (docs/LOOP.md)
 plugins/gate/           # `eris gate record|skip|check|ci`: index.ts (the manifest, and gatePlugin(defaults): the ladder file and the
                         #   org's pulled tree a build supplies), gate.ts (the command line and the one failure render), record.ts
                         #   (record and skip), check.ts (the statuses and the derived rows), artifact.ts and git.ts (where an

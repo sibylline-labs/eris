@@ -7,9 +7,21 @@ the verbs make is a request to the gateway on the `eris login` bearer
 ([dev/GATES-CLIENT.md](dev/GATES-CLIENT.md)): eris holds no tracker credential.
 
 ```
-eris loop list                  [--output json]
-eris loop resolve <ISSUE|YAK-ID> [--output json]
+eris loop list                    [--output json]
+eris loop resolve <ISSUE|YAK-ID>   [--output json]
+eris loop launch <loop> <ISSUE|YAK-ID> --cwd <abs> --model <m> [--report-to <KEY>]
+                 [--caller <name>] [--context <text>] [--force] [--unclaimed] [--output json]
+eris loop resume <ref> | --all [--prompt <text>] [--unclaimed] [--output json]
+eris loop stop <ref>               [--output json]
+eris loop hand-back <ISSUE> [--claim <id>] [--report-to <KEY>] [--outcome handed_back|aborted] [--output json] < body
 ```
+
+A `<ref>` is a session id (the job id `claude --bg` printed, or its session id), the session's exact
+name, or the issue key of a loop session. A loop session is named `eris-loop-<slug>-<issue>`.
+
+The runtime is Claude Code: a session is a `claude --bg` background job, kept under
+`~/.claude/jobs/<id>/state.json`. Every `claude` child runs under a deadline, with the caller's env less
+its Claude Code session markers (`CLAUDECODE`, `CLAUDE_CODE_*`) and eris's bearer (`ERIS_YAKS_TOKEN`).
 
 ## Where a loop body comes from
 
@@ -39,6 +51,64 @@ gateway: `GET /v1/yaks/observations/<id>` (`/v0` for a UUID) names its cluster, 
 `GET /v1/yaks/clusters/<cluster>` the cluster's current issue. The lookup never follows a redirect, so
 the bearer cannot be carried to another host. JSON: `{"issue": "...", "yak"?: "..."}`. A yak with no
 issue yet is `yak-unresolved` (exit 2).
+
+## The claim
+
+The gateway holds at most one live claim per org and issue. This machine keeps a ledger,
+`~/.eris/loop/claims/<ISSUE>.json` (directory `0700`, file `0600`, written whole), naming the claim id
+it holds for an issue, the loop, and the session the claim is bound to. The ledger is advisory: the
+gateway is the authority, and the ledger is how `stop`, `reap` and a forced relaunch name the claim they
+release. An entry is dropped only while it still names the claim being released, so a forced
+successor's entry survives its predecessor's late hand-back.
+
+## launch
+
+`eris loop launch <loop> <ref> --cwd <abs> --model <m>` runs, in order:
+
+1. Normalise every operand. A refusal here (`loop-usage`, exit 2) has claimed, requested and spawned
+   nothing. `--cwd` must be an absolute directory that is not `$HOME`; `--model` is required.
+2. The `claude` CLI on PATH, then a yak id resolved to its issue.
+3. Unless `--force`: refuse while a local loop session on the issue is still at work. With
+   `--unclaimed`, only a session of the same loop counts.
+4. With `--force`: release this machine's prior claim on the issue (`aborted`).
+5. Unless `--unclaimed`: reserve the claim (`POST /v1/linear/issues/<key>/claim`). Another loop's claim
+   is `linear-issue-claimed` (exit 3), naming the holder.
+6. The org's tree for `--cwd`'s org, pulled when the claim names a newer bundle; the loop's body; the
+   prompt.
+7. `claude --bg <prompt> --name eris-loop-<slug>-<issue> --model <m>` in `--cwd`.
+8. Bind the claim to the session (once more after 3 s when the gateway opened no agent session), then
+   move the issue, and its parent, to In Progress while each is unstarted. A closed issue is never
+   reopened; a failed move only warns.
+
+Any failure after step 5 releases the claim (`aborted`, the reason as its body) before the verb stops.
+The receipt is `delegated <ISSUE>[ (yak <8>)] → loop <slug> · <session> · model <m>`.
+
+## hand-back
+
+`eris loop hand-back <ISSUE> --claim <id> < body` is how a loop reports. With `--claim` (the id its
+prompt's `Claim:` line carries) the body is the claim's release response; when the claim no longer
+holds the issue (`superseded`, `not_claimed`), or with no `--claim`, it is a comment on the issue.
+`--report-to <KEY>` also comments there. The body is refused before anything is sent when it is blank or
+over 65,536 characters. Each write is tried once, and again (bounded, waiting the reply's
+`Retry-After`) only when the gateway shed it with a 429. A target that got nothing fails the verb with
+`loop-hand-back-failed` (exit 1) after the lines for what did land are printed.
+
+## stop
+
+`eris loop stop <ref>` stops the session (`claude stop`). When this machine's claim on its issue is
+bound to that very session, it releases the claim (`aborted`) and moves the issue back to Todo, but only
+while it is In Progress: In Review, Blocked and every other state stand. A session that holds no claim
+touches neither. The receipt is `stopped <ISSUE> → loop <slug> · <id>`.
+
+## resume
+
+`eris loop resume <ref> [--prompt <text>]` continues a finished session (`claude --bg --resume`). A
+working session is refused. The session holds its issue's claim again: this machine's claim is re-bound
+to the resumed session when it is bound to this very session; otherwise a fresh claim is reserved
+first (refused while another loop holds the issue, unless `--unclaimed`), and released if the resume
+fails. The continuation prompt carries the claim's `Claim:` and `Hand-back:` lines. `--all` resumes
+every failed loop session whose issue is open, reading every issue before resuming any. The receipt is
+`resumed <ISSUE> → loop <slug> · <id>`.
 
 ## The prompt
 

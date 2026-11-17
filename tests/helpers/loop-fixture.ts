@@ -64,6 +64,7 @@ const args = process.argv.slice(2);
 const home = process.env.HOME;
 const jobs = join(home, ".claude", "jobs");
 appendFileSync(process.env.FAKE_CLAUDE_LOG, args.join("\\x1f") + "\\x1e");
+appendFileSync(process.env.FAKE_CLAUDE_LOG + ".env", JSON.stringify({ cwd: process.cwd(), CLAUDECODE: process.env.CLAUDECODE ?? null, CLAUDE_CODE_ENTRYPOINT: process.env.CLAUDE_CODE_ENTRYPOINT ?? null, ERIS_YAKS_TOKEN: process.env.ERIS_YAKS_TOKEN ?? null }) + "\\n");
 const flag = (n) => { const i = args.indexOf(n); return i < 0 ? undefined : args[i + 1]; };
 if (args[0] === "--bg") {
   if (process.env.FAKE_CLAUDE_FAIL) { process.stderr.write("claude: the daemon is down\\n"); process.exit(1); }
@@ -98,9 +99,14 @@ export interface LoopWorld {
   readonly issues: Map<string, Issue>;
   /** Answer a route with this instead of the fake's own reply (`"POST /v1/linear/issues/ABC-7/claim"`). */
   readonly refuse: Map<string, () => Response>;
+  /** The org's live policy, as the gateway serves it; `setBundle` changes it and its sha. */
+  bundle: GatesOrgBundle;
   liveSha: string;
+  setBundle(b: GatesOrgBundle): Promise<void>;
   /** Every `claude` call's argv, in order. */
   calls(): string[][];
+  /** Each `claude` call's working directory and the session markers and bearer its env carried. */
+  childEnvs(): Array<Record<string, string | null>>;
   /** A job's state file, as the fake keeps it. */
   job(id: string): Record<string, unknown>;
   setJob(id: string, patch: Record<string, unknown>): void;
@@ -126,6 +132,7 @@ export async function loopWorld(): Promise<LoopWorld> {
   const refuse = new Map<string, () => Response>();
   const log = join(dir, "calls.log");
   writeFileSync(log, "");
+  writeFileSync(`${log}.env`, "");
   const world: LoopWorld = {
     home,
     dir,
@@ -135,7 +142,17 @@ export async function loopWorld(): Promise<LoopWorld> {
     claims,
     issues,
     refuse,
+    bundle: BUNDLE,
     liveSha: await computeGatesBundleSha(BUNDLE, SETTINGS),
+    setBundle: async (b) => {
+      world.bundle = b;
+      world.liveSha = await computeGatesBundleSha(b, SETTINGS);
+    },
+    childEnvs: () =>
+      readFileSync(`${log}.env`, "utf8")
+        .split("\n")
+        .filter((l) => l !== "")
+        .map((l) => JSON.parse(l) as Record<string, string | null>),
     calls: () =>
       readFileSync(log, "utf8")
         .split("\x1e")
@@ -173,7 +190,7 @@ async function answer(req: Request): Promise<Response> {
   w.seen.push({ method: req.method, path: url.pathname, body, auth: req.headers.get("authorization") });
   const refused = w.refuse.get(`${req.method} ${url.pathname}`);
   if (refused !== undefined) return refused();
-  if (req.method === "GET" && url.pathname === "/v1/gates/policy") return Response.json({ contract: "gates-contract/v1.5", bundle: BUNDLE, bundle_sha: w.liveSha });
+  if (req.method === "GET" && url.pathname === "/v1/gates/policy") return Response.json({ contract: "gates-contract/v1.5", bundle: w.bundle, bundle_sha: w.liveSha });
   if (req.method === "GET" && url.pathname === "/v1/gates/settings") return Response.json({ contract: "gates-contract/v1.5", settings: SETTINGS, bundle_sha: w.liveSha });
   const m = /^\/v1\/linear\/issues\/([A-Z]+-\d+)(?:\/(claim|release|comments|transition))?$/.exec(url.pathname);
   if (m === null) return problem(404, "not_found");

@@ -44,6 +44,28 @@ const ROWS = {
   loop: { impl: "ts", summary: "Run the org's loops as background Claude Code sessions that hold an issue's claim" },
   "loop list": { summary: "The loops the org's policy carries", json: true },
   "loop resolve": { summary: "The issue key an operand (a key or a yak id) names", json: true, pos: ["ref"], usage: "<ISSUE|YAK-ID>" },
+  "loop launch": {
+    summary: "Claim an issue and start a loop on it as a background session",
+    json: true,
+    pos: ["loop", "issue"],
+    flags: [v("--cwd"), v("--model"), v("--report-to"), v("--caller"), v("--context"), b("--force"), b("--unclaimed")],
+    usage: "<loop> <ISSUE|YAK-ID> --cwd <abs> --model <m> [--report-to <KEY>] [--caller <name>] [--context <text>] [--force] [--unclaimed]",
+  },
+  "loop resume": {
+    summary: "Continue a finished loop session, holding its claim again",
+    json: true,
+    pos: ["ref?"],
+    flags: [b("--all"), v("--prompt"), b("--unclaimed")],
+    usage: "<ref> | --all [--prompt <text>] [--unclaimed]",
+  },
+  "loop stop": { summary: "Stop a loop session, release its claim, move an In Progress issue to Todo", json: true, pos: ["ref"], usage: "<ref>" },
+  "loop hand-back": {
+    summary: "Post a loop's hand-back (stdin) as the claim's release response, else a comment",
+    json: true,
+    pos: ["issue"],
+    flags: [v("--claim"), v("--report-to"), v("--outcome")],
+    usage: "<ISSUE> [--claim <id>] [--report-to <KEY>] [--outcome handed_back|aborted] < body",
+  },
 } as const;
 
 /** The loop plugin, with what the build supplies. */

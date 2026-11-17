@@ -17,7 +17,7 @@ Start with the [repo README](../README.md) for install and quickstart; come here
 | [YAK.md](YAK.md) | `eris yak …`, `eris login`, `eris logout`, `eris whoami`, `eris tokens`, `eris org members`, `eris org connect-linear`, `eris org delete` | Land a durable, deduplicated observation with a Yaks endpoint |
 | [DOCTRINE.md](DOCTRINE.md) | `eris doctrine check\|schema\|gates\|effect` | Validate a doctrine file's postures, print the policy contract as JSON Schema, the active gate map, and a change as sentences |
 | [GATE.md](GATE.md) | `eris gate record\|skip\|check\|ci`, `eris surface lock\|unlock\|digest` | Record a gate receipt on an issue, skip a gate on a grant, and check that every gate a change owes passes |
-| [LOOP.md](LOOP.md) | `eris loop list\|resolve` | Run the org's loops as background Claude Code sessions that hold an issue's claim until their hand-back |
+| [LOOP.md](LOOP.md) | `eris loop list\|resolve\|launch\|resume\|stop\|hand-back` | Run the org's loops as background Claude Code sessions that hold an issue's claim until their hand-back |
 | [COMPLETION.md](COMPLETION.md) | `eris completion bash\|zsh` | Shell tab completion: install and the derived command tree |
 | [SKILLS.md](SKILLS.md) | `eris skills install`, `eris skills lint`, `eris docs` | Install the agent skills this build publishes; check skills against their kind's contract; print the verb reference (`--json` for agents) |
 | [UPDATE.md](UPDATE.md) | `eris --version`, `eris update` | Which build this is, and replacing a binary with the newest release after checking it |
