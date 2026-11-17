@@ -17,8 +17,8 @@
  *     or `revoke`.
  *   - Every response is parsed against a schema that drops unknown keys, so a
  *     field the server should not send (a hash, a secret) is never re-printed.
- *   - A failure block carries the status and the server's `error.code` only,
- *     never the response body.
+ *   - A failure block carries the status and the server's problem `code` only
+ *     (when it is a snake_case word), never the response body.
  *   - Every failure is the §4 block on stderr, nothing on stdout, exit 1.
  *   - The bearer is read through `resolveOrgBearer` with the caller's cwd, so
  *     a repo that selects org B manages org B's tokens.
@@ -89,11 +89,8 @@ Creating a service token needs an org admin's login ('eris login'); an org on th
 holds at most 3 live service tokens. Run 'eris tokens <command> --help' for a command's flags.
 `;
 
-/** The server's `error.code` when it is a short snake_case word: anything else is not echoed. */
-const safeCode = (code: string | undefined): string | undefined => (code !== undefined && /^[a-z][a-z_]{0,39}$/.test(code) ? code : undefined);
-
-function refusal(status: number, code: string | undefined, target: string): Failure {
-  const c = safeCode(code);
+/** `code` arrives already filtered by the shared reader (`problemCode` in ./yak-admin.ts): a short snake_case word or nothing. */
+function refusal(status: number, c: string | undefined, target: string): Failure {
   const answered = `the endpoint answered ${status}${c ? ` ${c}` : ""} for ${target}`;
   if (status === 401) {
     return { slug: "yak-unauthorized", what: `${answered}: it rejected the bearer token`, fix: "run: eris login\n(or check ERIS_YAKS_TOKEN when it is set)" };

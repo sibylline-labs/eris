@@ -1,8 +1,8 @@
 /**
- * The yak admin verbs that read or write a destination (`discover`,
- * `config get`, `config set`) act as the org the caller's directory selects:
- * a repo that names org B reads and writes org B's server with org B's bearer
- * and never touches the default org's.
+ * Every yak admin verb (`status`, `ready`, `reports`, `discover`, `config get`,
+ * `config set`) acts as the org the caller's directory selects: a repo that
+ * names org B reads and writes org B's server with org B's bearer and never
+ * touches the default org's.
  *
  * The seam is `runYakVerb`, the dispatcher that forwards its `cwd` to the
  * admin handlers, over two real loopback servers (one per org) named in a
@@ -32,7 +32,7 @@ interface Seen {
   authorization: string | null;
 }
 
-/** A loopback yaks server that records each request and answers the three admin routes. */
+/** A loopback yaks server that records each request and answers the admin routes. */
 function serve(seen: Seen[]) {
   return Bun.serve({
     port: 0,
@@ -43,6 +43,8 @@ function serve(seen: Seen[]) {
       if (url.pathname === "/v1/yaks/discovery") {
         return Response.json({ teams: [{ id: TEAM, key: "ENG", name: "Engineering" }], team_id: TEAM, projects: [], workflow_states: [], labels: [], default_state_id: null });
       }
+      if (url.pathname === "/v1/yaks/status") return Response.json({ configured: true, observation_count: 1, last_filed_issue_identifier: null });
+      if (url.pathname === "/v1/yaks/vendor-reports") return Response.json({ reports: [] });
       if (url.pathname === "/v1/yaks/config") {
         return Response.json({
           config: { team_id: TEAM, project_id: null, state_id: null, label_ids: [], new_issue_cap: 20 },
@@ -110,13 +112,16 @@ async function yak(args: string[], cwd: string): Promise<number> {
 }
 
 const VERBS: [string, string[], string][] = [
+  ["status", ["status"], "GET /v1/yaks/status"],
+  ["ready", ["ready"], "GET /v1/yaks/status"],
+  ["reports", ["reports"], "GET /v1/yaks/vendor-reports"],
   ["discover", ["discover", "teams"], "GET /v1/yaks/discovery"],
   ["config get", ["config", "get"], "GET /v1/yaks/config"],
   ["config set", ["config", "set", "--team", "ENG"], "PUT /v1/yaks/config"],
 ];
 
 describe.each(VERBS)("eris yak %s from a repo that selects org B", (_name, args, last) => {
-  // admits: another admin verb or another dispatcher path resolving from the process cwd; these three plus status and ready (org-send-sites.test.ts) are the admin verbs
+  // admits: another admin verb or another dispatcher path resolving from the process cwd; these six are every admin verb adminHandler routes
   it("reaches org B's server with org B's bearer and never org A's", async () => {
     /** When the dispatcher drops its cwd, or a handler resolves from process.cwd(), an org-B repo reads or writes the default org: observed as a request on server A. */
     expect(await yak(args, repoB)).toBe(0);

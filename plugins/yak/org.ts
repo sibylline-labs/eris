@@ -33,6 +33,7 @@ import { CliExit, groupArgs, readArgs, renderFailureBlock, resolveOrgBearer, typ
 import { z } from "zod";
 import plugin from "./index";
 import { defaultOpenBrowser } from "./login";
+import { problemCode } from "./yak-admin";
 
 // A `…Slug`-named union: `tests/errors-doc.test.ts` harvests its members.
 export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied" | "org-delete-flags" | "org-confirmation-mismatch" | "org-workspace-name-unknown" | "org-tokens-revoked" | "org-connect-unconfigured" | "org-connect-timeout";
@@ -138,16 +139,6 @@ interface Failure {
 }
 
 type Outcome<T> = { ok: true; value: T } | { ok: false; failure: Failure };
-
-/** The problem body's `code`: top level, else the `{error:{code}}` shape. */
-function problemCode(body: unknown): string | undefined {
-  if (typeof body !== "object" || body === null) return undefined;
-  const top = (body as { code?: unknown }).code;
-  if (typeof top === "string") return top;
-  const error = (body as { error?: unknown }).error;
-  if (typeof error === "object" && error !== null && typeof (error as { code?: unknown }).code === "string") return (error as { code: string }).code;
-  return undefined;
-}
 
 type Action = "deactivate a member" | "delete the org" | "cancel the org's deletion" | "connect Linear";
 

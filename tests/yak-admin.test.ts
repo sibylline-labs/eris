@@ -62,6 +62,10 @@ function stored(config: Record<string, unknown>) {
 
 type Route = (req: Request, body: unknown) => Response;
 
+/** A refusal as Hera sends it: RFC 7807 problem+json with the code at the top level. */
+const problem = (status: number, code: string) =>
+  Response.json({ type: `urn:hera:error:${code}`, title: "Refused", status, detail: "refused", code }, { status, headers: { "content-type": "application/problem+json" } });
+
 let sandbox: string;
 let home: string;
 let server: ReturnType<typeof Bun.serve>;
@@ -80,7 +84,7 @@ beforeAll(() => {
       const body: unknown = text.length > 0 ? JSON.parse(text) : undefined;
       requests.push({ method: req.method, path: `${url.pathname}${url.search}`, body, auth: req.headers.get("authorization") });
       const route = routes[`${req.method} ${url.pathname}`];
-      return route ? route(req, body) : Response.json({ error: { code: "not_found", message: "no such endpoint" } }, { status: 404 });
+      return route ? route(req, body) : problem(404, "not_found");
     },
   });
 });
@@ -274,7 +278,7 @@ describe("eris yak ready", () => {
 
   it("401: says the token was refused and nudges eris login", async () => {
     /** When a revoked token reads as 'unreachable', the agent waits on the network instead of signing in again. */
-    routes["GET /v1/yaks/status"] = () => Response.json({ error: { code: "unauthorized", message: "x" } }, { status: 401 });
+    routes["GET /v1/yaks/status"] = () => problem(401, "unauthorized");
     const r = await ready(loopback());
     expect(r.rc).toBe(0);
     expect(r.stdout.split("\n")[0]).toContain("refused");
@@ -334,12 +338,32 @@ describe("eris yak discover", () => {
 
   it("403 admin_required: the yak-admin-required block naming the Linear-admin approver, exit 1, stdout empty", async () => {
     /** When a non-admin refusal reads as an empty list, an agent concludes the workspace has no teams: observed on all three outputs. */
-    routes["GET /v1/yaks/discovery"] = () => Response.json({ error: { code: "admin_required", message: "x" } }, { status: 403 });
+    routes["GET /v1/yaks/discovery"] = () => problem(403, "admin_required");
     const r = await yak(["discover"], "json");
     expect(r.rc).toBe(1);
     expect(r.stdout).toBe("");
     expect(r.stderr).toContain("slug: yak-admin-required");
     expect(r.stderr).toContain("Linear admin");
+  });
+
+  // admits: a lost Linear connection read as unavailable; only the 409 code tells the admin to reconnect
+  it("409 linear_disconnected: the yak-linear-disconnected block naming the reconnect, exit 1", async () => {
+    /** When the reader misses Hera's top-level code, a revoked Linear connection reads as yak-admin-unavailable and the admin retries instead of reconnecting: observed in the slug on stderr. */
+    routes["GET /v1/yaks/discovery"] = () => problem(409, "linear_disconnected");
+    const r = await yak(["discover"]);
+    expect(r.rc).toBe(1);
+    expect(r.stderr).toContain("slug: yak-linear-disconnected");
+    expect(r.stderr).toContain("eris org connect-linear");
+  });
+
+  // admits: a server-chosen code driving the terminal; the reader is the one place a code enters a block
+  it("a code that is not a snake_case word is not echoed, and maps to the generic slug", async () => {
+    /** When the reader echoes the server's code raw, a response can write escape sequences into the operator's terminal: observed as an ESC byte on stderr. */
+    routes["GET /v1/yaks/discovery"] = () => problem(403, "\u001b[31madmin_required");
+    const r = await yak(["discover"]);
+    expect(r.rc).toBe(1);
+    expect(r.stderr).not.toContain("\u001b");
+    expect(r.stderr).toContain("slug: yak-admin-unavailable");
   });
 
   it("an unknown kind is yak-discover-unknown-kind, exit 1, nothing sent", async () => {
@@ -381,7 +405,7 @@ describe("eris yak config set", () => {
   it("a UUID team still goes through discovery, so a team the workspace lacks is refused before any PUT", async () => {
     /** When a UUID skips the check, a set stores a team no yak can be filed into: observed as the absent PUT. */
     routes["GET /v1/yaks/discovery"] = (req) =>
-      new URL(req.url).searchParams.get("team_id") === OTHER_TEAM ? Response.json({ error: { code: "team_not_found", message: "x" } }, { status: 404 }) : Response.json(discovery(TEAM));
+      new URL(req.url).searchParams.get("team_id") === OTHER_TEAM ? problem(404, "team_not_found") : Response.json(discovery(TEAM));
     const r = await yak(["config", "set", "--team", OTHER_TEAM]);
     expect(r.rc).toBe(1);
     expect(r.stderr).toContain("slug: yak-team-not-found");
@@ -399,6 +423,15 @@ describe("eris yak config set", () => {
     expect(requests.some((q) => q.path === `/v1/yaks/discovery?team_id=${OTHER_TEAM}`)).toBe(true);
     expect(puts()[0]!.body).toEqual({ project_id: PROJECT });
     expect(r.stdout.startsWith("configured: yes\n")).toBe(true);
+  });
+
+  // admits: a member's set read as unavailable; only the 403 code names the admin who can set it
+  it("403 admin_required on the PUT: the yak-admin-required block, exit 1", async () => {
+    /** When the PUT's Hera refusal is not read, a member's config set reads as an outage instead of naming the admin who can set it: observed in the slug on stderr. */
+    routes["PUT /v1/yaks/config"] = () => problem(403, "admin_required");
+    const r = await yak(["config", "set", "--team", "ENG"]);
+    expect(r.rc).toBe(1);
+    expect(r.stderr).toContain("slug: yak-admin-required");
   });
 
   it("an unmatched name is yak-config-no-match listing the candidates, and nothing is PUT", async () => {
@@ -426,7 +459,7 @@ describe("eris yak config set", () => {
     const empty = await yak(["config", "set"]);
     expect(empty.rc).toBe(1);
     expect(empty.stderr).toContain("slug: yak-config-set-empty");
-    routes["PUT /v1/yaks/config"] = () => Response.json({ error: { code: "invalid_config", message: "x" } }, { status: 422 });
+    routes["PUT /v1/yaks/config"] = () => problem(422, "invalid_config");
     const refused = await yak(["config", "set", "--team", TEAM], "json");
     expect(refused).toMatchObject({ rc: 1, stdout: "" });
     expect(refused.stderr).toContain("slug: yak-config-invalid");
