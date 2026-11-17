@@ -881,8 +881,10 @@ The org this directory acts as cannot be determined, so nothing was sent.
 Either `ERIS_ORG`, or `repo.org` in an `eris.yaml`, is not an org id (26
 uppercase Crockford base32 characters, the id `eris whoami` prints), or an
 `eris.yaml` between this directory and the checkout root cannot be read or
-parsed. A broken manifest might be the one that selects an org, so it is never
-skipped. Fix: correct the id or the manifest, or remove the selector.
+parsed, or a `.git` on that walk cannot be inspected (so whether the checkout
+root was reached is unknown). A broken manifest might be the one that selects an
+org, so it is never skipped. Fix: correct the id or the manifest, make the named
+`.git` readable, or remove the selector.
 
 ### org-token-mismatch
 
