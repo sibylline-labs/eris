@@ -81,10 +81,10 @@ function generated(reg: Registry): { tree: string; helpers: string; argv: string
     flagArms.push([keyOf(path), `echo "${uniqSorted([...own, "--help"]).join(" ")}"`]);
   }
 
-  const valueFlags = uniqSorted(paths.flatMap((p) => (reg[p]!.flags ?? []).filter((f) => f.takesValue).map((f) => safe(f.name, FLAG, "flag"))));
+  const valueFlags = uniqSorted(paths.flatMap((p) => (reg[p]!.flags ?? []).filter((f) => f.completeValue ?? f.takesValue).map((f) => safe(f.name, FLAG, "flag"))));
   // Registry order, first seen: core's rows precede a plugin's, and the emitted
   // case arm lists them in that order.
-  const fileFlags = [...new Set(paths.flatMap((p) => (reg[p]!.flags ?? []).filter((f) => f.takesValue && f.file === true).map((f) => safe(f.name, FLAG, "flag"))))];
+  const fileFlags = [...new Set(paths.flatMap((p) => (reg[p]!.flags ?? []).filter((f) => (f.completeValue ?? f.takesValue) && f.file === true).map((f) => safe(f.name, FLAG, "flag"))))];
 
   const slotArms: [string, string][] = [];
   const fileSlots: string[] = [];

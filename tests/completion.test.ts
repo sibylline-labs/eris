@@ -346,6 +346,30 @@ describe("the emitter: one registry edit is the whole change", () => {
     expect(press(["eris", "frob", "--zing", "./er"], { script, cwd: REPO })).toEqual([]);
   });
 
+  it("`completeValue: false` suppresses value-waiting in the emitted script while `takesValue` stays true for parsing", () => {
+    /** When the emitter reads `takesValue` alone, a flag a plugin marks `completeValue: false` still waits for a value at a tab press (and a `file` one still offers file names): observed on the emitted bash. */
+    const quiet: Record<string, Row> = {
+      ...REGISTRY,
+      frob: { impl: "ts", summary: "test verb", flags: [{ name: "--hush", takesValue: true, completeValue: false, file: true }, v("--zing")] },
+    };
+    const script = join(tmp, "complete-value.bash");
+    writeFileSync(script, emitScript("bash", quiet));
+    expect(press(["eris", "frob", "--hush", "./er"], { script, cwd: REPO })).toEqual([]);
+    expect(sorted(press(["eris", "frob", "--hush", "--"], { script }))).toEqual(["--help", "--hush", "--zing"]);
+    expect(press(["eris", "frob", "--zing", ""], { script })).toEqual([]);
+  });
+
+  it("`completeValue: true` makes a flag wait for a value in the emitted script even when `takesValue` is false", () => {
+    /** When the emitter ignores `completeValue` on a non-value flag, a plugin cannot opt a flag into value completion: the next word completes as a flag instead of a value. */
+    const loud: Record<string, Row> = {
+      ...REGISTRY,
+      frob: { impl: "ts", summary: "test verb", flags: [{ name: "--hold", takesValue: false, completeValue: true }] },
+    };
+    const script = join(tmp, "complete-value-true.bash");
+    writeFileSync(script, emitScript("bash", loud));
+    expect(press(["eris", "frob", "--hold", "--"], { script })).toEqual([]);
+  });
+
   it.skipIf(!HAS_ZSH)("the same registry edit completes in the emitted zsh, loaded through a real compinit + bashcompinit", () => {
     /** When the zsh wrapper diverges from the shared body, zsh users lose a verb bash users have. */
     const script = join(tmp, "injected.zsh");

@@ -28,6 +28,9 @@ export type FlagName = `--${string}`;
 export interface Flag {
   readonly name: FlagName;
   readonly takesValue: boolean;
+  /** Whether tab completion waits for a value after this flag. Absent, it follows
+   *  `takesValue`; the parser reads `takesValue` alone, so this never changes parsing. */
+  readonly completeValue?: boolean;
   /** A value flag that may be given more than once; its values are kept in order. */
   readonly repeatable?: boolean;
   /** A one-letter spelling the parser also accepts (`-y` for `--yes`). */
