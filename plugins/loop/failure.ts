@@ -18,7 +18,8 @@ export type LoopSlug =
   | "loop-hand-back-failed"
   | "loop-session-not-found"
   | "loop-session-ambiguous"
-  | "loop-claim-ledger-unwritable";
+  | "loop-claim-ledger-unwritable"
+  | "loop-secret-detected";
 
 /** A slugged failure with the loop's wider exit range (the client's are 2 or 3). */
 export interface LoopBlock extends Omit<ContractFailure, "exit"> {

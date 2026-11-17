@@ -60,6 +60,16 @@ describe("eris loop hand-back", () => {
     expect(w.seen).toEqual([]);
   });
 
+  it("refuses a body holding a secret before any request, naming the rule and never the text", async () => {
+    /** When the scan is skipped or runs after the release, an agent's hand-back posts a live credential to the tracker, where it cannot be recalled: observed on the slug, the stderr and the empty request log. */
+    const token = "ghp" + "_" + "0123456789abcdefghijABCDEFGHIJ012345";
+    const r = await loop(w, ["hand-back", "ABC-7", "--claim", CLAIM], { stdin: `result: done\nused ${token} to push\n` });
+    expect([r.rc, slugOf(r.stderr), r.stdout]).toEqual([2, "loop-secret-detected", ""]);
+    expect(r.stderr).not.toContain(token);
+    expect(w.seen).toEqual([]);
+    expect(readClaim(w.home, "ABC-7")?.claim_id).toBe(CLAIM);
+  });
+
   it("prints what landed, then fails loop-hand-back-failed (exit 1) naming the target that got nothing", async () => {
     /** When a target that got nothing still exits 0, a hand-back is silently lost; when the failure hides what did land, it is posted twice on re-run: observed on stdout, the slug and the exit. */
     const r = await loop(w, ["hand-back", "ABC-7", "--claim", CLAIM, "--report-to", "ABC-404"], { stdin: "result" });

@@ -4,7 +4,8 @@
  * the claim no longer holds the issue, it is a comment on the issue. `--report-to` also comments there.
  *
  * Invariants:
- *  - the body is refused before anything is sent: blank, or over `HAND_BACK_MAX` characters;
+ *  - the body is refused before anything is sent: blank, over `HAND_BACK_MAX` characters, or holding a
+ *    secret a vendored gitleaks rule matches (`loop-secret-detected`, the same scan `gate record` runs);
  *  - a release that answered (released or not) drops the ledger entry while it still names the claim;
  *    a stale claim (`superseded`, `not_claimed`) or a failed release falls back to the comment;
  *  - each target gets one write, retried only on a 429 (shed before the route ran, so never doubled),
@@ -13,9 +14,10 @@
  */
 
 import { commentIssue, releaseIssue, type RetryOpts, retryRateLimited } from "eris/gates-contract";
+import { scanStrings } from "eris/outbound-scan";
 import { dropClaim } from "./claims";
 import { endpoint, type Run } from "./deps";
-import { usage } from "./failure";
+import { block, stop, usage } from "./failure";
 import { CLAIM_ID_RE, HAND_BACK_MAX, normaliseIssue, normaliseReportTo } from "./names";
 
 export const HAND_BACK_OUTCOMES = ["handed_back", "aborted"] as const;
@@ -52,6 +54,10 @@ export async function handBack(run: Run, input: HandBackInput): Promise<HandBack
   if (body.trim() === "") usage("hand-back reads the hand-back on stdin, and stdin was empty", "Pipe the hand-back body on stdin: eris loop hand-back <ISSUE> < <file>.");
   const chars = [...body].length;
   if (chars > HAND_BACK_MAX) usage(`the hand-back is ${chars} characters; the tracker takes at most ${HAND_BACK_MAX}`, "Shorten the hand-back and re-run.");
+  const leaked = [...new Set(scanStrings(body).map((h) => h.rule))];
+  if (leaked.length > 0) {
+    stop(block("loop-secret-detected", `the hand-back holds a secret (${leaked.join(", ")}); nothing was sent`, "Remove the secret from the hand-back and re-run; this check cannot be overridden.", 2));
+  }
 
   const ep = await endpoint(run);
   const retry: RetryOpts = run.deps.retry ?? {

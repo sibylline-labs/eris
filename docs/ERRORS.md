@@ -1414,6 +1414,13 @@ The claim ledger, `~/.eris/loop/claims/`, could not be written. A launch or resu
 claim released it (`aborted`) first, so no claim is held that this machine cannot name. Make the
 directory writable by you (it is created 0700) and re-run. Exit 3.
 
+### loop-secret-detected
+
+`eris loop hand-back` found a secret in the body: a vendored gitleaks rule (`packages/outbound-scan`)
+matched it. The `ERROR` line names the rule ids, never the text. Nothing was sent: the claim is still
+held and no comment was posted. This check cannot be overridden. Remove the secret from the hand-back
+and run it again. Exit 2.
+
 ### asks-store-unreachable
 
 The asks API (`GET /v1/asks`) gave no answer within the deadline, the network failed, or it answered
