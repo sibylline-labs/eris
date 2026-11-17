@@ -152,6 +152,9 @@ surface. A plugin's surfaces are documented with that plugin, not here.
 | `eris doctrine gates` | tab-separated rows: `<profile>\t<gate>\t<mode>`, then `@user-impact\t<class>\t<req,...>`, `@lift\t<door>\t<rung>`, `@remediate\t<key>\t<value>` and `@ask\t<key>\t<value>`; `--explain` adds indented lines after each. Nothing when there is no doctrine file or the active posture has no policy ([DOCTRINE.md](DOCTRINE.md#gates)) | refused | experimental |
 | `eris doctrine effect` | text: one sentence per changed knob, nothing when nothing changed. JSON: one bare record `{effects: [{path, knob, before, after, direction, sentence}]}`. Bad stdin exits `2`, a side that does not decode exits `3`, each with the §4 block and nothing on stdout ([DOCTRINE.md](DOCTRINE.md#effect)) | accepted | experimental |
 
+| `eris doctrine pull` | text: one `<orgId>\t<bundle_sha>` line. JSON: one bare record `{org, bundle_sha, dir}`. Every failure is the §4 block with nothing on stdout, exit `3`, and the previous tree left in place ([DOCTRINE.md](DOCTRINE.md#pull-and-path)) | accepted | experimental |
+| `eris doctrine path` | one line: the pulled `doctrine.md` through the org's link, `~/.eris/doctrine/<orgId>/doctrine.md`, printed only after the tree verifies; none pulled or an edited tree is the §4 block, exit `3` ([DOCTRINE.md](DOCTRINE.md#pull-and-path)) | refused | experimental |
+
 Everything not listed is a **human surface**. Its stdout may change shape in any
 release. Parsing it is unsupported — ask for a machine surface instead.
 

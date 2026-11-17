@@ -1,16 +1,20 @@
-# `eris doctrine` — the doctrine `policy:` contract, offline
+# `eris doctrine` — the doctrine `policy:` contract
 
 A doctrine is a markdown file of **postures**: named ways of working (a quick prototype, business
 as usual, a lock-in before a launch), one of them active. Each posture may carry a `policy:` block
 that says which review gates run and how strictly, who signs off which kind of change, and what
-evidence each class of change must show before it closes. `eris doctrine` reads that file. Every
-verb is offline: it reads a local file, a profiles file, or stdin, and never the network.
+evidence each class of change must show before it closes. `eris doctrine` reads that file. `check`,
+`schema`, `gates` and `effect` are offline: they read a local file, a profiles file, or stdin, and
+never the network. `pull` fetches the org's hosted policy and `path` names the file it wrote
+([pull and path](#pull-and-path)).
 
 ```
 eris doctrine check  [--file <path>] [--cite] [--output json]
 eris doctrine schema
 eris doctrine gates  [--file <path>] [--profiles <file>] [--explain]
 eris doctrine effect [--profiles <file>] [--output json] < {"contract": ..., "before": ..., "after": ...}
+eris doctrine pull   [--output json]
+eris doctrine path
 ```
 
 The contract itself (the Schema, its explanations, the reader and the evaluators) is the
@@ -136,6 +140,33 @@ direction, sentence }] }`, `direction` one of `raise` (stricter), `lower` (loose
 Stdin that is not that object exits 2 ([`doctrine-usage`](ERRORS.md#doctrine-usage)); a side that
 does not decode exits 3 ([`doctrine-policy-invalid`](ERRORS.md#doctrine-policy-invalid),
 [`gate-surfaces-invalid`](ERRORS.md#gate-surfaces-invalid)).
+
+## `pull` and `path`
+
+An organisation keeps its doctrine in the hosted gates service. `pull` fetches it, on the
+`eris login` bearer of the org the directory acts as (`ERIS_ORG`, else `repo.org` in the nearest
+`eris.yaml`, else the machine's default org), through the gates client
+([dev/GATES-CLIENT.md](dev/GATES-CLIENT.md)), and writes it as files:
+
+```
+~/.eris/doctrine/<orgId>/manifest.json   { contract, org, bundle_sha, settings, files, pulled_at }
+                        doctrine.md profiles.yaml loops/<slug>.md
+```
+
+- The client recomputes the bundle's `bundle_sha` from the values it decoded; a bundle whose sha
+  does not match is refused (`gate-contract-mismatch`).
+- The new tree is written beside the old one, read back and verified, and only then swapped in, so a
+  failed pull leaves the previous tree in place.
+- `<orgId>` is a link to the current tree; `path` prints the doctrine through it,
+  `~/.eris/doctrine/<orgId>/doctrine.md`, after checking every file against the manifest. A tree
+  edited by hand fails `doctrine-local-modified`; `pull` restores it. Change the policy in the
+  org's Gates settings, not on disk.
+
+```sh
+eris doctrine pull                                   # <orgId>\t<bundle_sha>
+eris doctrine check --file "$(eris doctrine path)"
+eris doctrine gates --file "$(eris doctrine path)" --profiles "$(dirname "$(eris doctrine path)")/profiles.yaml"
+```
 
 ## A distribution's defaults
 

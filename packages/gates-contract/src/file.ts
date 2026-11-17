@@ -69,8 +69,8 @@ function sections(lines: readonly string[]): { active: string | null; sections: 
   return { active, sections: out };
 }
 
-/** The section's policy, or the problems that stopped it decoding. */
-function policyOf(s: Section): { policy: DoctrinePolicy | null; sha256: string | null; problems: DoctrineProblem[] } {
+/** The section's fenced `policy:` value, undecoded, or the problems that stopped it being read. */
+function fencedPolicy(s: Section): { found: { line: number; yaml: string; value: unknown } | null; problems: DoctrineProblem[] } {
   const problems: DoctrineProblem[] = [];
   const blocks: { line: number; yaml: string }[] = [];
   let open: { line: number; lines: string[] } | null = null;
@@ -99,8 +99,13 @@ function policyOf(s: Section): { policy: DoctrinePolicy | null; sha256: string |
     if (doc !== null && typeof doc === "object" && "policy" in doc) found.push({ line: b.line, yaml: b.yaml, value: (doc as { policy: unknown }).policy });
   }
   if (found.length > 1) problems.push({ line: found[1]!.line, message: `${s.slug}: more than one policy: block` });
-  const first = found[0];
-  if (first === undefined || problems.length > 0) return { policy: null, sha256: null, problems };
+  return { found: problems.length > 0 ? null : (found[0] ?? null), problems };
+}
+
+/** The section's policy, or the problems that stopped it decoding. */
+function policyOf(s: Section): { policy: DoctrinePolicy | null; sha256: string | null; problems: DoctrineProblem[] } {
+  const { found: first, problems } = fencedPolicy(s);
+  if (first === null) return { policy: null, sha256: null, problems };
 
   const decoded = decodeResult(DoctrinePolicy, first.value);
   if (decoded._tag === "Success") return { policy: decoded.success, sha256: createHash("sha256").update(first.yaml).digest("hex"), problems };
@@ -124,6 +129,46 @@ export function readDoctrine(text: string): DoctrineRead {
     const r = policyOf(s);
     problems.push(...r.problems);
     return { slug: s.slug, name: s.name, line: s.line, section: sectionText(s), policy: r.policy, policy_sha256: r.sha256 };
+  });
+  if (active !== null && !secs.some((s) => s.slug === active)) problems.push({ line: 1, message: `active: ${active} names no ## section` });
+  return { active, postures, problems };
+}
+
+/** A posture as a policy bundle carries it: its name line, its `- ` bullets, and its fence's raw `policy:` value. */
+export interface BundlePosture {
+  readonly slug: string;
+  readonly name: string;
+  readonly bullets: readonly string[];
+  /** The fence's `policy:` value as YAML parsed it, undecoded; undefined when the section has none. */
+  readonly policy: unknown;
+}
+
+export interface BundleSectionsRead {
+  readonly active: string | null;
+  readonly postures: readonly BundlePosture[];
+  readonly problems: readonly DoctrineProblem[];
+}
+
+const BULLET = /^-\s(.*)$/;
+
+/**
+ * Read a doctrine file the way a policy bundle holds it (bundle.ts `bundleFromFiles`): the bullets
+ * are the `- ` lines straight after the name line, and the policy is left for the bundle's own
+ * Schema to decode. Fence problems are the ones `readDoctrine` reports.
+ */
+export function readBundleSections(text: string): BundleSectionsRead {
+  const { active, sections: secs } = sections(text.split(/\r?\n/));
+  const problems: DoctrineProblem[] = [];
+  const postures = secs.map((s): BundlePosture => {
+    const bullets: string[] = [];
+    for (let i = 1; i < s.body.length; i++) {
+      const m = BULLET.exec(s.body[i]!.text);
+      if (m === null) break;
+      bullets.push(m[1]!);
+    }
+    const r = fencedPolicy(s);
+    problems.push(...r.problems);
+    return { slug: s.slug, name: s.name, bullets, policy: r.found?.value };
   });
   if (active !== null && !secs.some((s) => s.slug === active)) problems.push({ line: 1, message: `active: ${active} names no ## section` });
   return { active, postures, problems };

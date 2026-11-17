@@ -21,7 +21,7 @@ export interface DoctrineDefaults {
 export type DoctrineDefaultsSource = DoctrineDefaults | ((ctx: VerbContext) => DoctrineDefaults | Promise<DoctrineDefaults>);
 
 const ROWS = {
-  doctrine: { impl: "ts", summary: "Doctrine policy: blocks (check, schema, gates, effect); the U2/U3 floor cannot be waived" },
+  doctrine: { impl: "ts", summary: "Doctrine policy: blocks (check, schema, gates, effect, pull, path); the U2/U3 floor cannot be waived" },
   "doctrine check": {
     summary: "Validate every posture's policy: block in a doctrine file",
     json: true,
@@ -47,11 +47,14 @@ const ROWS = {
     flags: [{ name: "--profiles", takesValue: true, file: true }],
     usage: '[--profiles <file>] < {"contract": "policy"|"surfaces", "before": ..., "after": ...}',
   },
+  "doctrine pull": { summary: "Fetch the org's hosted policy on the eris login bearer and write it to ~/.eris/doctrine/<orgId>/", json: true },
+  "doctrine path": { summary: "Print the pulled doctrine.md of the org this directory acts as, after verifying it" },
 } as const;
 
 const JSON_FIX = `  eris doctrine check                      {active, policy_hash, citation, postures: [{slug, name, line,
                                             section, policy, policy_sha256, policy_hash, citation}]}
   eris doctrine effect                     {effects: [{path, knob, before, after, direction, sentence}]}
+  eris doctrine pull                       {org, bundle_sha, dir}
 `;
 
 /** The doctrine plugin, reading `defaults` when a verb's file flag is absent. */

@@ -46,9 +46,9 @@ src/                    # The TS program the shim and the bin run
 ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN lines
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
-plugins/doctrine/       # `eris doctrine check|schema|gates|effect`: index.ts (the manifest, and doctrinePlugin(defaults), the
+plugins/doctrine/       # `eris doctrine check|schema|gates|effect|pull|path`: index.ts (the manifest, and doctrinePlugin(defaults), the
                         #   same plugin reading a distribution's doctrine and profiles files), doctrine.ts (the
-                        #   handlers); the contract is packages/gates-contract, imported by name (docs/DOCTRINE.md)
+                        #   handlers), pull.ts (pull and path), org-tree.ts (the pulled tree: write, verify, swap); the contract is packages/gates-contract, imported by name (docs/DOCTRINE.md)
 plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consult|status|policy|evidence|settings`: index.ts (the manifest), submit.ts
                         #   (submit, its unfit and stamp rules, and the group dispatch), client.ts (the credentialed GET,
                         #   POST or PUT every endpoint verb shares), classify.ts (local rubric scoring, HAL override
@@ -83,7 +83,9 @@ packages/gates-contract/ # the doctrine policy: contract, `eris/gates-contract`:
                         #   src/explain.ts (each knob's explanation and the machinery that reads it),
                         #   src/surfaces.ts (the .claude/surfaces.yml Schema), src/file.ts (the doctrine.md
                         #   reader), src/active.ts, src/profile.ts, src/effect.ts (one sentence per changed knob),
-                        #   src/schema.ts (the JSON Schema document), src/decode.ts (value-stripping decode)
+                        #   src/schema.ts (the JSON Schema document), src/decode.ts (value-stripping decode),
+                        #   src/bundle.ts (the hosted policy bundle, bundle_sha, its files), src/client.ts (the
+                        #   hosted gates API client, docs/dev/GATES-CLIENT.md)
 packages/socrates-core/ # Socrates living-doc surgery, `eris/socrates-core`: src/doc-surgery.ts (applyOps, the pure
                         #   splices and guards; writeDoc, the fetch-splice-check-write-verify pipe over an injected
                         #   LinearDocPort; ensureDoc; parseTitle). Web APIs only: its tsconfig has no Bun/Node types.

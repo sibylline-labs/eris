@@ -1,7 +1,7 @@
 {
   "name": "@sibylline-labs/gates-contract",
   "version": "0.1.0",
-  "description": "The doctrine policy: contract: its Effect Schema with plain-English explanations, the doctrine.md reader, the active-posture evaluators and the effect-sentence engine",
+  "description": "The doctrine policy: contract: its Effect Schema with plain-English explanations, the doctrine.md reader, the active-posture evaluators, the effect-sentence engine, the hosted org policy bundle and its client",
   "license": "Apache-2.0",
   "private": false,
   "type": "module",
