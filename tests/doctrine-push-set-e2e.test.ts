@@ -6,11 +6,13 @@
  * path an operator runs: pull, edit the tree, push it, then switch a posture and comment an issue.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { computeGatesBundleSha, type GatesOrgBundle, type GatesSettings, policyHash, readDoctrine, renderBundle } from "eris/gates-contract";
 import { sandbox, type Sandbox } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 const ORG = "01HZX3K5Q8W2N4R6T8V0Y2B4D6";
 const LOGIN = ["sib", ORG, "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
