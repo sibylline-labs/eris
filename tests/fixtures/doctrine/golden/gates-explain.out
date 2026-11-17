@@ -1,0 +1,47 @@
+quick	plan-review	on
+    Reviews the written plan against the design rules and the codebase's own patterns before any code is written. Guards against a design flaw that is cheap to fix in a plan reaching code, where it costs a rewrite or a review round. Stricter: Plans now get the full review before any code, adding about one review round. Looser: Plans get a lighter, later or no review: faster, but design flaws surface in code review or in production instead.
+    on: Runs in full on every issue.
+quick	final-gates	on
+    Runs the closing checks before a pull request is marked ready: regressions against the starting baseline, the target graph, the code conventions and the user-impact evidence. Guards against a change merging with a new failure, an unreviewed dependency, or no proof it can be rolled back. Stricter: Every pull request waits for the full closing checks, a few extra minutes per issue. Looser: The checks run more lightly or once at the end; never off, because this gate enforces the no-downtime, no-customer-loss floor.
+    on: Runs in full on every issue.
+guarded	premise-gate	lite
+    Checks each assumption a plan rests on against the real system before that plan is built. Guards against a plan built on an assumption that turns out to be false, which costs a rewrite or a bad release. Stricter: Each load-bearing assumption gets a direct check (a probe, a query, a diff), about one extra research pass before planning. Looser: Fewer assumptions are checked directly (none when off): faster, but a wrong assumption can reach code.
+    lite: Runs with a lighter rubric: the same receipt, fewer checks.
+guarded	final-gates	on
+    Runs the closing checks before a pull request is marked ready: regressions against the starting baseline, the target graph, the code conventions and the user-impact evidence. Guards against a change merging with a new failure, an unreviewed dependency, or no proof it can be rolled back. Stricter: Every pull request waits for the full closing checks, a few extra minutes per issue. Looser: The checks run more lightly or once at the end; never off, because this gate enforces the no-downtime, no-customer-loss floor.
+    on: Runs in full on every issue.
+guarded	user-impact	on
+    Checks that a change proves what its user-impact class requires: a way back, zero downtime, an end-to-end run, a rehearsed rollback. Guards against a user-visible change closing with no proven way back, or a risky one with no proof it stays up. Stricter: The evidence is checked as the work goes, and a change cannot close without it. Looser: The evidence is checked more lightly or once at the end; never off, because this gate is the floor.
+    on: Runs in full on every issue.
+@user-impact	U1	revert-path,e2e
+    revert-path: A proven way back: the revert command run, or a flag flipped off.
+    e2e: An end-to-end run against the real stack.
+@user-impact	U2	revert-path,zero-downtime,e2e
+    revert-path: A proven way back: the revert command run, or a flag flipped off.
+    zero-downtime: A rollout shape proven to keep the service up while it deploys.
+    e2e: An end-to-end run against the real stack.
+@user-impact	U3	revert-path,zero-downtime,e2e,rollback-rehearsal
+    revert-path: A proven way back: the revert command run, or a flag flipped off.
+    zero-downtime: A rollout shape proven to keep the service up while it deploys.
+    e2e: An end-to-end run against the real stack.
+    rollback-rehearsal: The rollback actually rehearsed before release.
+@lift	U0	R2
+    R2: Closes automatically on passing receipts.
+@lift	U1:cross-repo-seam	R1
+    R1: A human reviews after the run (the pull request review).
+@remediate	on	final-gates-fail
+    Which failing gates launch a remediation round: final-gates-fail, unlock-gate-fail.
+@remediate	loop	follow-up
+    The agent loop each remediation round runs (default follow-up).
+@remediate	runtime	opencode/vertex→claude
+    Which runtime each remediation round runs on: the first round, then the escalation.
+@remediate	max_rounds	3
+    Rounds a remediation loop may run before it stops and a human signs off with every round's report (default 2, at most 5).
+@remediate	scope	findings-only
+    What a remediation round may change (findings-only: the open review findings and nothing else).
+@ask	two_way_timeout	24h
+    How long a two-way ask with a recommendation waits before it is answered with that recommendation: none (default), or <n>h from 4 to 720. A one-way ask never times out.
+@ask	digest	daily
+    How non-blocking asks are rolled up for the operator: off (default), hourly, daily.
+@ask	session_budget	3
+    Open asks one session may hold before a new ask is refused (default 5, at most 20).

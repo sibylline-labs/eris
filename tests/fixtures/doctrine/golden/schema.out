@@ -1,0 +1,761 @@
+{
+  "dialect": "draft-2020-12",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "profile_default": {
+        "type": "string",
+        "description": "The review profile an issue starts on: spine (lighter) or deep (adds the target-graph and SDK checks). Guards against risky work starting on too light a review. Stricter: Starting every issue on deep adds the target-graph and SDK checks, about two more short passes per issue. Looser: Starting on spine skips those passes unless an escalation trigger fires.",
+        "x-eris-explain": {
+          "summary": "The review profile an issue starts on: spine (lighter) or deep (adds the target-graph and SDK checks).",
+          "protects": "risky work starting on too light a review.",
+          "raise": "Starting every issue on deep adds the target-graph and SDK checks, about two more short passes per issue.",
+          "lower": "Starting on spine skips those passes unless an escalation trigger fires.",
+          "order": [
+            "spine",
+            "deep"
+          ]
+        }
+      },
+      "escalate_on": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "one-way-door",
+            "cross-repo-seam",
+            "U1",
+            "U2",
+            "U3"
+          ],
+          "description": "A kind of change that moves an issue up to the deep profile. one-way-door: A change that is hard to undo: a migration, a deletion, a contract change. cross-repo-seam: A change to a call or contract between two repositories. U1: A user-visible change that can be reverted. U2: A change that risks availability. U3: A change that could lose user data or money for good.",
+          "x-eris-explain": {
+            "summary": "A kind of change that moves an issue up to the deep profile.",
+            "values": {
+              "one-way-door": "A change that is hard to undo: a migration, a deletion, a contract change.",
+              "cross-repo-seam": "A change to a call or contract between two repositories.",
+              "U1": "A user-visible change that can be reverted.",
+              "U2": "A change that risks availability.",
+              "U3": "A change that could lose user data or money for good."
+            }
+          }
+        },
+        "description": "The kinds of change that move an issue up to the deep profile. Guards against a risky change (hard to undo, cross-repo, user-facing) getting only the light review. Stricter: More kinds of change get the deep review, each costing its extra passes. Looser: Fewer kinds escalate, so more risky changes run on the light profile.",
+        "x-eris-explain": {
+          "summary": "The kinds of change that move an issue up to the deep profile.",
+          "protects": "a risky change (hard to undo, cross-repo, user-facing) getting only the light review.",
+          "raise": "More kinds of change get the deep review, each costing its extra passes.",
+          "lower": "Fewer kinds escalate, so more risky changes run on the light profile."
+        }
+      },
+      "gates": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string",
+          "enum": [
+            "on",
+            "lite",
+            "once-at-end",
+            "off"
+          ],
+          "description": "How strictly a gate runs. on: Runs in full on every issue. lite: Runs with a lighter rubric: the same receipt, fewer checks. once-at-end: Is judged once, at the final gates, instead of when its stage runs. off: Is skipped: eris records a doctrine SKIPPED receipt in its place.",
+          "x-eris-explain": {
+            "summary": "How strictly a gate runs.",
+            "values": {
+              "on": "Runs in full on every issue.",
+              "lite": "Runs with a lighter rubric: the same receipt, fewer checks.",
+              "once-at-end": "Is judged once, at the final gates, instead of when its stage runs.",
+              "off": "Is skipped: eris records a doctrine SKIPPED receipt in its place."
+            },
+            "rank": [
+              "off",
+              "once-at-end",
+              "lite",
+              "on"
+            ]
+          }
+        },
+        "description": "How strictly each work gate runs, by gate name; a gate the posture does not name runs in full (on). Guards against a review step being skipped without anyone deciding to skip it. Stricter: Gates run more fully, each adding its own review time to every issue. Looser: Gates run lighter, later or not at all: issues move faster with less checked.",
+        "x-eris-explain": {
+          "summary": "How strictly each work gate runs, by gate name; a gate the posture does not name runs in full (on).",
+          "protects": "a review step being skipped without anyone deciding to skip it.",
+          "raise": "Gates run more fully, each adding its own review time to every issue.",
+          "lower": "Gates run lighter, later or not at all: issues move faster with less checked.",
+          "keys": {
+            "understand-scope": {
+              "summary": "Reads the issue, restates it, classifies its user impact and picks the review profile before any work starts.",
+              "protects": "work starting on a misread issue, or a risky change running on the light profile.",
+              "raise": "Every issue gets a written scope note and a recorded impact class first, a few minutes per issue.",
+              "lower": "Scoping is lighter, later or skipped, so a misread issue or an understated risk class is caught later, or not at all."
+            },
+            "premise-gate": {
+              "summary": "Checks each assumption a plan rests on against the real system before that plan is built.",
+              "protects": "a plan built on an assumption that turns out to be false, which costs a rewrite or a bad release.",
+              "raise": "Each load-bearing assumption gets a direct check (a probe, a query, a diff), about one extra research pass before planning.",
+              "lower": "Fewer assumptions are checked directly (none when off): faster, but a wrong assumption can reach code."
+            },
+            "define-future": {
+              "summary": "States, before any code, how the service graph should change (config keys, calls between services, queues, events), so the final check can hold the code to it.",
+              "protects": "a change quietly adding or removing a dependency between services that nobody reviewed.",
+              "raise": "Each issue writes down its intended graph change up front, and one that alters or removes something existing waits for a human.",
+              "lower": "The graph change is stated more lightly, later or not at all, so an unreviewed new dependency can ship."
+            },
+            "sdk-check": {
+              "summary": "Looks up the shared-library building blocks a plan needs and routes any missing one to the shared SDK instead of hand-rolling it.",
+              "protects": "the same plumbing (retries, HTTP, config reading) being rewritten slightly differently in every repo.",
+              "raise": "Each plan gets a catalogue lookup and gaps are filed against the SDK, a short pass before code.",
+              "lower": "A lighter, later or skipped lookup saves time, but local copies of shared plumbing pile up and drift apart."
+            },
+            "plan-review": {
+              "summary": "Reviews the written plan against the design rules and the codebase's own patterns before any code is written.",
+              "protects": "a design flaw that is cheap to fix in a plan reaching code, where it costs a rewrite or a review round.",
+              "raise": "Plans now get the full review before any code, adding about one review round.",
+              "lower": "Plans get a lighter, later or no review: faster, but design flaws surface in code review or in production instead."
+            },
+            "final-gates": {
+              "summary": "Runs the closing checks before a pull request is marked ready: regressions against the starting baseline, the target graph, the code conventions and the user-impact evidence.",
+              "protects": "a change merging with a new failure, an unreviewed dependency, or no proof it can be rolled back.",
+              "raise": "Every pull request waits for the full closing checks, a few extra minutes per issue.",
+              "lower": "The checks run more lightly or once at the end; never off, because this gate enforces the no-downtime, no-customer-loss floor."
+            },
+            "user-impact": {
+              "summary": "Checks that a change proves what its user-impact class requires: a way back, zero downtime, an end-to-end run, a rehearsed rollback.",
+              "protects": "a user-visible change closing with no proven way back, or a risky one with no proof it stays up.",
+              "raise": "The evidence is checked as the work goes, and a change cannot close without it.",
+              "lower": "The evidence is checked more lightly or once at the end; never off, because this gate is the floor."
+            },
+            "research": {
+              "summary": "Caches the docs of a library the model cannot know (new, unpinned, or newer than its training) and runs one real call before a plan relies on it.",
+              "protects": "a plan built on a library API that has changed or never existed.",
+              "raise": "Each such library gets a pinned docs cache and one executed call, a short research pass.",
+              "lower": "A lighter, later or skipped research pass: a plan may trust memory of the library, which may be out of date."
+            }
+          }
+        }
+      },
+      "signoff": {
+        "type": "object",
+        "properties": {
+          "one-way": {
+            "type": "string",
+            "enum": [
+              "human",
+              "self"
+            ],
+            "description": "Who approves a one-way door: a change that is hard to undo. Guards against an irreversible change shipping without a human looking at it. Stricter: A human approves each one before it closes. Looser: The agent closes it on its own receipts.",
+            "x-eris-explain": {
+              "summary": "Who approves a one-way door: a change that is hard to undo.",
+              "values": {
+                "human": "A human approves it before it closes.",
+                "self": "The agent closes it on its own passing receipts."
+              },
+              "rank": [
+                "self",
+                "human"
+              ],
+              "protects": "an irreversible change shipping without a human looking at it.",
+              "raise": "A human approves each one before it closes.",
+              "lower": "The agent closes it on its own receipts."
+            }
+          },
+          "two-way": {
+            "type": "string",
+            "enum": [
+              "human",
+              "self"
+            ],
+            "description": "Who approves a two-way door: a change that is easy to undo. Guards against a quick mistake reaching users unnoticed. Stricter: A human approves every reversible change too, which slows every close. Looser: The agent closes reversible changes itself: the fast path.",
+            "x-eris-explain": {
+              "summary": "Who approves a two-way door: a change that is easy to undo.",
+              "values": {
+                "human": "A human approves it before it closes.",
+                "self": "The agent closes it on its own passing receipts."
+              },
+              "rank": [
+                "self",
+                "human"
+              ],
+              "protects": "a quick mistake reaching users unnoticed.",
+              "raise": "A human approves every reversible change too, which slows every close.",
+              "lower": "The agent closes reversible changes itself: the fast path."
+            }
+          },
+          "unlock": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off"
+            ],
+            "description": "Whether registered surfaces may unlock one-way doors without a human when their unlock bar, audit baseline and change budget hold (default off). Guards against an agent passing a one-way door on a sensitive surface when the operator wants every one-way door human-signed. Stricter: Switching unlock off keeps every one-way door with a human, whatever .claude/surfaces.yml lists. Looser: Switching unlock on lets registered surfaces unlock one-way actions once their bar gates, audit baseline and budget hold.",
+            "x-eris-explain": {
+              "summary": "Whether registered surfaces may unlock one-way doors without a human when their unlock bar, audit baseline and change budget hold (default off).",
+              "values": {
+                "on": "A one-way action on a registered surface unlocks when every bar gate passes bound to the PR head and the audit baseline and budget hold.",
+                "off": "Every one-way door stays human-signed, whatever the surface's one_way_unlock lists."
+              },
+              "rank": [
+                "on",
+                "off"
+              ],
+              "protects": "an agent passing a one-way door on a sensitive surface when the operator wants every one-way door human-signed.",
+              "raise": "Switching unlock off keeps every one-way door with a human, whatever .claude/surfaces.yml lists.",
+              "lower": "Switching unlock on lets registered surfaces unlock one-way actions once their bar gates, audit baseline and budget hold.",
+              "unset": "strictest"
+            }
+          },
+          "raise": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "merge": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "description": "A gate name, optionally with a qualifier, whose passing receipt is required. An effort qualifier (adversarial-review:max) passes only on a review-report@1 for this surface at that effort or above; :clean passes only on a PASS, not AMENDED; any other qualifier never unlocks."
+                  },
+                  "description": "Extra gates the posture adds to a surface's one_way_unlock.merge bar before an agent may merge a one-way change without a human. Guards against an agent being able to merge a one-way change under this posture with only the repo's baseline gates. Stricter: The agent must pass more gates before it may merge a one-way change alone. Looser: Fewer posture-added gates; the repo's own one_way_unlock.merge bar still holds.",
+                  "minItems": 1,
+                  "x-eris-explain": {
+                    "summary": "Extra gates the posture adds to a surface's one_way_unlock.merge bar before an agent may merge a one-way change without a human.",
+                    "protects": "an agent being able to merge a one-way change under this posture with only the repo's baseline gates.",
+                    "raise": "The agent must pass more gates before it may merge a one-way change alone.",
+                    "lower": "Fewer posture-added gates; the repo's own one_way_unlock.merge bar still holds."
+                  }
+                },
+                "deploy": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "description": "A gate name, optionally with a qualifier, whose passing receipt is required. An effort qualifier (adversarial-review:max) passes only on a review-report@1 for this surface at that effort or above; :clean passes only on a PASS, not AMENDED; any other qualifier never unlocks."
+                  },
+                  "description": "Extra gates the posture adds to a surface's one_way_unlock.deploy bar before an agent may deploy a one-way change without a human. Guards against an agent being able to deploy a one-way change under this posture with only the repo's baseline gates. Stricter: The agent must pass more gates before it may deploy a one-way change alone. Looser: Fewer posture-added gates; the repo's own one_way_unlock.deploy bar still holds.",
+                  "minItems": 1,
+                  "x-eris-explain": {
+                    "summary": "Extra gates the posture adds to a surface's one_way_unlock.deploy bar before an agent may deploy a one-way change without a human.",
+                    "protects": "an agent being able to deploy a one-way change under this posture with only the repo's baseline gates.",
+                    "raise": "The agent must pass more gates before it may deploy a one-way change alone.",
+                    "lower": "Fewer posture-added gates; the repo's own one_way_unlock.deploy bar still holds."
+                  }
+                },
+                "effect": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "description": "A gate name, optionally with a qualifier, whose passing receipt is required. An effort qualifier (adversarial-review:max) passes only on a review-report@1 for this surface at that effort or above; :clean passes only on a PASS, not AMENDED; any other qualifier never unlocks."
+                  },
+                  "description": "Extra gates the posture adds to a surface's one_way_unlock.effect bar before an agent may run a one-way side effect without a human. Guards against an agent being able to run a one-way side effect under this posture with only the repo's baseline gates. Stricter: The agent must pass more gates before it may run a one-way side effect alone. Looser: Fewer posture-added gates; the repo's own one_way_unlock.effect bar still holds.",
+                  "minItems": 1,
+                  "x-eris-explain": {
+                    "summary": "Extra gates the posture adds to a surface's one_way_unlock.effect bar before an agent may run a one-way side effect without a human.",
+                    "protects": "an agent being able to run a one-way side effect under this posture with only the repo's baseline gates.",
+                    "raise": "The agent must pass more gates before it may run a one-way side effect alone.",
+                    "lower": "Fewer posture-added gates; the repo's own one_way_unlock.effect bar still holds."
+                  }
+                }
+              },
+              "additionalProperties": true,
+              "description": "Per action (merge, deploy, effect), extra gates added to the surface's repo-declared unlock bar."
+            },
+            "description": "Extra unlock gates a posture adds to a surface's repo-declared one_way_unlock bar, by surface name or * for every surface; doctrine only raises. Guards against a surface's repo-declared unlock bar being too light for the active posture. Stricter: Adding surfaces or gates requires more passing receipts before a one-way action unlocks. Looser: Dropping raised gates falls back toward the repo's own one_way_unlock bar; an unlisted action stays human-signed.",
+            "x-eris-explain": {
+              "summary": "Extra unlock gates a posture adds to a surface's repo-declared one_way_unlock bar, by surface name or * for every surface; doctrine only raises.",
+              "protects": "a surface's repo-declared unlock bar being too light for the active posture.",
+              "raise": "Adding surfaces or gates requires more passing receipts before a one-way action unlocks.",
+              "lower": "Dropping raised gates falls back toward the repo's own one_way_unlock bar; an unlisted action stays human-signed."
+            }
+          },
+          "waive": {
+            "description": "Forbidden: a doctrine posture may only raise a surface's unlock bar, never waive a repo-declared gate. Guards against a doctrine posture waiving a gate that a surface in .claude/surfaces.yml requires. Stricter: Leave waive unset: every repo-declared unlock gate holds. Looser: Never allowed: eris doctrine check refuses any signoff.waive key.",
+            "x-eris-explain": {
+              "summary": "Forbidden: a doctrine posture may only raise a surface's unlock bar, never waive a repo-declared gate.",
+              "protects": "a doctrine posture waiving a gate that a surface in .claude/surfaces.yml requires.",
+              "raise": "Leave waive unset: every repo-declared unlock gate holds.",
+              "lower": "Never allowed: eris doctrine check refuses any signoff.waive key."
+            }
+          }
+        },
+        "additionalProperties": true,
+        "description": "Who must approve a change before it closes, by door kind, and whether registered surfaces may unlock one-way doors. Guards against changes closing with less human oversight than the operator intends. Stricter: More changes wait for a human, or require more gates before a surface unlocks. Looser: More changes close on the agent's own receipts.",
+        "x-eris-explain": {
+          "summary": "Who must approve a change before it closes, by door kind, and whether registered surfaces may unlock one-way doors.",
+          "protects": "changes closing with less human oversight than the operator intends.",
+          "raise": "More changes wait for a human, or require more gates before a surface unlocks.",
+          "lower": "More changes close on the agent's own receipts."
+        }
+      },
+      "close": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string",
+          "enum": [
+            "on",
+            "file-only",
+            "off"
+          ],
+          "description": "How a close stage runs after an issue lands. on: Runs and acts on its result: files suggestions and hands them on to be built. file-only: Runs and files its result, but nothing builds it. off: Is skipped.",
+          "x-eris-explain": {
+            "summary": "How a close stage runs after an issue lands.",
+            "values": {
+              "on": "Runs and acts on its result: files suggestions and hands them on to be built.",
+              "file-only": "Runs and files its result, but nothing builds it.",
+              "off": "Is skipped."
+            },
+            "rank": [
+              "off",
+              "file-only",
+              "on"
+            ]
+          }
+        },
+        "description": "How each close stage runs after an issue lands, by stage name; a stage the posture does not name runs in full (on). Guards against follow-up work (simplifications, SDK lifts, reports) being silently dropped. Stricter: More close stages run and act, using agent time after each close. Looser: Close stages file less or are skipped, saving agent time.",
+        "x-eris-explain": {
+          "summary": "How each close stage runs after an issue lands, by stage name; a stage the posture does not name runs in full (on).",
+          "protects": "follow-up work (simplifications, SDK lifts, reports) being silently dropped.",
+          "raise": "More close stages run and act, using agent time after each close.",
+          "lower": "Close stages file less or are skipped, saving agent time.",
+          "keys": {
+            "improvement-loop": {
+              "summary": "After an issue closes, proposes up to five suggestions a day per project that make the code smaller or simpler.",
+              "protects": "code only ever growing, with nobody looking for what can be removed.",
+              "raise": "Suggestions are filed and handed on to be built automatically, which uses agent time.",
+              "lower": "Fewer or no simplification suggestions: the code shrinks only when someone asks."
+            },
+            "lift-to-sdk": {
+              "summary": "Files each piece of shared plumbing built locally in more than one place as a suggestion against the SDK that should own it.",
+              "protects": "duplicated local copies of shared plumbing living on forever.",
+              "raise": "Suggestions are filed and handed to background agents to build.",
+              "lower": "Suggestions are only filed (file-only), or not looked for at all (off)."
+            },
+            "loop-dispatch": {
+              "summary": "Hands the follow-up issues a close filed to background agent loops to work.",
+              "protects": "follow-ups piling up untouched after a close.",
+              "raise": "Follow-ups start automatically after a close, using agent time.",
+              "lower": "Follow-ups wait for a human to pick them up."
+            },
+            "tpm-report": {
+              "summary": "Writes a short project-management report on the affected Linear projects after a close.",
+              "protects": "project boards drifting out of date after work lands.",
+              "raise": "Each close ends with a refreshed project report.",
+              "lower": "Boards are refreshed only when someone runs a pass by hand."
+            },
+            "close-ledger": {
+              "summary": "Records what the close did (landed, deployed, filed, torn down) as an audit log.",
+              "protects": "a close nobody can audit afterwards.",
+              "raise": "Every close leaves a full audit entry.",
+              "lower": "Closes leave less record of what they did."
+            }
+          }
+        }
+      },
+      "ceilings": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string",
+          "enum": [
+            "R0",
+            "R1",
+            "R2"
+          ],
+          "description": "How much human review a door class gets: the autonomy rung. R0: A human signs off before the change closes. R1: A human reviews after the run (the pull request review). R2: Closes automatically on passing receipts.",
+          "x-eris-explain": {
+            "summary": "How much human review a door class gets: the autonomy rung.",
+            "values": {
+              "R0": "A human signs off before the change closes.",
+              "R1": "A human reviews after the run (the pull request review).",
+              "R2": "Closes automatically on passing receipts."
+            },
+            "rank": [
+              "R2",
+              "R1",
+              "R0"
+            ]
+          }
+        },
+        "description": "The highest autonomy rung a kind of change may reach, by door class (all, U0-U3, U<n>:<crossing>); a ceiling only ever lowers a rung. Guards against a class of change closing with less human review than the operator wants right now. Stricter: A lower ceiling (toward R0) makes more changes wait for a human sign-off before they close. Looser: A higher ceiling (toward R2) lets more changes close on review after the fact, or automatically.",
+        "x-eris-explain": {
+          "summary": "The highest autonomy rung a kind of change may reach, by door class (all, U0-U3, U<n>:<crossing>); a ceiling only ever lowers a rung.",
+          "protects": "a class of change closing with less human review than the operator wants right now.",
+          "raise": "A lower ceiling (toward R0) makes more changes wait for a human sign-off before they close.",
+          "lower": "A higher ceiling (toward R2) lets more changes close on review after the fact, or automatically.",
+          "unset": "loosest"
+        }
+      },
+      "lifts": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string",
+          "enum": [
+            "R1",
+            "R2"
+          ],
+          "description": "The rung a bleed-reducing fix is raised to. R1: A human reviews after the run (the pull request review). R2: Closes automatically on passing receipts.",
+          "x-eris-explain": {
+            "summary": "The rung a bleed-reducing fix is raised to.",
+            "values": {
+              "R1": "A human reviews after the run (the pull request review).",
+              "R2": "Closes automatically on passing receipts."
+            },
+            "rank": [
+              "R2",
+              "R1"
+            ]
+          }
+        },
+        "description": "The rung a bleed-reducing fix of a low-risk class (U0, U1) is raised to, so a fix that stops an ongoing problem is not held in a review queue. Guards against an urgent fix waiting on review while the problem it stops keeps hurting. Stricter: Bleed fixes stay under normal review: no lift, or only to R1. Looser: Low-risk bleed fixes close with review after the fact (R1) or automatically (R2); never U2 or U3.",
+        "x-eris-explain": {
+          "summary": "The rung a bleed-reducing fix of a low-risk class (U0, U1) is raised to, so a fix that stops an ongoing problem is not held in a review queue.",
+          "protects": "an urgent fix waiting on review while the problem it stops keeps hurting.",
+          "raise": "Bleed fixes stay under normal review: no lift, or only to R1.",
+          "lower": "Low-risk bleed fixes close with review after the fact (R1) or automatically (R2); never U2 or U3.",
+          "unset": "strictest"
+        }
+      },
+      "remediate": {
+        "type": "object",
+        "properties": {
+          "on": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "final-gates-fail",
+                "unlock-gate-fail"
+              ],
+              "description": "A failing gate that launches a remediation round. final-gates-fail: The closing checks failed on the pull request. unlock-gate-fail: A gate a surface's one-way unlock requires failed.",
+              "x-eris-explain": {
+                "summary": "A failing gate that launches a remediation round.",
+                "values": {
+                  "final-gates-fail": "The closing checks failed on the pull request.",
+                  "unlock-gate-fail": "A gate a surface's one-way unlock requires failed."
+                }
+              }
+            },
+            "description": "Which failing gates launch a remediation round: final-gates-fail, unlock-gate-fail. Guards against a fixable review failure waiting on a human when an agent could clear its findings. Stricter: Fewer triggers: more failures go straight to a human. Looser: More triggers: more failures are first handed to an agent loop to fix.",
+            "x-eris-explain": {
+              "summary": "Which failing gates launch a remediation round: final-gates-fail, unlock-gate-fail.",
+              "protects": "a fixable review failure waiting on a human when an agent could clear its findings.",
+              "raise": "Fewer triggers: more failures go straight to a human.",
+              "lower": "More triggers: more failures are first handed to an agent loop to fix.",
+              "stricter": "less"
+            }
+          },
+          "loop": {
+            "type": "string",
+            "description": "The agent loop each remediation round runs (default follow-up). Guards against a round running under a loop with the wrong instructions. Stricter: A stricter loop holds each round to more checks. Looser: A lighter loop makes each round faster and less checked.",
+            "x-eris-explain": {
+              "summary": "The agent loop each remediation round runs (default follow-up).",
+              "protects": "a round running under a loop with the wrong instructions.",
+              "raise": "A stricter loop holds each round to more checks.",
+              "lower": "A lighter loop makes each round faster and less checked."
+            }
+          },
+          "runtime": {
+            "type": "object",
+            "properties": {
+              "default": {
+                "type": "string",
+                "description": "The runtime of round 1 (default opencode/vertex). Guards against spending the most capable runtime on a failure a cheaper one could fix. Stricter: A more capable runtime for round 1: costlier, more likely to fix it first time. Looser: A cheaper runtime for round 1: costs less, may need the escalation round.",
+                "x-eris-explain": {
+                  "summary": "The runtime of round 1 (default opencode/vertex).",
+                  "protects": "spending the most capable runtime on a failure a cheaper one could fix.",
+                  "raise": "A more capable runtime for round 1: costlier, more likely to fix it first time.",
+                  "lower": "A cheaper runtime for round 1: costs less, may need the escalation round."
+                }
+              },
+              "escalate": {
+                "type": "string",
+                "description": "The runtime of round 2 and later (default claude). Guards against a hard failure being retried on a runtime that already could not fix it. Stricter: A more capable runtime for the later rounds. Looser: A cheaper runtime for the later rounds, which may not get further than round 1.",
+                "x-eris-explain": {
+                  "summary": "The runtime of round 2 and later (default claude).",
+                  "protects": "a hard failure being retried on a runtime that already could not fix it.",
+                  "raise": "A more capable runtime for the later rounds.",
+                  "lower": "A cheaper runtime for the later rounds, which may not get further than round 1."
+                }
+              }
+            },
+            "additionalProperties": true,
+            "description": "Which runtime each remediation round runs on: the first round, then the escalation. Guards against remediation cost running away, or a weak runtime stuck on a hard failure. Stricter: More capable runtimes: costlier rounds that fix more. Looser: Cheaper runtimes: rounds cost less and may fix less.",
+            "x-eris-explain": {
+              "summary": "Which runtime each remediation round runs on: the first round, then the escalation.",
+              "protects": "remediation cost running away, or a weak runtime stuck on a hard failure.",
+              "raise": "More capable runtimes: costlier rounds that fix more.",
+              "lower": "Cheaper runtimes: rounds cost less and may fix less."
+            }
+          },
+          "max_rounds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "Infinity",
+                  "-Infinity",
+                  "NaN"
+                ]
+              }
+            ],
+            "description": "Rounds a remediation loop may run before it stops and a human signs off with every round's report (default 2, at most 5). Guards against an agent loop retrying a failure without end. Stricter: Fewer rounds: a human sees a stuck failure sooner. Looser: More rounds: the loop keeps trying longer, using agent time, before a human looks.",
+            "x-eris-explain": {
+              "summary": "Rounds a remediation loop may run before it stops and a human signs off with every round's report (default 2, at most 5).",
+              "protects": "an agent loop retrying a failure without end.",
+              "raise": "Fewer rounds: a human sees a stuck failure sooner.",
+              "lower": "More rounds: the loop keeps trying longer, using agent time, before a human looks.",
+              "stricter": "less"
+            }
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "findings-only"
+                ]
+              }
+            ],
+            "description": "What a remediation round may change (findings-only: the open review findings and nothing else). Guards against a remediation round widening the change beyond what review asked for. Stricter: Rounds stay within the open findings. Looser: Rounds may change more than the findings (no wider scope exists today).",
+            "x-eris-explain": {
+              "summary": "What a remediation round may change (findings-only: the open review findings and nothing else).",
+              "values": {
+                "findings-only": "Fixes the open review findings and nothing else."
+              },
+              "protects": "a remediation round widening the change beyond what review asked for.",
+              "raise": "Rounds stay within the open findings.",
+              "lower": "Rounds may change more than the findings (no wider scope exists today)."
+            }
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "additionalProperties": true,
+        "description": "Hands a failing review to a bounded agent remediation loop; with no block, a failure goes straight to a human. Guards against a fixable review failure sitting idle until a human gets to it. Stricter: Remove the block: every failure waits for a human. Looser: Add the block: failures are first worked by an agent loop, within its round cap.",
+        "x-eris-explain": {
+          "summary": "Hands a failing review to a bounded agent remediation loop; with no block, a failure goes straight to a human.",
+          "protects": "a fixable review failure sitting idle until a human gets to it.",
+          "raise": "Remove the block: every failure waits for a human.",
+          "lower": "Add the block: failures are first worked by an agent loop, within its round cap."
+        }
+      },
+      "ask": {
+        "type": "object",
+        "properties": {
+          "two_way_timeout": {
+            "type": "string",
+            "description": "How long a two-way ask with a recommendation waits before it is answered with that recommendation: none (default), or <n>h from 4 to 720. A one-way ask never times out. Guards against a decision that is not irreversible stalling a build while nobody answers. Stricter: No timeout, or a longer one: a two-way ask waits for a human longer. Looser: A shorter timeout: the recommendation is taken sooner, with less human review.",
+            "x-eris-explain": {
+              "summary": "How long a two-way ask with a recommendation waits before it is answered with that recommendation: none (default), or <n>h from 4 to 720. A one-way ask never times out.",
+              "protects": "a decision that is not irreversible stalling a build while nobody answers.",
+              "raise": "No timeout, or a longer one: a two-way ask waits for a human longer.",
+              "lower": "A shorter timeout: the recommendation is taken sooner, with less human review."
+            }
+          },
+          "digest": {
+            "type": "string",
+            "enum": [
+              "off",
+              "hourly",
+              "daily"
+            ],
+            "description": "How non-blocking asks are rolled up for the operator: off (default), hourly, daily. Guards against a stream of non-blocking asks burying the ones that block. Stricter: Rolling asks up into a digest: fewer interruptions, answers come later. Looser: No digest: every non-blocking ask is shown as it arrives.",
+            "x-eris-explain": {
+              "summary": "How non-blocking asks are rolled up for the operator: off (default), hourly, daily.",
+              "values": {
+                "off": "Each non-blocking ask is shown on its own.",
+                "hourly": "Non-blocking asks are rolled into one hourly digest.",
+                "daily": "Non-blocking asks are rolled into one daily digest."
+              },
+              "protects": "a stream of non-blocking asks burying the ones that block.",
+              "raise": "Rolling asks up into a digest: fewer interruptions, answers come later.",
+              "lower": "No digest: every non-blocking ask is shown as it arrives."
+            }
+          },
+          "session_budget": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "Infinity",
+                  "-Infinity",
+                  "NaN"
+                ]
+              }
+            ],
+            "description": "Open asks one session may hold before a new ask is refused (default 5, at most 20). Guards against one session flooding the operator with open questions. Stricter: A smaller budget: a session must wait for answers before it asks more. Looser: A larger budget: a session may hold more questions open at once.",
+            "x-eris-explain": {
+              "summary": "Open asks one session may hold before a new ask is refused (default 5, at most 20).",
+              "protects": "one session flooding the operator with open questions.",
+              "raise": "A smaller budget: a session must wait for answers before it asks more.",
+              "lower": "A larger budget: a session may hold more questions open at once.",
+              "stricter": "less"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "description": "Ask volume controls: the two-way timeout, the digest cadence and the per-session budget. Guards against asks stalling a build, or flooding the operator. Stricter: Tighter limits: fewer open asks and slower timeouts, more waiting for a human. Looser: Looser limits: more asks open at once, recommendations taken sooner.",
+        "x-eris-explain": {
+          "summary": "Ask volume controls: the two-way timeout, the digest cadence and the per-session budget.",
+          "protects": "asks stalling a build, or flooding the operator.",
+          "raise": "Tighter limits: fewer open asks and slower timeouts, more waiting for a human.",
+          "lower": "Looser limits: more asks open at once, recommendations taken sooner."
+        }
+      },
+      "user_impact": {
+        "type": "object",
+        "properties": {
+          "U0": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "revert-path",
+                "zero-downtime",
+                "e2e",
+                "rollback-rehearsal"
+              ],
+              "description": "Evidence a change must show before it closes. revert-path: A proven way back: the revert command run, or a flag flipped off. zero-downtime: A rollout shape proven to keep the service up while it deploys. e2e: An end-to-end run against the real stack. rollback-rehearsal: The rollback actually rehearsed before release.",
+              "x-eris-explain": {
+                "summary": "Evidence a change must show before it closes.",
+                "values": {
+                  "revert-path": "A proven way back: the revert command run, or a flag flipped off.",
+                  "zero-downtime": "A rollout shape proven to keep the service up while it deploys.",
+                  "e2e": "An end-to-end run against the real stack.",
+                  "rollback-rehearsal": "The rollback actually rehearsed before release."
+                }
+              }
+            },
+            "description": "Evidence a U0 change (internal only) owes on top of the floor (none); it can only add. Guards against a U0 change closing without enough proof it is safe. Stricter: Each U0 change owes more evidence before it closes, each item a real run or rehearsal. Looser: U0 changes owe less evidence above the floor.",
+            "x-eris-explain": {
+              "summary": "Evidence a U0 change (internal only) owes on top of the floor (none); it can only add.",
+              "protects": "a U0 change closing without enough proof it is safe.",
+              "raise": "Each U0 change owes more evidence before it closes, each item a real run or rehearsal.",
+              "lower": "U0 changes owe less evidence above the floor."
+            }
+          },
+          "U1": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "revert-path",
+                "zero-downtime",
+                "e2e",
+                "rollback-rehearsal"
+              ],
+              "description": "Evidence a change must show before it closes. revert-path: A proven way back: the revert command run, or a flag flipped off. zero-downtime: A rollout shape proven to keep the service up while it deploys. e2e: An end-to-end run against the real stack. rollback-rehearsal: The rollback actually rehearsed before release.",
+              "x-eris-explain": {
+                "summary": "Evidence a change must show before it closes.",
+                "values": {
+                  "revert-path": "A proven way back: the revert command run, or a flag flipped off.",
+                  "zero-downtime": "A rollout shape proven to keep the service up while it deploys.",
+                  "e2e": "An end-to-end run against the real stack.",
+                  "rollback-rehearsal": "The rollback actually rehearsed before release."
+                }
+              }
+            },
+            "description": "Evidence a U1 change (user-visible, reversible) owes on top of the floor (revert-path); it can only add. Guards against a U1 change closing without enough proof it is safe. Stricter: Each U1 change owes more evidence before it closes, each item a real run or rehearsal. Looser: U1 changes owe less evidence above the floor.",
+            "x-eris-explain": {
+              "summary": "Evidence a U1 change (user-visible, reversible) owes on top of the floor (revert-path); it can only add.",
+              "protects": "a U1 change closing without enough proof it is safe.",
+              "raise": "Each U1 change owes more evidence before it closes, each item a real run or rehearsal.",
+              "lower": "U1 changes owe less evidence above the floor."
+            }
+          },
+          "U2": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "revert-path",
+                "zero-downtime",
+                "e2e",
+                "rollback-rehearsal"
+              ],
+              "description": "Evidence a change must show before it closes. revert-path: A proven way back: the revert command run, or a flag flipped off. zero-downtime: A rollout shape proven to keep the service up while it deploys. e2e: An end-to-end run against the real stack. rollback-rehearsal: The rollback actually rehearsed before release.",
+              "x-eris-explain": {
+                "summary": "Evidence a change must show before it closes.",
+                "values": {
+                  "revert-path": "A proven way back: the revert command run, or a flag flipped off.",
+                  "zero-downtime": "A rollout shape proven to keep the service up while it deploys.",
+                  "e2e": "An end-to-end run against the real stack.",
+                  "rollback-rehearsal": "The rollback actually rehearsed before release."
+                }
+              }
+            },
+            "description": "Evidence a U2 change (availability risk) owes on top of the floor (revert-path, zero-downtime, e2e); it can only add. Guards against a U2 change closing without enough proof it is safe. Stricter: Each U2 change owes more evidence before it closes, each item a real run or rehearsal. Looser: U2 changes owe less evidence above the floor; the floor itself can never be lowered.",
+            "x-eris-explain": {
+              "summary": "Evidence a U2 change (availability risk) owes on top of the floor (revert-path, zero-downtime, e2e); it can only add.",
+              "protects": "a U2 change closing without enough proof it is safe.",
+              "raise": "Each U2 change owes more evidence before it closes, each item a real run or rehearsal.",
+              "lower": "U2 changes owe less evidence above the floor; the floor itself can never be lowered."
+            }
+          },
+          "U3": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "revert-path",
+                "zero-downtime",
+                "e2e",
+                "rollback-rehearsal"
+              ],
+              "description": "Evidence a change must show before it closes. revert-path: A proven way back: the revert command run, or a flag flipped off. zero-downtime: A rollout shape proven to keep the service up while it deploys. e2e: An end-to-end run against the real stack. rollback-rehearsal: The rollback actually rehearsed before release.",
+              "x-eris-explain": {
+                "summary": "Evidence a change must show before it closes.",
+                "values": {
+                  "revert-path": "A proven way back: the revert command run, or a flag flipped off.",
+                  "zero-downtime": "A rollout shape proven to keep the service up while it deploys.",
+                  "e2e": "An end-to-end run against the real stack.",
+                  "rollback-rehearsal": "The rollback actually rehearsed before release."
+                }
+              }
+            },
+            "description": "Evidence a U3 change (irreversible user loss) owes on top of the floor (revert-path, zero-downtime, e2e, rollback-rehearsal); it can only add. Guards against a U3 change closing without enough proof it is safe. Stricter: Each U3 change owes more evidence before it closes, each item a real run or rehearsal. Looser: U3 changes owe less evidence above the floor; the floor itself can never be lowered.",
+            "x-eris-explain": {
+              "summary": "Evidence a U3 change (irreversible user loss) owes on top of the floor (revert-path, zero-downtime, e2e, rollback-rehearsal); it can only add.",
+              "protects": "a U3 change closing without enough proof it is safe.",
+              "raise": "Each U3 change owes more evidence before it closes, each item a real run or rehearsal.",
+              "lower": "U3 changes owe less evidence above the floor; the floor itself can never be lowered."
+            }
+          }
+        },
+        "additionalProperties": true,
+        "description": "Extra evidence each user-impact class must show before it closes, on top of the floor; a posture can only add. Guards against a user-facing change closing without enough proof it is safe. Stricter: Changes owe more evidence, for example an end-to-end run for every U1 change. Looser: Changes owe less evidence above the floor; the U2 and U3 floor can never be lowered.",
+        "x-eris-explain": {
+          "summary": "Extra evidence each user-impact class must show before it closes, on top of the floor; a posture can only add.",
+          "protects": "a user-facing change closing without enough proof it is safe.",
+          "raise": "Changes owe more evidence, for example an end-to-end run for every U1 change.",
+          "lower": "Changes owe less evidence above the floor; the U2 and U3 floor can never be lowered."
+        }
+      }
+    },
+    "additionalProperties": true,
+    "description": "A doctrine posture's policy: which gates run and how, who signs off, and what each class of change must prove."
+  },
+  "definitions": {},
+  "x-eris-floor": {
+    "user_impact": {
+      "U2": [
+        "revert-path",
+        "zero-downtime",
+        "e2e"
+      ],
+      "U3": [
+        "revert-path",
+        "zero-downtime",
+        "e2e",
+        "rollback-rehearsal"
+      ]
+    },
+    "gates_never_off": [
+      "final-gates",
+      "user-impact"
+    ]
+  }
+}

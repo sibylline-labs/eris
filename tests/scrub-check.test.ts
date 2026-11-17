@@ -38,6 +38,8 @@ describe("scan", () => {
     ["a decision-register label", "src/a.ts", `// per ${"D" + "42"}`, "register-label"],
     ["a lettered finding label", "src/a.ts", `// (fixed, ${"F" + "7q"})`, "register-label"],
     ["a review-claim label", "src/a.ts", `// (${"Claim" + " 64"}, deliberate)`, "register-label"],
+    ["a rung literal outside the doctrine paths", "src/a.ts", `// ceiling ${"R" + "1"}`, "register-label"],
+    ["a non-rung register label inside the doctrine paths", "packages/gates-contract/src/doctrine.ts", `// per ${"R" + "3"} and ${"D" + "42"}`, "register-label"],
     ["a private plan section", "src/a.ts", `// see ${"plan " + "§5"}`, "private-plan"],
     ["a lettered document section", "src/a.ts", `// the server re-derives (${"§0" + "b.1"})`, "private-section"],
     ["a named document section", "src/a.ts", `// the ${"CLAUDE.md § " + "Gotchas"} lesson`, "private-section"],
@@ -69,6 +71,8 @@ describe("scan", () => {
     ["output-contract sections and a cut field", "src/a.ts", "// docs/OUTPUT-CONTRACT.md §4 and §3.1; cut -d' ' -f1"],
     ["a sha256 digest", "tests/a.ts", "a".repeat(32) + "0".repeat(32)],
     ["hyphenated standard names and the placeholder tracker label", "docs/a.md", "UTF-8, SHA-256, RFC-6761 and ABC-123"],
+    ["public GateRung enum values in the doctrine contract and docs", "packages/gates-contract/src/doctrine.ts", `export const GATE_RUNGS = ["${"R" + "0"}", "${"R" + "1"}", "${"R" + "2"}"] as const;`],
+    ["public GateRung enum values in DOCTRINE.md", "docs/DOCTRINE.md", `Autonomy rungs: \`${"R" + "0"}\`, \`${"R" + "1"}\`, \`${"R" + "2"}\`.`],
   ])("passes %s", (_name, path, text) => {
     /** When the gate flags public text, CI goes red on a clean tree and the allowlist gets widened blindly — observed at scan(). */
     expect(scan(path, text)).toEqual([]);

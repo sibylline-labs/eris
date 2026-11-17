@@ -21,7 +21,8 @@
     "./yak-contract": "./packages/yak-contract/src/index.ts",
     "./socrates-core": "./packages/socrates-core/src/index.ts",
     "./yak-redact": "./packages/outbound-scan/src/redact.ts",
-    "./outbound-scan": "./packages/outbound-scan/src/index.ts"
+    "./outbound-scan": "./packages/outbound-scan/src/index.ts",
+    "./gates-contract": "./packages/gates-contract/src/index.ts"
   },
   "files": [
     "bin",
@@ -36,6 +37,8 @@
     "packages/yak-contract/package.json",
     "packages/socrates-core/src",
     "packages/socrates-core/package.json",
+    "packages/gates-contract/src",
+    "packages/gates-contract/package.json",
     "testing",
     "ts",
     "docs",
@@ -57,6 +60,8 @@
     "ci": "bun scripts/ci-local.ts"
   },
   "dependencies": {
+    "effect": "4.0.6",
+    "yaml": "2.9.1",
     "zod": "^3.23.0"
   },
   "devDependencies": {

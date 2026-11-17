@@ -1,0 +1,8 @@
+surfaces.auth.paths: src/auth/** → src/auth/**, src/session/*.ts. More paths are gated, so more changes get posture checks. Adds src/session/*.ts.
+surfaces.auth.class_taxonomy: unset → docs/vocab/auth.md. The vocabulary file listing the defect classes checked on this surface.
+surfaces.auth.severity_floor: medium → low. A lower floor (toward low) reports more findings.
+surfaces.auth.one_way_unlock.merge: unset → plan-review, final-gates:clean. The agent may merge a one-way change alone on less evidence: fewer gates, or 'merge' newly listed; leave it out to keep it human-signed. Adds plan-review. Adds final-gates:clean.
+surfaces.auth.audit_ttl: 30d → 7d. A shorter window forces audits more often.
+surfaces.auth.change_budget: 10 → 3. A smaller budget forces a re-audit sooner.
+surfaces.auth.ledger: ABC-1 → ABC-2. The Linear issue that holds this surface's audit-surfaces baseline and unlocked-<action> receipts (one issue per surface).
+surfaces.secrets: unset → registered. Registering a surface puts every change touching its paths through posture checks.
