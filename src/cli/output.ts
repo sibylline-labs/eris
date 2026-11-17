@@ -16,9 +16,11 @@ import { deriveJsonSurfaces } from "./registry";
 export type OutputFormat = "text" | "json";
 
 /** A value echoed into a diagnostic: C0 controls except tab and newline, plus
- *  DEL, removed; then every trailing newline dropped. */
+ *  DEL (so CR too), removed; every trailing newline dropped; each embedded
+ *  newline shown as a literal `\n`, so the value never starts a second line of
+ *  the machine-parsed failure block. */
 export function sanitizeDisplay(s: string): string {
-  return s.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").replace(/\n+$/, "");
+  return s.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").replace(/\n+$/, "").replace(/\n/g, "\\n");
 }
 
 /**
