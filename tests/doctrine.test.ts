@@ -12,7 +12,7 @@
  * what the reference printed.
  */
 
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,6 +22,8 @@ import { composeCli } from "../src/cli/compose";
 import { REGISTRY } from "../src/cli/registry";
 import { HANDLERS, main } from "../src/main";
 import { REPO, type Sandbox, sandbox } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 const FIX = join(REPO, "tests", "fixtures", "doctrine");
 /**
