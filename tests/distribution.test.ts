@@ -20,6 +20,7 @@ import { DISTRIBUTION, DISTRIBUTION_PLUGINS, IDENTITY } from "../examples/distri
 import { RUBRIC_V1, score } from "../packages/socrates-core/src/index";
 import { deriveIdempotencyKey, YakSubmission } from "../packages/yak-contract/src/index";
 import doctrine from "../plugins/doctrine";
+import gate from "../plugins/gate";
 import socrates from "../plugins/socrates";
 import yak from "../plugins/yak";
 import { redact, redactDeep } from "../packages/outbound-scan/src/redact";
@@ -152,7 +153,7 @@ describe("the package's exports", () => {
     const scan = await import("@sibylline-labs/eris/outbound-scan");
     expect(sdk.secretRules).toBe(scan.secretRules);
     expect(sdk.scanStrings).toBe(scan.scanStrings);
-    expect(sdk.PLUGINS.map((p) => p.name)).toEqual(["yak", "socrates", "doctrine"]);
+    expect(sdk.PLUGINS.map((p) => p.name)).toEqual(["yak", "socrates", "doctrine", "gate"]);
     // Through a variable: the type checker refuses the literal the same way.
     const deepPath = "@sibylline-labs/eris/src/cli/compose";
     const deep = await import(deepPath).then(
@@ -241,9 +242,9 @@ describe("the package's exports", () => {
 });
 
 describe("this build's composition", () => {
-  it("is core's rows plus the yak, socrates and doctrine plugins', exactly", () => {
+  it("is core's rows plus the yak, socrates, doctrine and gate plugins', exactly", () => {
     /** When a distribution's plugin or the example plugins leak into this build's list, the public binary ships verbs it neither documents nor tests: observed at the composed registry and at the top-level help of the program under test. */
-    expect(Object.keys(defaultCli().registry).sort()).toEqual([...Object.keys(REGISTRY), ...Object.keys(yak.rows), ...Object.keys(socrates.rows), ...Object.keys(doctrine.rows)].sort());
+    expect(Object.keys(defaultCli().registry).sort()).toEqual([...Object.keys(REGISTRY), ...Object.keys(yak.rows), ...Object.keys(socrates.rows), ...Object.keys(doctrine.rows), ...Object.keys(gate.rows)].sort());
     expect(defaultCli().groups.map((g) => [g.group, g.plugin])).toEqual([
       ["yak", "yak"],
       ["login", "yak"],
@@ -253,11 +254,12 @@ describe("this build's composition", () => {
       ["tokens", "yak"],
       ["socrates", "socrates"],
       ["doctrine", "doctrine"],
+      ["gate", "gate"],
     ]);
     const help = spawnSync(ERIS, ["--help"], { env: { ...process.env, ...oracleEnv() }, encoding: "utf8" });
     expect(help.status).toBe(0);
     const commands = help.stdout.split("\nCommands:\n")[1]!.split("\n\n")[0]!.split("\n").map((l) => l.trim().split(/\s+/)[0]);
-    expect(commands).toEqual(["completion", "update", "docs", "skills", "yak", "login", "logout", "org", "whoami", "tokens", "socrates", "doctrine"]);
+    expect(commands).toEqual(["completion", "update", "docs", "skills", "yak", "login", "logout", "org", "whoami", "tokens", "socrates", "doctrine", "gate"]);
     // The public program has no menu, so it promises no interactive mode (the example distribution's usage does).
     expect(help.stdout).toContain("\nRun 'eris <command> --help' for command-specific usage.\n");
     expect(help.stdout).not.toContain("interactive mode");
@@ -267,7 +269,7 @@ describe("this build's composition", () => {
 describe("the example distribution, composed", () => {
   it("routes core, this build's plugins and its own, and owns the bare program", async () => {
     /** When a distribution's composition drops a layer (core, this build's plugins, its own) or its menu, a private build silently loses verbs or its launcher: observed through `main` with the fixture's composition. */
-    expect(await run([])).toEqual({ rc: 0, stdout: "example distribution: yak, login, logout, org, whoami, tokens, socrates, doctrine, demo (eris --help for usage)\n", stderr: "" });
+    expect(await run([])).toEqual({ rc: 0, stdout: "example distribution: yak, login, logout, org, whoami, tokens, socrates, doctrine, gate, demo (eris --help for usage)\n", stderr: "" });
     const help = await run(["--help"]);
     for (const line of ["\n  completion ", "\n  yak ", "\n  demo ", "\nRun 'eris' without arguments for interactive mode.\n"]) expect(help.stdout).toContain(line);
     expect((await run(["completion", "--help"])).stdout).toContain("never touches the network.\nAlso completes the names 'eris demo hello' greets (see the demo plugin).\nSee docs/COMPLETION.md.\n");
@@ -441,7 +443,7 @@ describe.skipIf(checkoutOnly("builds its own binary from this checkout's source"
 
   it("runs its own verbs, this build's plugins and its menu, from its own entry", async () => {
     /** When build() compiles core's entry instead of the distribution's, or the bundle cannot resolve `eris/sdk`, the private binary is the public one or does not start: observed at the compiled fixture's output. */
-    expect(await sb.run([], { program: outfile })).toMatchObject({ status: 0, stdout: "example distribution: yak, login, logout, org, whoami, tokens, socrates, doctrine, demo (eris --help for usage)\n", stderr: "" });
+    expect(await sb.run([], { program: outfile })).toMatchObject({ status: 0, stdout: "example distribution: yak, login, logout, org, whoami, tokens, socrates, doctrine, gate, demo (eris --help for usage)\n", stderr: "" });
     expect(await sb.run(["demo", "hello", "quiet", "grace"], { program: outfile })).toMatchObject({ status: 0, stdout: "hello grace\n", stderr: "" });
     const yakHelp = await sb.run(["yak", "issue", "--help"], { program: outfile });
     expect({ status: yakHelp.status, head: yakHelp.stdout.split("\n")[0] }).toEqual({ status: 0, head: "usage: eris yak issue [flags]" });
@@ -485,6 +487,6 @@ describe.skipIf(checkoutOnly("builds its own binary from this checkout's source"
     expect(press(script, ["eris", "demo", "hello", ""])).toEqual(["loud", "quiet"]);
     expect(press(script, ["eris", "demo", "hello", "loud", ""])).toEqual(["ADA", "GRACE"]);
     expect(press(script, ["eris", "demo", "hello", "quiet", ""])).toEqual(["ada", "grace"]);
-    expect(press(script, ["eris", ""])).toEqual(["--help", "--version", "completion", "demo", "docs", "doctrine", "login", "logout", "org", "skills", "socrates", "tokens", "update", "whoami", "yak"]);
+    expect(press(script, ["eris", ""])).toEqual(["--help", "--version", "completion", "demo", "docs", "doctrine", "gate", "login", "logout", "org", "skills", "socrates", "tokens", "update", "whoami", "yak"]);
   });
 });

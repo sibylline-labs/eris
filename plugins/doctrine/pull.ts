@@ -9,7 +9,7 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { BUNDLE_PROFILES_FILE, type ContractFailure, fail, fetchOrgPolicy, gatesEndpoint, type Outcome, succeed } from "eris/gates-contract";
+import { BUNDLE_DOCTRINE_FILE, BUNDLE_PROFILES_FILE, type ContractFailure, fail, fetchOrgPolicy, gatesEndpoint, type Outcome, succeed } from "eris/gates-contract";
 import { CliExit, readArgs, renderFailureBlock, renderWarnLines, resolveOrgBearer, type VerbContext } from "../../src/cli/plugin";
 import plugin from "./index";
 import { linkedDoctrineFile, materialize, orgPath, orgTree } from "./org-tree";
@@ -127,6 +127,23 @@ export async function pulledDefaults(ctx: VerbContext, deps: PullDeps = {}): Pro
   if (!tree.ok) return tree;
   if (tree.value === null) return succeed({});
   return succeed({ doctrineFile: linkedDoctrineFile(h, org), profilesFile: join(orgPath(h, org), BUNDLE_PROFILES_FILE) });
+}
+
+/**
+ * The org's pulled tree as another verb group reads it (the gate verbs, composed in plugins/index.ts):
+ * the verified tree's own doctrine and profiles files and the bundle sha they hash to. Null when no org
+ * resolves or none is pulled; an edited tree is `doctrine-local-modified`.
+ */
+export async function pulledTree(ctx: VerbContext, deps: PullDeps = {}): Promise<Outcome<{ doctrineFile: string; profilesFile: string; bundleSha: string } | null>> {
+  const h = home(ctx, deps);
+  const bearer = await resolveOrgBearer({ home: h, env: ctx.env, cwd: deps.cwd ?? process.cwd() });
+  const org = "reason" in bearer ? null : bearer.value.org;
+  if (org === null) return succeed(null);
+  const tree = await orgTree(h, org);
+  if (!tree.ok) return tree;
+  if (tree.value === null) return succeed(null);
+  const { dir, manifest } = tree.value;
+  return succeed({ doctrineFile: join(dir, BUNDLE_DOCTRINE_FILE), profilesFile: join(dir, BUNDLE_PROFILES_FILE), bundleSha: manifest.bundle_sha });
 }
 
 /** `eris doctrine path`. */
