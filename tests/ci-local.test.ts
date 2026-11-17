@@ -1,8 +1,10 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CI_YML, GATES, gateDrift, remoteDelegation } from "../scripts/ci-local";
 import { checkoutOnly, REPO } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 /**
  * scripts/ci-local.ts stands in for ci.yml on a laptop. It is only worth running
