@@ -49,12 +49,15 @@ plugins/index.ts        # the plugins this build compiles in, composed by src/ma
 plugins/doctrine/       # `eris doctrine check|schema|gates|effect|pull|path`: index.ts (the manifest, and doctrinePlugin(defaults), the
                         #   same plugin reading a distribution's doctrine and profiles files), doctrine.ts (the
                         #   handlers), pull.ts (pull and path), org-tree.ts (the pulled tree: write, verify, swap); the contract is packages/gates-contract, imported by name (docs/DOCTRINE.md)
-plugins/gate/           # `eris gate record|skip|check`: index.ts (the manifest, and gatePlugin(defaults): the ladder file and the
+plugins/gate/           # `eris gate record|skip|check|ci`: index.ts (the manifest, and gatePlugin(defaults): the ladder file and the
                         #   org's pulled tree a build supplies), gate.ts (the command line and the one failure render), record.ts
                         #   (record and skip), check.ts (the statuses and the derived rows), artifact.ts and git.ts (where an
                         #   artifact lives, read through git), floor.ts, ladder.ts, burden.ts, surfaces.ts (the floor, the door rung,
                         #   the evidence burden and the surfaces a change crosses), render.ts and templates/ (the comment prose),
-                        #   actor.ts (who recorded it), store.ts (the endpoint and the bounded 429 retry) (docs/GATE.md)
+                        #   actor.ts (who recorded it), store.ts (the endpoint and the bounded 429 retry); `ci`: ci.ts (the event,
+                        #   the route, the GET-only fetch), ci-verb.ts (the verb and its legs), registry.ts (.claude/surfaces.yml read
+                        #   and matched), monotone.ts (the monotone leg), unlock.ts (the unlock leg), ledger.ts (lock and budget
+                        #   reads off a surface's ledger) (docs/GATE.md)
 plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consult|status|policy|evidence|settings`: index.ts (the manifest), submit.ts
                         #   (submit, its unfit and stamp rules, and the group dispatch), client.ts (the credentialed GET,
                         #   POST or PUT every endpoint verb shares), classify.ts (local rubric scoring, HAL override

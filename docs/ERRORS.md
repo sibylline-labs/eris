@@ -1417,6 +1417,82 @@ YAML, or does not decode: `classes:` maps door classes (`all`, `U0`-`U3`, `U<n>:
 and no U3 class sits above the human-after rung. Fix the file, or move it aside to read every class at
 the default rung. Exit 3.
 
+### gate-ci-event-invalid
+
+`eris gate ci` could not read a `pull_request` event: no `--event` and no `GITHUB_EVENT_PATH`, the
+file is unreadable or not JSON, or it lacks `pull_request.title`, `.head.ref`, `.head.sha`,
+`.base.sha` or `.user.login` (each sha a full 40-hex commit). It fails closed: nothing is fetched. Run
+it from a workflow triggered by `pull_request`, with `--event "$GITHUB_EVENT_PATH"`
+([GATE.md](GATE.md#ci)). Exit 3.
+
+### gate-issue-missing
+
+`eris gate ci` found no issue key on the pull request: none in the head ref (`<you>/<key>-...`) and
+none in the title, the author is not on the org's `settings.ci.bot_allowlist`, and the org's
+`settings.ci.untracked_prs` is `block`. Put the key in the PR title (`ABC-123: ...`) or the branch
+name; a title edit re-runs the check when the workflow triggers on `edited`. An org that accepts
+untracked PRs sets `untracked_prs` to `warn` or `allow` in its Gates settings
+([GATE.md](GATE.md#ci)). Exit 3.
+
+### gate-ci-bot-surface
+
+`eris gate ci` ran the surfaces leg for an untracked pull request (no issue key, and an allowlisted
+bot author or `untracked_prs: warn|allow`), and the PR's merge-base diff changes a path on a
+registered surface, at the fork's registry or the head's, or the registry itself; the
+`@surface-path` rows name each. A surface change needs an issue so the ticketed legs (profile,
+monotone, unlock) judge it: put the issue key in the PR title or branch ([GATE.md](GATE.md#ci)).
+Exit 3.
+
+### gate-ci-write-refused
+
+`eris gate ci`'s gateway client refused a request that is not a `GET` before it left the process:
+the check reads the gateway and writes nothing, and every call it makes goes through one GET-only
+fetch. It means a leg tried to write, and it is reported in place of any failure the client made of
+the refused request. Nothing was sent. Report it with the command's output ([GATE.md](GATE.md#ci)).
+Exit 3.
+
+### gate-monotone-wider
+
+`eris gate ci`'s monotone leg found that the `.claude/surfaces.yml` diff, a surface vocabulary or a
+registered review skill widens the surface bar on at least one dimension; the `@monotone` rows name
+each. The issue's latest `surface-widen` receipt is missing, does not pass, carries no human
+`--authorized` grant (a `doctrine:` grant never approves a widening), or its artifact lacks one of the
+wider rows. Tighten instead, or have a human approve the widening: save the `@monotone` rows the run
+printed (without the `@monotone` prefix) to a file, commit and push it, record
+`eris gate record surface-widen --issue <KEY> --verdict PASS --artifact <that file> --authorized
+"<name> asked: <request>"`, and re-run the check ([GATE.md](GATE.md#ci)). Exit 3.
+
+### gate-monotone-unresolved
+
+`eris gate ci`'s monotone leg could not read the two sides: the directory is not in a git checkout,
+the event's base sha names no commit here or shares no history with `HEAD`, or git could not list the
+changes or read a file at the merge-base. Check out the PR with `fetch-depth: 0`. Exit 3.
+
+### gate-unlock-human
+
+`eris gate ci`'s unlock leg did not unlock the merge, and no human signed it. The failure names every
+reason: the hosted posture does not set `signoff.unlock: on`; a bar gate is missing, failing or not
+bound to the PR head (`stale-head`), or its qualifier is not met (`no-report`, `not-clean`) or is one
+this build does not judge (`unjudged`); the surface does not list `merge` under `one_way_unlock`; it is
+not on the base registry yet; its ledger has no fresh passing `audit-surfaces` baseline, the change
+budget since it is spent, or no `unlocked-merge` announcement names this head; the surface is
+locked; or the diff touches a governance file (the registry, a registered vocabulary or review
+skill: always human, with each `@monotone` row named, and a wider row no human `surface-widen`
+receipt covers named again). A `door-signoff` on the issue that does not hold is named too:
+`stale-head` (recorded before a later code push, on a commit that is not its ancestor, or over a file
+artifact), `wrong-action` (no `door: merge` evidence line), or no human grant. A human signs off at
+the PR head with `eris gate record door-signoff --issue <KEY> --verdict PASS --artifact <committed
+plan or note> --evidence "door: merge" --authorized "<name> asked: <request>"`, or close each reason
+and re-run the job ([GATE.md](GATE.md#ci)). Exit 3.
+
+### gate-unlock-unresolved
+
+`eris gate ci` could not read the change: the directory is not in a git checkout, the event's base
+names no commit or shares no history with `HEAD`, the event's head sha is neither `HEAD` nor the PR
+parent (`HEAD^2`) of a two-parent merge onto the base tip whose tree is their clean merge, the base
+and head share no merge-base, or git could not list the changed paths or read the registry at a
+commit. Check out the PR with `fetch-depth: 0` ([GATE.md](GATE.md#ci)). Exit 3.
+
 ### asks-listing-truncated
 
 The asks API answered `eris gate check`'s read of open blocking asks with a full page. The route has
@@ -1461,7 +1537,10 @@ not a map of kebab-case profile names to a non-empty list of kebab-case gate nam
 does not decode as a `.claude/surfaces.yml`: a missing or empty `surfaces:` map, a surface name
 that is not kebab-case, an unknown key at any level, a malformed `audit_ttl`, `change_budget`,
 `ledger` or unlock gate, or two surfaces sharing a ledger. The block names the side and the first
-problem. Exit 3.
+problem. From `eris gate ci`, the registry (`--registry`, default `.claude/surfaces.yml`) at the
+merge-base, the head or in the working tree is one of those, is not valid YAML, holds more than one
+document, an anchor, alias or merge key, or is a symlink; the block names the side and each line.
+Exit 3.
 
 ## Adding a new slug
 

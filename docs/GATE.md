@@ -9,6 +9,7 @@ through the hosted gates store and reads them back to decide whether a change ma
 eris gate record <gate> --issue <KEY> --verdict PASS|AMENDED|BLOCKING --artifact <path> [evidence flags]
 eris gate skip   <gate> --issue <KEY> --reason <why> --authorized <grant> --artifact <path>
 eris gate check  --issue <KEY> (--gates <a,b,...> | --profile <name>) [--expect <id,...>]
+eris gate ci     [--event <file>] [--registry <path>]
 ```
 
 Every verb signs in with `eris login` (the org this directory acts as: `ERIS_ORG`, else `repo.org` in
@@ -118,3 +119,37 @@ After the gate rows, in this order:
 The store's reads lag its writes by seconds to about a minute. `--expect <id,...>` (the ids
 `record` printed) makes `check` re-read, about 30 s in all, until one listing holds every id, and
 fail closed (`gate-receipt-unseen`) if none does.
+
+## ci
+
+The required check a repo's CI runs on a pull request. It reads the `pull_request` event (`--event`,
+default `$GITHUB_EVENT_PATH`), fetches the org's hosted policy and settings on the `eris login` bearer
+(`ERIS_YAKS_TOKEN` and `ERIS_YAKS_URL` on a runner), and decides under the live hosted posture: a
+locally pulled tree is never read. It records nothing. Every request it sends is a `GET`; the one
+gateway client it builds refuses any other method before the network, and a refusal stops it with
+`gate-ci-write-refused`.
+
+stdout, in order:
+
+- `@policy\t<bundle_sha>\t<active posture>`
+- `@issue\t<KEY|->\t<ref|title|none>`: the issue key from the head ref (`<you>/abc-123-...`) first,
+  then the title (`ABC-123: ...`).
+- each leg's rows, then `@ci\t<leg>\t<pass|fail|skipped>`.
+
+A PR with an issue key runs three legs, each to the end, and the check fails with the first failing
+leg's failure:
+
+| Leg | What it checks |
+|---|---|
+| `profile` | when `settings.ci.check_profile_in_ci` is `on`: the hosted posture's `profile_default` (default `spine`) from the hosted bundle's profiles, as `check --profile --dry-run` does. A gate the posture sets `off` reads `skipped`. |
+| `monotone` | `.claude/surfaces.yml` (`--registry`), each surface's vocabulary and each registered review skill at the merge-base against the head, one `@monotone\t<scope>\t<subject>\t<field>\t<tighter\|wider>\t<detail>` row per changed dimension. Any wider row fails (`gate-monotone-wider`) unless the issue's latest `surface-widen` receipt passes with a human grant and its artifact carries every wider row verbatim. |
+| `unlock` | whether the merge may proceed without a human on each registered surface the diff crosses: `@surface`, `@lock`, the bar's gate rows, `@baseline`, `@budget`, `@announce`, and `@governance` plus `@monotone` rows for a diff that edits the registry, a vocabulary or a review skill. It reads `@unlock\tnot-needed` with no surface crossed, `unlocked` when the posture sets `signoff.unlock: on` and every bar gate passes bound to the PR head, or `human-signed` on the issue's latest `door-signoff` passing with a human grant, bound to the head and carrying a `door: merge` evidence line. Anything else fails (`gate-unlock-human`), naming every reason. |
+
+A PR with no key: under `settings.ci.untracked_prs: block` it fails (`gate-issue-missing`). An author
+on `settings.ci.bot_allowlist`, or `untracked_prs: warn` (one `WARN` line) or `allow`, runs the
+surfaces leg instead: one `@surface-path\t<path>` row per path the PR's merge-base diff changes on a
+registered surface (the registry at the fork or at the head) or the registry itself, failing
+(`gate-ci-bot-surface`) when there is any, else `@ci\tsurfaces\tpass`.
+
+The check needs the PR's base and head commits in the checkout (`fetch-depth: 0`); it accepts the
+merge commit a `pull_request` workflow checks out, judging the PR head that is its second parent.

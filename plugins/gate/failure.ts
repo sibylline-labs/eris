@@ -22,6 +22,15 @@ export type GateSlug =
   | "gate-burden-unreadable"
   | "gate-burden-unresolved"
   | "gate-ladder-invalid"
+  | "gate-ci-event-invalid"
+  | "gate-issue-missing"
+  | "gate-ci-bot-surface"
+  | "gate-ci-write-refused"
+  | "gate-surfaces-invalid"
+  | "gate-monotone-wider"
+  | "gate-monotone-unresolved"
+  | "gate-unlock-human"
+  | "gate-unlock-unresolved"
   | "asks-listing-truncated";
 
 export class GateFailure extends Error {
@@ -31,7 +40,8 @@ export class GateFailure extends Error {
   }
 }
 
-const block = (slug: GateSlug, what: string, fix: string, exit: 2 | 3): ContractFailure => ({ slug, what, fix, docs: `docs/ERRORS.md#${slug}`, exit });
+/** The slugged block for `slug`, not yet thrown. */
+export const block = (slug: GateSlug, what: string, fix: string, exit: 2 | 3): ContractFailure => ({ slug, what, fix, docs: `docs/ERRORS.md#${slug}`, exit });
 
 /** Stop with `f` as it stands (a client failure, or one built here). */
 export function stop(f: ContractFailure): never {

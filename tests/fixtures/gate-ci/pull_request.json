@@ -1,0 +1,25 @@
+{
+  "action": "synchronize",
+  "number": 1,
+  "pull_request": {
+    "number": 1,
+    "state": "open",
+    "title": "feat: harden the login flow",
+    "draft": false,
+    "head": {
+      "label": "acme:alice/abc-1-thing",
+      "ref": "alice/abc-1-thing",
+      "sha": "HEAD_SHA",
+      "repo": { "full_name": "acme/shop" }
+    },
+    "base": {
+      "label": "acme:main",
+      "ref": "main",
+      "sha": "BASE_SHA",
+      "repo": { "full_name": "acme/shop" }
+    },
+    "user": { "login": "alice", "type": "User" }
+  },
+  "repository": { "full_name": "acme/shop", "default_branch": "main" },
+  "sender": { "login": "alice", "type": "User" }
+}

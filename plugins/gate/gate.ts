@@ -1,6 +1,6 @@
 /**
- * gate.ts — `eris gate record | skip | check`: the command line, read from the plugin's rows, handed to
- * the engines (record.ts, check.ts) over the gates client.
+ * gate.ts — `eris gate record | skip | check | ci`: the command line, read from the plugin's rows, handed
+ * to the engines (record.ts, check.ts, ci-verb.ts) over the gates client.
  *
  * Every failure below the command line is one thrown `GateFailure`, caught once here and written as its
  * slugged block, so the exit code is the failure's own (2 for a wrong command line, 3 for anything the
@@ -65,6 +65,9 @@ Commands:
                           Append a SKIPPED receipt naming the grant behind it
   check  --issue <KEY> --gates <a,b,...> | --profile <name> [--expect <id,...>]
                           Exit 3 unless every gate's latest receipt passes
+  ci     [--event <file>] [--registry <path>]
+                          The required PR check under the org's hosted policy
+                          (GET-only: it records nothing)
 
 Receipts are written and read through the gateway's gate-receipt routes,
 signed in with 'eris login' (run it once per machine; ERIS_YAKS_TOKEN, a sib_
@@ -439,6 +442,7 @@ export function gateHandler(defaults: GateDefaults = {}, deps: GateDeps = {}): V
     try {
       if (g.sub === "record") return await runRecord(g.rest, ctx, defaults, deps);
       if (g.sub === "skip") return await runSkip(g.rest, ctx, defaults, deps);
+      if (g.sub === "ci") return await (await import("./ci-verb")).runCi(g.rest, ctx, deps);
       return await runCheck(g.rest, ctx, defaults, deps);
     } catch (e) {
       if (!(e instanceof GateFailure)) throw e;

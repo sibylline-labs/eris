@@ -67,6 +67,7 @@ describe("router table", () => {
       "doctrine schema": "ts",
       gate: "ts",
       "gate check": "ts",
+      "gate ci": "ts",
       "gate record": "ts",
       "gate skip": "ts",
       update: "ts",
