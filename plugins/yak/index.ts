@@ -48,6 +48,11 @@ export default definePlugin({
       example: `eris yak suggest --summary "a --dry-run flag for eris yak" --body "I wanted to see the payload before it was sent"`,
     },
     "yak status": { summary: "Whether this org has a destination for its yaks, and how many it holds", json: true },
+    "yak reports": {
+      summary: "This org's own vendor reports with their Linear state",
+      json: true,
+      example: "eris yak reports",
+    },
     "yak ready": { summary: "Whether this machine can file yaks, and when to file; always exits 0 (a SessionStart hook runs it)", json: true },
     "yak discover": {
       summary: "The Linear teams, projects, states and labels this org can file yaks into",
@@ -133,6 +138,8 @@ export default definePlugin({
                                             redactions, error?}
                                             (nothing on stderr, unlike every other surface here)
   eris yak status                          {configured, observation_count, last_filed_issue_identifier}
+  eris yak reports                         {reports: [{id, summary, issue_identifier, issue_url,
+                                            state: {name, type}, submitted_at}]}
   eris yak ready                           {ready, signed_in, endpoint, configured,
                                             last_filed_issue_identifier, fix}
   eris yak discover                        {teams, team_id, projects, workflow_states, labels,

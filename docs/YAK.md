@@ -568,6 +568,30 @@ eris yak config set --team ENG --state Triage
 eris yak status                    # configured: yes
 ```
 
+### `eris yak reports`: the org's own vendor reports
+
+A `--vendor` yak goes to the vendor's tracker, not the org's. `eris yak reports` lists the ones this org
+filed, with where each stands in the vendor's Linear:
+
+```sh
+eris yak reports            # issue, state, submitted, summary
+eris --output json yak reports
+```
+
+It reads `GET /v1/yaks/vendor-reports` with the directory's org bearer (any token that can run `eris yak
+status` can). The server returns only the reports the bearer's org submitted, and only the summary line,
+the Linear identifier and url, the state and the submit time: never a body or evidence. Text mode prints one
+row per report (the summary on one line, control characters removed); an org with none prints nothing on
+stdout and an `INFO` line on stderr. `--output json` is the server's `{reports: [{id, summary,
+issue_identifier, issue_url, state: {name, type}, submitted_at}]}`, bare, with any key this eris does not
+know dropped. A report whose Linear state has not been recorded reads `Unknown` / `unknown`.
+
+Failures are the failure block on stderr, nothing on stdout, exit `1`:
+[`yak-unauthorized`](ERRORS.md#yak-unauthorized), [`yak-reports-forbidden`](ERRORS.md#yak-reports-forbidden),
+[`yak-reports-unconfigured`](ERRORS.md#yak-reports-unconfigured),
+[`yak-reports-unavailable`](ERRORS.md#yak-reports-unavailable) and
+[`yak-admin-unavailable`](ERRORS.md#yak-admin-unavailable). The request is bounded at 15 seconds.
+
 ## What a receipt does not promise
 
 **A receipt is not a promise that an issue was created.** The endpoint accepts,

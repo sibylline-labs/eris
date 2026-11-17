@@ -110,7 +110,7 @@ describe("eris yak — the group dispatcher", () => {
       stdout: "",
       // The block renderer is golden-pinned against bash (tests/eris-fail-golden.test.ts).
       stderr: renderFailureBlock(
-        { slug: "yak-unknown-verb", what: "unknown yak command 'bogus'", fix: "use one of: issue, suggest, fatal, status, ready, discover, config\nrun 'eris yak --help' for the full command list" },
+        { slug: "yak-unknown-verb", what: "unknown yak command 'bogus'", fix: "use one of: issue, suggest, fatal, status, ready, reports, discover, config\nrun 'eris yak --help' for the full command list" },
         REPO,
       ),
     });

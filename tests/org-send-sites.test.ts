@@ -18,6 +18,7 @@ import { CliExit } from "../src/cli/ts-verb";
 import { runSocrates } from "../plugins/socrates/submit";
 import { runOrg } from "../plugins/yak/org";
 import { runYak } from "../plugins/yak/yak";
+import { runReports } from "../plugins/yak/yak-reports";
 import { runReady, runStatus } from "../plugins/yak/yak-admin";
 import { runTokens } from "../plugins/yak/tokens";
 
@@ -112,6 +113,16 @@ describe("a repo that selects org B sends org B's bearer and url", () => {
         await swallow(() => run([], ctx().ctx, { cwd, home, fetchImpl: fetch }));
         expect(seen[0]).toEqual({ url: `${url}/v1/yaks/status`, authorization: `Bearer ${token}` });
       }
+    }
+  });
+
+  // admits: another admin verb resolving from the process cwd; reports is the one verb with its own resolveEndpoint call
+  it("eris yak reports", async () => {
+    /** When yak-reports.ts or its handler hands the resolver the wrong cwd, an org-B repo lists the default org's vendor reports with the default bearer: observed in the request the injected fetch receives. */
+    for (const [cwd, token, url] of [[repoB, TOKEN_B, URL_B], [repoDefault, TOKEN_A, URL_A], ["/", TOKEN_A, URL_A]] as const) {
+      const { seen, fetch } = recorder(() => ({ reports: [] }));
+      await swallow(() => runReports([], ctx().ctx, { cwd, home, fetchImpl: fetch }));
+      expect(seen[0]).toEqual({ url: `${url}/v1/yaks/vendor-reports`, authorization: `Bearer ${token}` });
     }
   });
 
