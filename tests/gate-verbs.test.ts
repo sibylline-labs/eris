@@ -214,6 +214,15 @@ describe("record and check round trip", () => {
     expect(posts()).toEqual([]);
   });
 
+  // admits: boundary-io: a login URL that is plain http off loopback would carry the bearer in cleartext, or print "run eris login" when the login is fine; observed at the slug and the empty request log.
+  it("refuses a plain-http login URL under its own slug, sending nothing", async () => {
+    writeFileSync(join(home, ".eris", "yaks.json"), JSON.stringify({ url: "http://example.invalid", token: LOGIN }), { mode: 0o600 });
+    const r = await gate(["record", "plan-review", "--issue", ISSUE, "--verdict", "PASS", "--artifact", artifactFile(), "--actor", "a@example.com"]);
+    expect(r.code).toBe(3);
+    expect(r.err).toContain("slug: login-url-refused");
+    expect(seen).toEqual([]);
+  });
+
   // admits: boundary-io: a 429 on the write must be retried with the same comment id, or the gateway stores the receipt twice; observed at the two POST bodies.
   it("retries a rate-limited write under the same comment id", async () => {
     let refused = 0;

@@ -26,6 +26,9 @@
  *     `ERIS_YAKS_TOKEN` bearer pairs with a URL someone named, never with
  *     `DEFAULT_YAKS_URL`, which only the `eris login` file's bearer may use (the
  *     type holds it; `yaks-token-single-resolver` holds the env read).
+ *   - The bearer leaves `resolveOrgBearer` only for an `https:` URL, or `http:`
+ *     on localhost, 127.0.0.1 or [::1] (`login-url-refused` otherwise), whichever
+ *     source named the URL, so no client sends it in cleartext.
  *   - A selected org that holds no bearer fails closed (`org-not-signed-in`),
  *     never falling back to the default org's bearer; an `orgs` entry whose key
  *     is not its own token's org is dropped on read, so a key never routes
@@ -296,6 +299,32 @@ export type OrgSelection =
 
 export type OrgSlug = "org-not-signed-in" | "org-selector-invalid" | "org-token-mismatch";
 
+/** The hosts an `http:` URL may name (`URL.hostname` lowercases and brackets IPv6, and folds `127.1` into `127.0.0.1`). */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** Why the bearer may not be sent to `url` (it would cross a cleartext link, or `url` names no host), or `null` when it may. */
+export function bearerUrlRefusal(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return "the eris login URL is not an absolute URL, so the token is not sent";
+  }
+  if (parsed.protocol === "https:" || (parsed.protocol === "http:" && LOOPBACK_HOSTS.has(parsed.hostname))) return null;
+  return parsed.protocol === "http:"
+    ? `the eris login URL is plain http on ${parsed.hostname}, which is not a loopback host, so the token is not sent in cleartext`
+    : `the eris login URL's scheme is ${parsed.protocol}; the token goes only to https, or http on localhost, 127.0.0.1 or [::1]`;
+}
+
+/** The slugs `resolveOrgBearer` names that keep their own `docs/ERRORS.md` heading in a verb that otherwise reads any other miss as a login to run. */
+export const RESOLVER_OWN_HEADING_SLUGS: ReadonlySet<string> = new Set<string>([
+  "yak-url-unresolved",
+  "login-url-refused",
+  "org-not-signed-in",
+  "org-selector-invalid",
+  "org-token-mismatch",
+]);
+
 /** A refused selection; `fix` is the line a failure block prints. Never carries a token. */
 export type OrgFailure = { reason: string; slug: OrgSlug; fix: string };
 
@@ -477,8 +506,9 @@ export type OrgBearer = YaksBearer & { readonly org: string | null; readonly isD
 /**
  * The one bearer resolver for a command running in `cwd`: read the file,
  * choose the org (`resolveOrgSelection`), narrow to it (`selectOrgConfig`),
- * then `resolveYaksBearer` on that org's view. Every failure names its fix and
- * carries no token.
+ * then `resolveYaksBearer` on that org's view, then refuse a URL the bearer
+ * would cross in cleartext (`login-url-refused`), so no caller sends it there.
+ * Every failure names its fix and carries no token.
  */
 export async function resolveOrgBearer(opts: {
   home: string;
@@ -487,7 +517,7 @@ export async function resolveOrgBearer(opts: {
   flag?: string;
 }): Promise<
   | { value: OrgBearer }
-  | { reason: string; slug: OrgSlug | "yak-config-permissive" | "yak-config-malformed" | "yak-token-unresolved" | "yak-url-unresolved"; fix: string }
+  | { reason: string; slug: OrgSlug | "yak-config-permissive" | "yak-config-malformed" | "yak-token-unresolved" | "yak-url-unresolved" | "login-url-refused"; fix: string }
 > {
   const file = await readYaksFileConfig(opts.home);
   if ("reason" in file) return { reason: file.reason, slug: file.slug, fix: `fix or remove ${yaksConfigPath(opts.home)}, then run 'eris login' again` };
@@ -497,5 +527,9 @@ export async function resolveOrgBearer(opts: {
   if ("reason" in view) return view;
   const bearer = resolveYaksBearer(view.value.config, opts.env, opts.flag);
   if ("reason" in bearer) return bearer;
+  const refusal = bearerUrlRefusal(bearer.value.url);
+  if (refusal !== null) {
+    return { reason: refusal, slug: "login-url-refused", fix: "set ERIS_YAKS_URL to the gateway's https URL (http only for localhost, 127.0.0.1 or [::1]), or run 'eris login' again" };
+  }
   return { value: { ...bearer.value, org: view.value.org, isDefault: view.value.isDefault, selection: selection.value } };
 }

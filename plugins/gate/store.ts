@@ -9,11 +9,8 @@
  */
 
 import { type GatesEndpoint, gatesEndpoint } from "eris/gates-contract";
-import { resolveOrgBearer } from "../../src/cli/plugin";
+import { RESOLVER_OWN_HEADING_SLUGS, resolveOrgBearer } from "../../src/cli/plugin";
 import { stop, unwrap } from "./failure";
-
-/** The slugs the bearer resolver names that keep their own heading; every other miss is a login to run. */
-const RESOLVER_SLUGS = new Set(["yak-url-unresolved", "org-not-signed-in", "org-selector-invalid", "org-token-mismatch"]);
 
 export interface StoreOptions {
   readonly home: string;
@@ -28,7 +25,7 @@ export interface StoreOptions {
 export async function storeEndpoint(o: StoreOptions): Promise<GatesEndpoint> {
   const bearer = await resolveOrgBearer({ home: o.home, env: o.env, cwd: o.cwd });
   if ("reason" in bearer) {
-    const slug = RESOLVER_SLUGS.has(bearer.slug) ? bearer.slug : "eris-login-required";
+    const slug = RESOLVER_OWN_HEADING_SLUGS.has(bearer.slug) ? bearer.slug : "eris-login-required";
     const fix = slug === "eris-login-required" ? "Run 'eris login' once on this machine (or set ERIS_YAKS_TOKEN to a sib_ service token), then re-run." : bearer.fix;
     return stop({ slug, what: bearer.reason, fix, docs: `docs/ERRORS.md#${slug}`, exit: 3 });
   }

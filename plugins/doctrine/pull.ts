@@ -10,7 +10,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { BUNDLE_DOCTRINE_FILE, BUNDLE_PROFILES_FILE, type ContractFailure, fail, fetchOrgPolicy, gatesEndpoint, type Outcome, succeed } from "eris/gates-contract";
-import { CliExit, readArgs, renderFailureBlock, renderWarnLines, resolveOrgBearer, type VerbContext } from "../../src/cli/plugin";
+import { CliExit, readArgs, renderFailureBlock, renderWarnLines, RESOLVER_OWN_HEADING_SLUGS, resolveOrgBearer, type VerbContext } from "../../src/cli/plugin";
 import plugin from "./index";
 import { linkedDoctrineFile, localModified, materialize, orgPath, orgTree } from "./org-tree";
 
@@ -51,9 +51,6 @@ function stop(ctx: VerbContext, f: ContractFailure): never {
 
 const home = (ctx: VerbContext, deps: PullDeps): string => deps.home ?? ctx.env.HOME ?? homedir();
 
-/** The slugs the bearer resolver names that keep their own heading; every other miss is a login to run. */
-const RESOLVER_SLUGS = new Set(["yak-url-unresolved", "org-not-signed-in", "org-selector-invalid", "org-token-mismatch"]);
-
 /** What a pull wrote: the org, the bundle it verified, and the tree it swapped in. */
 export interface Pulled {
   readonly org: string;
@@ -73,7 +70,7 @@ export async function resolveOrg(ctx: VerbContext, deps: PullDeps, why: string):
   const h = home(ctx, deps);
   const bearer = await resolveOrgBearer({ home: h, env: ctx.env, cwd: deps.cwd ?? process.cwd() });
   if ("reason" in bearer) {
-    const slug = RESOLVER_SLUGS.has(bearer.slug) ? bearer.slug : "eris-login-required";
+    const slug = RESOLVER_OWN_HEADING_SLUGS.has(bearer.slug) ? bearer.slug : "eris-login-required";
     const fix = slug === "eris-login-required" ? "Run 'eris login' once on this machine (or set ERIS_YAKS_TOKEN to a sib_ service token), then re-run." : bearer.fix;
     return fail({ slug, what: bearer.reason, fix, docs: `docs/ERRORS.md#${slug}`, exit: 3 });
   }

@@ -246,7 +246,7 @@ describe("runYak — agent misuse (exit 1, the four-line failure block, stdout e
       const result = await runYak(
         baseOpts({
           argv: ["issue", "--summary", "s", "--body", tooLong],
-          env: { ERIS_YAKS_URL: "http://example.invalid", ERIS_YAKS_TOKEN: "t" },
+          env: { ERIS_YAKS_URL: "https://example.invalid", ERIS_YAKS_TOKEN: "t" },
           home,
         }),
       );
@@ -368,7 +368,7 @@ describe("runYak — --output json emits a bare record on misuse too (exit 1 unc
       const jsonResult = await runYak(
         baseOpts({
           argv: ["issue", "--summary", "s", "--body", tooLongWithSecret],
-          env: { ERIS_YAKS_URL: "http://example.invalid", ERIS_YAKS_TOKEN: "t", ERIS_OUTPUT: "json" },
+          env: { ERIS_YAKS_URL: "https://example.invalid", ERIS_YAKS_TOKEN: "t", ERIS_OUTPUT: "json" },
           home,
         }),
       );
@@ -392,7 +392,7 @@ describe("runYak — --output json emits a bare record on misuse too (exit 1 unc
         const textResult = await runYak(
           baseOpts({
             argv: ["issue", "--summary", "s", "--body", tooLongWithSecret],
-            env: { ERIS_YAKS_URL: "http://example.invalid", ERIS_YAKS_TOKEN: "t" },
+            env: { ERIS_YAKS_URL: "https://example.invalid", ERIS_YAKS_TOKEN: "t" },
             home: textHome,
           }),
         );
@@ -416,7 +416,7 @@ describe("runYak — environment/config/transport (exit 0, WARN, never the failu
       const result = await runYak(
         baseOpts({
           argv: ["issue", "--summary", "s", "--body", "b"],
-          env: { ERIS_YAKS_URL: "http://example.invalid" },
+          env: { ERIS_YAKS_URL: "https://example.invalid" },
           home,
         }),
       );
@@ -451,13 +451,35 @@ describe("runYak — environment/config/transport (exit 0, WARN, never the failu
     }
   });
 
+  it("a plain-http URL that is not loopback: WARN login-url-refused, exit 0, and nothing is fetched", async () => {
+    /** When the scheme check is missing from the shared resolver, `eris yak` posts the bearer over cleartext http: observed at the injected fetch, which records no call. */
+    const home = await freshHome();
+    const fetched: string[] = [];
+    try {
+      const result = await runYak(
+        baseOpts({
+          argv: ["issue", "--summary", "s", "--body", "b"],
+          env: { ERIS_YAKS_URL: "http://example.invalid", ERIS_YAKS_TOKEN: "self-hosted-token" },
+          home,
+          fetchImpl: (async (u: string | URL | Request) => (fetched.push(String(u)), new Response("{}", { status: 500 }))) as typeof fetch,
+        }),
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toContain("slug: login-url-refused");
+      expect(result.stderr).not.toContain("self-hosted-token");
+      expect(fetched).toEqual([]);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it("a group-readable ~/.eris/yaks.json is refused, never read: WARN + exit 0", async () => {
     const home = await freshHome();
     try {
       const erisDir = join(home, ".eris");
       await mkdir(erisDir, { recursive: true });
       const path = join(erisDir, "yaks.json");
-      await writeFile(path, JSON.stringify({ url: "http://example.invalid", token: "leaked" }));
+      await writeFile(path, JSON.stringify({ url: "https://example.invalid", token: "leaked" }));
       await chmod(path, 0o644);
 
       const result = await runYak(baseOpts({ argv: ["issue", "--summary", "s", "--body", "b"], env: {}, home }));
@@ -529,7 +551,7 @@ describe("runYak — environment/config/transport (exit 0, WARN, never the failu
       const result = await runYak(
         baseOpts({
           argv: ["issue", "--summary", "s", "--body", "b"],
-          env: { ERIS_YAKS_URL: "http://example.invalid", ERIS_OUTPUT: "json" },
+          env: { ERIS_YAKS_URL: "https://example.invalid", ERIS_OUTPUT: "json" },
           home,
         }),
       );
@@ -576,7 +598,7 @@ describe("runYak — environment/config/transport (exit 0, WARN, never the failu
       const result = await runYak(
         baseOpts({
           argv: ["issue", "--summary", "s", "--body", "b"],
-          env: { ERIS_YAKS_URL: "http://example.invalid", ERIS_YAKS_TOKEN: "t" },
+          env: { ERIS_YAKS_URL: "https://example.invalid", ERIS_YAKS_TOKEN: "t" },
           home,
         }),
       );
