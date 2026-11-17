@@ -12,7 +12,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, setDe
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { SocratesProblem, SocratesSubmitReceipt, SocratesSubmitRequest, SocratesSubmitResponse } from "../plugins/socrates/socrates-contract.v1";
+import { SOCRATES_PROJECT_MAX_LENGTH, SocratesProblem, SocratesSubmitReceipt, SocratesSubmitRequest, SocratesSubmitResponse } from "../plugins/socrates/socrates-contract.v1";
 import { runSocrates } from "../plugins/socrates/submit";
 import { REDACTION_CLASSES } from "../packages/outbound-scan/src/index";
 import * as Verbs from "../plugins/socrates/socrates-contract.v1.verbs";
@@ -84,6 +84,28 @@ describe("the contract v1 routes beyond submit, against the shared golden file",
       }
     });
   }
+
+  // admits: boundary-io: a project name of 201-255 characters, which Linear allows, is echoed by the server and refused by this decoder; the name is runtime data no type or lint rule sees.
+  it("project names decode up to Linear's 255-character limit and refuse 256 on every route that carries one", () => {
+    /** When this copy's bound falls back below the source's, a status, settings or hint carrying a long project name decodes as an error. */
+    expect(SOCRATES_PROJECT_MAX_LENGTH).toBe(255);
+    expect(Verbs.SOCRATES_PROJECT_MAX_LENGTH).toBe(255);
+    const name = (n: number) => "p".repeat(n);
+    const submit = (project: string) => ({ schema_version: "1.0.0", candidate: { kind: "decision", title: "t", statement: "s", source: "https://example.com", project } });
+    type Raw = Record<string, any>;
+    const accepted = (route: string, has: (r: Raw) => unknown): Raw => (fixtures.messages[route]?.response?.accept as Raw[]).find(has)!;
+    const status = accepted("status", (r) => r.open_epics?.length);
+    const settings = accepted("settings", (r) => r.enrolment?.projects.length);
+    const withEpicProject = (project: string) => ({ ...status, open_epics: [{ ...status.open_epics[0], project }] });
+    const withEnrolledName = (n: string) => ({ ...settings, enrolment: { projects: [{ ...settings.enrolment.projects[0], name: n }] } });
+    for (const [len, ok] of [[201, true], [255, true], [256, false]] as const) {
+      expect([len, SocratesSubmitRequest.safeParse(submit(name(len))).success]).toEqual([len, ok]);
+      expect([len, Verbs.SocratesConsultRequest.safeParse({ doc: "canon", project: name(len) }).success]).toEqual([len, ok]);
+      expect([len, Verbs.SocratesSettingsTeamRequest.safeParse({ schema_version: "1.0.0", project: name(len), team: "t" }).success]).toEqual([len, ok]);
+      expect([len, Verbs.SocratesStatusResponse.safeParse(withEpicProject(name(len))).success]).toEqual([len, ok]);
+      expect([len, Verbs.SocratesSettingsResponse.safeParse(withEnrolledName(name(len))).success]).toEqual([len, ok]);
+    }
+  });
 
   it("classify: every answer of every published rubric decodes", () => {
     /** Published rubrics are frozen, so an answer spelling the wire refuses can never be sent. */
