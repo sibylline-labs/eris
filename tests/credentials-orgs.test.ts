@@ -37,6 +37,7 @@ const TOKEN_B = bearer(ORG_B);
 const URL_A = "https://a.example.test";
 const URL_B = "https://b.example.test";
 const DEFAULT: OrgSelection = { org: null, source: "default" };
+const isRoot = process.getuid?.() === 0;
 
 mkdirSync(join(REPO, ".scratch"), { recursive: true });
 const sandbox = realpathSync(mkdtempSync(join(REPO, ".scratch", "orgs-")));
@@ -128,6 +129,31 @@ describe("resolveOrgSelection", () => {
     writeFileSync(join(wt, ".git"), "gitdir: /elsewhere/.git/worktrees/wt\n");
     expect(await resolveOrgSelection({}, wt)).toEqual({ value: { org: null, source: "default" } });
     expect(resolveOrgSelectionSync({}, wt)).toEqual({ value: { org: null, source: "default" } });
+  });
+
+  // Fails (red) when an unreadable `.git` reads as "no checkout here": the walk crosses the nested checkout and selects the enclosing manifest's repo.org (NFR-FAILCLOSED-1). Observed in the org resolution result.
+  // admits: a parent repo's org lent to a nested checkout whose marker cannot be inspected; file modes are a runtime fact
+  it.skipIf(isRoot)("fails closed when a nested `.git` directory or pointer file cannot be inspected", async () => {
+    const outer = checkout("outer-locked", `service: outer\nrepo:\n  org: ${ORG_B}\n`);
+    const dirMarker = checkout("outer-locked/nested-dir");
+    const fileMarker = join(outer, "nested-file");
+    mkdirSync(fileMarker, { recursive: true });
+    writeFileSync(join(fileMarker, ".git"), "gitdir: /elsewhere/.git/worktrees/nested\n");
+    chmodSync(join(dirMarker, ".git"), 0o000);
+    chmodSync(join(fileMarker, ".git"), 0o000);
+    try {
+      for (const cwd of [dirMarker, fileMarker]) {
+        const async_ = await resolveOrgSelection({}, cwd);
+        const sync = resolveOrgSelectionSync({}, cwd);
+        expect("slug" in async_ && [async_.slug, async_.reason.includes(join(cwd, ".git"))]).toEqual(["org-selector-invalid", true]);
+        expect(sync).toEqual(async_);
+      }
+    } finally {
+      chmodSync(join(dirMarker, ".git"), 0o755);
+      chmodSync(join(fileMarker, ".git"), 0o644);
+    }
+    // Control: once readable, each marker is a checkout root again and the outer org stays out.
+    for (const cwd of [dirMarker, fileMarker]) expect(await resolveOrgSelection({}, cwd)).toEqual({ value: { org: null, source: "default" } });
   });
 
   // admits: a manifest above or at home selecting the org; walk results depend on files on disk
