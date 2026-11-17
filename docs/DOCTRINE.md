@@ -162,16 +162,22 @@ An organisation keeps its doctrine in the hosted gates service. `pull` fetches i
   edited by hand fails `doctrine-local-modified`; `pull` restores it. Change the policy in the
   org's Gates settings, not on disk.
 
+- `eris login` runs a pull once the token is written. A pull that fails there is one `WARN` naming
+  its slug; the login still exits 0, and `eris doctrine pull` retries it.
+- With no `--file`, `check`, `gates` and `effect` read the pulled tree (its `doctrine.md` and
+  `profiles.yaml`), verified first: an edited tree fails `doctrine-local-modified` unless a flag
+  names another file. A build's own defaults (below) win over the tree.
+
 ```sh
 eris doctrine pull                                   # <orgId>\t<bundle_sha>
-eris doctrine check --file "$(eris doctrine path)"
-eris doctrine gates --file "$(eris doctrine path)" --profiles "$(dirname "$(eris doctrine path)")/profiles.yaml"
+eris doctrine check                                  # the pulled doctrine.md, verified
+eris doctrine check --file "$(eris doctrine path)"   # the same file, named
 ```
 
 ## A distribution's defaults
 
-This build has no default doctrine or profiles file: `check` needs `--file`, and `gates` and
-`effect` use the built-in profiles. A distribution that keeps its organisation's doctrine somewhere
+This build has no default doctrine or profiles file of its own: with no pulled tree, `check` needs
+`--file`, and `gates` and `effect` use the built-in profiles. A distribution that keeps its organisation's doctrine somewhere
 known composes the plugin with defaults in place of this build's, from `eris/sdk`:
 
 ```ts

@@ -1304,9 +1304,9 @@ stdin at all. Pipe the object in ([DOCTRINE.md](DOCTRINE.md#effect)). Exit 2.
 
 ### doctrine-file-missing
 
-A doctrine verb needs a doctrine file and has none: `eris doctrine check` was given no `--file`
-and the build names no default doctrine file, or the file it names cannot be read. Pass
-`--file <path>`. From `eris doctrine path`: no signed-in org resolves for the directory, or nothing
+A doctrine verb needs a doctrine file and has none: `eris doctrine check` was given no `--file`,
+the build names no default doctrine file and no org policy is pulled, or the file it names cannot be
+read. Pass `--file <path>`, or run `eris login`, then `eris doctrine pull`. From `eris doctrine path`: no signed-in org resolves for the directory, or nothing
 is pulled for it; run `eris login`, then `eris doctrine pull`. `eris doctrine gates` with no doctrine file is not a failure: it prints nothing,
 since no posture then skips or defers a gate. Exit 3.
 

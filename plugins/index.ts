@@ -9,6 +9,9 @@
 import type { ErisPlugin } from "../src/cli/plugin";
 import doctrine from "./doctrine";
 import socrates from "./socrates";
-import yak from "./yak";
+import { yakPlugin } from "./yak";
+
+/** `eris login` pulls the signed-in org's policy once the token is written (a WARN when it cannot). */
+const yak = yakPlugin({ afterLogin: async () => (await import("./doctrine/pull")).seedAfterLogin() });
 
 export const PLUGINS: readonly ErisPlugin[] = [yak, socrates, doctrine];
