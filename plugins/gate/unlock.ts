@@ -40,15 +40,16 @@ import {
   listReceipts,
   RAISE_ALL,
   type SurfacesFile,
+  type RetryOpts,
+  retryRateLimited,
 } from "eris/gates-contract";
 import { type Checking, humanGrantGap, type Judged, type Latest, statusOf } from "./check";
-import { precondition } from "./failure";
+import { precondition, unwrap } from "./failure";
 import { changedPaths, type CommitBound, commitBoundToHead, type Git, mergeBase, ok, repoRoot, revParse, run, untrackedFiles } from "./git";
 import { DOOR_SIGNOFF } from "./ladder";
 import { announcedHeads, countUnlocked, lockState, monDd, UNLOCKED_GATES } from "./ledger";
 import { classifyMonotone, type Dim, inSkillDir, named, readMonotoneSides, rowLine, type Signoff, uncovered } from "./monotone";
 import { issuesText, type MatchedSurface, matchSurfaces, surfacesInvalid, validateSurfacesYaml, vocabularyPath } from "./registry";
-import { type RetryOpts, retryRateLimited } from "./store";
 
 /** Every bar holds posture-check: the diff itself passed the surface posture gate. */
 export const ALWAYS_UNLOCK_GATES = ["posture-check"] as const;
@@ -207,7 +208,7 @@ async function judgeBarGate(gate: string, qualifier: string | undefined, latest:
 
 /** The issue's latest receipt for `gate` and, when it is a passing human-granted one, its artifact bytes. */
 export async function humanSignoff(input: Pick<UnlockInput, "ep" | "g" | "cwd" | "readRetry">, issue: string, gate: string): Promise<Signoff> {
-  const listing = await retryRateLimited(() => listReceipts(input.ep, issue), input.readRetry);
+  const listing = unwrap(await retryRateLimited(() => listReceipts(input.ep, issue), input.readRetry));
   const l = latestByGate(issue, listing.receipts).get(gate);
   if (l === undefined) return { why: "missing" };
   const judged = await statusOf({ input: { ep: input.ep, g: input.g, cwd: input.cwd, issue }, digests: new Map(), gitRepos: [] }, l, null);
@@ -244,7 +245,7 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
 
   const reasons: string[] = [];
   const read = input.doctrine.read;
-  const listing = await retryRateLimited(() => listReceipts(input.ep, input.issue), input.readRetry);
+  const listing = unwrap(await retryRateLimited(() => listReceipts(input.ep, input.issue), input.readRetry));
   const latest = latestByGate(input.issue, listing.receipts);
   const digests: Checking["digests"] = new Map();
   const judgeOn = (issue: string): Checking => ({ input: { ep: input.ep, g, cwd: input.cwd, issue }, digests, gitRepos: [] });
@@ -281,7 +282,7 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
       reasons.push(`${name}: not on the base registry yet (a surface the PR adds unlocks after it merges)`);
       continue;
     }
-    const ledgerReceipts = surface.ledger === undefined ? undefined : (await retryRateLimited(() => listReceipts(input.ep, surface.ledger!), input.readRetry)).receipts;
+    const ledgerReceipts = surface.ledger === undefined ? undefined : unwrap(await retryRateLimited(() => listReceipts(input.ep, surface.ledger!), input.readRetry)).receipts;
     const lock = surface.ledger === undefined || ledgerReceipts === undefined ? { locked: false } : lockState(surface.ledger, ledgerReceipts);
     input.out(`@lock\t${lock.locked ? "locked" : "open"}\t${name}`);
     if (lock.locked) {

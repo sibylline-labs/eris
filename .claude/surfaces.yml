@@ -41,6 +41,7 @@ surfaces:
       - tests/gates-client-receipts.test.ts
       - tests/gate-verbs.test.ts
       - tests/gate-ci.test.ts
+      - tests/loop-client.test.ts
     class_taxonomy: docs/dev/surfaces/secrets.md
     description: |
       Client-side secret scanning and redaction for `eris yak` and `eris

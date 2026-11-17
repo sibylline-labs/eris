@@ -11,7 +11,7 @@ and the order the gate verbs move onto it.
 |---|---|
 | Credential | The `eris login` bearer for the org the directory acts as, resolved by the SDK's `resolveOrgBearer` (`ERIS_ORG`, else `repo.org` in the nearest `eris.yaml`, else the default org). The verb resolves it; the client takes `{ url, token }` and never reads a file or the environment. |
 | Origin | `gatesEndpoint(url, token)` refuses any URL that is not `https:`, or `http:` on `localhost`, `127.0.0.1` or `[::1]` (`login-url-refused`), before a client exists. The bearer never crosses a cleartext link. |
-| Transport | Plain `fetch` (injectable for tests), one attempt, a deadline over the whole exchange (20 s), a reply cap (1 MiB for the policy routes). No retry inside the client; a retry is the verb's decision. |
+| Transport | Plain `fetch` (injectable for tests), one attempt, a deadline over the whole exchange (20 s), a reply cap (1 MiB for the policy routes). No retry inside the client; a retry is the verb's decision, through the package's one bounded `retryRateLimited`. |
 | Decoding | A reply body is `unknown` until it decodes through its Effect Schema. A body that does not decode is `gate-contract-mismatch`; nothing undecoded reaches a verb. |
 | Trust | A bundle is trusted only when the client's own `computeGatesBundleSha` over the decoded values equals the server's `bundle_sha`. |
 | Failures | The client returns `Outcome<A>`: a value, or a `ContractFailure` (slug, what, fix, docs, exit). It never throws, prints or exits; the verb renders the failure block. |
@@ -27,11 +27,14 @@ The failure map, by what the gateway answered:
 | any other status, a body that does not decode, a reply over the cap, or a `bundle_sha` the values do not hash to | `gate-contract-mismatch` |
 | `/policy` and `/settings` name different `bundle_sha`s twice running | `gate-store-unreachable` |
 | a receipt route: HTTP 409 `doctrine_out_of_date` (the org's staleness is `hard`) | `doctrine-out-of-date` |
-| a receipt route: HTTP 404 `issue_not_found` | `linear-issue-not-found` |
+| a receipt or `/v1/linear` route: HTTP 404 `issue_not_found` | `linear-issue-not-found` |
+| `POST /v1/linear/issues/<key>/claim`: HTTP 409 `issue_already_claimed` with `fields.holder` (the block names the holder's loop, runtime, session and expiry) | `linear-issue-claimed` |
+| `POST /v1/linear/issues/<key>/transition`: HTTP 404 `state_not_found` | `linear-state-not-found` |
+| the yak lookup: HTTP 404, no cluster, or a cluster with no issue | `yak-unresolved` |
 | `PUT /v1/gates/policy`: HTTP 403 or 405 | `doctrine-push-refused` |
 | `PUT /v1/gates/policy`: HTTP 409 | `doctrine-push-stale` |
 | `PUT /v1/gates/policy`: HTTP 400, 413 or 422 | `doctrine-push-invalid` |
-| a receipt, asset or artifact route: HTTP 429 (the failure carries `retryAfterMs` from `Retry-After`) | `linear-rate-limited` |
+| a receipt, asset, artifact or `/v1/linear` route: HTTP 429 (the failure carries `retryAfterMs` from `Retry-After`) | `linear-rate-limited` |
 | the asks route: 402/403, no answer or 5xx, 429, anything else | `asks-store-forbidden`, `asks-store-unreachable`, `asks-rate-limited`, `asks-contract-mismatch` |
 
 ## Routes
@@ -45,6 +48,8 @@ The failure map, by what the gateway answered:
 | `GET /v1/asks?issue=&state=open&blocking=true` | `gate check` (the `@asks` row of a terminal gate) | served |
 | `PUT /v1/gates/policy` | `doctrine push` | served |
 | `GET\|POST /v1/gates/doctrine-comments` | `doctrine set` | served |
+| `GET /v1/linear/issues/<key>`, `POST /v1/linear/issues/<key>/{claim,release,comments,transition}` (`linear-contract/v1`) | `loop launch`, `hand-back`, `stop`, `resume`, `reap` | served |
+| `GET /v1/yaks/observations/<id>`, `GET /v1/yaks/clusters/<id>` (`/v0` for a UUID yak id), never following a redirect | `loop resolve`, `loop launch` | served |
 
 A route is added to the client in the slice whose verb first calls it, with its reply Schema
 vendored into `packages/gates-contract` beside the bundle contract.
@@ -72,6 +77,8 @@ from the tracker directly.
 | Piece | Location | Why |
 |---|---|---|
 | Wire contract (bundle, settings, replies, `bundle_sha`) | `packages/gates-contract/src/bundle.ts` | data and pure functions; another tool reads it without eris |
+| The `/v1/linear` and yak lookup replies | `packages/gates-contract/src/linear.ts` | vendored beside the bundle contract, decoded leniently |
+| The bounded 429 retry (`retryRateLimited`) | `packages/gates-contract/src/retry.ts` | every verb that retries a rate-limited call shares one |
 | Client (`gatesEndpoint`, one function per route) | `packages/gates-contract/src/client.ts` | `fetch` and decode only, no CLI runtime |
 | The org's pulled tree on disk (`~/.eris/doctrine/<orgId>/`) | `plugins/doctrine/org-tree.ts` | file I/O belongs to the verbs |
 | Verbs | the plugin that owns the group (`plugins/doctrine/`, then a `gate` plugin, ...) | rows plus lazy handlers, through the SDK |

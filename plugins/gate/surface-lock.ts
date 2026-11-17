@@ -9,12 +9,11 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type GateActor, isHumanGrant, listReceipts } from "eris/gates-contract";
-import { precondition, usage } from "./failure";
+import { type GateActor, isHumanGrant, listReceipts, retryRateLimited } from "eris/gates-contract";
+import { precondition, unwrap, usage } from "./failure";
 import { lockState, SURFACE_LOCK_GATE } from "./ledger";
 import { recordGate, type WriteRun } from "./record";
 import { issuesText, validateSurfacesYaml } from "./registry";
-import { retryRateLimited } from "./store";
 
 /** A surface of the registry at `registry` (relative to `cwd`) and the ledger that holds its lock, or a usage refusal. */
 export function surfaceLedger(cwd: string, registry: string, name: string): { readonly file: string; readonly ledger: string } {
@@ -60,7 +59,7 @@ export async function setLock(run: WriteRun, input: SetLockInput): Promise<SetLo
   const reason = input.reason.trim();
   if (reason === "") return usage("--reason is blank", "Say why, in words the next reader can check.");
   const { file, ledger } = surfaceLedger(run.cwd, input.registry, input.name);
-  const listing = await retryRateLimited(() => listReceipts(run.ep, ledger), run.retry);
+  const listing = unwrap(await retryRateLimited(() => listReceipts(run.ep, ledger), run.retry));
   if (lockState(ledger, listing.receipts).locked === (input.to === "locked")) return { kind: "noop", ledger };
   const recorded = await recordGate(run, {
     gate: SURFACE_LOCK_GATE,

@@ -73,6 +73,8 @@ import {
   requirementsFor,
   reviewReportDigest,
   sha256Hex,
+  type RetryOpts,
+  retryRateLimited,
 } from "eris/gates-contract";
 import { resolveArtifact, targetRoot } from "./artifact";
 import { type BurdenRubric, burdenOf, type EvidenceKind, owedBy, unmet } from "./burden";
@@ -81,7 +83,6 @@ import { effectiveClass } from "./floor";
 import { type Git, repoRoot } from "./git";
 import { BLEED_REDUCING, type DoorLadder, DOOR_SIGNOFF, doorRung, RUNG_MEANS } from "./ladder";
 import { skipGate, validateTarget } from "./record";
-import { type RetryOpts, retryRateLimited } from "./store";
 import type { Crossed } from "./surfaces";
 
 export type GateStatus = "missing" | "bad-digest" | "blocking" | "unresolved" | "drift" | "pass" | "skipped" | "unauthorized-skip" | "doctrine-stale" | "deferred" | "forbidden" | "absent";
@@ -267,7 +268,7 @@ export function humanGrantGap(latest: Latest | undefined, status: GateStatus): s
 async function readListing(input: CheckInput): Promise<{ receipts: ReadonlyArray<ListedReceipt>; invalid: number }> {
   const delays = input.expectDelaysMs ?? EXPECT_RETRY_DELAYS_MS;
   const expect = input.expect ?? [];
-  const read = () => retryRateLimited(() => listReceipts(input.ep, input.issue), input.readRetry);
+  const read = async () => unwrap(await retryRateLimited(() => listReceipts(input.ep, input.issue), input.readRetry));
   let listing = await read();
   let unseen = expect.filter((id) => !listing.receipts.some((c) => c.id === id));
   for (let i = 0; unseen.length > 0 && i < delays.length; i++) {

@@ -1350,6 +1350,26 @@ The gate receipt store answered HTTP 429 and the verb's bounded retry (it waits 
 written; a write that was retried reused its comment id, so it was never stored twice. Wait the time
 the block names and re-run. Exit 3.
 
+### linear-issue-claimed
+
+`eris loop launch` or `resume` asked the gateway to claim an issue another loop holds (HTTP 409
+`issue_already_claimed`). The block names the holder's loop, runtime, session and when its claim
+expires. Nothing was claimed or spawned. Message that loop or wait for its hand-back; `eris loop stop`
+releases a claim this machine holds. Exit 3.
+
+### linear-state-not-found
+
+A loop asked the gateway to move an issue to a state its team's workflow does not have (HTTP 404
+`state_not_found`): `In Progress` on launch, `Todo` on stop. The loop verbs only warn with it; the
+session already started or stopped. Add the state to the team's workflow, or move the issue by hand.
+Exit 3.
+
+### yak-unresolved
+
+`eris loop resolve` or `launch` was given a yak id the gateway could not turn into an issue key: the
+yak is unknown, has no cluster yet, or its cluster has no tracker issue yet. Nothing was claimed or
+spawned. Pass the issue key instead, or re-run once the yak has an issue. Exit 2.
+
 ### asks-store-unreachable
 
 The asks API (`GET /v1/asks`) gave no answer within the deadline, the network failed, or it answered
