@@ -117,8 +117,8 @@ export interface CheckInput {
   readonly burden?: { readonly rubric: BurdenRubric; readonly crossing: () => Promise<Crossed> } | undefined;
   /** The doctrine file and its read (null: no file). Absent: no doctrine, so every `doctrine:` skip is stale. */
   readonly doctrine?: { readonly file: string; readonly read: () => DoctrineRead | null } | undefined;
-  /** The ladder's read (null: no file, every class R1); with a floor gate, adds the `@door` row. */
-  readonly ladder: { readonly read: () => DoorLadder | null };
+  /** The ladder's read (null: no file, every class R1); with a floor gate, adds the `@door` row. Absent: no `@door` row (`gate ci`). */
+  readonly ladder?: { readonly read: () => DoorLadder | null } | undefined;
   readonly applyModes?: boolean | undefined;
   readonly readOnly?: true | undefined;
   readonly now: Date;
@@ -126,13 +126,13 @@ export interface CheckInput {
 }
 
 /** The receipt deciding a gate, with the marker version it was parsed from. */
-interface Latest {
+export interface Latest {
   readonly receipt: GateReceipt;
   readonly version: "v1" | "v2";
   readonly at: string;
 }
 
-interface Judged {
+export interface Judged {
   readonly status: GateStatus;
   readonly why?: string;
   /** The artifact bytes a `pass` was judged on, live or the stored copy. */
@@ -141,9 +141,12 @@ interface Judged {
 
 type DigestCache = Map<string, AssetDigest>;
 
+/** What judging one issue's receipts reads: the store, git, the directory, and the issue. */
+export type JudgeOn = Pick<CheckInput, "ep" | "g" | "cwd" | "issue">;
+
 /** One check: its input plus what it has read so far. */
-interface Checking {
-  readonly input: CheckInput;
+export interface Checking {
+  readonly input: JudgeOn;
   readonly digests: DigestCache;
   /** The git checkouts the issue's `git` artifacts live in (for a `repo:no-eris-yaml` skip), resolved once. */
   gitRepos: ReadonlyArray<string>;
@@ -203,7 +206,7 @@ function decodeCopy(copy: GateArtifactCopy): Buffer | null {
   }
 }
 
-async function statusOf(c: Checking, latest: Latest | undefined, doctrine: DoctrineRead | null): Promise<Judged> {
+export async function statusOf(c: Checking, latest: Latest | undefined, doctrine: DoctrineRead | null): Promise<Judged> {
   if (latest === undefined) return { status: "missing" };
   const r = latest.receipt;
   const bad = await badDigest(c, r.evidence);
@@ -254,7 +257,7 @@ async function statusOf(c: Checking, latest: Latest | undefined, doctrine: Doctr
 }
 
 /** Why a human sign-off receipt does not hold, or null: it exists, passes, and carries a human grant. */
-function humanGrantGap(latest: Latest | undefined, status: GateStatus): string | null {
+export function humanGrantGap(latest: Latest | undefined, status: GateStatus): string | null {
   if (latest === undefined) return "missing";
   if (status !== "pass") return status;
   return isHumanGrant(latest.receipt.authorized) ? null : "no human grant";
@@ -511,16 +514,19 @@ export async function checkGates(input: CheckInput): Promise<void> {
       input.out(`@floor\t${lacking.length === 0 ? "pass" : "unmet"}\t${cls}`);
       const raisedBy = required.length > requirementsFor(cls).length ? ` (raised by doctrine ${posture?.slug})` : "";
       if (lacking.length > 0) failing.push(`${cls} floor unmet${raisedBy}: ${lacking.map((req) => `${req} (${statuses.get(req)})`).join(", ")}`);
-      const active = activePosture(doctrine);
-      const bleedReducing = (await statusOf(c, latest.get(BLEED_REDUCING), doctrine)).status === "pass";
-      const d = doorRung({ ladder: input.ladder.read(), policy: active?.policy, posture: active?.slug, u: cls, crossings: crossed?.surfaces ?? [], bleedReducing });
-      input.out(`@door\t${d.rung}\t${d.door}`);
-      const how = `${d.liftedBy !== undefined ? `, lifted by ${d.liftedBy}` : ""}${d.cappedBy !== undefined ? `, capped by ${d.cappedBy}` : ""}`;
-      input.warn(`door: ${d.door} at ${d.rung} (${RUNG_MEANS[d.rung]}); ladder states ${d.stated}${how}`);
-      if (d.rung === "R0") {
-        const signoff = latest.get(DOOR_SIGNOFF);
-        const why = humanGrantGap(signoff, (await statusOf(c, signoff, doctrine)).status);
-        if (why !== null) failing.push(`door R0 (${d.door}): no passing ${DOOR_SIGNOFF} receipt with a human --authorized grant (${why})`);
+      const ladder = input.ladder;
+      if (ladder !== undefined) {
+        const active = activePosture(doctrine);
+        const bleedReducing = (await statusOf(c, latest.get(BLEED_REDUCING), doctrine)).status === "pass";
+        const d = doorRung({ ladder: ladder.read(), policy: active?.policy, posture: active?.slug, u: cls, crossings: crossed?.surfaces ?? [], bleedReducing });
+        input.out(`@door\t${d.rung}\t${d.door}`);
+        const how = `${d.liftedBy !== undefined ? `, lifted by ${d.liftedBy}` : ""}${d.cappedBy !== undefined ? `, capped by ${d.cappedBy}` : ""}`;
+        input.warn(`door: ${d.door} at ${d.rung} (${RUNG_MEANS[d.rung]}); ladder states ${d.stated}${how}`);
+        if (d.rung === "R0") {
+          const signoff = latest.get(DOOR_SIGNOFF);
+          const why = humanGrantGap(signoff, (await statusOf(c, signoff, doctrine)).status);
+          if (why !== null) failing.push(`door R0 (${d.door}): no passing ${DOOR_SIGNOFF} receipt with a human --authorized grant (${why})`);
+        }
       }
     }
   }

@@ -1,7 +1,7 @@
 /**
- * The gate plugin's manifest: `eris gate record`, `skip` and `check` as registry rows plus a lazy
+ * The gate plugin's manifest: `eris gate record`, `skip`, `check` and `ci` as registry rows plus a lazy
  * handler thunk (docs/dev/PLUGINS.md, docs/GATE.md). The verbs write and read gate receipts through the
- * gates client (docs/dev/GATES-CLIENT.md) on the `eris login` bearer.
+ * gates client (docs/dev/GATES-CLIENT.md) on the `eris login` bearer; `ci` only reads.
  *
  * `gatePlugin(defaults)` is the same plugin with what a build supplies: the door-class ladder file
  * `check` reads (none: every class at R1), and the org's pulled, verified policy tree, whose doctrine
@@ -34,7 +34,7 @@ const rf = <const N extends `--${string}`>(name: N) => ({ name, takesValue: true
 const b = <const N extends `--${string}`>(name: N) => ({ name, takesValue: false }) as const;
 
 const ROWS = {
-  gate: { impl: "ts", summary: "Gate receipts on tracker issues (record, skip, check); not feature flags" },
+  gate: { impl: "ts", summary: "Gate receipts on tracker issues (record, skip, check, ci); not feature flags" },
   "gate record": {
     summary: "Append a gate-receipt@v2 comment to an issue",
     flags: [
@@ -62,6 +62,11 @@ const ROWS = {
     flags: [v("--issue"), v("--reason"), v("--authorized"), f("--artifact"), f("--doctrine"), v("--impact"), v("--actor")],
     pos: ["gate?"],
     usage: "<gate> --issue <KEY> --reason <why> --authorized <grant> --artifact <path> [--doctrine <path>] [--impact U0|U1|U2|U3] [--actor <who>]",
+  },
+  "gate ci": {
+    summary: "The required PR check: route a pull_request event by issue key and run the gate legs under the org's hosted policy, GET-only",
+    flags: [f("--event"), v("--registry")],
+    usage: "[--event <file>] [--registry <path>]",
   },
   "gate check": {
     summary: "Exit non-zero unless every named gate's latest receipt passes",

@@ -192,3 +192,20 @@ export function cloneRoot(env: Env, slug: string): string | null {
   if (path === "" || path === "null") return null;
   return isCheckout(path) ? path : null;
 }
+
+/** The directory gate notes are committed under: a commit that changes only these stays bound to its head. */
+export const NOTE_PREFIX = "thoughts/";
+
+export type CommitBound = { readonly bound: true } | { readonly bound: false; readonly why: string };
+
+/** Whether commit `c` is `head`, or an ancestor of `head` with only `NOTE_PREFIX` paths changed since. */
+export async function commitBoundToHead(g: Git, top: string, c: string, head: string): Promise<CommitBound> {
+  if (c === head) return { bound: true };
+  if (!ok(await run(g, top, ["merge-base", "--is-ancestor", c, head]))) {
+    return { bound: false, why: `recorded at ${c.slice(0, 12)}, which is not an ancestor of the head ${head.slice(0, 12)}` };
+  }
+  const diff = await run(g, top, ["-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", "-z", c, head, "--"]);
+  if (!ok(diff)) return { bound: false, why: `git could not diff ${c.slice(0, 12)}..${head.slice(0, 12)}` };
+  const code = diff.stdout.toString("utf8").split("\0").filter((p) => p !== "" && !p.startsWith(NOTE_PREFIX));
+  return code.length === 0 ? { bound: true } : { bound: false, why: `${code.length} path(s) changed after it was recorded at ${c.slice(0, 12)} (${code.slice(0, 3).join(", ")})` };
+}
