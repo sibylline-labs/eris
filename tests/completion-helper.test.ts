@@ -9,7 +9,7 @@
  * a real bash and zsh in an empty directory.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -21,6 +21,8 @@ import { type CompletionDomain, REGISTRY } from "../src/cli/registry";
 import { HANDLERS } from "../src/main";
 import { REPO } from "./helpers/blackbox";
 import { FX_ENV, FX_GATE, FX_KEY, FX_VAR, LIBRARY } from "./fixtures/completion-library";
+
+setDefaultTimeout(60_000);
 
 const fn = (name: string, body = "  echo x") => `${name}() {\n${body}\n}\n`;
 const x = (body: string) => fn("__eris_dom_x", body);

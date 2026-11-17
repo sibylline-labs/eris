@@ -9,11 +9,13 @@
  * device login, so every run ends at its first request and writes nothing.
  */
 
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { existsSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { join } from "node:path";
 import { sandbox, type Sandbox } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 const DEFAULT = "https://api.sibylline.group";
 

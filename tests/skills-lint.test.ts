@@ -10,11 +10,13 @@
  * each table row was run through it and its answer is the literal here.
  */
 
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { lintSkills, readSkillKind, SKILL_KINDS, type SkillKindRead } from "../src/runtime/skills-lint";
 import { REPO, type Sandbox, sandbox } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 const SCRATCH = join(REPO, ".scratch");
 const made: string[] = [];

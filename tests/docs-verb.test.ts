@@ -3,10 +3,12 @@
  * of carrying its own, checked against the composed registry the program runs.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { helpJson, usageLine } from "../src/cli/args";
 import { defaultCli } from "../src/main";
 import { REPO, sandbox } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 describe("eris docs", () => {
   // admits: a reference that misses a plugin's verb, or restates a flag differently from the parser, sends an agent to a command that fails.

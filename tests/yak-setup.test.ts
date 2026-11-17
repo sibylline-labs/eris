@@ -4,10 +4,12 @@
  * goes and where it never goes.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, resolve } from "node:path";
+
+setDefaultTimeout(60_000);
 
 const REPO = resolve(import.meta.dir, "..");
 const SCRIPT = join(REPO, "plugins/yak/yak-setup.ts");

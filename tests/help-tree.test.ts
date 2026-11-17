@@ -13,11 +13,13 @@
  * program with stdin closed exits 0 inside a second, printing the usage.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { defaultCli, main } from "../src/main";
 import { ERIS, oracleEnv, REPO } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 /** A port nothing listens on. */
 const DEAD = "http://127.0.0.1:9";

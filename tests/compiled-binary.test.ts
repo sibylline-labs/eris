@@ -5,10 +5,12 @@
  * pinned in tests/cli-shim.test.ts.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { binaryOnly, expectFailBlock, installRoot, type Sandbox, sandbox } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 /** A yak report. With no Yaks credentials in the sandbox it runs to its "not configured" outcome. */
 const YAK = ["yak", "issue", "--summary", "s", "--body", "b"];

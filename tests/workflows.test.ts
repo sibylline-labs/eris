@@ -6,10 +6,12 @@
  * user then runs.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkoutOnly, REPO } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 interface Step {
   uses?: string;

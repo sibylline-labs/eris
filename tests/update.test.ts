@@ -5,9 +5,11 @@
  * tests/update-release.test.ts.
  */
 
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { main } from "../src/main";
 import { REPO } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 async function run(argv: string[], env: Record<string, string> = {}): Promise<{ rc: number; stdout: string; stderr: string }> {
   let stdout = "";

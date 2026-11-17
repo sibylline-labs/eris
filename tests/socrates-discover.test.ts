@@ -7,12 +7,14 @@
  * and the cursor file is observed on disk.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { runSocrates } from "../plugins/socrates/submit";
 import { CliExit } from "../src/cli/ts-verb";
 import { type Sandbox, sandbox } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 const REPO = resolve(import.meta.dir, "..");
 

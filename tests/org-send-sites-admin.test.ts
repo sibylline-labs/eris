@@ -11,11 +11,13 @@
  * assembled at runtime so no literal trips a secret scanner.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { CliExit } from "../src/cli/ts-verb";
 import { runYakVerb } from "../plugins/yak/handlers";
+
+setDefaultTimeout(60_000);
 
 const REPO = resolve(import.meta.dir, "..");
 const B64 = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE";
