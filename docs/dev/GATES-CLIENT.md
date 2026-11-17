@@ -28,6 +28,9 @@ The failure map, by what the gateway answered:
 | `/policy` and `/settings` name different `bundle_sha`s twice running | `gate-store-unreachable` |
 | a receipt route: HTTP 409 `doctrine_out_of_date` (the org's staleness is `hard`) | `doctrine-out-of-date` |
 | a receipt route: HTTP 404 `issue_not_found` | `linear-issue-not-found` |
+| `PUT /v1/gates/policy`: HTTP 403 or 405 | `doctrine-push-refused` |
+| `PUT /v1/gates/policy`: HTTP 409 | `doctrine-push-stale` |
+| `PUT /v1/gates/policy`: HTTP 400, 413 or 422 | `doctrine-push-invalid` |
 | a receipt, asset or artifact route: HTTP 429 (the failure carries `retryAfterMs` from `Retry-After`) | `linear-rate-limited` |
 | the asks route: 402/403, no answer or 5xx, 429, anything else | `asks-store-forbidden`, `asks-store-unreachable`, `asks-rate-limited`, `asks-contract-mismatch` |
 
@@ -40,10 +43,10 @@ The failure map, by what the gateway answered:
 | `POST /v1/gates/receipts` | `gate record`, `gate skip`, `surface lock\|unlock` | served |
 | `POST /v1/gates/assets`, `GET /v1/gates/assets/digest`, `GET /v1/gates/artifacts/<sha256>` | `gate record`, `gate check` | served |
 | `GET /v1/asks?issue=&state=open&blocking=true` | `gate check` (the `@asks` row of a terminal gate) | served |
-| `PUT /v1/gates/policy` | `doctrine push` | later slice |
-| `POST /v1/gates/doctrine-comments` | `doctrine set` | later slice |
+| `PUT /v1/gates/policy` | `doctrine push` | served |
+| `GET\|POST /v1/gates/doctrine-comments` | `doctrine set` | served |
 
-Each later route is added to the client in the slice whose verb first calls it, with its reply Schema
+A route is added to the client in the slice whose verb first calls it, with its reply Schema
 vendored into `packages/gates-contract` beside the bundle contract.
 
 The receipt routes carry the pulled bundle's sha as `x-eris-policy-sha`; a reply marked

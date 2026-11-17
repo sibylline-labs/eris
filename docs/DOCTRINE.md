@@ -6,7 +6,9 @@ that says which review gates run and how strictly, who signs off which kind of c
 evidence each class of change must show before it closes. `eris doctrine` reads that file. `check`,
 `schema`, `gates` and `effect` are offline: they read a local file, a profiles file, or stdin, and
 never the network. `pull` fetches the org's hosted policy and `path` names the file it wrote
-([pull and path](#pull-and-path)).
+([pull and path](#pull-and-path)); `push` saves an edited copy back ([push](#push)); `set` switches a
+local doctrine file's active posture and has the gateway comment the issues it affects
+([set](#set)).
 
 ```
 eris doctrine check  [--file <path>] [--cite] [--output json]
@@ -14,6 +16,8 @@ eris doctrine schema
 eris doctrine gates  [--file <path>] [--profiles <file>] [--explain]
 eris doctrine effect [--profiles <file>] [--output json] < {"contract": ..., "before": ..., "after": ...}
 eris doctrine pull   [--output json]
+eris doctrine push   [--output json]
+eris doctrine set    <posture> --reason <why> --file <path> [--profiles <file>] [--actor <who>] [--issues <KEY,KEY>]
 eris doctrine path
 ```
 
@@ -159,8 +163,8 @@ An organisation keeps its doctrine in the hosted gates service. `pull` fetches i
   failed pull leaves the previous tree in place.
 - `<orgId>` is a link to the current tree; `path` prints the doctrine through it,
   `~/.eris/doctrine/<orgId>/doctrine.md`, after checking every file against the manifest. A tree
-  edited by hand fails `doctrine-local-modified`; `pull` restores it. Change the policy in the
-  org's Gates settings, not on disk.
+  edited by hand fails `doctrine-local-modified`; `pull` restores it, and [`push`](#push) saves the
+  edit as the org's policy.
 
 - `eris login` runs a pull once the token is written. A pull that fails there is one `WARN` naming
   its slug; the login still exits 0, and `eris doctrine pull` retries it.
@@ -173,6 +177,39 @@ eris doctrine pull                                   # <orgId>\t<bundle_sha>
 eris doctrine check                                  # the pulled doctrine.md, verified
 eris doctrine check --file "$(eris doctrine path)"   # the same file, named
 ```
+
+## `push`
+
+`push` saves your edits to the pulled tree as the org's policy, on the same bearer, with
+`PUT /v1/gates/policy`:
+
+- It reads the live policy first and refuses (`doctrine-push-stale`) unless the live `bundle_sha` is
+  the one the tree was pulled on, so a newer save is never silently reverted. The refusal leaves the
+  tree exactly as you left it.
+- A tree whose files decode to the live bundle saves nothing: no request is sent, the tree is
+  re-pulled, and the verb prints `unchanged`.
+- A file a bundle does not carry (anything but `doctrine.md`, `profiles.yaml` and `loops/<slug>.md`),
+  or a file that no longer decodes, is `doctrine-push-invalid` before any request.
+- The save is sent once. The gateway refuses it unless the bearer is an org admin's and the org has
+  saves from eris turned on (`doctrine-push-refused`); a policy it will not take is
+  `doctrine-push-invalid`. After a save the tree is replaced by the saved bundle, re-rendered and
+  verified, so YAML comments and layout in your files are normalized.
+
+```sh
+eris doctrine push                                   # <orgId>\t<bundle_sha>\t<version|unchanged>
+```
+
+## `set`
+
+`set <posture> --reason <why> --file <path>` switches `active:` in the named doctrine file, appends the
+attributed change to `doctrine-history.jsonl` beside it, and asks the gateway
+(`/v1/gates/doctrine-comments`) to write one tracker comment on each impacted open issue: one whose
+latest gate receipt is on a different policy. The comment reads
+`Doctrine changed: A → B · by <actor> · reason: …`, then one sentence per effect. A second flip
+within ten minutes of the first updates that comment in place. eris holds no tracker credential: the
+gateway reads the issue and writes the comment with the org's own connection. The org's pulled tree
+is never edited here (`doctrine-org-managed`); the gateway is asked before the file is written, so a
+refused request leaves the file as it was.
 
 ## A distribution's defaults
 

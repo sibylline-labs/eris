@@ -21,7 +21,7 @@ export interface DoctrineDefaults {
 export type DoctrineDefaultsSource = DoctrineDefaults | ((ctx: VerbContext) => DoctrineDefaults | Promise<DoctrineDefaults>);
 
 const ROWS = {
-  doctrine: { impl: "ts", summary: "Doctrine policy: blocks (check, schema, gates, effect, pull, path); the U2/U3 floor cannot be waived" },
+  doctrine: { impl: "ts", summary: "Doctrine policy: blocks (check, schema, gates, effect, set, pull, push, path); the U2/U3 floor cannot be waived" },
   "doctrine check": {
     summary: "Validate every posture's policy: block in a doctrine file",
     json: true,
@@ -48,6 +48,19 @@ const ROWS = {
     usage: '[--profiles <file>] < {"contract": "policy"|"surfaces", "before": ..., "after": ...}',
   },
   "doctrine pull": { summary: "Fetch the org's hosted policy on the eris login bearer and write it to ~/.eris/doctrine/<orgId>/", json: true },
+  "doctrine push": { summary: "Save the org's edited policy tree as its hosted policy (PUT /v1/gates/policy); an unedited tree saves nothing", json: true },
+  "doctrine set": {
+    summary: "Switch a doctrine file's active posture and have the gateway comment every impacted open issue",
+    flags: [
+      { name: "--reason", takesValue: true },
+      { name: "--file", takesValue: true, file: true },
+      { name: "--profiles", takesValue: true, file: true },
+      { name: "--actor", takesValue: true },
+      { name: "--issues", takesValue: true },
+    ],
+    pos: ["posture?"],
+    usage: "<posture> --reason <why> --file <path> [--profiles <file>] [--actor <who>] [--issues <KEY,KEY>]",
+  },
   "doctrine path": { summary: "Print the pulled doctrine.md of the org this directory acts as, after verifying it" },
 } as const;
 
@@ -55,6 +68,7 @@ const JSON_FIX = `  eris doctrine check                      {active, policy_has
                                             section, policy, policy_sha256, policy_hash, citation}]}
   eris doctrine effect                     {effects: [{path, knob, before, after, direction, sentence}]}
   eris doctrine pull                       {org, bundle_sha, dir}
+  eris doctrine push                       {org, bundle_sha, version, saved_at, dir, pushed}
 `;
 
 /** The doctrine plugin, reading `defaults` when a verb's file flag is absent. */
