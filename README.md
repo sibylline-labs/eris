@@ -193,6 +193,22 @@ eris doctrine check --file "$(eris doctrine path)"   # check the pulled doctrine
 The contract is [`packages/gates-contract`](packages/gates-contract), exported as
 `eris/gates-contract`; [docs/DOCTRINE.md](docs/DOCTRINE.md) is the reference.
 
+## Loops
+
+`eris loop` runs the org's loops, runbooks kept in its hosted policy, as background Claude Code
+sessions on tracker issues. Each session holds its issue's claim until it hands back; every claim,
+comment and state move is a request to the gateway on the `eris login` bearer.
+
+```sh
+eris loop list                                              # the loops the org's policy carries
+eris loop launch one-shot ABC-123 --cwd "$PWD" --model sonnet   # claim the issue and start the loop
+eris loop status ABC-123                                    # the session's state, claim and newest message
+eris loop hand-back ABC-123 --claim <id> < result.md        # release the claim with the hand-back
+eris loop reap --dry-run                                    # what a tidy-up would stop, release and remove
+```
+
+[docs/LOOP.md](docs/LOOP.md) is the reference.
+
 ## Documentation
 
 [docs/README.md](docs/README.md) indexes the references: the architecture,

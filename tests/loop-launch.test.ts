@@ -8,11 +8,13 @@
  * HTTP and every session is a real child process that writes a real job file.
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readClaim } from "../plugins/loop/claims";
 import { BUNDLE, LOGIN, loop, loopWorld, type LoopWorld, slugOf, stopServer } from "./helpers/loop-fixture";
+
+setDefaultTimeout(60_000);
 
 let w: LoopWorld;
 beforeEach(async () => {

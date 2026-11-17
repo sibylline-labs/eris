@@ -105,6 +105,8 @@ export const runWidgets: VerbHandler = async (args, ctx) => {
   and another plugin's verb with **`runErisVerb`**: both go through the
   subprocess adapter, so the deadline kills the whole tree. Never spawn one
   yourself.
+- Fan work out through **`runPool(items, concurrency, worker)`**, with the concurrency from
+  **`resolveConcurrency(readEnv(env, "ERIS_BATCH_CONCURRENCY"))`**: bounded, never one promise per item.
 - Read the repo's own `eris.yaml` with **`nearestErisYaml(startDir)`**: the
   nearest one at or above `startDir`, stopping at the git checkout's root, as
   `{ok: true, path, value}` (parsed, never merged), `{ok: false, path, error}`

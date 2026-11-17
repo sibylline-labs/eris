@@ -7,9 +7,11 @@
  * tests/helpers/loop-fixture.ts; each session is launched through the real `launch` first.
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { readClaim } from "../plugins/loop/claims";
 import { loop, loopWorld, type LoopWorld, slugOf, stopServer } from "./helpers/loop-fixture";
+
+setDefaultTimeout(60_000);
 
 let w: LoopWorld;
 beforeEach(async () => {

@@ -58,6 +58,13 @@ const ROWS = {
     flags: [b("--all"), v("--prompt"), b("--unclaimed")],
     usage: "<ref> | --all [--prompt <text>] [--unclaimed]",
   },
+  "loop status": { summary: "A loop session's state, detail, claim, in-flight calls and newest message", pos: ["ref"], usage: "<ref>" },
+  "loop reap": {
+    summary: "Stop finished loop sessions, release their claims, remove clean finished worktrees",
+    json: true,
+    flags: [b("--dry-run"), { name: "--repo", takesValue: true, repeatable: true }],
+    usage: "[--dry-run] [--repo <abs>]...",
+  },
   "loop stop": { summary: "Stop a loop session, release its claim, move an In Progress issue to Todo", json: true, pos: ["ref"], usage: "<ref>" },
   "loop hand-back": {
     summary: "Post a loop's hand-back (stdin) as the claim's release response, else a comment",
@@ -68,6 +75,13 @@ const ROWS = {
   },
 } as const;
 
+const JSON_FIX = `  eris loop list                           {loops}
+  eris loop resolve                        {issue, yak?}
+  eris loop launch                         {issue, slug, session, runtime, model, claimId?, yak?}
+  eris loop resume|stop|reap               {lines}
+  eris loop hand-back                      {lines, failed}
+`;
+
 /** The loop plugin, with what the build supplies. */
 export function loopPlugin(defaults: LoopDefaults = {}) {
   return definePlugin({
@@ -76,6 +90,7 @@ export function loopPlugin(defaults: LoopDefaults = {}) {
     handlers: {
       loop: async () => (await import("./handlers")).loopHandler(defaults),
     },
+    jsonFix: JSON_FIX,
   });
 }
 

@@ -17,10 +17,14 @@ Commands:
          [--caller <name>] [--context <text>] [--force] [--unclaimed]
                           Claim the issue and start the loop; prints
                           'delegated <ISSUE> → loop <slug> · <session> · model <m>'
+  status <ref>            A session's state, detail, claim and newest message
   resume <ref> | --all [--prompt <text>] [--unclaimed]
                           Continue a finished session, holding its claim again
   stop <ref>              Stop a session, release its claim, move an In Progress
                           issue to Todo
+  reap [--dry-run] [--repo <abs>]...
+                          Stop finished sessions, release their claims, remove
+                          clean finished worktrees
   hand-back <ISSUE> [--claim <id>] [--report-to <KEY>] [--outcome <o>] < body
                           Post a loop's hand-back as the org's app
 
@@ -95,6 +99,28 @@ Flags:
   --all          Every failed loop session on an open issue
   --prompt       The continuation prompt (one line, at most 1024 characters)
   --unclaimed    Reserve no claim
+  --output json  Print {"lines": [...]}
+
+${EXIT}`,
+  status: `Usage: eris loop status <ref>
+
+Print '<id> · <name> · <state>', then detail:, needs:, claim: (this machine's
+ledger), also: (the other sessions the ref names), one in-flight: line per
+running tool call (stalled: past the 25-minute budget), and the session's newest
+message. Text only: --output json is refused.
+
+${EXIT}`,
+  reap: `Usage: eris loop reap [--dry-run] [--repo <abs>]... [--output json]
+
+Stop loop sessions that are done or blocked, release their claims and
+reservations a launch never bound (after 15 minutes), and remove worktrees that
+are clean, idle, unused by a working loop, and merged (a closed or merged pull
+request, or HEAD on main). Never --force. The last line is a summary.
+
+Flags:
+  --dry-run      Print what would be done; change nothing
+  --repo         A repo whose worktrees are reaped (absolute); repeatable.
+                 Default: the clones in ~/.eris/clones.json and every session's repo
   --output json  Print {"lines": [...]}
 
 ${EXIT}`,

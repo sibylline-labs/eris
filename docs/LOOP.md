@@ -11,8 +11,10 @@ eris loop list                    [--output json]
 eris loop resolve <ISSUE|YAK-ID>   [--output json]
 eris loop launch <loop> <ISSUE|YAK-ID> --cwd <abs> --model <m> [--report-to <KEY>]
                  [--caller <name>] [--context <text>] [--force] [--unclaimed] [--output json]
+eris loop status <ref>
 eris loop resume <ref> | --all [--prompt <text>] [--unclaimed] [--output json]
 eris loop stop <ref>               [--output json]
+eris loop reap [--dry-run] [--repo <abs>]... [--output json]
 eris loop hand-back <ISSUE> [--claim <id>] [--report-to <KEY>] [--outcome handed_back|aborted] [--output json] < body
 ```
 
@@ -99,6 +101,37 @@ over 65,536 characters. Each write is tried once, and again (bounded, waiting th
 bound to that very session, it releases the claim (`aborted`) and moves the issue back to Todo, but only
 while it is In Progress: In Review, Blocked and every other state stand. A session that holds no claim
 touches neither. The receipt is `stopped <ISSUE> → loop <slug> · <id>`.
+
+## status
+
+`eris loop status <ref>` prints `<id> · <name> · <state>`, then, each when present, `detail:`,
+`needs:`, `claim:` (this machine's ledger: the claim id's first 8 characters, the issue, the bound
+session, since when), `also:` (the other sessions the ref names), one `in-flight:` line per running tool
+call (from the job's `fan`, else the transcript's unanswered tool calls), a `stalled:` line for a call
+running past the 25-minute budget, and the newest message (its last 4,000 characters). When a ref names
+several sessions it shows the one working, else the newest; two working is `loop-session-ambiguous`.
+Text only.
+
+## reap
+
+`eris loop reap` tidies up after finished loops:
+
+- It stops each background loop session in `done` or `blocked` (`claude stop`). A working session is
+  kept, and a session that is not a loop's is never touched.
+- It releases (`aborted`) each ledger claim whose session is done, blocked or gone, but only when
+  `claude agents --json` was read: a listing that failed releases nothing. A reservation a launch never
+  bound is released once its `claimed_at` is 15 minutes old, so a launch between its reserve and its bind
+  keeps its claim.
+- It removes each worktree of the repos (`--repo`, repeatable; default the clones in
+  `~/.eris/clones.json` and every session's repo) that is a directory no process has its cwd in, no
+  working loop runs in, `git status --porcelain` shows clean, has no open pull request, and is merged (a
+  closed or merged pull request on its branch, or `HEAD` an ancestor of `origin/main` or `main`).
+  Removal is `git worktree remove`, never `--force`; a worktree whose directory is gone is pruned.
+
+`--dry-run` prints `dry-run:` lines for what it would do and changes nothing. The last line is the
+summary: `reap: sessions stopped=… failed=… kept_working=… · worktrees removed=… failed=… pruned_missing=…
+kept_dirty=… kept_open_pr=… kept_busy=… kept_working_loop=… kept_unmerged=… · claims released=… failed=…`,
+with `· stalled=<n>` when a working session has a call past its budget.
 
 ## resume
 

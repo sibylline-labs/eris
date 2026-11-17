@@ -61,6 +61,8 @@ export {
   type YaksUrlSource,
 } from "../runtime/credentials";
 export { CliExit } from "./args";
+/** The bounded pool a plugin fans work out through (`ts/lib/pool.ts` imports nothing, so the completion path stays light). */
+export { resolveConcurrency, runPool } from "../../ts/lib/pool";
 export type { RunResult } from "../runtime/process";
 export type { ArgSinks, CliContext, CompletionDomain, Flag, FlagName, GroupArgs, ReadOptions, Row, RowArgs, SlotWord, VerbContext, VerbHandler };
 

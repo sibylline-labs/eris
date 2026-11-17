@@ -15,7 +15,9 @@ import { HELP, USAGE } from "./help";
 import plugin, { type LoopDefaults } from "./index";
 import { handBack } from "./hand-back";
 import { launchLoop, launchReceipt } from "./launch";
+import { reapLoops } from "./reap";
 import { resumeLoop } from "./resume";
+import { loopStatus } from "./status";
 import { stopLoop } from "./stop";
 import { resolveTarget } from "./target";
 
@@ -78,6 +80,20 @@ async function runStop(args: string[], ctx: VerbContext, deps: LoopDeps): Promis
   return 0;
 }
 
+async function runStatus(args: string[], ctx: VerbContext, deps: LoopDeps): Promise<number> {
+  const a = readArgs(ROWS, "loop status", args, ctx, { help: HELP.status });
+  if (a === null) return 0;
+  ctx.stdout.write(loopStatus(runOf(ctx, deps), a.pos[0]));
+  return 0;
+}
+
+async function runReap(args: string[], ctx: VerbContext, deps: LoopDeps): Promise<number> {
+  const a = readArgs(ROWS, "loop reap", args, ctx, { help: HELP.reap });
+  if (a === null) return 0;
+  printLines(ctx, await reapLoops(runOf(ctx, deps), { dryRun: a.flags["--dry-run"], repos: a.flags["--repo"] }));
+  return 0;
+}
+
 async function runHandBack(args: string[], ctx: VerbContext, deps: LoopDeps): Promise<number> {
   const a = readArgs(ROWS, "loop hand-back", args, ctx, { help: HELP.handBack });
   if (a === null) return 0;
@@ -120,6 +136,10 @@ export function loopHandler(defaults: LoopDefaults = {}, deps: LoopDeps = {}): V
           return await runResume(g.rest, ctx, deps);
         case "stop":
           return await runStop(g.rest, ctx, deps);
+        case "status":
+          return await runStatus(g.rest, ctx, deps);
+        case "reap":
+          return await runReap(g.rest, ctx, deps);
         case "hand-back":
           return await runHandBack(g.rest, ctx, deps);
         default:
