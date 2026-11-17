@@ -26,20 +26,35 @@ The failure map, by what the gateway answered:
 | HTTP 5xx | `gate-store-unreachable` |
 | any other status, a body that does not decode, a reply over the cap, or a `bundle_sha` the values do not hash to | `gate-contract-mismatch` |
 | `/policy` and `/settings` name different `bundle_sha`s twice running | `gate-store-unreachable` |
+| a receipt route: HTTP 409 `doctrine_out_of_date` (the org's staleness is `hard`) | `doctrine-out-of-date` |
+| a receipt route: HTTP 404 `issue_not_found` | `linear-issue-not-found` |
+| a receipt, asset or artifact route: HTTP 429 (the failure carries `retryAfterMs` from `Retry-After`) | `linear-rate-limited` |
+| the asks route: 402/403, no answer or 5xx, 429, anything else | `asks-store-forbidden`, `asks-store-unreachable`, `asks-rate-limited`, `asks-contract-mismatch` |
 
 ## Routes
 
 | Route | Verb | Status |
 |---|---|---|
 | `GET /v1/gates/policy`, `GET /v1/gates/settings` | `doctrine pull`, `gate ci` | served |
-| `GET /v1/gates/receipts?issue=` | `gate check`, `gate ci`, `surface digest` | later slice |
-| `POST /v1/gates/receipts` | `gate record`, `gate skip`, `surface lock\|unlock` | later slice |
-| `POST /v1/gates/assets`, `GET /v1/gates/assets/digest`, `GET /v1/gates/artifacts/<sha256>` | `gate record`, `gate check` | later slice |
+| `GET /v1/gates/receipts?issue=` | `gate check`, `gate ci`, `surface digest` | served |
+| `POST /v1/gates/receipts` | `gate record`, `gate skip`, `surface lock\|unlock` | served |
+| `POST /v1/gates/assets`, `GET /v1/gates/assets/digest`, `GET /v1/gates/artifacts/<sha256>` | `gate record`, `gate check` | served |
+| `GET /v1/asks?issue=&state=open&blocking=true` | `gate check` (the `@asks` row of a terminal gate) | served |
 | `PUT /v1/gates/policy` | `doctrine push` | later slice |
 | `POST /v1/gates/doctrine-comments` | `doctrine set` | later slice |
 
 Each later route is added to the client in the slice whose verb first calls it, with its reply Schema
 vendored into `packages/gates-contract` beside the bundle contract.
+
+The receipt routes carry the pulled bundle's sha as `x-eris-policy-sha`; a reply marked
+`x-gates-policy-stale: soft` is a WARN naming `eris doctrine pull`, and `hard` refuses the write. A
+listing's rows decode leniently: a key the contract does not name is ignored, so the server may add
+fields. A 429 is returned with its `Retry-After`; the client never retries, and a verb that retries
+reuses the same comment id, which the gateway dedupes on.
+
+What the public `gate` verbs do not judge fails closed rather than passing: a receipt whose evidence
+is a review report reads `blocking` (judging one needs a distribution's registered review skills),
+and an issue carrying a `remediate` receipt prints `@remediate unsupported` and fails.
 
 ## Tracker writes happen server-side
 

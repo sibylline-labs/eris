@@ -8,7 +8,14 @@
 
 import type { ErisPlugin } from "../src/cli/plugin";
 import doctrine from "./doctrine";
+import { gatePlugin } from "./gate";
 import socrates from "./socrates";
-import yak from "./yak";
+import { yakPlugin } from "./yak";
 
-export const PLUGINS: readonly ErisPlugin[] = [yak, socrates, doctrine];
+/** `eris login` pulls the signed-in org's policy once the token is written (a WARN when it cannot). */
+const yak = yakPlugin({ afterLogin: async () => (await import("./doctrine/pull")).seedAfterLogin() });
+
+/** The gate verbs read the org's pulled, verified tree for their doctrine, profiles and policy sha. */
+const gate = gatePlugin({ pulled: async (ctx) => (await import("./doctrine/pull")).pulledTree(ctx) });
+
+export const PLUGINS: readonly ErisPlugin[] = [yak, socrates, doctrine, gate];

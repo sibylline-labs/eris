@@ -60,8 +60,8 @@ Commands:
 const CHECK_USAGE = `Usage: eris doctrine check [--file <path>] [--cite] [--output json]
 
 Validate every posture's policy: block in the doctrine file (default: the
-build's own doctrine file, when it names one; with neither, exits 3,
-doctrine-file-missing). Text: one '<slug>\\t<policy|no-policy>' line per
+build's own doctrine file, when it names one, else the org's pulled
+doctrine.md, verified; with none, exits 3, doctrine-file-missing). Text: one '<slug>\\t<policy|no-policy>' line per
 posture, the active one marked '*'. With --cite: print the active posture's
 citation '<Display name> (<slug>@<policy-hash>)'. JSON: { active, policy_hash,
 citation, postures: [{ slug, name, line, section, policy, policy_sha256,
@@ -81,7 +81,8 @@ const GATES_USAGE = `Usage: eris doctrine gates [--file <path>] [--profiles <fil
 
 Print the active posture's effective gate map, one '<profile>\\t<gate>\\t<mode>'
 line per gate of each work profile (the build's own profiles file when it
-names one, else the built-in spine and deep; --profiles reads a YAML map of
+names one, else the pulled org's profiles.yaml, else the built-in spine and
+deep; --profiles reads a YAML map of
 profile to gate list instead). A gate the policy does not name is 'on'. Then
 one '@user-impact\\t<class>\\t<req,...>' line per class that owes any
 requirement: the user-impact floor plus the posture's policy.user_impact raise.
@@ -93,8 +94,8 @@ Then, when the posture has a policy.remediate block, one
 '@ask\\t<key>\\t<value>' line per ask setting (two_way_timeout '<n>h' or none,
 digest off|hourly|daily, session_budget), defaults filled, for every posture
 with a policy: block.
-Prints nothing when there is no doctrine file (no --file, and the build names
-none, or the file does not exist) or the active posture has no policy: block,
+Prints nothing when there is no doctrine file (no --file, the build names
+none and no org policy is pulled, or the file does not exist) or the active posture has no policy: block,
 since nothing is then skipped or deferred. A doctrine that does not parse
 exits 3 (doctrine-policy-invalid).
 
@@ -126,6 +127,9 @@ not that object exits 2 (doctrine-usage).
 
 const INDENT = "    ";
 
+/** The files a verb reads when its flag is absent, resolved on first use. */
+type Fallback = () => Promise<DoctrineDefaults>;
+
 /** `eris doctrine effect <usage>`, as its row declares it. */
 const EFFECT_LINE = `eris doctrine effect ${ROWS["doctrine effect"].usage}`;
 
@@ -135,15 +139,15 @@ function stop(ctx: VerbContext, f: ContractFailure): never {
   throw new CliExit(f.exit);
 }
 
-function runCheck(args: string[], ctx: VerbContext, d: DoctrineDefaults): number {
+async function runCheck(args: string[], ctx: VerbContext, defaults: Fallback): Promise<number> {
   const a = readArgs(ROWS, "doctrine check", args, ctx, { help: CHECK_USAGE });
   if (a === null) return 0;
-  const file = a.flags["--file"] ?? d.doctrineFile;
+  const file = a.flags["--file"] ?? (await defaults()).doctrineFile;
   if (file === undefined) {
     stop(ctx, {
       slug: "doctrine-file-missing",
-      what: "eris doctrine check: no --file names a doctrine file, and this build names none",
-      fix: "Pass --file <path>.",
+      what: "eris doctrine check: no --file names a doctrine file, this build names none, and no org policy is pulled",
+      fix: "Pass --file <path>, or run 'eris login', then 'eris doctrine pull'.",
       docs: "docs/ERRORS.md#doctrine-file-missing",
       exit: 3,
     });
@@ -212,10 +216,10 @@ function fieldSummary(fields: Fields, key: string): string {
   return (field !== undefined ? explainOf(field.ast)?.summary : undefined) ?? "(undocumented)";
 }
 
-function runGates(args: string[], ctx: VerbContext, d: DoctrineDefaults): number {
+async function runGates(args: string[], ctx: VerbContext, defaults: Fallback): Promise<number> {
   const a = readArgs(ROWS, "doctrine gates", args, ctx, { help: GATES_USAGE });
   if (a === null) return 0;
-  const file = a.flags["--file"] ?? d.doctrineFile;
+  const file = a.flags["--file"] ?? (await defaults()).doctrineFile;
   if (file === undefined) return 0;
   const read = readDoctrineFile(file);
   if (!read.ok) stop(ctx, read.failure);
@@ -224,7 +228,7 @@ function runGates(args: string[], ctx: VerbContext, d: DoctrineDefaults): number
   if (invalid !== null) stop(ctx, invalid);
   const policy = activePosture(read.value)?.policy;
   if (policy === undefined || policy === null) return 0;
-  const profiles = readProfiles(a.flags["--profiles"] ?? d.profilesFile);
+  const profiles = readProfiles(a.flags["--profiles"] ?? (await defaults()).profilesFile);
   if (!profiles.ok) stop(ctx, profiles.failure);
   // One write: a reader that closes the pipe early (`| head`) then ends a single write, not a loop of them.
   const out: string[] = [];
@@ -257,7 +261,7 @@ function runGates(args: string[], ctx: VerbContext, d: DoctrineDefaults): number
   return 0;
 }
 
-function runEffect(args: string[], ctx: VerbContext, d: DoctrineDefaults, stdin: () => string): number {
+async function runEffect(args: string[], ctx: VerbContext, defaults: Fallback, stdin: () => string): Promise<number> {
   const a = readArgs(ROWS, "doctrine effect", args, ctx, { help: EFFECT_USAGE });
   if (a === null) return 0;
   let raw: string;
@@ -266,7 +270,7 @@ function runEffect(args: string[], ctx: VerbContext, d: DoctrineDefaults, stdin:
   } catch {
     stop(ctx, { slug: "doctrine-usage", what: "doctrine effect: stdin could not be read", fix: `usage: ${EFFECT_LINE}`, docs: "docs/DOCTRINE.md#effect", exit: 2 });
   }
-  const profiles = readProfiles(a.flags["--profiles"] ?? d.profilesFile);
+  const profiles = readProfiles(a.flags["--profiles"] ?? (await defaults()).profilesFile);
   if (!profiles.ok) stop(ctx, profiles.failure);
   const out = effectsOfInput(raw, profiles.value, `Pipe one JSON object: ${EFFECT_LINE}`);
   if (!out.ok) stop(ctx, out.failure);
@@ -299,10 +303,20 @@ export function doctrineHandler(defaults: DoctrineDefaultsSource = {}, stdin: ()
     if (g.sub === "schema") return runSchema(g.rest, ctx);
     if (g.sub === "pull") return (await import("./pull")).runPull(g.rest, ctx, pull);
     if (g.sub === "path") return (await import("./pull")).runPath(g.rest, ctx, pull);
-    const d = typeof defaults === "function" ? await defaults(ctx) : defaults;
-    if (g.sub === "check") return runCheck(g.rest, ctx, d);
-    if (g.sub === "gates") return runGates(g.rest, ctx, d);
-    return runEffect(g.rest, ctx, d, stdin);
+    let resolved: DoctrineDefaults | undefined;
+    // The build's defaults, else the pulled org tree for each file the build leaves unnamed; read once,
+    // and only when a verb's own flag is absent, so an edited tree never fails a verb given --file.
+    const fallback: Fallback = async () => {
+      if (resolved !== undefined) return resolved;
+      const d = typeof defaults === "function" ? await defaults(ctx) : defaults;
+      if (d.doctrineFile !== undefined && d.profilesFile !== undefined) return (resolved = d);
+      const pulled = await (await import("./pull")).pulledDefaults(ctx, pull);
+      if (!pulled.ok) stop(ctx, pulled.failure);
+      return (resolved = { ...pulled.value, ...d });
+    };
+    if (g.sub === "check") return runCheck(g.rest, ctx, fallback);
+    if (g.sub === "gates") return runGates(g.rest, ctx, fallback);
+    return runEffect(g.rest, ctx, fallback, stdin);
   };
 }
 

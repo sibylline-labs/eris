@@ -100,11 +100,11 @@ describe("eris doctrine: failures", () => {
   });
 
   // admits: integration: when a build with no doctrine file defaults to some posture (or crashes), check reports a doctrine that does not exist and gates prints a map nobody chose; observed as check's doctrine-file-missing exit 3 and gates' empty exit 0.
-  it("with no --file and no default, check fails doctrine-file-missing and gates prints nothing", async () => {
+  it("with no --file, no default and no pulled policy, check fails doctrine-file-missing and gates prints nothing", async () => {
     // From a directory that holds a doctrine.md: no verb guesses a file by its name.
     const c = await box().run(["doctrine", "check"], { cwd: FIX });
     expect({ status: c.status, stdout: c.stdout }).toEqual({ status: 3, stdout: "" });
-    expect(c.stderr).toContain("slug: doctrine-file-missing\nfix: Pass --file <path>.\n");
+    expect(c.stderr).toContain("slug: doctrine-file-missing\nfix: Pass --file <path>, or run 'eris login', then 'eris doctrine pull'.\n");
     const g = await box().run(["doctrine", "gates"], { cwd: FIX });
     expect({ status: g.status, stdout: g.stdout, stderr: g.stderr }).toEqual({ status: 0, stdout: "", stderr: "" });
   });

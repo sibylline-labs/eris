@@ -14,6 +14,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rea
 import { join, resolve } from "node:path";
 import { computeGatesBundleSha, gatesEndpoint, type GatesOrgBundle, type GatesSettings } from "eris/gates-contract";
 import { doctrineHandler } from "../plugins/doctrine/doctrine";
+import { seedAfterLogin } from "../plugins/doctrine/pull";
 import { CliExit } from "../src/cli/ts-verb";
 
 setDefaultTimeout(60_000);
@@ -223,5 +224,36 @@ describe("eris doctrine pull", () => {
     expect(r.rc).toBe(3);
     expect(r.stdout).toBe("");
     expect(slugOf(r.stderr)).toBe("doctrine-file-missing");
+  });
+
+  it("with no --file, check and gates read the pulled tree; an edited tree is refused unless --file names another", async () => {
+    /** When the offline verbs ignore the pulled tree, an org's own doctrine never governs them; when they read it unverified, an edited doctrine is trusted: observed on stdout and the slug. */
+    expect((await doctrine(["pull"])).rc).toBe(0);
+    expect(await doctrine(["check"])).toEqual({ rc: 0, stdout: " rapid-prototype\tpolicy\n*business-as-usual\tpolicy\n", stderr: "" });
+    const gates = await doctrine(["gates"]);
+    expect(gates.rc).toBe(0);
+    expect(gates.stdout).toContain("@user-impact\t");
+    appendFileSync(join(linked(), "doctrine.md"), "- an edit\n");
+    const edited = await doctrine(["check"]);
+    expect({ rc: edited.rc, stdout: edited.stdout, slug: slugOf(edited.stderr) }).toEqual({ rc: 3, stdout: "", slug: "doctrine-local-modified" });
+    expect((await doctrine(["gates"])).rc).toBe(3);
+    // A named file never reads the tree, so the edit cannot fail it.
+    const named = await doctrine(["check", "--file", resolve(REPO, "tests/fixtures/doctrine/doctrine.md")]);
+    expect(named.stderr).not.toContain("doctrine-local-modified");
+  });
+
+  it("the after-login pull writes the tree and says so on stderr only", async () => {
+    /** When the post-login pull prints on stdout, a script reading the login's line breaks; when it does not write the tree, the org has no doctrine until a manual pull: observed on both streams and the link. */
+    let out = "";
+    let err = "";
+    await seedAfterLogin({ home, cwd: sandbox, now: () => new Date("2026-11-17T12:00:00.000Z") })({
+      erisDir: REPO,
+      env: { PATH: process.env.PATH, HOME: home },
+      format: "text",
+      stdout: { write: (s: string) => ((out += s), true) },
+      stderr: { write: (s: string) => ((err += s), true) },
+    });
+    expect({ out, err }).toEqual({ out: "", err: `INFO pulled org ${ORG} policy ${sha}\n` });
+    expect(readlinkSync(linked())).toMatch(new RegExp(`^\\.${ORG}\\.${sha}\\.`));
   });
 });

@@ -1296,6 +1296,133 @@ contract), a reply over the size cap, or a policy bundle whose values do not has
 back is also this slug. Nothing was written. Update eris (`eris update`); if it persists, the gateway
 and this client disagree on the gates contract. Exit 3.
 
+### doctrine-out-of-date
+
+The gateway refused a receipt write (HTTP 409 `doctrine_out_of_date`): the org requires every writer to
+hold its live policy (staleness `hard`), and this machine's pulled copy is not it. Nothing was
+recorded. Run `eris doctrine pull`, then re-run the command. With staleness `soft` the write lands and
+the verb prints one `WARN` naming `eris doctrine pull` instead. Exit 3.
+
+### linear-issue-not-found
+
+The gateway's tracker connection has no issue with this key visible to your org (HTTP 404
+`issue_not_found`) on a receipt read or write. Check the issue key and that the issue is not archived.
+Exit 3.
+
+### linear-rate-limited
+
+The gate receipt store answered HTTP 429 and the verb's bounded retry (it waits the reply's
+`Retry-After`, capped, then a fixed backoff) ran out. Nothing past the refused call was read or
+written; a write that was retried reused its comment id, so it was never stored twice. Wait the time
+the block names and re-run. Exit 3.
+
+### asks-store-unreachable
+
+The asks API (`GET /v1/asks`) gave no answer within the deadline, the network failed, or it answered
+with a `5xx`. `eris gate check` never reads an unreadable asks API as "no asks": it fails instead. Retry
+once the gateway answers. Exit 3.
+
+### asks-store-forbidden
+
+The asks API accepted the bearer but refused it (HTTP 402 or 403): the org may not raise or read asks
+on this token. Sign in with an account whose org may, or ask the org's admin. Exit 3.
+
+### asks-contract-mismatch
+
+The asks API answered with a status the route does not answer with, a body that is not an `ask@1`
+listing, or a reply over the size cap. Update eris (`eris update`); if it persists, the asks API and
+this client disagree on the contract. Exit 3.
+
+### asks-rate-limited
+
+The asks API answered HTTP 429. The block names the wait when the reply carried `Retry-After`. Wait and
+re-run. Exit 3.
+
+### gate-usage
+
+An `eris gate` command line is wrong: a required flag or the `<gate>` operand is missing, `--gates`
+and `--profile` were both given, `--burden` came without `--base` (or the reverse), `--pr` is not a
+number (each exit 1, before anything is read); or a value is wrong once read: an issue key that is
+not `ABC-123`-shaped, a gate name that is not kebab-case, a `--verdict` other than `PASS`, `AMENDED` or
+`BLOCKING` (a skip is `eris gate skip`), an `--impact` other than `U0`-`U3`, a blank `--authorized` or
+`--reason`, a `--reason` under 12 characters, an unrecognised screenshot or video extension, or a
+reserved `unlocked-*` gate (exit 2). Nothing was sent. The block's `fix:` names the usage
+([GATE.md](GATE.md)).
+
+### gate-profile-unknown
+
+`eris gate check --profile <name>` named no profile in force: the built-in `spine` and `deep`, the
+org's pulled `profiles.yaml`, or the `--profiles` file. The block lists the profiles there are. Exit 2.
+
+### gate-file-unreadable
+
+A file `eris gate record` or `skip` must hash (`--artifact`, `--doctrine`, an evidence file) cannot be
+read. The block names the flag and the path, never the bytes. Relative paths resolve from the current
+directory. Exit 3.
+
+### gate-evidence-too-large
+
+An inline evidence file (`--log`, `--test-run`, `--e2e`, or one `--evidence` line) is over 16 KiB, or a
+`--screenshot`/`--video` is over 25 MiB. A receipt is a record, not a log store: record the part the
+gate relied on (a failure summary, the last lines). Nothing was sent. Exit 2.
+
+### gate-artifact-uncommitted
+
+`eris gate record --artifact` named a file inside a checkout with a hosted `origin`, but the file's
+bytes are not committed at HEAD, or HEAD is not pushed to `origin`. The receipt would name a commit no
+other checkout can read. Commit and push, then record again. Nothing was sent. Exit 3.
+
+### gate-skip-unauthorized
+
+`eris gate skip` was given a grant that reads as a machine grant but does not hold: a `doctrine`
+grant that is not exactly `doctrine:<posture>`, has no `--doctrine` file, or names a posture that is
+not the active one or does not set the gate `off` (the block names the doctrine's sha256 it judged
+and, when the active posture does turn the gate off, the exact flags it accepts); or a `repo` grant
+that is not exactly `repo:no-eris-yaml` on `define-future` in a git repo with no root `eris.yaml`.
+Run the gate, or skip it on a human grant (`--authorized '<name> asked: <request>'`). Nothing was
+sent. Exit 3.
+
+### gate-receipt-unseen
+
+`eris gate check --expect <ids>` re-read the issue's receipts (about 30 s) and no listing held every
+id: the store's reads lag its writes. Re-run the same check in a minute; if an id stays unseen, check
+it is a comment on this issue (`eris gate record` printed it). Exit 3.
+
+### gate-check-failed
+
+At least one gate `eris gate check` judged does not pass: a row reads `missing`, `bad-digest`,
+`blocking`, `unresolved`, `drift`, `unauthorized-skip`, `doctrine-stale` or `forbidden`, the
+`burden` row reads `unmet`, the user-impact floor is `unmet` or `unclassified`, a door at the first
+rung has no human sign-off, `@remediate` reads `unsupported`, or `@asks` reads `open`. The block names
+each, and its `fix:` says what clears each status ([GATE.md](GATE.md#statuses)). Exit 3.
+
+### gate-burden-unreadable
+
+The `--burden` rubric cannot be read, is not YAML, or is not a `surfaces:` map of surface to a
+non-empty list of evidence kinds (`text`, `log`, `test-run`, `e2e`, `screenshot`, `video`). Exit 3.
+
+### gate-burden-unresolved
+
+`eris gate check --burden` could not say which surfaces the change crosses: the directory is not in a
+git checkout, `--base` names no commit or shares no history with HEAD, git could not list the
+changes, the checkout has no root `eris.yaml`, the root opts nothing into discovery
+(`discover.language` + `discover.paths`) or its discover block cannot be read, or the estate has leaf
+`eris.yaml` files under the root (this build resolves surfaces from the root's claims only, so a
+leaf's narrower claim could own a changed path). Exit 3.
+
+### gate-ladder-invalid
+
+The door-class ladder `eris gate check` reads (`--ladder`, or the build's) cannot be read, is not
+YAML, or does not decode: `classes:` maps door classes (`all`, `U0`-`U3`, `U<n>:<crossing>`) to a rung,
+and no U3 class sits above the human-after rung. Fix the file, or move it aside to read every class at
+the default rung. Exit 3.
+
+### asks-listing-truncated
+
+The asks API answered `eris gate check`'s read of open blocking asks with a full page. The route has
+no cursor, so asks past that page may be open: the check fails closed rather than read a partial
+list as complete. Answer or withdraw stale asks to bring the open set under the page. Exit 3.
+
 ### doctrine-usage
 
 `eris doctrine effect` read stdin that is not one JSON object of the shape
@@ -1304,9 +1431,9 @@ stdin at all. Pipe the object in ([DOCTRINE.md](DOCTRINE.md#effect)). Exit 2.
 
 ### doctrine-file-missing
 
-A doctrine verb needs a doctrine file and has none: `eris doctrine check` was given no `--file`
-and the build names no default doctrine file, or the file it names cannot be read. Pass
-`--file <path>`. From `eris doctrine path`: no signed-in org resolves for the directory, or nothing
+A doctrine verb needs a doctrine file and has none: `eris doctrine check` was given no `--file`,
+the build names no default doctrine file and no org policy is pulled, or the file it names cannot be
+read. Pass `--file <path>`, or run `eris login`, then `eris doctrine pull`. From `eris doctrine path`: no signed-in org resolves for the directory, or nothing
 is pulled for it; run `eris login`, then `eris doctrine pull`. `eris doctrine gates` with no doctrine file is not a failure: it prints nothing,
 since no posture then skips or defers a gate. Exit 3.
 

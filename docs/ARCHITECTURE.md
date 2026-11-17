@@ -39,8 +39,8 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
   doctrine.md reader, the active-posture evaluators, the profiles reader and the effect-sentence
   engine, plus the hosted org policy bundle (`bundle.ts`) and the client for the hosted gates API
   (`client.ts`, [`dev/GATES-CLIENT.md`](dev/GATES-CLIENT.md)). It imports only `effect`, `yaml`,
-  `node:` builtins and the Web `fetch`/`crypto`, and returns a failure as data for its caller to render; `plugins/doctrine` (`eris doctrine`, [`DOCTRINE.md`](DOCTRINE.md)) is
-  its CLI.
+  `node:` builtins and the Web `fetch`/`crypto`, and returns a failure as data for its caller to render; `plugins/doctrine` (`eris doctrine`, [`DOCTRINE.md`](DOCTRINE.md)) and `plugins/gate`
+  (`eris gate`, [`GATE.md`](GATE.md)) are its CLI.
 
 eris installs from npm only (`npx`, `bunx`, `bun add -g @sibylline-labs/eris`); the package's
 `bin/eris.ts` is the command. A checkout needs `bun install --frozen-lockfile` and no build step:

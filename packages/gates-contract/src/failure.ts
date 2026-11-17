@@ -12,6 +12,8 @@ export interface ContractFailure {
   /** Repo-relative doc path, with its `#anchor`. */
   readonly docs: string;
   readonly exit: 2 | 3;
+  /** Set only on a rate-limited failure (HTTP 429): the server's `Retry-After` window, or null when it named none. */
+  readonly retryAfterMs?: number | null;
 }
 
 /** A value, or the failure that stopped it. */
