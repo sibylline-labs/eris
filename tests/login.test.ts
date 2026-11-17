@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { join, resolve } from "node:path";
 import { YAKS_CONTRACT_VERSION } from "eris/yak-contract";
 import { runYakVerb } from "../plugins/yak/handlers";
+import { seedAfterLogin } from "../plugins/doctrine/pull";
 import { runLogin, runLogout, type LoginDeps } from "../plugins/yak/login";
 import { CliExit } from "../src/cli/ts-verb";
 
@@ -192,6 +193,18 @@ describe("eris login — the device-code grant", () => {
     );
     expect({ rc: yakRc, stdout: yakOut, stderr: yakErr }).toEqual({ rc: 0, stdout: "recorded: obs-1\n", stderr: "" });
     expect(requests.find((r) => r.path === "/v1/yaks")).toMatchObject({ path: "/v1/yaks", auth: `Bearer ${TOKEN}` });
+  });
+
+  it("after the token is written, a policy pull that fails is one WARN and the login still exits 0", async () => {
+    /** When the post-login pull runs before the write, or its failure becomes the login's exit, a gateway without the policy route signs nobody in: observed at yaks.json, the exit code and the WARN's slug. */
+    polls = [minted()];
+    const r = await drive(runLogin, ["--url", url()], { deps: { afterLogin: seedAfterLogin({ home, cwd: sandbox }) } });
+    expect({ rc: r.rc, stdout: r.stdout }).toEqual({ rc: 0, stdout: `logged in: token "laptop (eris)" written to ${yaksJson()}\n` });
+    expect(JSON.parse(readFileSync(yaksJson(), "utf8"))).toEqual({ url: url(), token: TOKEN });
+    // The pull ran on the token just written (the stub has no policy route, so it 404s).
+    expect(requests.filter((q) => q.path === "/v1/gates/policy").map((q) => q.auth)).toEqual([`Bearer ${TOKEN}`]);
+    expect(r.stderr).toContain("WARN eris login: this org's policy was not pulled (gate-contract-mismatch); run 'eris doctrine pull'\nslug: gate-contract-mismatch\n");
+    expectNoSecret(r);
   });
 
   it.each([

@@ -15,6 +15,8 @@ Start with the [repo README](../README.md) for install and quickstart; come here
 | Doc | Commands | One-liner |
 |-----|----------|-----------|
 | [YAK.md](YAK.md) | `eris yak …`, `eris login`, `eris logout`, `eris whoami`, `eris tokens`, `eris org members`, `eris org connect-linear`, `eris org delete` | Land a durable, deduplicated observation with a Yaks endpoint |
+| [DOCTRINE.md](DOCTRINE.md) | `eris doctrine check\|schema\|gates\|effect` | Validate a doctrine file's postures, print the policy contract as JSON Schema, the active gate map, and a change as sentences |
+| [GATE.md](GATE.md) | `eris gate record\|skip\|check\|ci`, `eris surface lock\|unlock\|digest` | Record a gate receipt on an issue, skip a gate on a grant, and check that every gate a change owes passes |
 | [COMPLETION.md](COMPLETION.md) | `eris completion bash\|zsh` | Shell tab completion: install and the derived command tree |
 | [SKILLS.md](SKILLS.md) | `eris skills install`, `eris skills lint`, `eris docs` | Install the agent skills this build publishes; check skills against their kind's contract; print the verb reference (`--json` for agents) |
 | [UPDATE.md](UPDATE.md) | `eris --version`, `eris update` | Which build this is, and replacing a binary with the newest release after checking it |
@@ -28,4 +30,5 @@ Start with the [repo README](../README.md) for install and quickstart; come here
 | [dev/TESTING.md](dev/TESTING.md) | The `bun test` suite: layout, fixtures and goldens, loopback servers, writing new tests |
 | [dev/ADDING-A-COMMAND.md](dev/ADDING-A-COMMAND.md) | Walkthrough: a new subcommand or command group, end to end |
 | [dev/PLUGINS.md](dev/PLUGINS.md) | Writing a plugin: a verb group as rows plus handlers, composed at build time |
+| [dev/GATES-CLIENT.md](dev/GATES-CLIENT.md) | The hosted gates API client: what it owns, its failure map, where tracker writes happen, the order the gate verbs move onto it |
 | [dev/RELEASING.md](dev/RELEASING.md) | Cutting a release: the tag, the workflow, the assets, npm |

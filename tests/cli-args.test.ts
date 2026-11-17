@@ -232,7 +232,7 @@ describe("every TS leaf parses", () => {
     /** When a row declares a flag the grammar cannot read (no `--`, a bad alias) or an operand after a `...`, the verb is unreachable. */
     for (const [path, row] of Object.entries({ ...REGISTRY, ...ROWS })) {
       for (const f of row.flags ?? []) {
-        expect({ path, f: f.name }).toEqual({ path, f: expect.stringMatching(/^--[a-z][a-z-]*$/) });
+        expect({ path, f: f.name }).toEqual({ path, f: expect.stringMatching(/^--[a-z][a-z0-9-]*$/) });
         if (f.alias !== undefined) expect({ path, a: f.alias }).toEqual({ path, a: expect.stringMatching(/^-[a-z]$/) });
         if (f.repeatable === true) expect({ path, f: f.name, v: f.takesValue }).toEqual({ path, f: f.name, v: true });
       }

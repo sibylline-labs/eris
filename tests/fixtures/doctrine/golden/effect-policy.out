@@ -1,0 +1,15 @@
+profile_default: spine → deep. Starting every issue on deep adds the target-graph and SDK checks, about two more short passes per issue.
+gates.plan-review: lite → on. Plans now get the full review before any code, adding about one review round.
+gates.research: off → lite. Each such library gets a pinned docs cache and one executed call, a short research pass.
+signoff.one-way: unset → human. Who approves a one-way door: a change that is hard to undo. human: A human approves it before it closes.
+signoff.unlock: off → on. Switching unlock on lets registered surfaces unlock one-way actions once their bar gates, audit baseline and budget hold.
+signoff.raise.*.merge: unset → adversarial-review:max. The agent must pass more gates before it may merge a one-way change alone. Adds adversarial-review:max.
+close.tpm-report: file-only → on. Each close ends with a refreshed project report.
+ceilings.all: unset → R1. A lower ceiling (toward R0) makes more changes wait for a human sign-off before they close.
+lifts.U0: unset → R2. Low-risk bleed fixes close with review after the fact (R1) or automatically (R2); never U2 or U3.
+remediate.on: final-gates-fail → final-gates-fail, unlock-gate-fail. More triggers: more failures are first handed to an agent loop to fix. Adds unlock-gate-fail: A gate a surface's one-way unlock requires failed.
+remediate.max_rounds: 2 → 4. More rounds: the loop keeps trying longer, using agent time, before a human looks.
+ask.two_way_timeout: 24h → none. How long a two-way ask with a recommendation waits before it is answered with that recommendation: none (default), or <n>h from 4 to 720. A one-way ask never times out.
+ask.digest: off → hourly. How non-blocking asks are rolled up for the operator: off (default), hourly, daily. hourly: Non-blocking asks are rolled into one hourly digest.
+ask.session_budget: 5 → 2. A smaller budget: a session must wait for answers before it asks more.
+user_impact.U1: revert-path → revert-path, e2e. Each U1 change owes more evidence before it closes, each item a real run or rehearsal. Adds e2e: An end-to-end run against the real stack.

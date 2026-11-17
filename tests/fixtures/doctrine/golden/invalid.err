@@ -1,0 +1,3 @@
+invalid.md:6: lock-in: policy.gates: Expected final-gates and user-impact not off (they enforce the user-impact floor; use lite or once-at-end)
+invalid.md:6: lock-in: policy.lifts: Expected lift classes U0, U1 or U<0|1>:<crossing>; never all, U2 or U3 (their sign-off is the floor)
+invalid.md:6: lock-in: policy.user_impact.U2: Expected a list holding revert-path, zero-downtime, e2e (the U2 floor cannot be waived)

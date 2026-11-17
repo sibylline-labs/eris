@@ -1,0 +1,3 @@
+{"contract": "policy",
+ "before": {"profile_default": "spine", "gates": {"plan-review": "lite", "research": "off"}, "close": {"tpm-report": "file-only"}, "user_impact": {"U1": ["revert-path"]}, "remediate": {"on": ["final-gates-fail"]}, "ask": {"two_way_timeout": "24h"}},
+ "after": {"profile_default": "deep", "gates": {"research": "lite"}, "signoff": {"one-way": "human", "unlock": "on", "raise": {"*": {"merge": ["adversarial-review:max"]}}}, "ceilings": {"all": "R1"}, "lifts": {"U0": "R2"}, "user_impact": {"U1": ["revert-path", "e2e"]}, "remediate": {"on": ["final-gates-fail", "unlock-gate-fail"], "max_rounds": 4}, "ask": {"digest": "hourly", "session_budget": 2}}}

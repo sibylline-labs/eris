@@ -31,7 +31,7 @@ describe("registry shape", () => {
         const parent = words.slice(0, -1).join(" ");
         expect({ path, parent: Object.hasOwn(REGISTRY, parent) }).toEqual({ path, parent: true });
       }
-      for (const f of REGISTRY[path]!.flags ?? []) expect({ path, flag: f.name }).toEqual({ path, flag: expect.stringMatching(/^--[a-z][a-z-]*$/) });
+      for (const f of REGISTRY[path]!.flags ?? []) expect({ path, flag: f.name }).toEqual({ path, flag: expect.stringMatching(/^--[a-z][a-z0-9-]*$/) });
     }
     expect(groups).toEqual(expect.arrayContaining(["completion", "yak"]));
   });

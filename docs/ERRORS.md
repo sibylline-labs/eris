@@ -1233,6 +1233,355 @@ body. A timeout, an unreachable endpoint or a body that does not match the contr
 [`yak-admin-unavailable`](#yak-admin-unavailable) instead. Retry; `eris whoami` shows which org and url this
 directory uses. Exit 1.
 
+### doctrine-unknown-verb
+
+`eris doctrine <word>` named no doctrine command. The commands are `check`, `schema`, `gates`,
+`effect`, `set`, `pull`, `push` and `path`; `eris doctrine --help` lists them. Exit 1.
+
+### doctrine-org-unresolved
+
+`eris doctrine pull` found an `eris login` bearer for this directory, but it names no org (it is not a
+`sib_<org>_…` token), so there is no org policy to pull. Run `eris login` to mint an org bearer, or set
+`ERIS_ORG` to the org this directory acts as. Exit 3.
+
+### doctrine-pull-unwritable
+
+`eris doctrine pull` could not write the new tree under `~/.eris/doctrine/`, or could not swap the
+org's link onto it. The block names the path and the system's reason. Nothing was swapped: the
+previous tree, if any, is still the org's. Make `~/.eris/doctrine` writable by you (a pull creates it
+`0700`), then pull again. Exit 3.
+
+### doctrine-local-modified
+
+The org's pulled tree under `~/.eris/doctrine/<orgId>/` no longer matches what was pulled: a file was
+edited, added or removed, the manifest does not decode, or the files no longer hash to the manifest's
+`bundle_sha`. The block names the first difference. Every verb that reads the tree checks it first
+(`eris doctrine path` does), so an edited policy is never read as the org's. Run `eris doctrine pull`
+to restore it; it replaces the tree without reading it. To keep the edit instead, `eris doctrine
+push` saves it as the org's policy. Exit 3.
+
+### eris-login-required
+
+A verb that calls the hosted gates API has no usable `eris login` bearer: none is saved for this
+directory's org and `ERIS_YAKS_TOKEN` is unset, the credentials file cannot be read, or the gateway
+rejected the token (HTTP 401; the block names the server's error code). Run `eris login` once on the
+machine, or set `ERIS_YAKS_TOKEN` to a `sib_` service token with its `ERIS_YAKS_URL`. Exit 3.
+
+### login-url-refused
+
+The `eris login` URL the gates client would send the bearer to is not `https:`, or is `http:` on a
+host other than `localhost`, `127.0.0.1` or `[::1]`, or is not a URL at all. Nothing was sent: the
+bearer never crosses a cleartext link. Set `ERIS_YAKS_URL` (or the `url` in `~/.eris/yaks.json`) to
+the gateway's `https` URL. Exit 3.
+
+### gate-store-forbidden
+
+The gateway accepted the bearer but refused it for this request (HTTP 402 or 403): the org does not
+have Gates, or the token's scope does not cover the route. Sign in with an account whose org has
+Gates, or ask the org's admin. Exit 3.
+
+### gate-store-unreachable
+
+The hosted gates API gave no answer within the deadline, the network failed, it answered with a
+`5xx`, or (for `eris doctrine pull`) the org's policy changed between the policy and settings reads
+twice running. Nothing was written. Retry once the gateway answers; `ERIS_YAKS_URL` (or `yaks.json`'s
+`url`) names the host when it is not the default. Exit 3.
+
+### gate-contract-mismatch
+
+The gateway answered with something this client's contract does not describe: a status the route
+does not answer with, a body that does not decode (an HTML page from a proxy, an older or newer
+contract), a reply over the size cap, or a policy bundle whose values do not hash to the
+`bundle_sha` the server named. A pulled bundle that does not survive being written to disk and read
+back is also this slug. Nothing was written. Update eris (`eris update`); if it persists, the gateway
+and this client disagree on the gates contract. Exit 3.
+
+### doctrine-push-refused
+
+The gateway does not take a policy save on this bearer (HTTP 403 or 405 from `PUT /v1/gates/policy`):
+the login is not an org admin's, or the org has not turned on policy saves from eris. Nothing was
+saved and the tree under `~/.eris/doctrine/<orgId>/` is as you left it. Change the policy in the
+org's Gates settings, then run `eris doctrine pull`; or have an org admin sign in and enable saves.
+Exit 3.
+
+### doctrine-push-stale
+
+The org's live policy is not the one your edited tree was pulled on, so pushing would revert the
+newer save (or the gateway answered HTTP 409 to the save). Nothing was saved and the tree is
+untouched. Copy your edited files out of `~/.eris/doctrine/<orgId>/`, run `eris doctrine pull`,
+re-apply them, then push again. Exit 3.
+
+### doctrine-push-invalid
+
+The tree cannot be pushed: it holds a file a policy bundle does not carry, a file that does not
+decode (the block names it), or the gateway refused the bundle (HTTP 400, 413 or 422: not a valid
+bundle, over 256 KiB, or holding a credential). Nothing was saved and the tree is untouched. Fix or
+remove the named file (`eris doctrine check --file <doctrine.md>` names doctrine problems), then push
+again. Exit 3.
+
+### doctrine-org-managed
+
+`eris doctrine set` was pointed at a file inside `~/.eris/doctrine/`, the org's pulled policy, which
+this machine never edits in place. Change the active posture in the org's Gates settings, then run
+`eris doctrine pull`; or pass `--file` naming a local doctrine file. Exit 3.
+
+### doctrine-posture-unknown
+
+`eris doctrine set <posture>` named a posture the doctrine file has no `## <posture>` section for. The
+block lists the slugs it does have (`eris doctrine check` lists them too). Exit 3.
+
+### doctrine-out-of-date
+
+The gateway refused a receipt write (HTTP 409 `doctrine_out_of_date`): the org requires every writer to
+hold its live policy (staleness `hard`), and this machine's pulled copy is not it. Nothing was
+recorded. Run `eris doctrine pull`, then re-run the command. With staleness `soft` the write lands and
+the verb prints one `WARN` naming `eris doctrine pull` instead. Exit 3.
+
+### linear-issue-not-found
+
+The gateway's tracker connection has no issue with this key visible to your org (HTTP 404
+`issue_not_found`) on a receipt read or write. Check the issue key and that the issue is not archived.
+Exit 3.
+
+### linear-rate-limited
+
+The gate receipt store answered HTTP 429 and the verb's bounded retry (it waits the reply's
+`Retry-After`, capped, then a fixed backoff) ran out. Nothing past the refused call was read or
+written; a write that was retried reused its comment id, so it was never stored twice. Wait the time
+the block names and re-run. Exit 3.
+
+### asks-store-unreachable
+
+The asks API (`GET /v1/asks`) gave no answer within the deadline, the network failed, or it answered
+with a `5xx`. `eris gate check` never reads an unreadable asks API as "no asks": it fails instead. Retry
+once the gateway answers. Exit 3.
+
+### asks-store-forbidden
+
+The asks API accepted the bearer but refused it (HTTP 402 or 403): the org may not raise or read asks
+on this token. Sign in with an account whose org may, or ask the org's admin. Exit 3.
+
+### asks-contract-mismatch
+
+The asks API answered with a status the route does not answer with, a body that is not an `ask@1`
+listing, or a reply over the size cap. Update eris (`eris update`); if it persists, the asks API and
+this client disagree on the contract. Exit 3.
+
+### asks-rate-limited
+
+The asks API answered HTTP 429. The block names the wait when the reply carried `Retry-After`. Wait and
+re-run. Exit 3.
+
+### gate-usage
+
+An `eris gate` command line is wrong: a required flag or the `<gate>` operand is missing, `--gates`
+and `--profile` were both given, `--burden` came without `--base` (or the reverse), `--pr` is not a
+number (each exit 1, before anything is read); or a value is wrong once read: an issue key that is
+not `ABC-123`-shaped, a gate name that is not kebab-case, a `--verdict` other than `PASS`, `AMENDED` or
+`BLOCKING` (a skip is `eris gate skip`), an `--impact` other than `U0`-`U3`, a blank `--authorized` or
+`--reason`, a `--reason` under 12 characters, an unrecognised screenshot or video extension, or a
+reserved `unlocked-*` gate (exit 2). Nothing was sent. The block's `fix:` names the usage
+([GATE.md](GATE.md)).
+
+### gate-profile-unknown
+
+`eris gate check --profile <name>` named no profile in force: the built-in `spine` and `deep`, the
+org's pulled `profiles.yaml`, or the `--profiles` file. The block lists the profiles there are. Exit 2.
+
+### gate-file-unreadable
+
+A file `eris gate record` or `skip` must hash (`--artifact`, `--doctrine`, an evidence file) cannot be
+read. The block names the flag and the path, never the bytes. Relative paths resolve from the current
+directory. Exit 3.
+
+### gate-evidence-too-large
+
+An inline evidence file (`--log`, `--test-run`, `--e2e`, or one `--evidence` line) is over 16 KiB, or a
+`--screenshot`/`--video` is over 25 MiB. A receipt is a record, not a log store: record the part the
+gate relied on (a failure summary, the last lines). Nothing was sent. Exit 2.
+
+### gate-artifact-uncommitted
+
+`eris gate record --artifact` named a file inside a checkout with a hosted `origin`, but the file's
+bytes are not committed at HEAD, or HEAD is not pushed to `origin`. The receipt would name a commit no
+other checkout can read. Commit and push, then record again. Nothing was sent. Exit 3.
+
+### gate-skip-unauthorized
+
+`eris gate skip` was given a grant that reads as a machine grant but does not hold: a `doctrine`
+grant that is not exactly `doctrine:<posture>`, has no `--doctrine` file, or names a posture that is
+not the active one or does not set the gate `off` (the block names the doctrine's sha256 it judged
+and, when the active posture does turn the gate off, the exact flags it accepts); or a `repo` grant
+that is not exactly `repo:no-eris-yaml` on `define-future` in a git repo with no root `eris.yaml`.
+Run the gate, or skip it on a human grant (`--authorized '<name> asked: <request>'`). Nothing was
+sent. Exit 3.
+
+### gate-receipt-unseen
+
+`eris gate check --expect <ids>` re-read the issue's receipts (about 30 s) and no listing held every
+id: the store's reads lag its writes. Re-run the same check in a minute; if an id stays unseen, check
+it is a comment on this issue (`eris gate record` printed it). Exit 3.
+
+### gate-check-failed
+
+At least one gate `eris gate check` judged does not pass: a row reads `missing`, `bad-digest`,
+`blocking`, `unresolved`, `drift`, `unauthorized-skip`, `doctrine-stale` or `forbidden`, the
+`burden` row reads `unmet`, the user-impact floor is `unmet` or `unclassified`, a door at the first
+rung has no human sign-off, `@remediate` reads `unsupported`, or `@asks` reads `open`. The block names
+each, and its `fix:` says what clears each status ([GATE.md](GATE.md#statuses)). Exit 3.
+
+### gate-burden-unreadable
+
+The `--burden` rubric cannot be read, is not YAML, or is not a `surfaces:` map of surface to a
+non-empty list of evidence kinds (`text`, `log`, `test-run`, `e2e`, `screenshot`, `video`). Exit 3.
+
+### gate-burden-unresolved
+
+`eris gate check --burden` could not say which surfaces the change crosses: the directory is not in a
+git checkout, `--base` names no commit or shares no history with HEAD, git could not list the
+changes, the checkout has no root `eris.yaml`, the root opts nothing into discovery
+(`discover.language` + `discover.paths`) or its discover block cannot be read, or the estate has leaf
+`eris.yaml` files under the root (this build resolves surfaces from the root's claims only, so a
+leaf's narrower claim could own a changed path). Exit 3.
+
+### gate-ladder-invalid
+
+The door-class ladder `eris gate check` reads (`--ladder`, or the build's) cannot be read, is not
+YAML, or does not decode: `classes:` maps door classes (`all`, `U0`-`U3`, `U<n>:<crossing>`) to a rung,
+and no U3 class sits above the human-after rung. Fix the file, or move it aside to read every class at
+the default rung. Exit 3.
+
+### gate-ci-event-invalid
+
+`eris gate ci` could not read a `pull_request` event: no `--event` and no `GITHUB_EVENT_PATH`, the
+file is unreadable or not JSON, or it lacks `pull_request.title`, `.head.ref`, `.head.sha`,
+`.base.sha` or `.user.login` (each sha a full 40-hex commit). It fails closed: nothing is fetched. Run
+it from a workflow triggered by `pull_request`, with `--event "$GITHUB_EVENT_PATH"`
+([GATE.md](GATE.md#ci)). Exit 3.
+
+### gate-issue-missing
+
+`eris gate ci` found no issue key on the pull request: none in the head ref (`<you>/<key>-...`) and
+none in the title, the author is not on the org's `settings.ci.bot_allowlist`, and the org's
+`settings.ci.untracked_prs` is `block`. Put the key in the PR title (`ABC-123: ...`) or the branch
+name; a title edit re-runs the check when the workflow triggers on `edited`. An org that accepts
+untracked PRs sets `untracked_prs` to `warn` or `allow` in its Gates settings
+([GATE.md](GATE.md#ci)). Exit 3.
+
+### gate-ci-bot-surface
+
+`eris gate ci` ran the surfaces leg for an untracked pull request (no issue key, and an allowlisted
+bot author or `untracked_prs: warn|allow`), and the PR's merge-base diff changes a path on a
+registered surface, at the fork's registry or the head's, or the registry itself; the
+`@surface-path` rows name each. A surface change needs an issue so the ticketed legs (profile,
+monotone, unlock) judge it: put the issue key in the PR title or branch ([GATE.md](GATE.md#ci)).
+Exit 3.
+
+### gate-ci-write-refused
+
+`eris gate ci`'s gateway client refused a request that is not a `GET` before it left the process:
+the check reads the gateway and writes nothing, and every call it makes goes through one GET-only
+fetch. It means a leg tried to write, and it is reported in place of any failure the client made of
+the refused request. Nothing was sent. Report it with the command's output ([GATE.md](GATE.md#ci)).
+Exit 3.
+
+### gate-monotone-wider
+
+`eris gate ci`'s monotone leg found that the `.claude/surfaces.yml` diff, a surface vocabulary or a
+registered review skill widens the surface bar on at least one dimension; the `@monotone` rows name
+each. The issue's latest `surface-widen` receipt is missing, does not pass, carries no human
+`--authorized` grant (a `doctrine:` grant never approves a widening), or its artifact lacks one of the
+wider rows. Tighten instead, or have a human approve the widening: save the `@monotone` rows the run
+printed (without the `@monotone` prefix) to a file, commit and push it, record
+`eris gate record surface-widen --issue <KEY> --verdict PASS --artifact <that file> --authorized
+"<name> asked: <request>"`, and re-run the check ([GATE.md](GATE.md#ci)). Exit 3.
+
+### gate-monotone-unresolved
+
+`eris gate ci`'s monotone leg could not read the two sides: the directory is not in a git checkout,
+the event's base sha names no commit here or shares no history with `HEAD`, or git could not list the
+changes or read a file at the merge-base. Check out the PR with `fetch-depth: 0`. Exit 3.
+
+### gate-unlock-human
+
+`eris gate ci`'s unlock leg did not unlock the merge, and no human signed it. The failure names every
+reason: the hosted posture does not set `signoff.unlock: on`; a bar gate is missing, failing or not
+bound to the PR head (`stale-head`), or its qualifier is not met (`no-report`, `not-clean`) or is one
+this build does not judge (`unjudged`); the surface does not list `merge` under `one_way_unlock`; it is
+not on the base registry yet; its ledger has no fresh passing `audit-surfaces` baseline, the change
+budget since it is spent, or no `unlocked-merge` announcement names this head; the surface is
+locked; or the diff touches a governance file (the registry, a registered vocabulary or review
+skill: always human, with each `@monotone` row named, and a wider row no human `surface-widen`
+receipt covers named again). A `door-signoff` on the issue that does not hold is named too:
+`stale-head` (recorded before a later code push, on a commit that is not its ancestor, or over a file
+artifact), `wrong-action` (no `door: merge` evidence line), or no human grant. A human signs off at
+the PR head with `eris gate record door-signoff --issue <KEY> --verdict PASS --artifact <committed
+plan or note> --evidence "door: merge" --authorized "<name> asked: <request>"`, or close each reason
+and re-run the job ([GATE.md](GATE.md#ci)). Exit 3.
+
+### gate-unlock-unresolved
+
+`eris gate ci` could not read the change: the directory is not in a git checkout, the event's base
+names no commit or shares no history with `HEAD`, the event's head sha is neither `HEAD` nor the PR
+parent (`HEAD^2`) of a two-parent merge onto the base tip whose tree is their clean merge, the base
+and head share no merge-base, or git could not list the changed paths or read the registry at a
+commit. Check out the PR with `fetch-depth: 0` ([GATE.md](GATE.md#ci)). Exit 3.
+
+### asks-listing-truncated
+
+The asks API answered `eris gate check`'s read of open blocking asks with a full page. The route has
+no cursor, so asks past that page may be open: the check fails closed rather than read a partial
+list as complete. Answer or withdraw stale asks to bring the open set under the page. Exit 3.
+
+### doctrine-usage
+
+`eris doctrine effect` read stdin that is not one JSON object of the shape
+`{"contract": "policy"|"surfaces", "before": <value|null>, "after": <value|null>}`, or could not read
+stdin at all. Pipe the object in ([DOCTRINE.md](DOCTRINE.md#effect)). Exit 2.
+
+### doctrine-file-missing
+
+A doctrine verb needs a doctrine file and has none: `eris doctrine check` was given no `--file`,
+the build names no default doctrine file and no org policy is pulled, or the file it names cannot be
+read. Pass `--file <path>`, or run `eris login`, then `eris doctrine pull`. From `eris doctrine path`: no signed-in org resolves for the directory, or nothing
+is pulled for it; run `eris login`, then `eris doctrine pull`. `eris doctrine gates` with no doctrine file is not a failure: it prints nothing,
+since no posture then skips or defers a gate. Exit 3.
+
+### doctrine-policy-invalid
+
+A doctrine file does not parse as a doctrine, or a posture's `policy:` block breaks the contract:
+an unknown value, a `policy:` outside a ```` ```yaml ```` fence, more than one `policy:` block in a
+section, an `active:` that names no section, or a value that lowers the floor (a U2/U3
+requirement list without its floor, `final-gates` or `user-impact` set `off`, a `lifts` class
+other than U0/U1, a U3 ceiling above its cap, a `signoff.waive` key). `eris doctrine check` prints one
+`<file>:<line>: <message>` line per problem on stderr before the block and nothing on stdout;
+`eris doctrine gates` names the first. From `eris doctrine effect`, a `before` or `after` value
+that does not decode as a `policy:` block. Fix each line named; the floor is
+[DOCTRINE.md](DOCTRINE.md#the-floor). Exit 3, never a default posture in its place.
+
+### gate-profile-unreadable
+
+The `--profiles` file (or the build's default profiles file) cannot be read, is not YAML, or is
+not a map of kebab-case profile names to a non-empty list of kebab-case gate names, or to
+`{ require: [...], forbid: [...] }` with no gate in both lists. Exit 3.
+
+### gate-surfaces-invalid
+
+`eris doctrine effect` with `"contract": "surfaces"` was given a `before` or `after` value that
+does not decode as a `.claude/surfaces.yml`: a missing or empty `surfaces:` map, a surface name
+that is not kebab-case, an unknown key at any level, a malformed `audit_ttl`, `change_budget`,
+`ledger` or unlock gate, or two surfaces sharing a ledger. The block names the side and the first
+problem. From `eris gate ci`, the registry (`--registry`, default `.claude/surfaces.yml`) at the
+merge-base, the head or in the working tree is one of those, is not valid YAML, holds more than one
+document, an anchor, alias or merge key, or is a symlink; the block names the side and each line.
+Exit 3.
+
+### surface-lock-unauthorized
+
+`eris surface lock` or `unlock` was given no `--authorized` grant, or a grant that is not a human
+one (`doctrine:<posture>` never signs). A lock and its lift are human writes: pass
+`--authorized 'Dan asked: <request>'`. Nothing was read or sent. Exit 3.
+
 ## Adding a new slug
 
 Call `reportFailure({ slug, what, fix, docs })` (it writes the block and

@@ -165,7 +165,7 @@ describe("eris socrates consult: refusals", () => {
   it("refuses two selecting flags and a bad project, and sends nothing", async () => {
     /** When flags are not exclusive or --project is unchecked, the user gets a doc they did not ask for or a request the contract forbids; observed in slug and request count. */
     expect(await drive(["consult", "--canon", "--practices"])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-flag-required" });
-    expect(await drive(["consult", "--practices", "--project", "x".repeat(201)])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-flag-required" });
+    expect(await drive(["consult", "--practices", "--project", "x".repeat(256)])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-flag-required" });
     expect(requests).toHaveLength(0);
   });
 

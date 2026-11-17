@@ -68,7 +68,7 @@ export const SOCRATES_GATE_REASON_MAX_LENGTH = 500;
 export const SOCRATES_DOC_TITLE_MAX_LENGTH = 500;
 export const SOCRATES_DOC_MAX_LENGTH = 1_000_000;
 export const SOCRATES_ID_MAX_LENGTH = 200;
-export const SOCRATES_PROJECT_MAX_LENGTH = 200;
+export const SOCRATES_PROJECT_MAX_LENGTH = 255;
 
 export const SocratesGateKind = z.enum(["hard", "soft"]);
 export const SocratesGateOutcome = z.enum(["pass", "fail", "off", "overridden"]);

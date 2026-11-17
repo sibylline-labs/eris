@@ -119,6 +119,8 @@ export interface LoginDeps {
   /** Open `url` in a browser, best effort. The default does so only when
    *  stderr is a terminal. */
   openBrowser?: (url: string) => Promise<void>;
+  /** Run after the token is written and the success line printed; its outcome never changes the exit. */
+  afterLogin?: (ctx: VerbContext) => Promise<void>;
 }
 
 type Grant = {
@@ -301,6 +303,7 @@ export async function runLogin(args: string[], ctx: VerbContext, deps: LoginDeps
       }
       const name = typeof body?.name === "string" ? printable(body.name) : "eris";
       ctx.stdout.write(added.asDefault ? `logged in: token "${name}" written to ${written.value}\n` : `logged in to org ${added.org}: token "${name}" written to ${written.value}\n`);
+      await deps.afterLogin?.(ctx);
       return 0;
     }
 

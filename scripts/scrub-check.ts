@@ -61,6 +61,12 @@ const EXAMPLE_DOMAIN = /(^|\.)(example\.(com|org|net)|example|test|invalid|local
 /** Public standards written `ABC-123`, and `ABC` itself as the placeholder; any other such label is a tracker key. */
 const STANDARD_PREFIXES = new Set(["ABC", "RFC", "UTF", "SHA", "ISO", "CVE", "CWE", "EIP", "ERC"]);
 
+/** Public autonomy-rung enum values (`GateRung`), allowed only in the doctrine contract, the doctrine and gate plugins, docs and fixtures. */
+const GATE_RUNG_LITERALS = new Set(["R0", "R1", "R2"]);
+const DOCTRINE_RUNG_PREFIXES = ["packages/gates-contract/", "plugins/doctrine/", "plugins/gate/", "tests/fixtures/doctrine/"];
+const isDoctrineRungPath = (path: string) =>
+  path === "docs/DOCTRINE.md" || DOCTRINE_RUNG_PREFIXES.some((p) => path.startsWith(p));
+
 /** The SHAs a file may cite: this repository's own commits and the workflows' action pins. */
 export type KnownShas = ReadonlySet<string>;
 
@@ -108,7 +114,11 @@ const RULES: Rule[] = [
   { id: "requirements-label", re: /\bPRD-[A-Z0-9]/g },
   // A decision, requirement, finding or review label from a private register:
   // D42, R97, F31, F7q, M58, Decision Z, Claim 64, round-7 #9.
-  { id: "register-label", re: /\b[DRFM]\d{1,2}[a-z]?\b|\bDecision [A-Z]\b|\bClaim \d+\b/g },
+  {
+    id: "register-label",
+    re: /\b[DRFM]\d{1,2}[a-z]?\b|\bDecision [A-Z]\b|\bClaim \d+\b/g,
+    allow: (m, path) => GATE_RUNG_LITERALS.has(m[0]) && isDoctrineRungPath(path),
+  },
   { id: "review-round", re: /\bround-\d\b/gi },
   { id: "private-pr", re: /\bPR #\d+/g },
   // A section or phase of a plan the reader cannot open. A `§N` or `§N.M` alone is
