@@ -1235,8 +1235,66 @@ directory uses. Exit 1.
 
 ### doctrine-unknown-verb
 
-`eris doctrine <word>` named no doctrine command. The commands are `check`, `schema`, `gates` and
-`effect`; `eris doctrine --help` lists them. Exit 1.
+`eris doctrine <word>` named no doctrine command. The commands are `check`, `schema`, `gates`,
+`effect`, `pull` and `path`; `eris doctrine --help` lists them. Exit 1.
+
+### doctrine-org-unresolved
+
+`eris doctrine pull` found an `eris login` bearer for this directory, but it names no org (it is not a
+`sib_<org>_…` token), so there is no org policy to pull. Run `eris login` to mint an org bearer, or set
+`ERIS_ORG` to the org this directory acts as. Exit 3.
+
+### doctrine-pull-unwritable
+
+`eris doctrine pull` could not write the new tree under `~/.eris/doctrine/`, or could not swap the
+org's link onto it. The block names the path and the system's reason. Nothing was swapped: the
+previous tree, if any, is still the org's. Make `~/.eris/doctrine` writable by you (a pull creates it
+`0700`), then pull again. Exit 3.
+
+### doctrine-local-modified
+
+The org's pulled tree under `~/.eris/doctrine/<orgId>/` no longer matches what was pulled: a file was
+edited, added or removed, the manifest does not decode, or the files no longer hash to the manifest's
+`bundle_sha`. The block names the first difference. Every verb that reads the tree checks it first
+(`eris doctrine path` does), so an edited policy is never read as the org's. Run `eris doctrine pull`
+to restore it; it replaces the tree without reading it. Change the policy in the org's Gates
+settings, not on disk. Exit 3.
+
+### eris-login-required
+
+A verb that calls the hosted gates API has no usable `eris login` bearer: none is saved for this
+directory's org and `ERIS_YAKS_TOKEN` is unset, the credentials file cannot be read, or the gateway
+rejected the token (HTTP 401; the block names the server's error code). Run `eris login` once on the
+machine, or set `ERIS_YAKS_TOKEN` to a `sib_` service token with its `ERIS_YAKS_URL`. Exit 3.
+
+### login-url-refused
+
+The `eris login` URL the gates client would send the bearer to is not `https:`, or is `http:` on a
+host other than `localhost`, `127.0.0.1` or `[::1]`, or is not a URL at all. Nothing was sent: the
+bearer never crosses a cleartext link. Set `ERIS_YAKS_URL` (or the `url` in `~/.eris/yaks.json`) to
+the gateway's `https` URL. Exit 3.
+
+### gate-store-forbidden
+
+The gateway accepted the bearer but refused it for this request (HTTP 402 or 403): the org does not
+have Gates, or the token's scope does not cover the route. Sign in with an account whose org has
+Gates, or ask the org's admin. Exit 3.
+
+### gate-store-unreachable
+
+The hosted gates API gave no answer within the deadline, the network failed, it answered with a
+`5xx`, or (for `eris doctrine pull`) the org's policy changed between the policy and settings reads
+twice running. Nothing was written. Retry once the gateway answers; `ERIS_YAKS_URL` (or `yaks.json`'s
+`url`) names the host when it is not the default. Exit 3.
+
+### gate-contract-mismatch
+
+The gateway answered with something this client's contract does not describe: a status the route
+does not answer with, a body that does not decode (an HTML page from a proxy, an older or newer
+contract), a reply over the size cap, or a policy bundle whose values do not hash to the
+`bundle_sha` the server named. A pulled bundle that does not survive being written to disk and read
+back is also this slug. Nothing was written. Update eris (`eris update`); if it persists, the gateway
+and this client disagree on the gates contract. Exit 3.
 
 ### doctrine-usage
 
@@ -1248,7 +1306,8 @@ stdin at all. Pipe the object in ([DOCTRINE.md](DOCTRINE.md#effect)). Exit 2.
 
 A doctrine verb needs a doctrine file and has none: `eris doctrine check` was given no `--file`
 and the build names no default doctrine file, or the file it names cannot be read. Pass
-`--file <path>`. `eris doctrine gates` with no doctrine file is not a failure: it prints nothing,
+`--file <path>`. From `eris doctrine path`: no signed-in org resolves for the directory, or nothing
+is pulled for it; run `eris login`, then `eris doctrine pull`. `eris doctrine gates` with no doctrine file is not a failure: it prints nothing,
 since no posture then skips or defers a gate. Exit 3.
 
 ### doctrine-policy-invalid

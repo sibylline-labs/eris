@@ -37,8 +37,9 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
 - **`packages/gates-contract`** is the doctrine `policy:` contract, a bun workspace package exported
   as `eris/gates-contract`: the Effect Schema with each knob's plain-English explanation, the
   doctrine.md reader, the active-posture evaluators, the profiles reader and the effect-sentence
-  engine. It imports only `effect`, `yaml` and `node:` builtins, and returns a failure as data for
-  its caller to render; `plugins/doctrine` (`eris doctrine`, [`DOCTRINE.md`](DOCTRINE.md)) is
+  engine, plus the hosted org policy bundle (`bundle.ts`) and the client for the hosted gates API
+  (`client.ts`, [`dev/GATES-CLIENT.md`](dev/GATES-CLIENT.md)). It imports only `effect`, `yaml`,
+  `node:` builtins and the Web `fetch`/`crypto`, and returns a failure as data for its caller to render; `plugins/doctrine` (`eris doctrine`, [`DOCTRINE.md`](DOCTRINE.md)) is
   its CLI.
 
 eris installs from npm only (`npx`, `bunx`, `bun add -g @sibylline-labs/eris`); the package's

@@ -21,6 +21,8 @@ surfaces:
       - plugins/socrates/consult.ts
       - plugins/socrates/settings.ts
       - plugins/socrates/settings-panels.ts
+      - packages/gates-contract/src/client.ts
+      - plugins/doctrine/pull.ts
       - scripts/vendor-gitleaks.ts
       - tests/yak-redact.test.ts
       - tests/tokens.test.ts
@@ -28,6 +30,7 @@ surfaces:
       - tests/org.test.ts
       - tests/org-send-sites.test.ts
       - tests/yak-reports.test.ts
+      - tests/doctrine-pull.test.ts
     class_taxonomy: docs/dev/surfaces/secrets.md
     description: |
       Client-side secret scanning and redaction for `eris yak` and `eris
@@ -38,6 +41,8 @@ surfaces:
       vendored gitleaks rules and the scan that refuses on them (scan.ts);
       yak-submit.ts, yak-reports.ts and socrates/submit.ts, resolve.ts, consult.ts, settings.ts and settings-panels.ts are the call sites,
       credentials.ts resolves the bearer and the URL it may go to, and
-      yak.ts, yak-admin.ts, org.ts and client.ts carry it, tokens.ts mints and prints a service token's secret once, discover.ts strips a remote url's
+      yak.ts, yak-admin.ts, org.ts and client.ts carry it, as do the gates
+      client (packages/gates-contract/src/client.ts, which also refuses a
+      non-https, non-loopback URL) and doctrine/pull.ts, tokens.ts mints and prints a service token's secret once, discover.ts strips a remote url's
       credentials before keeping it; the test files
       pin each class and each secret shape.

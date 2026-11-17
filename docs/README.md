@@ -29,4 +29,5 @@ Start with the [repo README](../README.md) for install and quickstart; come here
 | [dev/TESTING.md](dev/TESTING.md) | The `bun test` suite: layout, fixtures and goldens, loopback servers, writing new tests |
 | [dev/ADDING-A-COMMAND.md](dev/ADDING-A-COMMAND.md) | Walkthrough: a new subcommand or command group, end to end |
 | [dev/PLUGINS.md](dev/PLUGINS.md) | Writing a plugin: a verb group as rows plus handlers, composed at build time |
+| [dev/GATES-CLIENT.md](dev/GATES-CLIENT.md) | The hosted gates API client: what it owns, its failure map, where tracker writes happen, the order the gate verbs move onto it |
 | [dev/RELEASING.md](dev/RELEASING.md) | Cutting a release: the tag, the workflow, the assets, npm |

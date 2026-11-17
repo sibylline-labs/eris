@@ -2,7 +2,8 @@
  * doctrine.ts — `eris doctrine <command>`: the doctrine `policy:` contract's offline verbs.
  * `check` validates a doctrine file and prints each posture's parsed policy, `schema` prints the
  * contract as JSON Schema, `gates` prints the active posture's effective gate map, and `effect`
- * turns a before/after pair into one sentence per changed knob. None of them restates the shape
+ * turns a before/after pair into one sentence per changed knob. `pull` and `path` (pull.ts) fetch
+ * the org's hosted policy and name the tree it was written to. None of them restates the shape
  * or the user-impact floor: they read it from eris/gates-contract (docs/DOCTRINE.md).
  */
 
@@ -36,6 +37,7 @@ import {
 } from "eris/gates-contract";
 import { CliExit, groupArgs, readArgs, renderFailureBlock, type VerbContext, type VerbHandler } from "../../src/cli/plugin";
 import plugin, { type DoctrineDefaults, type DoctrineDefaultsSource } from "./index";
+import type { PullDeps } from "./pull";
 
 const ROWS = plugin.rows;
 
@@ -51,6 +53,8 @@ Commands:
   gates [--file <path>] [--explain]
                           Print the active posture's effective gate map
   effect                  Read {contract, before, after} on stdin; print each change as a sentence
+  pull                    Fetch the org's hosted policy into ~/.eris/doctrine/<orgId>/
+  path                    Print the pulled doctrine.md, after verifying it
 `;
 
 const CHECK_USAGE = `Usage: eris doctrine check [--file <path>] [--cite] [--output json]
@@ -273,9 +277,10 @@ function runEffect(args: string[], ctx: VerbContext, d: DoctrineDefaults, stdin:
 
 /**
  * The `eris doctrine` handler, reading `defaults` when a verb's file flag is absent. `stdin` is
- * what `effect` reads (fd 0 when absent).
+ * what `effect` reads (fd 0 when absent); `pull` is what `pull` and `path` reach the gateway, the
+ * home directory and the clock through (the process's own when absent).
  */
-export function doctrineHandler(defaults: DoctrineDefaultsSource = {}, stdin: () => string = () => readFileSync(0, "utf8")): VerbHandler {
+export function doctrineHandler(defaults: DoctrineDefaultsSource = {}, stdin: () => string = () => readFileSync(0, "utf8"), pull: PullDeps = {}): VerbHandler {
   return async (args, ctx) => {
     const g = groupArgs(ROWS, "doctrine", args);
     if (g.kind === "bare" || g.kind === "help") {
@@ -285,13 +290,15 @@ export function doctrineHandler(defaults: DoctrineDefaultsSource = {}, stdin: ()
     if (g.kind === "unknown") {
       ctx.stderr.write(
         renderFailureBlock(
-          { slug: "doctrine-unknown-verb", what: `unknown doctrine command '${g.sub}'`, fix: "use one of: check, schema, gates, effect\nrun 'eris doctrine --help' for the command list" },
+          { slug: "doctrine-unknown-verb", what: `unknown doctrine command '${g.sub}'`, fix: "use one of: check, schema, gates, effect, pull, path\nrun 'eris doctrine --help' for the command list" },
           ctx.erisDir,
         ),
       );
       throw new CliExit(1);
     }
     if (g.sub === "schema") return runSchema(g.rest, ctx);
+    if (g.sub === "pull") return (await import("./pull")).runPull(g.rest, ctx, pull);
+    if (g.sub === "path") return (await import("./pull")).runPath(g.rest, ctx, pull);
     const d = typeof defaults === "function" ? await defaults(ctx) : defaults;
     if (g.sub === "check") return runCheck(g.rest, ctx, d);
     if (g.sub === "gates") return runGates(g.rest, ctx, d);

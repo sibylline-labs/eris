@@ -8,12 +8,16 @@
  *     the evaluators: gate modes, the effective gate map, requirements, lifts, remediation, asks;
  *   - the profiles a gate map is taken over (profile.ts);
  *   - the effect-sentence engine (effect.ts) and the JSON Schema document (schema.ts);
- *   - `decodeResult` / `decodeResultStrict`, the value-stripping decode every problem line uses.
+ *   - `decodeResult` / `decodeResultStrict`, the value-stripping decode every problem line uses;
+ *   - the hosted org policy bundle (bundle.ts): its Schema, `bundle_sha`, and the files it is written
+ *     to disk as; and the client for the hosted gates API (client.ts, docs/dev/GATES-CLIENT.md).
  *
  * A read that cannot go on returns a `ContractFailure` (failure.ts) for the caller to render.
  */
 
 export * from "./active";
+export * from "./bundle";
+export * from "./client";
 export * from "./decode";
 export * from "./doctrine";
 export * from "./effect";
