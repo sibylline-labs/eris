@@ -38,7 +38,7 @@ import { homedir } from "node:os";
 import { CURRENT_RUBRIC, extractFeatures, issueEntryOf, type RejectGateId, rubricFor, scoreUnderPolicy, type Title, type Verdict } from "eris/socrates-core";
 import { z } from "zod";
 import { readArgs, readYaksFileConfig, resolveOrgSelection, resolveUrl, selectOrgConfig, type VerbContext } from "../../src/cli/plugin";
-import { ANSWER_FIX, answersOf, checkCandidateTitle, issues, OVERRIDE_FIX, type Override, overridesOf, pairs, type Rubric } from "./answers";
+import { ANSWER_FIX, answersOf, checkCandidateStatement, checkCandidateTitle, issues, OVERRIDE_FIX, type Override, overridesOf, pairs, type Rubric } from "./answers";
 import plugin from "./index";
 import { type LocalPolicy, localPolicy, policyLine, readPolicyCache, readRepoPolicy } from "./policy";
 import { SocratesCandidate, SocratesPolicyHash, SocratesRepoPolicy } from "./socrates-contract.v1";
@@ -82,7 +82,8 @@ and bypasses only the gate it names.
                        in backticks so Linear does not autolink them
   --statement, --source, --kind, --project
                        the rest of the candidate, as 'eris socrates submit'
-                       takes it
+                       takes it (a decision or practice statement is a
+                       single line; a prd or conflict statement is not)
   --answer <question>=<answer>
                        repeatable, one per rubric question; answer each from
                        what you observed:
@@ -107,6 +108,7 @@ A conflict statement:
   Authoritative sites:                     two or more, one per line:
   - [Label](https://...)
   - \`ACME-K11\`, \`ACME-K12\` in [Doc](https://...)
+  - \`<8 lowercase hex>\` in [Doc](https://...)   (a legacy entry hash)
 
   Proposed resolution:                     optional, then its text
 `;
@@ -279,6 +281,7 @@ export async function runClassify(args: string[], ctx: VerbContext, deps: Socrat
   const parsedCandidate = SocratesCandidate.safeParse(input.candidate);
   if (!parsedCandidate.success) fail(ctx, "socrates-candidate-invalid", `the candidate does not match the contract (${printable(issues(parsedCandidate.error, "candidate"))})`, "run 'eris socrates classify --help' for each flag's bounds");
   const candidate = checkCandidateTitle(ctx, parsedCandidate.data);
+  checkCandidateStatement(ctx, candidate);
   const { kind } = candidate;
   if (kind === "prd" || kind === "conflict") return issueVerdict(ctx, rubric, { ...candidate, kind }, input);
   const answers = answersOf(ctx, rubric, input.answers);

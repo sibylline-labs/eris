@@ -4,7 +4,7 @@
  *
  * Invariants:
  *   - Every entry title is one line of 1–80 characters with no unbackticked
- *     autolinkable dotted token (`parseTitle` + raw line-break guard); a `prd`
+ *     autolinkable dotted token (`parseTitle`); a `prd`
  *     title also fits within 80 characters after `'PRD authored: '`.
  *   - The answers are the rubric's own enums (`answersSchema`); each override
  *     is the contract's `SocratesOverride` (a one-line reason).
@@ -13,7 +13,7 @@
  *     fires, so there is nothing to override.
  */
 
-import { answersSchema, type Answers, CURRENT_RUBRIC, disabledGates, ENTRY_TITLE_MAX_LENGTH, type Features, type GateId, gateFiring, parseTitle, type ScoringPolicy, type Title } from "eris/socrates-core";
+import { answersSchema, type Answers, CURRENT_RUBRIC, disabledGates, ENTRY_TITLE_MAX_LENGTH, type Features, type GateId, gateFiring, hasOddTrailingBackslash, hasUnmatchedBackticks, LINE_BREAK, parseTitle, type ScoringPolicy, type Title } from "eris/socrates-core";
 import { z } from "zod";
 import type { VerbContext } from "../../src/cli/plugin";
 import { fail, printable } from "./client";
@@ -64,21 +64,17 @@ export function overridesOf(ctx: VerbContext, rubric: Rubric, policy: ScoringPol
     if (q.route !== "reject") fail(ctx, "socrates-override-invalid", `${gate} routes the candidate (${q.route}) rather than rejecting it, so it cannot be overridden`, "answer the gate as it is; a reroute is not a rejection");
     if (seen.has(gate)) fail(ctx, "socrates-override-invalid", `${gate} is overridden twice`, fix);
     if (off.has(gate)) fail(ctx, "socrates-override-invalid", `${gate} is turned off by the policy, so there is nothing to override`, fix);
-    if (gateFiring(rubric, gate as GateId<Rubric>, answers, features) === undefined) fail(ctx, "socrates-override-invalid", `${gate} does not reject these answers, so there is nothing to override`, fix);
+    if (gateFiring(rubric, gate as GateId<Rubric>, answers, features, [...off] as GateId<Rubric>[]) === undefined) fail(ctx, "socrates-override-invalid", `${gate} does not reject these answers, so there is nothing to override`, fix);
     seen.add(gate);
   }
   return parsed.data;
 }
 
-const LINE_BREAK = /[\r\n\u2028\u2029]/;
 const PRD_PREFIX = "PRD authored: ";
 export const PRD_TITLE_MAX_LENGTH = ENTRY_TITLE_MAX_LENGTH - PRD_PREFIX.length;
 
-/** Validate an entry title against the living-doc / review-issue rule (`parseTitle` + raw line breaks). */
+/** Validate an entry title against the living-doc / review-issue rule (`parseTitle`). */
 export function checkEntryTitle(ctx: VerbContext, raw: string, slug: "socrates-candidate-invalid" | "socrates-amend-invalid", prefix = ""): Title {
-  if (LINE_BREAK.test(raw)) {
-    fail(ctx, slug, `${prefix}entry title must be a single line of at most ${ENTRY_TITLE_MAX_LENGTH} characters`, `pass a single-line title of <= ${ENTRY_TITLE_MAX_LENGTH} characters`);
-  }
   const parsed = parseTitle(raw);
   if (parsed.ok) return parsed.title;
   const reason = parsed.refusal.kind === "bad-title" ? parsed.refusal.reason : "too-long";
@@ -104,16 +100,44 @@ export function checkEntryTitle(ctx: VerbContext, raw: string, slug: "socrates-c
   fail(ctx, slug, `${prefix}entry title must be a non-empty single line of at most ${ENTRY_TITLE_MAX_LENGTH} characters`, `pass a non-empty single-line title of <= ${ENTRY_TITLE_MAX_LENGTH} characters`);
 }
 
-/** Validate a candidate's entry title (and `'PRD authored: <title>' <= 80` for `--kind prd`) before scoring or sending. */
+/** A decision or practice statement renders as one line of its living-doc entry, so a line break would file a review issue that later refuses at resolve time. */
+export function checkEntryStatement(ctx: VerbContext, raw: string, slug: "socrates-candidate-invalid" | "socrates-amend-invalid", prefix = ""): void {
+  if (LINE_BREAK.test(raw)) {
+    fail(ctx, slug, `${prefix}statement must be a single line`, "put the statement on one line of at most 4000 characters");
+  }
+}
+
+/** Refuse a multi-line `decision` or `practice` statement; `prd` and `conflict` statements parse their own multi-line grammars. */
+export function checkCandidateStatement(ctx: VerbContext, candidate: Pick<SocratesCandidate, "kind" | "statement">): void {
+  if (candidate.kind === "decision" || candidate.kind === "practice") {
+    checkEntryStatement(ctx, candidate.statement, "socrates-candidate-invalid", `${candidate.kind} `);
+  }
+}
+
+/** Validate a candidate's entry title (and `'PRD authored: <title>' <= 80`, no brackets/angle-brackets, no unmatched backticks, and no odd trailing backslash for `--kind prd`) before scoring or sending. */
 export function checkCandidateTitle<T extends Pick<SocratesCandidate, "kind" | "title">>(ctx: VerbContext, candidate: T): T & { readonly title: Title } {
   const title = checkEntryTitle(ctx, candidate.title, "socrates-candidate-invalid");
-  if (candidate.kind === "prd" && !parseTitle(`${PRD_PREFIX}${title}`).ok) {
-    fail(
-      ctx,
-      "socrates-candidate-invalid",
-      `PRD entry title '${PRD_PREFIX}<title>' must be at most ${ENTRY_TITLE_MAX_LENGTH} characters (got ${PRD_PREFIX.length + title.length})`,
-      `shorten --title to <= ${PRD_TITLE_MAX_LENGTH} characters so '${PRD_PREFIX}<title>' fits in ${ENTRY_TITLE_MAX_LENGTH} characters`,
-    );
+  if (candidate.kind === "prd") {
+    if (/[[\]]/.test(title)) {
+      fail(ctx, "socrates-candidate-invalid", "PRD entry title must not contain brackets '[' or ']'", "remove '[' and ']' from --title");
+    }
+    if (/[<>]/.test(title)) {
+      fail(ctx, "socrates-candidate-invalid", "PRD entry title must not contain '<' or '>'", "remove '<' and '>' from --title");
+    }
+    if (hasOddTrailingBackslash(title)) {
+      fail(ctx, "socrates-candidate-invalid", "PRD entry title must not end with an odd number of backslashes", "remove the trailing backslash from --title");
+    }
+    if (hasUnmatchedBackticks(title)) {
+      fail(ctx, "socrates-candidate-invalid", "PRD entry title must not contain unmatched backticks", "balance or remove unmatched '`' in --title");
+    }
+    if (!parseTitle(`${PRD_PREFIX}${title}`).ok) {
+      fail(
+        ctx,
+        "socrates-candidate-invalid",
+        `PRD entry title '${PRD_PREFIX}<title>' must be at most ${ENTRY_TITLE_MAX_LENGTH} characters (got ${PRD_PREFIX.length + title.length})`,
+        `shorten --title to <= ${PRD_TITLE_MAX_LENGTH} characters so '${PRD_PREFIX}<title>' fits in ${ENTRY_TITLE_MAX_LENGTH} characters`,
+      );
+    }
   }
   return { ...candidate, title };
 }

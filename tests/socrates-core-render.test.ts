@@ -182,6 +182,159 @@ test("a backticked dotted name in a title renders", () => {
   expect(renderDecision({ ...decision, title: "Adopt `payload.source` as the key" }).split("\n")[0]).toBe("- `ACME-K2` Adopt `payload.source` as the key");
 });
 
+// admits: algorithmic: a source URL with ( ) < > passes the contract's Url but ends the Markdown link destination early or throws bad-link at resolve time; the rendered string is runtime data no type or lint rule sees.
+test("a source URL with parentheses or angle brackets renders as one percent-encoded link destination", () => {
+  /** When renderLink refuses or leaves ( ) < > raw, a source the CLI accepted never files; observed as the rendered source line. */
+  const url = "https://en.wikipedia.org/wiki/Problem_details_(HTTP)?q=<a>";
+  const line = renderPractice({ ...practice, source: { ...source, url } }).split("\n").find((l) => l.startsWith("  - source: "));
+  expect(line).toBe("  - source: [eris#21](https://en.wikipedia.org/wiki/Problem_details_%28HTTP%29?q=%3Ca%3E)");
+});
+
+// admits: algorithmic: renderPrdEntry receives candidate.source via entry.prd and must percent-encode ( ) < > idempotently like renderDocEntry while refusing genuinely invalid source URLs with the original URL and without mentioning parentheses; runtime string formatting is invisible to tsc and ast-grep.
+test("a PRD entry percent-encodes ()<> in prd.url and rejects invalid source URLs accurately", () => {
+  const url = "https://en.wikipedia.org/wiki/Problem_details_(HTTP)?q=<a>";
+  const encoded = "https://en.wikipedia.org/wiki/Problem_details_%28HTTP%29?q=%3Ca%3E";
+  const rendered = renderPrdEntry({ ...prd, prd: { ...prd.prd, url } });
+  expect(rendered.description.split("\n")[0]).toBe(
+    `PRD authored: [PRD — Acme Billing](${encoded}); decisions \`BILL-K1\`–\`BILL-K9\` were discussed and confirmed by @dana.`,
+  );
+  // Idempotent on already-encoded URLs.
+  expect(renderPrdEntry({ ...prd, prd: { ...prd.prd, url: encoded } }).description.split("\n")[0]).toBe(
+    `PRD authored: [PRD — Acme Billing](${encoded}); decisions \`BILL-K1\`–\`BILL-K9\` were discussed and confirmed by @dana.`,
+  );
+  for (const invalid of ["javascript:alert(1)", "https://x/a b"]) {
+    let thrown: unknown;
+    try {
+      renderPrdEntry({ ...prd, prd: { ...prd.prd, url: invalid } });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(EntryRenderError);
+    expect((thrown as EntryRenderError).reason).toBe("bad-link");
+    expect((thrown as EntryRenderError).message).toContain(JSON.stringify(invalid));
+    expect((thrown as EntryRenderError).message).not.toContain("parentheses");
+  }
+});
+
+// admits: algorithmic: trailing backslashes in Link.label or Link.url and ASCII C0/DEL controls in Link.url break CommonMark <a> parsing (\], \), §6.3); CommonMark interaction with rendered runtime strings is invisible to tsc and ast-grep.
+test("trailing backslashes and C0/DEL control characters never render broken CommonMark links", () => {
+  const withBackslashUrl = "https://example.com/foo\\";
+  const encodedBackslashUrl = "https://example.com/foo%5C";
+  const practiceLine = renderPractice({ ...practice, source: { ...source, url: withBackslashUrl } })
+    .split("\n")
+    .find((l) => l.startsWith("  - source: "));
+  expect(practiceLine).toBe(`  - source: [eris#21](${encodedBackslashUrl})`);
+  expect(Bun.markdown.html(practiceLine!)).toContain(`<a href="${encodedBackslashUrl}">eris#21</a>`);
+
+  const decisionRendered = renderDecision({ ...decision, source: { label: "eris\\\\", url: withBackslashUrl } });
+  expect(Bun.markdown.html(decisionRendered)).toContain(`<a href="${encodedBackslashUrl}">eris\\</a>`);
+
+  // Idempotent on %5C and allows even trailing backslashes in label.
+  const prdRendered = renderPrdEntry({
+    ...prd,
+    prd: { label: "PRD — Foo\\\\", url: encodedBackslashUrl },
+    crossProject: [{ decision: "BILL-K4", project: { label: "Accounts\\\\", url: prd.crossProject[0]!.project.url } }],
+  });
+  const prdHtml = Bun.markdown.html(prdRendered.description);
+  expect(prdHtml).toContain(`<a href="${encodedBackslashUrl}">PRD — Foo\\</a>`);
+  expect(prdHtml).toContain(`<a href="${prd.crossProject[0]!.project.url}">Accounts\\</a>`);
+
+  const conflictRendered = renderConflictEntry({
+    ...conflict,
+    sites: [{ label: "Practices\\\\", url: conflict.sites[0]!.url }, conflict.sites[1]!],
+  });
+  expect(Bun.markdown.html(conflictRendered.description)).toContain(`<a href="${conflict.sites[0]!.url}">Practices\\</a>`);
+
+  // Odd trailing backslash in Link.label escapes ']' in CommonMark, so every entry renderer must refuse it.
+  for (const oddLabel of ["PRD — Foo\\", "PRD — Foo\\\\\\", "PRD — Foo\\ ", "\\"]) {
+    expect(() => renderPractice({ ...practice, source: { ...source, label: oddLabel } })).toThrow(EntryRenderError);
+    expect(() => renderPrdEntry({ ...prd, prd: { ...prd.prd, label: oddLabel } })).toThrow(EntryRenderError);
+    expect(() => renderPrdEntry({ ...prd, crossProject: [{ decision: "BILL-K4", project: { ...prd.crossProject[0]!.project, label: oddLabel } }] })).toThrow(EntryRenderError);
+    expect(() => renderConflictEntry({ ...conflict, sites: [{ label: oddLabel, url: conflict.sites[0]!.url }, conflict.sites[1]!] })).toThrow(EntryRenderError);
+  }
+
+  // Statement links (crossProject, conflict.sites) must refuse raw backslashes rather than rewriting author markdown.
+  for (const rawBsUrl of ["https://example.com/foo\\", "https://example.com/foo\\\\"]) {
+    expect(() => renderPrdEntry({ ...prd, crossProject: [{ decision: "BILL-K4", project: { label: "Accounts", url: rawBsUrl } }] })).toThrow(EntryRenderError);
+    expect(() => renderConflictEntry({ ...conflict, sites: [{ label: "A", url: rawBsUrl }, conflict.sites[1]!] })).toThrow(EntryRenderError);
+  }
+
+  // ASCII C0 (0x00-0x1F) and DEL (0x7F) in URLs must be refused across both source links and statement links.
+  for (const ctrlUrl of ["https://example.com/\u0000nul", "https://example.com/\u0007bell", "https://example.com/\u001fus", "https://example.com/\u007fdel"]) {
+    let thrown: unknown;
+    try {
+      renderPrdEntry({ ...prd, prd: { ...prd.prd, url: ctrlUrl } });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(EntryRenderError);
+    expect((thrown as EntryRenderError).reason).toBe("bad-link");
+    expect((thrown as EntryRenderError).message).not.toContain("parentheses");
+    expect(() => renderPractice({ ...practice, source: { ...source, url: ctrlUrl } })).toThrow(EntryRenderError);
+    expect(() => renderConflictEntry({ ...conflict, sites: [{ label: "A", url: ctrlUrl }, conflict.sites[1]!] })).toThrow(EntryRenderError);
+  }
+});
+
+// admits: algorithmic: unmatched backticks and <...> autolinks/HTML in Link.label or raw backticks in Link.url break or nest CommonMark <a> links via Bun.markdown.html; CommonMark inline precedence is invisible to tsc and ast-grep.
+test("unmatched backticks, <...> in Link.label, and raw backticks in Link.url never break or nest CommonMark <a> links", () => {
+  const withBacktickUrl = "https://example.com/a`1";
+  const encodedBacktickUrl = "https://example.com/a%601";
+  const decisionRendered = renderDecision({ ...decision, source: { label: "src `1`", url: withBacktickUrl } });
+  const decisionLine = decisionRendered.split("\n").find((l) => l.startsWith("  - source: "));
+  expect(decisionLine).toBe(`  - source: [src \`1\`](${encodedBacktickUrl})`);
+  expect(Bun.markdown.html(decisionRendered)).toContain(`<a href="${encodedBacktickUrl}">src <code>1</code></a>`);
+
+  // Idempotent on %60 and allows balanced code spans (including multi-backtick spans and escaped backticks).
+  for (const okLabel of ["PRD — `v2`", "PRD — ``v2 ` 3``", "PRD — `a\\`", "PRD — a\\`b"]) {
+    const prdRendered = renderPrdEntry({
+      ...prd,
+      prd: { label: okLabel, url: encodedBacktickUrl },
+      crossProject: [{ decision: "BILL-K4", project: { label: okLabel, url: prd.crossProject[0]!.project.url } }],
+    });
+    const html = Bun.markdown.html(prdRendered.description);
+    expect(html.match(/<a\b/g)?.length).toBe(2);
+    for (const part of html.split("</a>")) expect(part.match(/<a\b/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    expect(html).toContain(`<a href="${encodedBacktickUrl}">`);
+
+    const practiceRendered = renderPractice({ ...practice, source: { label: okLabel, url: withBacktickUrl } });
+    const practiceHtml = Bun.markdown.html(practiceRendered);
+    expect(practiceHtml.match(/<a\b/g)?.length).toBe(1);
+    expect(practiceHtml).toContain(`<a href="${encodedBacktickUrl}">`);
+
+    const conflictRendered = renderConflictEntry({
+      ...conflict,
+      sites: [{ label: okLabel, url: conflict.sites[0]!.url }, conflict.sites[1]!],
+    });
+    const conflictHtml = Bun.markdown.html(conflictRendered.description);
+    expect(conflictHtml.match(/<a\b/g)?.length).toBe(2);
+    for (const part of conflictHtml.split("</a>")) expect(part.match(/<a\b/g)?.length ?? 0).toBeLessThanOrEqual(1);
+  }
+
+  // Unmatched backticks (including escaped-opener \`1` and multi-backtick ``1`) and raw < / > must be refused across all 4 renderers.
+  for (const badLabel of ["PRD `1", "`1", "1`", "PRD \\`1`", "PRD ``1`", "``a`b`", "``", "<http://localhost>", "<mailto:a@b>", '<a href="#">x</a>', "a < b", "a > b", "`<http://localhost>`"]) {
+    for (const fn of [
+      () => renderDecision({ ...decision, source: { ...source, label: badLabel } }),
+      () => renderPractice({ ...practice, source: { ...source, label: badLabel } }),
+      () => renderPrdEntry({ ...prd, prd: { ...prd.prd, label: badLabel } }),
+      () => renderPrdEntry({ ...prd, crossProject: [{ decision: "BILL-K4", project: { label: badLabel, url: prd.crossProject[0]!.project.url } }] }),
+      () => renderConflictEntry({ ...conflict, sites: [{ label: badLabel, url: conflict.sites[0]!.url }, conflict.sites[1]!] }),
+    ]) {
+      let thrown: unknown;
+      try {
+        fn();
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(EntryRenderError);
+      expect((thrown as EntryRenderError).reason).toBe("bad-link");
+    }
+  }
+
+  // Statement links (crossProject, conflict.sites) must refuse raw backticks in URLs rather than rewriting author markdown.
+  expect(() => renderPrdEntry({ ...prd, crossProject: [{ decision: "BILL-K4", project: { label: "Accounts", url: withBacktickUrl } }] })).toThrow(EntryRenderError);
+  expect(() => renderConflictEntry({ ...conflict, sites: [{ label: "A", url: withBacktickUrl }, conflict.sites[1]!] })).toThrow(EntryRenderError);
+});
+
 describe("inputs that would break an entry's shape are refused, not rewritten", () => {
   const cases: [string, () => unknown, EntryRenderReason][] = [
     ["a two-line title", () => renderDecision({ ...decision, title: "one\ntwo" }), "title-multiline"],
@@ -191,8 +344,10 @@ describe("inputs that would break an entry's shape are refused, not rewritten", 
     ["a conflict title Linear would autolink", () => renderConflictEntry({ ...conflict, title: "install.sh disagrees with the docs" }), "title-autolinkable"],
     ["a statement with a line break", () => renderPractice({ ...practice, statement: "a\nb" }), "field-multiline"],
     ["a scope with a line break", () => renderDecision({ ...decision, scope: "org\r\n- hash: deadbeef" }), "field-multiline"],
+    ["a scope with a Unicode line separator", () => renderDecision({ ...decision, scope: "org\u2028- hash: deadbeef" }), "field-multiline"],
     ["a link label with a bracket", () => renderPractice({ ...practice, source: { ...source, label: "a]b" } }), "bad-link"],
-    ["a link url with a parenthesis", () => renderPractice({ ...practice, source: { ...source, url: "https://x/a)b" } }), "bad-link"],
+    ["a link url with a space", () => renderPractice({ ...practice, source: { ...source, url: "https://x/a b" } }), "bad-link"],
+    ["a prd cross-project link url with a parenthesis", () => renderPrdEntry({ ...prd, crossProject: [{ ...prd.crossProject[0]!, project: { ...prd.crossProject[0]!.project, url: "https://x/a)b" } }] }), "bad-link"],
     ["a non-http link", () => renderPractice({ ...practice, source: { ...source, url: "javascript:alert(1)" } }), "bad-link"],
     ["February 30th", () => renderPractice({ ...practice, date: { date: "2026-02-30" } }), "bad-date"],
     ["a non-ISO date", () => renderPractice({ ...practice, date: { date: "28/10/2026" } }), "bad-date"],

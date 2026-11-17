@@ -73,7 +73,7 @@ describe.each(SOCRATES_SKILLS)("skills/%s", (dir) => {
     const bad: string[] = [];
     const commands = socratesInvocations(body());
     for (const cmd of commands) {
-      const tokens = cmd.split(/\s+/).filter((t) => !t.startsWith("<"));
+      const tokens = cmd.split(/\s+/).map((t) => t.replace(/^[[(]+|(?:[\])]+|\.{3})+$/g, "")).filter((t) => t && !t.startsWith("<"));
       const rest = tokens.slice(1);
       const key = rest.length > 1 && !rest[1]!.startsWith("-") ? `socrates ${rest[1]}` : "socrates";
       const nested = rest.length > 2 && !rest[2]!.startsWith("-") && `${key} ${rest[2]}` in ROWS ? `${key} ${rest[2]}` : key;
@@ -165,6 +165,7 @@ describe("the Socrates skills' triggers", () => {
     const res = socratesInvocations(skillText("socrates-resolve")).join("\n");
     expect(res).toMatch(/eris socrates settings policy/);
     expect(res).toMatch(/eris socrates resolve\b/);
+    expect(res).toContain("--amend");
   });
 
   // admits: the setup skill keeps firing on capture and consult phrases if its description still names them.
@@ -232,7 +233,7 @@ describe("the Yaks usage skill", () => {
     const bad: string[] = [];
     const commands = yakInvocations(text);
     for (const cmd of commands) {
-      const tokens = cmd.split(/\s+/).filter((t) => !t.startsWith("<"));
+      const tokens = cmd.split(/\s+/).map((t) => t.replace(/^[[(]+|(?:[\])]+|\.{3})+$/g, "")).filter((t) => t && !t.startsWith("<"));
       const verb = tokens[2] && !tokens[2].startsWith("-") ? `yak ${tokens[2]}` : "yak";
       const row = YAK_ROWS[verb];
       if (!row) {

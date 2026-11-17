@@ -47,6 +47,170 @@ describe("a PRD files as one entry", () => {
     });
   });
 
+  // admits: algorithmic: issueEntryOf passes candidate.source into renderPrdEntry so valid ()<> sources must render percent-encoded while crossProject statement links keep refusing raw () and genuinely invalid source URLs return bad-link without blaming parentheses; runtime regexes and string errors are invisible to tsc and ast-grep.
+  test("a PRD source URL with ()<> encodes on render, cross-project statement links still refuse raw (), and invalid source URLs report bad-link accurately", () => {
+    const filed = issueEntryOf({
+      kind: "prd",
+      title: "PRD — Acme Billing",
+      statement: prdStatement,
+      source: "https://en.wikipedia.org/wiki/Problem_details_(HTTP)?q=<a>",
+    });
+    expect(filed.ok).toBe(true);
+    if (filed.ok) {
+      expect(filed.value.description.split("\n")[0]).toBe(
+        "PRD authored: [PRD — Acme Billing](https://en.wikipedia.org/wiki/Problem_details_%28HTTP%29?q=%3Ca%3E); decisions `ACME-K1`–`ACME-K57` were discussed and confirmed by @dana.",
+      );
+    }
+    const badCross = issueEntryOf({
+      kind: "prd",
+      title: "PRD — Acme Billing",
+      statement: prdStatement.replace("https://docs.example.com/acme/project/accounts", "https://docs.example.com/a)b"),
+      source: PRD_URL,
+    });
+    expect(badCross.ok).toBe(false);
+    if (!badCross.ok) expect(badCross.reason).toMatch(/^bad-link:.*parentheses/);
+    for (const badSource of ["https://x/a b", "javascript:alert(1)"]) {
+      const bad = issueEntryOf({ kind: "prd", title: "PRD — Acme Billing", statement: prdStatement, source: badSource });
+      expect(bad.ok).toBe(false);
+      if (!bad.ok) {
+        expect(bad.reason).toContain("bad-link:");
+        expect(bad.reason).toContain(JSON.stringify(badSource));
+        expect(bad.reason).not.toContain("parentheses");
+      }
+    }
+  });
+
+  // admits: algorithmic: issueEntryOf passes PRD title/source and statement links into renderPrdEntry/renderConflictEntry, where odd trailing backslashes, raw statement backslashes, and C0/DEL URLs break CommonMark <a> rendering unless encoded or refused; runtime Markdown parsing is invisible to tsc and ast-grep.
+  test("issueEntryOf handles trailing backslashes and C0/DEL control characters without breaking CommonMark links", () => {
+    const encodedPrd = issueEntryOf({
+      kind: "prd",
+      title: "PRD — Acme\\\\",
+      statement: prdStatement,
+      source: "https://docs.example.com/prd\\",
+    });
+    expect(encodedPrd.ok).toBe(true);
+    if (encodedPrd.ok) {
+      const html = Bun.markdown.html(encodedPrd.value.description);
+      expect(html).toContain('<a href="https://docs.example.com/prd%5C">PRD — Acme\\</a>');
+    }
+
+    for (const oddTitle of ["PRD — Acme\\", "PRD — Acme\\\\\\", "PRD — Acme\\ "]) {
+      const badTitle = issueEntryOf({ kind: "prd", title: oddTitle, statement: prdStatement, source: PRD_URL });
+      expect(badTitle.ok).toBe(false);
+      if (!badTitle.ok) expect(badTitle.reason).toMatch(/^bad-link:/);
+    }
+
+    for (const ctrlSource of ["https://docs.example.com/\u0000nul", "https://docs.example.com/\u0007bell", "https://docs.example.com/\u007fdel"]) {
+      const badCtrl = issueEntryOf({ kind: "prd", title: "PRD — Acme", statement: prdStatement, source: ctrlSource });
+      expect(badCtrl.ok).toBe(false);
+      if (!badCtrl.ok) {
+        expect(badCtrl.reason).toContain("bad-link:");
+        expect(badCtrl.reason).not.toContain("parentheses");
+      }
+    }
+
+    const badCrossLabel = issueEntryOf({
+      kind: "prd",
+      title: "PRD — Acme",
+      statement: prdStatement.replace("[Accounts]", "[Accounts\\]"),
+      source: PRD_URL,
+    });
+    expect(badCrossLabel.ok).toBe(false);
+    if (!badCrossLabel.ok) expect(badCrossLabel.reason).toMatch(/^bad-link:/);
+
+    const badCrossUrl = issueEntryOf({
+      kind: "prd",
+      title: "PRD — Acme",
+      statement: prdStatement.replace("https://docs.example.com/acme/project/accounts", "https://docs.example.com/a\\"),
+      source: PRD_URL,
+    });
+    expect(badCrossUrl.ok).toBe(false);
+    if (!badCrossUrl.ok) expect(badCrossUrl.reason).toMatch(/^bad-link:/);
+
+    const badSiteLabel = issueEntryOf({
+      kind: "conflict",
+      title: "Conflict",
+      statement: conflictStatement.replace("[Review issue]", "[Review issue\\]"),
+      source: PRD_URL,
+    });
+    expect(badSiteLabel.ok).toBe(false);
+    if (!badSiteLabel.ok) expect(badSiteLabel.reason).toMatch(/^bad-link:/);
+
+    for (const badUrl of ["https://tracker.example.com/a\\", "https://tracker.example.com/\u0007bell", "https://tracker.example.com/\u007fdel"]) {
+      const badSiteUrl = issueEntryOf({
+        kind: "conflict",
+        title: "Conflict",
+        statement: conflictStatement.replace("https://tracker.example.com/acme/issue/42", badUrl),
+        source: PRD_URL,
+      });
+      expect(badSiteUrl.ok).toBe(false);
+      if (!badSiteUrl.ok) expect(badSiteUrl.reason).toMatch(/^bad-link:/);
+    }
+  });
+
+  // admits: algorithmic: issueEntryOf passes PRD title/source and statement links into renderPrdEntry/renderConflictEntry where unmatched backticks, <...> tags, and raw statement backtick URLs break or nest CommonMark <a> links; Markdown parsing is invisible to tsc and ast-grep.
+  test("issueEntryOf handles balanced vs unmatched backticks, <...>, and backtick URLs without breaking or nesting CommonMark links", () => {
+    const balancedPrd = issueEntryOf({
+      kind: "prd",
+      title: "PRD — `v2`",
+      statement: prdStatement,
+      source: "https://docs.example.com/a`1",
+    });
+    expect(balancedPrd.ok).toBe(true);
+    if (balancedPrd.ok) {
+      const html = Bun.markdown.html(balancedPrd.value.description);
+      expect(html.match(/<a\b/g)?.length).toBe(2);
+      for (const part of html.split("</a>")) expect(part.match(/<a\b/g)?.length ?? 0).toBeLessThanOrEqual(1);
+      expect(html).toContain('<a href="https://docs.example.com/a%601">PRD — <code>v2</code></a>');
+    }
+
+    for (const badTitle of ["PRD `1", "PRD \\`1`", "PRD ``1`", "<http://localhost>", '<a href="#">x</a>']) {
+      const badPrd = issueEntryOf({ kind: "prd", title: badTitle, statement: prdStatement, source: PRD_URL });
+      expect(badPrd.ok).toBe(false);
+      if (!badPrd.ok) expect(badPrd.reason).toMatch(/^bad-link:/);
+    }
+
+    for (const badCrossLabel of ["Accounts `1", "<http://localhost>", "<mailto:a@b>"]) {
+      const res = issueEntryOf({
+        kind: "prd",
+        title: "PRD — Acme",
+        statement: prdStatement.replace("[Accounts]", `[${badCrossLabel}]`),
+        source: PRD_URL,
+      });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.reason).toMatch(/^bad-link:/);
+    }
+
+    const badCrossUrl = issueEntryOf({
+      kind: "prd",
+      title: "PRD — Acme",
+      statement: prdStatement.replace("https://docs.example.com/acme/project/accounts", "https://docs.example.com/a`1"),
+      source: PRD_URL,
+    });
+    expect(badCrossUrl.ok).toBe(false);
+    if (!badCrossUrl.ok) expect(badCrossUrl.reason).toMatch(/^bad-link:/);
+
+    for (const badSiteLabel of ["Review `1", "<http://localhost>", '<a href="#">x</a>']) {
+      const res = issueEntryOf({
+        kind: "conflict",
+        title: "Conflict",
+        statement: conflictStatement.replace("[Review issue]", `[${badSiteLabel}]`),
+        source: PRD_URL,
+      });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.reason).toMatch(/^bad-link:/);
+    }
+
+    const badSiteUrl = issueEntryOf({
+      kind: "conflict",
+      title: "Conflict",
+      statement: conflictStatement.replace("https://tracker.example.com/acme/issue/42", "https://tracker.example.com/a`1"),
+      source: PRD_URL,
+    });
+    expect(badSiteUrl.ok).toBe(false);
+    if (!badSiteUrl.ok) expect(badSiteUrl.reason).toMatch(/^bad-link:/);
+  });
+
   test("one locked decision, written with `..`, names that one decision", () => {
     /** When the one-decision or `..` spelling is refused or mis-ranged, a valid PRD statement cannot be filed. */
     const parsed = parsePrdStatement("Decisions: `ACME-BILL-K3`..`ACME-BILL-K3`\nConfirmed by: dana", { label: "PRD", url: PRD_URL });
@@ -143,4 +307,23 @@ describe("a statement the grammar cannot place is refused with the reason", () =
       if (!result.ok) expect(result.reason).toMatch(reason);
     });
   }
+
+  // admits: When SITE_LINE only accepts DECISION_ID, a v3 doc's 8-hex entry hash is refused as "not a site" and agents drop the entry pointer; the grammar is a runtime regex tsc and ast-grep cannot see.
+  test("a conflict site may cite an 8-hex legacy entry ID, and round-trips", () => {
+    const hash = ["6f2f", "822b"].join("");
+    const statement = [
+      "Two docs disagree.",
+      "",
+      "Authoritative sites:",
+      `- \`${hash}\` in [Load-Bearing Decisions](https://docs.example.com/acme/document/lbd)`,
+      "- [Candidate](https://docs.example.com/acme/issue/99)",
+    ].join("\n");
+    const reparsed = parseConflictStatement(statement, "t");
+    expect(reparsed.ok && reparsed.value.sites[0]).toEqual({ label: "Load-Bearing Decisions", url: "https://docs.example.com/acme/document/lbd", decisions: [hash] });
+    const filed = issueEntryOf({ kind: "conflict", title: "Legacy hash site", statement, source: PRD_URL });
+    expect(filed).toEqual({ ok: true, value: { title: "Legacy hash site", description: `${statement}\n\n${ANSWER_HERE}` } });
+    expect(parseConflictStatement(statement.replace(hash, hash.toUpperCase()), "t").ok).toBe(false);
+    // 7 and 9 hex (a git short SHA) are not entry hashes: the length is exact.
+    for (const odd of [hash.slice(1), `${hash}a`]) expect(parseConflictStatement(statement.replace(hash, odd), "t").ok).toBe(false);
+  });
 });

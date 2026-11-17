@@ -9,7 +9,7 @@
  * render as `{ title, description }`: `prd` and `conflict`.
  */
 
-import { ENTRY_HANDLE_ID, ENTRY_TITLE_MAX_LENGTH, entryTitleLine, parseTitle, type Title } from "./doc-surgery";
+import { ENTRY_HANDLE_ID, ENTRY_TITLE_MAX_LENGTH, LINE_BREAK, entryTitleLine, parseTitle, type Title } from "./doc-surgery";
 
 /**
  * How a doc entry is identified. Either a readable ID, which goes in the title line (`` - `ACME-P3` Title ``), or
@@ -89,7 +89,6 @@ export { ENTRY_TITLE_MAX_LENGTH };
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"] as const;
 
-const LINE_BREAK = /[\r\n\u2028\u2029]/;
 const HANDLE_ID_EXACT = new RegExp(`^${ENTRY_HANDLE_ID}$`);
 
 /**
@@ -99,6 +98,10 @@ const HANDLE_ID_EXACT = new RegExp(`^${ENTRY_HANDLE_ID}$`);
  */
 export const DECISION_ID = "[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[A-Z]+-?[1-9][0-9]*";
 const DECISION_ID_EXACT = new RegExp(`^${DECISION_ID}$`);
+
+/** A v3 doc's entry hash: 8 lowercase hex characters. Legacy hashes stay readable as IDs, so a conflict site may cite one. */
+export const LEGACY_ENTRY_ID = "[0-9a-f]{8}";
+const SITE_ID_EXACT = new RegExp(`^(?:${DECISION_ID}|${LEGACY_ENTRY_ID})$`);
 
 /** Single-line review footer for issue entries: the reply lands on this issue, never on a linked one. */
 const ANSWER_HERE = "Answer on this issue. A comment here is authoritative, and Socrates carries it to every linked site.";
@@ -122,7 +125,7 @@ function renderDocEntry(entry: PracticeEntry, kindFields: readonly string[]): st
   const fields = [
     singleLine("statement", entry.statement),
     ...kindFields,
-    `source: ${renderLink(entry.source)}`,
+    `source: ${renderSourceLink(entry.source)}`,
     formatEntryDate(entry.date),
     `superseded-by: ${entry.supersededBy === undefined ? "-" : singleLine("supersededBy", entry.supersededBy)}`,
     ...("hash" in handle ? [`hash: ${handle.hash}`] : []),
@@ -140,7 +143,7 @@ export function renderPrdEntry(entry: PrdEntry): IssueEntry {
   const range = first === last ? `decision \`${first}\` was` : `decisions \`${first}\`–\`${last}\` were`;
   const title = checkTitle(`PRD authored: ${singleLine("prd.label", entry.prd.label)}`);
   const lines = [
-    `PRD authored: ${renderLink(entry.prd)}; ${range} discussed and confirmed by @${singleLine("confirmedBy", entry.confirmedBy)}.`,
+    `PRD authored: ${renderSourceLink(entry.prd)}; ${range} discussed and confirmed by @${singleLine("confirmedBy", entry.confirmedBy)}.`,
   ];
   if (entry.crossProject.length > 0) {
     lines.push("", "Decisions that touch other projects:");
@@ -167,7 +170,7 @@ export function renderConflictEntry(entry: ConflictEntry): IssueEntry {
 
 function renderSite(site: ConflictSite): string {
   const decisions = (site.decisions ?? []).map((id) => {
-    if (!DECISION_ID_EXACT.test(id)) throw new EntryRenderError("bad-decision", `${JSON.stringify(id)} is not a register ID such as ACME-K11`);
+    if (!SITE_ID_EXACT.test(id)) throw new EntryRenderError("bad-decision", `${JSON.stringify(id)} is not a register ID such as ACME-K11, or an 8-hex legacy entry ID`);
     return `\`${id}\``;
   });
   return decisions.length === 0 ? `- ${renderLink(site)}` : `- ${decisions.join(", ")} in ${renderLink(site)}`;
@@ -198,7 +201,6 @@ function daysInMonth(year: number, month: number): number {
 
 /** The entry-title rule `applyOps` and the submit server enforce (`parseTitle`), raised as an `EntryRenderError`. */
 function checkTitle(title: string): Title {
-  if (LINE_BREAK.test(title)) throw new EntryRenderError("title-multiline", "an entry title is one line");
   const parsed = parseTitle(title);
   if (parsed.ok) return parsed.title;
   const reason = parsed.refusal.kind === "bad-title" ? parsed.refusal.reason : "too-long";
@@ -231,12 +233,92 @@ function singleLine(field: string, value: string): string {
   return value.trim();
 }
 
+/**
+ * Whether `text` ends with an odd run of backslashes. In CommonMark, a trailing `\` escapes the closing `]` of `[label](url)`,
+ * turning the link into plain text, whereas an even run (`\\`) escapes the backslash itself and leaves `]` intact.
+ */
+export function hasOddTrailingBackslash(text: string): boolean {
+  let count = 0;
+  for (let i = text.length - 1; i >= 0 && text[i] === "\\"; i--) count++;
+  return count % 2 === 1;
+}
+
+/**
+ * Whether `text` contains an unescaped CommonMark backtick run that lacks a matching equal-length closing run.
+ * In CommonMark §6.1, code spans outrank `[label](url)` links, so an unmatched run inside `Link.label` can pair
+ * across `](url)` with a backtick run in `Link.url` or surrounding template text and swallow the link into `<code>`.
+ */
+export function hasUnmatchedBackticks(text: string): boolean {
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === "\\" && i + 1 < text.length) {
+      i += 2;
+      continue;
+    }
+    if (text[i] === "`") {
+      let len = 0;
+      while (i + len < text.length && text[i + len] === "`") len++;
+      let k = i + len;
+      let matched = false;
+      while (k < text.length) {
+        if (text[k] === "`") {
+          let closeLen = 0;
+          while (k + closeLen < text.length && text[k + closeLen] === "`") closeLen++;
+          k += closeLen;
+          if (closeLen === len) {
+            matched = true;
+            break;
+          }
+        } else {
+          k++;
+        }
+      }
+      if (!matched) return true;
+      i = k;
+      continue;
+    }
+    i++;
+  }
+  return false;
+}
+
+/**
+ * A candidate's `source` is any absolute http(s) URL, and RFC 3986 allows ( ) < > ` in one, while raw `\`, `` ` ``,
+ * and `< >` break or escape CommonMark link destinations (`\)`, unenclosed destinations, code spans). Both doc-entry
+ * `source` and PRD-entry `prd` (which `issueEntryOf` builds from `candidate.source`) percent-encode them idempotently:
+ * links embedded inside a `statement` (`crossProject` and `conflict.sites`) are the author's own Markdown, and raw
+ * `( ) < > \ `` ` `` there are a refusal, not a rewrite.
+ */
+function encodeLinkDestination(url: string): string {
+  return url.replace(/[()<>\\`]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+function renderSourceLink({ label, url }: Link): string {
+  if (!/^https?:\/\/[^\s\u0000-\u001f\u007f]+$/.test(url)) {
+    throw new EntryRenderError("bad-link", `link url ${JSON.stringify(url)} must be an http(s) URL with no spaces or control characters`);
+  }
+  return renderLink({ label, url: encodeLinkDestination(url) });
+}
+
 function renderLink({ label, url }: Link): string {
-  if (LINE_BREAK.test(label) || /[[\]]/.test(label) || label.trim().length === 0) {
-    throw new EntryRenderError("bad-link", `link label ${JSON.stringify(label)} must be one line with no brackets`);
+  const trimmed = label.trim();
+  if (
+    LINE_BREAK.test(label) ||
+    /[[\]<>]/.test(label) ||
+    trimmed.length === 0 ||
+    hasOddTrailingBackslash(trimmed) ||
+    hasUnmatchedBackticks(trimmed)
+  ) {
+    throw new EntryRenderError(
+      "bad-link",
+      `link label ${JSON.stringify(label)} must be one line with no brackets, angle brackets, unmatched backticks, or odd trailing backslash`,
+    );
   }
-  if (!/^https?:\/\/[^\s()<>]+$/.test(url)) {
-    throw new EntryRenderError("bad-link", `link url ${JSON.stringify(url)} must be an http(s) URL with no spaces or parentheses`);
+  if (!/^https?:\/\/[^\s\u0000-\u001f\u007f()<>\\`]+$/.test(url)) {
+    throw new EntryRenderError(
+      "bad-link",
+      `link url ${JSON.stringify(url)} must be an http(s) URL with no spaces, control characters, backslashes, backticks, or parentheses`,
+    );
   }
-  return `[${label.trim()}](${url})`;
+  return `[${trimmed}](${url})`;
 }

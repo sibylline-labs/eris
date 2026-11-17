@@ -65,6 +65,23 @@ const json = async (args: string[]) => {
 };
 
 describe("eris socrates classify", () => {
+  // admits: a multi-line decision or practice statement filed past preflight is marked Done and then refuses forever at resolve time; the statement string is runtime data no type or lint rule sees.
+  it("refuses a multi-line decision or practice statement and keeps multi-line prd and conflict statements", async () => {
+    /** When classify scores a decision or practice statement holding a line break it prints a verdict the submit then files and resolve can never write; observed as rc 1 and slug socrates-candidate-invalid, and rc 0 for prd and conflict. */
+    const base = ["--title", "Errors use problem+json", "--source", "https://example.com/pr/14"];
+    for (const kind of ["decision", "practice"]) {
+      for (const statement of ["Line 1\nLine 2", "Trailing\n", "A\r\nB", "A\u2028B"]) {
+        const r = await drive([...base, "--kind", kind, "--statement", statement, ...answers()]);
+        expect({ kind, statement, rc: r.rc, slug: r.slug, stdout: r.stdout }).toEqual({ kind, statement, rc: 1, slug: "socrates-candidate-invalid", stdout: "" });
+        expect(r.stderr).toContain("single line");
+      }
+    }
+    const prd = await drive(["--kind", "prd", "--title", "PRD — Acme Billing", "--source", "https://docs.example.com/acme/document/billing", "--statement", "Decisions: `ACME-K1`–`ACME-K57`\nConfirmed by: dana"]);
+    expect(prd.rc).toBe(0);
+    const help = await drive(["--help"]);
+    expect(help.stdout).toContain("a decision or practice statement is a");
+  });
+
   it("scores the answers locally and prints the same verdict every time", async () => {
     /** When the verdict depends on anything but the answers and the statement, two agents classifying one candidate disagree. Observed at stdout, byte for byte, with no fetch made. */
     const first = await drive([...CANDIDATE, ...answers()], { format: "json" });
@@ -73,7 +90,7 @@ describe("eris socrates classify", () => {
     expect(second.stdout).toBe(first.stdout);
     expect(JSON.parse(first.stdout)).toEqual({
       verdict: "load-bearing",
-      rubric_version: "rubric@v3",
+      rubric_version: "rubric@v4",
       score: 3,
       threshold: 3,
       breakdown: { consequence: 3 },
@@ -84,7 +101,7 @@ describe("eris socrates classify", () => {
       meta: { _links: {} },
     });
     expect((await drive([...CANDIDATE, ...answers()])).stdout).toBe(
-      "load-bearing: score 3 of 3 (rubric@v3)\n  policy: rubric defaults\n  next: submit it: eris socrates submit with the same flags and answers\n",
+      "load-bearing: score 3 of 3 (rubric@v4)\n  policy: rubric defaults\n  next: submit it: eris socrates submit with the same flags and answers\n",
     );
     expect(fetches).toEqual([]);
   });
@@ -92,13 +109,13 @@ describe("eris socrates classify", () => {
   it("says which gate rejected the candidate and why, with a typed override link for that gate", async () => {
     /** When a rejection omits the gate, the reason or the link, the agent cannot tell what failed or how to override it. */
     const r = await json([...CANDIDATE, ...answers({ end_condition: "has-end-condition" })]);
-    expect(r).toMatchObject({ verdict: "rejected", rubric_version: "rubric@v3", gate: "end_condition", answer: "has-end-condition" });
+    expect(r).toMatchObject({ verdict: "rejected", rubric_version: "rubric@v4", gate: "end_condition", answer: "has-end-condition" });
     expect(r.reason).toContain("end condition");
     expect(r.meta).toEqual({
       _links: { override: [{ href: `${ENDPOINT}/v1/socrates/classify`, method: "POST", gate: "end_condition", title: "eris socrates classify … --override end_condition=<one-line reason>" }] },
     });
     const text = await drive([...CANDIDATE, ...answers({ end_condition: "has-end-condition" })]);
-    expect(text.stdout).toContain("rejected: end_condition (rubric@v3)\n");
+    expect(text.stdout).toContain("rejected: end_condition (rubric@v4)\n");
     expect(text.stdout).toContain("--override end_condition=<one-line reason>");
   });
 
@@ -106,7 +123,7 @@ describe("eris socrates classify", () => {
     /** When a feature-fired rejection reads as the agent's answer, the agent changes a correct answer instead of the statement. */
     const r = await json(["--title", "t", "--statement", "We pin v2 for now.", "--source", "https://example.com/pr/14", ...answers()]);
     expect(r).toMatchObject({ verdict: "rejected", gate: "end_condition", answer: "none", feature: "end_condition_wording" });
-    expect(r.reason).toContain("temporary, until, for now or right now");
+    expect(r.reason).toContain("temporary, for now or right now");
   });
 
   it("bypasses only the gate an override names", async () => {
@@ -172,7 +189,7 @@ describe("eris socrates classify", () => {
     const prd = ["--kind", "prd", "--title", "PRD — Acme Billing", "--source", "https://docs.example.com/acme/document/billing", "--statement", "Decisions: `ACME-K1`–`ACME-K57`\nConfirmed by: dana"];
     expect(await json(prd)).toEqual({
       verdict: "prd",
-      rubric_version: "rubric@v3",
+      rubric_version: "rubric@v4",
       route: "review-issue",
       reason: "files as one review issue: PRD authored: PRD — Acme Billing",
       overrides: [],
@@ -180,7 +197,7 @@ describe("eris socrates classify", () => {
       meta: { _links: {} },
     });
     const conflict = ["--kind", "conflict", "--title", "Two sources disagree", "--source", "https://example.com/pr/14", "--statement", "S.\n\nAuthoritative sites:\n- `ACME-K11` in [Doc](https://docs.example.com/a)\n- [Code](https://code.example.com/b)"];
-    expect((await drive(conflict)).stdout).toBe("conflict: one review issue (rubric@v3) -> review-issue\n  why: files as one review issue: Two sources disagree\n  next: submit it: eris socrates submit --kind conflict with the same flags\n");
+    expect((await drive(conflict)).stdout).toBe("conflict: one review issue (rubric@v4) -> review-issue\n  why: files as one review issue: Two sources disagree\n  next: submit it: eris socrates submit --kind conflict with the same flags\n");
     expect(await drive([...conflict.slice(0, -1), "S. with no sites"])).toMatchObject({ rc: 1, stdout: "", slug: "socrates-candidate-invalid" });
     expect(await drive([...prd, ...answers()])).toMatchObject({ rc: 1, slug: "socrates-answers-invalid" });
     expect(await drive([...prd, "--override", "end_condition=a"])).toMatchObject({ rc: 1, slug: "socrates-override-invalid" });
@@ -261,6 +278,121 @@ describe("eris socrates classify steers the agent", () => {
     expect(await json(["--title", "See [ERRORS.md](https://example.com/docs) for slugs", "--statement", "Every 4xx is RFC 7807.", "--source", "https://example.com/pr/14", ...answers()])).toMatchObject({
       verdict: "load-bearing",
     });
+    expect(fetches).toEqual([]);
+  });
+
+  // admits: boundary-io: eris socrates classify --kind prd must accept Url-valid ()<> in --source while refusing invalid --source and bracketed PRD --title with field-accurate errors instead of blaming the prd statement; CLI parsing, Zod validation, and rendering interact only at runtime.
+  it("accepts ()<> in --source for --kind prd and never blames the prd statement for invalid --source or bracketed --title", async () => {
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+    expect(
+      await json([
+        "--kind",
+        "prd",
+        "--title",
+        "PRD — Problem Details",
+        "--statement",
+        prdStmt,
+        "--source",
+        "https://en.wikipedia.org/wiki/Problem_details_(HTTP)?q=<a>",
+      ]),
+    ).toMatchObject({
+      verdict: "prd",
+      route: "review-issue",
+    });
+
+    const badSource = await drive([
+      "--kind",
+      "prd",
+      "--title",
+      "PRD — Problem Details",
+      "--statement",
+      prdStmt,
+      "--source",
+      "https://example.com/a b",
+    ]);
+    expect({ rc: badSource.rc, slug: badSource.slug }).toEqual({ rc: 1, slug: "socrates-candidate-invalid" });
+    expect(badSource.stderr).toContain("candidate.source");
+    expect(badSource.stderr).not.toContain("prd statement");
+
+    const badTitle = await drive([
+      "--kind",
+      "prd",
+      "--title",
+      "PRD [draft]",
+      "--statement",
+      prdStmt,
+      "--source",
+      "https://docs.example.com/acme/billing",
+    ]);
+    expect({ rc: badTitle.rc, slug: badTitle.slug }).toEqual({ rc: 1, slug: "socrates-candidate-invalid" });
+    expect(badTitle.stderr).toContain("--title");
+    expect(badTitle.stderr).not.toContain("prd statement");
+    expect(fetches).toEqual([]);
+  });
+
+  // admits: boundary-io: eris socrates classify --kind prd must refuse odd trailing-backslash --title, trailing-backslash --source, and C0/DEL --source locally with field-accurate errors instead of emitting broken CommonMark or blaming the prd statement; CLI parsing, Zod validation, and title checks interact only at runtime.
+  it("refuses odd trailing-backslash --title and backslash or C0/DEL --source without blaming the prd statement", async () => {
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+
+    expect(
+      await json([
+        "--kind",
+        "prd",
+        "--title",
+        "PRD — Foo\\\\",
+        "--statement",
+        prdStmt,
+        "--source",
+        "https://docs.example.com/acme/billing",
+      ]),
+    ).toMatchObject({ verdict: "prd", route: "review-issue" });
+
+    for (const oddTitle of ["PRD — Foo\\", "PRD — Foo\\\\\\", "PRD — Foo\\ "]) {
+      const badTitle = await drive(["--kind", "prd", "--title", oddTitle, "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+      expect({ oddTitle, rc: badTitle.rc, slug: badTitle.slug }).toEqual({ oddTitle, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(badTitle.stderr).toContain("--title");
+      expect(badTitle.stderr).not.toContain("prd statement");
+    }
+
+    for (const badUrl of ["https://example.com/foo\\", "https://example.com/\u0000nul", "https://example.com/\u0007bell", "https://example.com/\u007fdel"]) {
+      const badSource = await drive(["--kind", "prd", "--title", "PRD — Foo", "--statement", prdStmt, "--source", badUrl]);
+      expect({ badUrl, rc: badSource.rc, slug: badSource.slug }).toEqual({ badUrl, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(badSource.stderr).toContain("candidate.source");
+      expect(badSource.stderr).not.toContain("prd statement");
+    }
+    expect(fetches).toEqual([]);
+  });
+
+  // admits: boundary-io: eris socrates classify --kind prd must refuse unmatched backticks and <...> in --title on --title itself and raw backticks in --source on candidate.source without blaming the prd statement while accepting balanced code spans; CLI parsing, Zod Url, and title checks interact only at runtime.
+  it("refuses unmatched backticks and <...> in PRD --title and backticks in --source without blaming the prd statement", async () => {
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+
+    expect(
+      await json([
+        "--kind",
+        "prd",
+        "--title",
+        "PRD — `v2`",
+        "--statement",
+        prdStmt,
+        "--source",
+        "https://docs.example.com/acme/billing",
+      ]),
+    ).toMatchObject({ verdict: "prd", route: "review-issue" });
+
+    for (const badTitle of ["PRD `1", "PRD \\`1`", "PRD ``1`", "<http://localhost>", "<mailto:a@b>", '<a href="#">x</a>']) {
+      const res = await drive(["--kind", "prd", "--title", badTitle, "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+      expect({ badTitle, rc: res.rc, slug: res.slug }).toEqual({ badTitle, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(res.stderr).toContain("--title");
+      expect(res.stderr).not.toContain("prd statement");
+    }
+
+    for (const badUrl of ["https://example.com/a`1", "https://ex`ample.com/a", "https://example.com`1"]) {
+      const res = await drive(["--kind", "prd", "--title", "PRD — Foo", "--statement", prdStmt, "--source", badUrl]);
+      expect({ badUrl, rc: res.rc, slug: res.slug }).toEqual({ badUrl, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(res.stderr).toContain("candidate.source");
+      expect(res.stderr).not.toContain("prd statement");
+    }
     expect(fetches).toEqual([]);
   });
 });

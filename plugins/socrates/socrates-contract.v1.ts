@@ -61,18 +61,21 @@ export const nonBlank = (max: number) =>
     .max(max)
     .refine((s) => s.trim().length > 0, "must not be blank");
 
+/** One line to the renderer too: `renderDecision` refuses the Unicode line separators as well as CR and LF. */
+const SINGLE_LINE = /^[^\r\n\u2028\u2029]*$/;
+
 export const oneLine = (max: number) =>
   z
     .string()
     .min(1)
     .max(max)
-    .regex(/^[^\r\n]*$/, "must be a single line")
+    .regex(SINGLE_LINE, "must be a single line")
     .refine((s) => s.trim().length > 0, "must not be blank");
 
 export const Url = z
   .string()
   .max(SOCRATES_SOURCE_MAX_LENGTH)
-  .regex(/^https?:\/\/[^\s/?#]+[^\s]*$/, "must be an absolute http(s) URL");
+  .regex(/^https?:\/\/[^\s\u0000-\u001f\u007f\\`/?#]+[^\s\u0000-\u001f\u007f\\`]*$/, "must be an absolute http(s) URL");
 
 export const Version = z.literal(SOCRATES_CONTRACT_VERSION);
 
@@ -84,7 +87,7 @@ export const SocratesProvenance = z
   .string()
   .max(SOCRATES_SOURCE_MAX_LENGTH)
   .regex(
-    /^(?:https?:\/\/[^\s/?#]+[^\s]*|[A-Za-z0-9._/-]+@[0-9a-f]{7,40}:[^\s#]+#L[1-9][0-9]*(?:-L?[1-9][0-9]*)?)$/,
+    /^(?:https?:\/\/[^\s\u0000-\u001f\u007f\\`/?#]+[^\s\u0000-\u001f\u007f\\`]*|[A-Za-z0-9._/-]+@[0-9a-f]{7,40}:[^\s\u0000-\u001f\u007f\\`#]+#L[1-9][0-9]*(?:-L?[1-9][0-9]*)?)$/,
     "must be an http(s) URL or repo@sha:path#L<n>",
   );
 
@@ -115,7 +118,7 @@ export const SocratesOneLine = z
   .string()
   .min(1)
   .max(SOCRATES_OVERRIDE_REASON_MAX_LENGTH)
-  .regex(/^[^\r\n]*$/, "must be a single line")
+  .regex(SINGLE_LINE, "must be a single line")
   .refine((s) => s.trim().length > 0, "must not be blank");
 
 export const uniqueGates = (items: readonly { gate: string }[]) => new Set(items.map((i) => i.gate)).size === items.length;

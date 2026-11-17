@@ -132,6 +132,10 @@ const ROW_KEY_RE = /^\|\s*\\?`([^`\\|]+)\\?`\s*\|/;
 
 /** The longest entry or doc title, counted on the bare title: an entry's readable-ID handle is not part of it. */
 export const ENTRY_TITLE_MAX_LENGTH = 80;
+
+/** Every character a renderer or a Linear body treats as a line end: a title or row that carries one is not one line. */
+export const LINE_BREAK = /[\r\n\u2028\u2029]/;
+const UNICODE_LINE_BREAK = /[\u2028\u2029]/;
 /** A readable entry ID as an entry's title line carries it (`ACME-P3`, `ACME-K10`). */
 export const ENTRY_HANDLE_ID = "[A-Z][A-Z0-9]*-[A-Z]+[1-9][0-9]*";
 const HANDLE_PREFIX_RE = new RegExp(`^\`(${ENTRY_HANDLE_ID})\`[ \t]+`);
@@ -168,7 +172,7 @@ export function canonicalizeLinear(body: string): string {
   for (const [rx, repl] of LINEAR_REWRITES) text = text.replace(rx, repl);
   const out: string[] = [];
   for (const line of text.split("\n")) {
-    if (line.trim() === "") {
+    if (!LINE_BREAK.test(line) && line.trim() === "") {
       if (out.length > 0 && out[out.length - 1] !== "") out.push("");
     } else out.push(line);
   }
@@ -181,10 +185,10 @@ export function canonicalizeLinear(body: string): string {
 
 /** Parse a doc or entry title. Linear autolinks a bare `name.tld`, after which the stored title never matches the sent one. */
 export function parseTitle(raw: string): { ok: true; title: Title } | Refused {
-  const title = raw.trim();
   const refuse = (reason: Extract<Refusal, { kind: "bad-title" }>["reason"]): Refused => ({ ok: false, refusal: { kind: "bad-title", reason, title: raw } });
+  if (LINE_BREAK.test(raw)) return refuse("multi-line");
+  const title = raw.trim();
   if (title === "") return refuse("empty");
-  if (/[\r\n]/.test(title)) return refuse("multi-line");
   if (title.length > ENTRY_TITLE_MAX_LENGTH) return refuse("too-long");
   if (AUTOLINKABLE_RE.test(title.replace(TITLE_LINK_SAFE_RE, " "))) return refuse("autolinkable");
   return { ok: true, title: title as Title };
@@ -273,7 +277,9 @@ function blocks(lines: string[], start: number, end: number): Block[] {
 function entryIds(body: string, identity: EntryIdentity): string[] {
   const lines = canonicalizeLinear(body).split("\n");
   const ids = blocks(lines, 0, lines.length).flatMap((b) => {
-    const id = identity.entryId(lines.slice(b.start, b.end).join("\n"));
+    const blockLines = lines.slice(b.start, b.end);
+    if (blockLines.some((l) => LINE_BREAK.test(l))) return [];
+    const id = identity.entryId(blockLines.join("\n"));
     return id === null ? [] : [id];
   });
   return [...new Set(ids)];
@@ -281,6 +287,7 @@ function entryIds(body: string, identity: EntryIdentity): string[] {
 
 function rowKeys(body: string): string[] {
   return [...new Set(canonicalizeLinear(body).split("\n").flatMap((line) => {
+    if (LINE_BREAK.test(line)) return [];
     const m = ROW_KEY_RE.exec(line);
     return m ? [m[1]!.trim()] : [];
   }))];
@@ -327,6 +334,7 @@ function checkEntry(entryMd: string, identity: EntryIdentity): { ok: true; id: s
   const titleLine = lines.find((l) => TOP_BULLET_RE.test(l))!;
   const title = parseEntryTitleLine(titleLine.slice(2));
   if (!title.ok) return title;
+  if (lines.some((l) => LINE_BREAK.test(l))) return refuse({ kind: "bad-entry", reason: "an entry is exactly one top-level bullet and its nested lines" });
   const id = identity.entryId(canonicalizeLinear(entryMd));
   if (id === null) return refuse({ kind: "unidentified-entry" });
   return { ok: true, id, lines };
@@ -373,8 +381,8 @@ function replaceSection(body: string, section: string, bodyMd: string): Step {
 }
 
 function replaceRow(body: string, decisionId: string, rowMd: string): Step {
+  if (LINE_BREAK.test(rowMd)) return refuse({ kind: "bad-row", reason: "a register row is one line" });
   const row = rowMd.trim();
-  if (/[\r\n]/.test(row)) return refuse({ kind: "bad-row", reason: "a register row is one line" });
   const key = ROW_KEY_RE.exec(row)?.[1]?.trim();
   if (key !== decisionId) return refuse({ kind: "bad-row", reason: `the row's key is ${key ?? "missing"}, not ${decisionId}` });
   const lines = body.split("\n");
@@ -391,7 +399,7 @@ function patchProse(body: string, oldString: string, newString: string): Step {
   if (count === 0) return refuse({ kind: "anchor-not-found" });
   if (count > 1) return refuse({ kind: "ambiguous-anchor", count });
   const at = body.indexOf(oldString);
-  return { ok: true, body: body.slice(0, at) + newString + body.slice(at + oldString.length) };
+  return { ok: true, body: body.slice(0, at) + newString.replace(/\r\n?/g, "\n") + body.slice(at + oldString.length) };
 }
 
 /**
@@ -465,6 +473,13 @@ export function applyOps(body: string, ops: readonly SurgeryOp[], identity: Entr
   const missingIds = minus(entryIds(body, identity), entryIds(cur, identity));
   const missingRowKeys = minus(rowKeys(body), rowKeys(cur));
   if (missingIds.length > 0 || missingRowKeys.length > 0) return refuse({ kind: "shrink", missingIds, missingRowKeys });
+  const afterStop = unwritable(cur);
+  if (afterStop) return refuse(afterStop);
+  for (const op of ops) {
+    if ((op.op === "patch_prose" && UNICODE_LINE_BREAK.test(op.newString)) || (op.op === "replace_section" && UNICODE_LINE_BREAK.test(op.bodyMd))) {
+      return refuse({ kind: "bad-entry", reason: "prose patches and section replacements cannot carry Unicode line separators" });
+    }
+  }
   return { ok: true, body: cur, applied, skipped };
 }
 

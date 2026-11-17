@@ -20,6 +20,7 @@
  *     (`readFreshPolicy`). Scoring locally (`classify`) reads whatever is cached.
  */
 
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -145,6 +146,32 @@ export function localPolicy(ctx: VerbContext, rubric: RubricDefinition, cache: P
   const merged = mergeRepoPolicy(rubric, org, repo.policy);
   if (!merged.ok) fail(ctx, "socrates-repo-policy-looser", `${repo.path}: ${merged.problems.join("; ")}`, "raise threshold to at least the org's or remove it; name only hard gates");
   return { policy: merged.policy, policy_hash, repo_policy: repo.policy };
+}
+
+/** JSON with every object's keys sorted and undefined members dropped: the server's hash input, byte for byte. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * The hash the server gives `rubric`'s default policy when the org chose no Canon doc: sha256 of the
+ * canonical `{rubric_version, policy}`. Stamped when the cached org policy belongs to another
+ * rubric, so the server's rubric-keyed resolve agrees instead of reclassifying every submit.
+ */
+export function defaultPolicyHash(rubric: RubricDefinition): string {
+  return createHash("sha256").update(canonicalJson({ rubric_version: rubric.version, policy: defaultPolicy(rubric) })).digest("hex");
+}
+
+/** The hash a stamp for `rubric` carries: the cached policy's when it belongs to `rubric`, else the rubric's own default. */
+export function stampedPolicyHash(rubric: RubricDefinition, cache: PolicyCache | undefined): string {
+  return cache !== undefined && cache.rubric_version === rubric.version ? cache.policy_hash : defaultPolicyHash(rubric);
 }
 
 /** One line naming the policy a verdict was scored under. */

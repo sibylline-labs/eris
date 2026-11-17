@@ -53,7 +53,8 @@
   ],
   "scripts": {
     "typecheck": "bunx tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "ci": "bun scripts/ci-local.ts"
   },
   "dependencies": {
     "zod": "^3.23.0"

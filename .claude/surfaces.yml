@@ -13,6 +13,7 @@ surfaces:
       - plugins/yak/tokens.ts
       - plugins/yak/org.ts
       - plugins/yak/yak-submit.ts
+      - plugins/yak/yak-reports.ts
       - plugins/socrates/submit.ts
       - plugins/socrates/client.ts
       - plugins/socrates/resolve.ts
@@ -26,6 +27,7 @@ surfaces:
       - tests/outbound-scan.test.ts
       - tests/org.test.ts
       - tests/org-send-sites.test.ts
+      - tests/yak-reports.test.ts
     class_taxonomy: docs/dev/surfaces/secrets.md
     description: |
       Client-side secret scanning and redaction for `eris yak` and `eris
@@ -34,7 +36,7 @@ surfaces:
       credential to a place it cannot be recalled from.
       packages/outbound-scan holds the redaction pipeline (redact.ts), the
       vendored gitleaks rules and the scan that refuses on them (scan.ts);
-      yak-submit.ts and socrates/submit.ts, resolve.ts, consult.ts, settings.ts and settings-panels.ts are the call sites,
+      yak-submit.ts, yak-reports.ts and socrates/submit.ts, resolve.ts, consult.ts, settings.ts and settings-panels.ts are the call sites,
       credentials.ts resolves the bearer and the URL it may go to, and
       yak.ts, yak-admin.ts, org.ts and client.ts carry it, tokens.ts mints and prints a service token's secret once, discover.ts strips a remote url's
       credentials before keeping it; the test files

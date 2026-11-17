@@ -154,6 +154,17 @@ async function drive(args: string[], opts: { format?: "text" | "json"; env?: Rec
 }
 
 describe("eris socrates submit", () => {
+  // admits: a multi-line decision or practice statement filed as a review issue is marked Done and then refuses forever at resolve time; the statement string is runtime data no type or lint rule sees.
+  it("refuses a multi-line decision or practice statement before sending anything", async () => {
+    /** When submit lets a decision or practice statement with a line break through, a review issue is filed that resolve can never write; observed as rc 1, slug socrates-candidate-invalid and zero HTTP requests. */
+    for (const kind of ["decision", "practice"]) {
+      const r = await drive(["submit", "--title", "Errors use problem+json", "--source", "https://example.com/pr/14", "--kind", kind, "--statement", "Line 1\nLine 2", ...answers()]);
+      expect({ kind, rc: r.rc, slug: r.slug }).toEqual({ kind, rc: 1, slug: "socrates-candidate-invalid" });
+    }
+    expect(requests).toEqual([]);
+    expect((await drive(["submit", "--help"])).stdout).toContain("single line");
+  });
+
   // admits: an ambiguity refusal that exits non-zero or drops its candidates.
   it("an ambiguous project name prints its candidates as a WARN and exits 0", async () => {
     /** When a 409 linear_ref_ambiguous on a project name reads as a failure block, the submitter gets exit 1 and no list to choose from; observed as rc, stdout and the WARN on stderr. */
@@ -177,7 +188,7 @@ describe("eris socrates submit", () => {
         body: {
           schema_version: "1.0.0",
           candidate: { kind: "decision", title: "Errors use problem+json", statement: "Every 4xx/5xx is RFC 7807.", source: "https://example.com/pr/14", project: "platform" },
-          classification: { rubric_version: "rubric@v3", policy_hash: H1, answers: PASSING },
+          classification: { rubric_version: "rubric@v4", policy_hash: H1, answers: PASSING },
         },
       },
     ]);
@@ -189,6 +200,7 @@ describe("eris socrates submit", () => {
     expect(requests.map((r) => (r.body as { now?: unknown }).now)).toEqual([true]);
   });
 
+  // admits: boundary-io: a scope, section or evidence holding U+2028/U+2029 passes the contract, is filed, then renderDecision refuses it at resolve time; the string is runtime data no type or lint rule sees.
   it("sends scope, section, evidence and target when supplied, and refuses invalid values locally", async () => {
     /** When the entry-anatomy flags are dropped or not validated before sending, the server receives a bare candidate or rejects at the door. */
     expect(
@@ -213,6 +225,11 @@ describe("eris socrates submit", () => {
     });
     expect(await drive(["submit", ...STAMPED, "--target", "unknown_doc"])).toMatchObject({ rc: 1, slug: "socrates-candidate-invalid" });
     expect(await drive(["submit", ...STAMPED, "--scope", "repo\norg"])).toMatchObject({ rc: 1, slug: "socrates-candidate-invalid" });
+    for (const flag of ["--scope", "--section", "--evidence"]) {
+      for (const sep of ["\u2028", "\u2029"]) {
+        expect(await drive(["submit", ...STAMPED, flag, `a${sep}b`])).toMatchObject({ rc: 1, slug: "socrates-candidate-invalid" });
+      }
+    }
   });
 
   it("prints a deduped receipt as a bare JSON record under --output json", async () => {
@@ -443,5 +460,83 @@ describe("eris socrates submit entry-title preflight", () => {
     expect(await drive(["submit", "--title", "Adopt `request.signal` in handlers", "--statement", "s", "--source", "https://example.com/pr/14", ...answers()])).toMatchObject({ rc: 0 });
     expect(await drive(["submit", "--title", `Token in title ${sib}`, "--statement", "s", "--source", "https://example.com/pr/14", ...answers()])).toMatchObject({ rc: 0 });
     expect(requests).toHaveLength(3);
+  });
+
+  // admits: boundary-io: eris socrates submit --kind prd must forward Url-valid ()<> --source over the real loopback HTTP seam and refuse invalid --source or bracketed PRD --title locally without blaming the prd statement; CLI validation and loopback HTTP wire behavior are invisible to tsc and ast-grep.
+  it("accepts ()<> in --source for --kind prd and refuses invalid --source or bracketed --title without blaming the statement", async () => {
+    requests.length = 0;
+    answer = () => Response.json({ candidate_id: "cand_prd_1", deduped: false, contract_version: "1.0.0" });
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+    const wikiUrl = "https://en.wikipedia.org/wiki/Problem_details_(HTTP)?q=<a>";
+    const ok = await drive(["submit", "--kind", "prd", "--title", "PRD — Problem Details", "--statement", prdStmt, "--source", wikiUrl]);
+    expect(ok).toMatchObject({ rc: 0, stdout: "submitted: cand_prd_1\n", stderr: "" });
+    expect(requests).toHaveLength(1);
+    expect((requests[0]!.body as { candidate: { kind: string; source: string } }).candidate).toMatchObject({
+      kind: "prd",
+      source: wikiUrl,
+    });
+
+    const badSource = await drive(["submit", "--kind", "prd", "--title", "PRD — Problem Details", "--statement", prdStmt, "--source", "https://example.com/a b"]);
+    expect({ rc: badSource.rc, slug: badSource.slug }).toEqual({ rc: 1, slug: "socrates-candidate-invalid" });
+    expect(badSource.stderr).toContain("source: must be an absolute http(s) URL");
+    expect(badSource.stderr).not.toContain("prd statement");
+
+    const badTitle = await drive(["submit", "--kind", "prd", "--title", "PRD [draft]", "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+    expect({ rc: badTitle.rc, slug: badTitle.slug }).toEqual({ rc: 1, slug: "socrates-candidate-invalid" });
+    expect(badTitle.stderr).toContain("--title");
+    expect(badTitle.stderr).not.toContain("prd statement");
+    expect(requests).toHaveLength(1);
+  });
+
+  // admits: boundary-io: eris socrates submit --kind prd must refuse odd trailing-backslash --title, trailing-backslash --source, and C0/DEL --source locally with field-accurate errors and 0 HTTP requests while accepting even trailing-backslash PRD titles; CLI parsing, Zod validation, title check, and loopback HTTP interact only at runtime.
+  it("refuses odd trailing-backslash PRD --title and backslash or C0/DEL --source locally with 0 HTTP requests", async () => {
+    requests.length = 0;
+    answer = () => Response.json({ candidate_id: "cand_prd_bs", deduped: false, contract_version: "1.0.0" });
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+
+    const evenOk = await drive(["submit", "--kind", "prd", "--title", "PRD — Foo\\\\", "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+    expect(evenOk).toMatchObject({ rc: 0, stdout: "submitted: cand_prd_bs\n", stderr: "" });
+    expect(requests).toHaveLength(1);
+
+    for (const oddTitle of ["PRD — Foo\\", "PRD — Foo\\\\\\", "PRD — Foo\\ "]) {
+      const badTitle = await drive(["submit", "--kind", "prd", "--title", oddTitle, "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+      expect({ oddTitle, rc: badTitle.rc, slug: badTitle.slug }).toEqual({ oddTitle, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(badTitle.stderr).toContain("--title");
+      expect(badTitle.stderr).not.toContain("prd statement");
+    }
+
+    for (const badUrl of ["https://example.com/foo\\", "https://example.com/\u0000nul", "https://example.com/\u0007bell", "https://example.com/\u007fdel"]) {
+      const badSource = await drive(["submit", "--kind", "prd", "--title", "PRD — Foo", "--statement", prdStmt, "--source", badUrl]);
+      expect({ badUrl, rc: badSource.rc, slug: badSource.slug }).toEqual({ badUrl, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(badSource.stderr).toContain("source: must be an absolute http(s) URL");
+      expect(badSource.stderr).not.toContain("prd statement");
+    }
+    expect(requests).toHaveLength(1);
+  });
+
+  // admits: boundary-io: eris socrates submit --kind prd must refuse unmatched backticks and <...> in --title and backticks in --source locally with field-accurate errors and 0 HTTP requests while accepting balanced code-span PRD titles; CLI parsing, Zod validation, title check, and loopback HTTP interact only at runtime.
+  it("refuses unmatched backticks and <...> in PRD --title and backticks in --source locally with 0 HTTP requests", async () => {
+    requests.length = 0;
+    answer = () => Response.json({ candidate_id: "cand_prd_bt", deduped: false, contract_version: "1.0.0" });
+    const prdStmt = "Decisions: `ACME-K1`–`ACME-K2`\nConfirmed by: dana";
+
+    const ok = await drive(["submit", "--kind", "prd", "--title", "PRD — `v2`", "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+    expect(ok).toMatchObject({ rc: 0, stdout: "submitted: cand_prd_bt\n", stderr: "" });
+    expect(requests).toHaveLength(1);
+
+    for (const badTitle of ["PRD `1", "PRD \\`1`", "PRD ``1`", "<http://localhost>", "<mailto:a@b>", '<a href="#">x</a>']) {
+      const res = await drive(["submit", "--kind", "prd", "--title", badTitle, "--statement", prdStmt, "--source", "https://docs.example.com/acme/billing"]);
+      expect({ badTitle, rc: res.rc, slug: res.slug }).toEqual({ badTitle, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(res.stderr).toContain("--title");
+      expect(res.stderr).not.toContain("prd statement");
+    }
+
+    for (const badUrl of ["https://example.com/a`1", "https://ex`ample.com/a", "https://example.com`1"]) {
+      const res = await drive(["submit", "--kind", "prd", "--title", "PRD — Foo", "--statement", prdStmt, "--source", badUrl]);
+      expect({ badUrl, rc: res.rc, slug: res.slug }).toEqual({ badUrl, rc: 1, slug: "socrates-candidate-invalid" });
+      expect(res.stderr).toContain("source: must be an absolute http(s) URL");
+      expect(res.stderr).not.toContain("prd statement");
+    }
+    expect(requests).toHaveLength(1);
   });
 });

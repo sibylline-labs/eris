@@ -59,7 +59,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx tsc --noEmit
       - run: bunx tsc --noEmit -p packages/socrates-core
-      - run: bun test ./tests
+      - run: bun test --parallel=6 --no-orphans ./tests
 
   binary-oracle:
     name: binary oracle (build + bun test, ERIS_BIN)
@@ -97,7 +97,7 @@ jobs:
       - name: bun test (ERIS_BIN = the binary)
         env:
           ERIS_BIN: ${{ steps.build.outputs.bin }}
-        run: bun test ./tests
+        run: bun test --parallel=6 --no-orphans ./tests
 
   ast-grep:
     name: ast-grep (scan + rule tests)

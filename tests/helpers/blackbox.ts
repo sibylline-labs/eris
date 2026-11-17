@@ -42,9 +42,17 @@ export const ERIS = ERIS_BIN ?? join(REPO, "eris");
 /**
  * Every binary process in one oracle run shares one asset cache, so the
  * race-safe first-run write (src/runtime/home.ts) is exercised by the suites'
- * own parallelism. Under the repo's gitignored `.scratch/`.
+ * own parallelism. Under the repo's gitignored `.scratch/`, one directory per binary
+ * identity (size, mtime, inode): a rebuilt binary gets a fresh directory, so no
+ * `bun test --parallel` worker ever deletes a cache another worker is reading.
  */
-const ORACLE_CACHE = join(REPO, ".scratch", "oracle-cache");
+const ORACLE_ROOT = join(REPO, ".scratch", "oracle-cache");
+const ORACLE_CACHE = ERIS_BIN === null ? ORACLE_ROOT : join(ORACLE_ROOT, binaryIdentity(ERIS_BIN));
+
+function binaryIdentity(bin: string): string {
+  const st = statSync(bin);
+  return `${st.size}-${Math.trunc(st.mtimeMs)}-${st.ino}`;
+}
 
 /**
  * A skip guard for a test about the CHECKOUT itself (the shim, a copy of the
@@ -78,17 +86,32 @@ export function oracleEnv(): Record<string, string> {
  */
 export function installRoot(): string {
   if (ERIS_BIN === null) return REPO;
-  const homes = readdirSync(ORACLE_CACHE).filter((e) => !e.includes(".tmp-"));
+  const homes = oracleHomes();
   if (homes.length !== 1) throw new Error(`expected one asset home in ${ORACLE_CACHE}, found: ${homes.join(", ") || "none"}`);
   return join(ORACLE_CACHE, homes[0]!);
 }
 
-const READY = Symbol.for("eris.oracle-cache.ready");
-if (ERIS_BIN !== null && !(globalThis as Record<symbol, unknown>)[READY]) {
-  (globalThis as Record<symbol, unknown>)[READY] = true;
-  // Once per run, before any test spawns: a home left by another build would make installRoot() ambiguous.
-  rmSync(ORACLE_CACHE, { recursive: true, force: true });
-  mkdirSync(ORACLE_CACHE, { recursive: true });
+/** The asset homes in the oracle cache, skipping a first-run write still in flight. */
+function oracleHomes(): string[] {
+  return existsSync(ORACLE_CACHE) ? readdirSync(ORACLE_CACHE).filter((e) => !e.includes(".tmp-")) : [];
+}
+
+if (ERIS_BIN !== null && oracleHomes().length !== 1) {
+  // Before any test of this file spawns. The worker that creates the directory prunes the
+  // caches of other binaries (a stale home there is harmless, only disk); a worker that
+  // finds it empty warms it itself, which the binary's race-safe install makes idempotent.
+  let created = false;
+  try {
+    mkdirSync(ORACLE_ROOT, { recursive: true });
+    mkdirSync(ORACLE_CACHE);
+    created = true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+  }
+  if (created) {
+    const mine = relative(ORACLE_ROOT, ORACLE_CACHE);
+    for (const e of readdirSync(ORACLE_ROOT)) if (e !== mine) rmSync(join(ORACLE_ROOT, e), { recursive: true, force: true });
+  }
   const r = spawnSync(ERIS_BIN, ["--help"], { env: { ...process.env, ERIS_CACHE_DIR: ORACLE_CACHE }, encoding: "utf8" });
   if (r.status !== 0) throw new Error(`ERIS_BIN=${ERIS_BIN} --help exited ${r.status}: ${r.stderr}`);
 }

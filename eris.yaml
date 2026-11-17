@@ -5,3 +5,28 @@ repo:
   conventions:
     commit_subject_key: none
     test_intent_comment: when-docblock
+
+# The local stand-in for .github/workflows/ci.yml: scripts/ci-local.ts runs one
+# gate per CI job, and `eris baseline record|diff` runs each gate below.
+ci:
+  local:
+    command: bun scripts/ci-local.ts
+    gates:
+      bun:
+        run: bun scripts/ci-local.ts --only bun
+        failures: '^\(fail\) (.+?)(?: \[[\d.]+m?s\])?$'
+      binary-oracle:
+        run: bun scripts/ci-local.ts --only binary-oracle
+        failures: '^\(fail\) (.+?)(?: \[[\d.]+m?s\])?$'
+      ast-grep:
+        run: bun scripts/ci-local.ts --only ast-grep
+        failures: '^\s*error\[([^\]]+)\]'
+      shellcheck:
+        run: bun scripts/ci-local.ts --only shellcheck
+        failures: '^In (\S+) line \d+:\n(?:.*\n)*?.*\^-+ (SC\d+)'
+      scrub:
+        run: bun scripts/ci-local.ts --only scrub
+        failures: '^scrub-check: (.+)$'
+      npm-pack:
+        run: bun scripts/ci-local.ts --only npm-pack
+        failures: '^::error title=([^:]+)::'

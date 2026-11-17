@@ -87,7 +87,7 @@ export default definePlugin({
       ],
     },
     "socrates settings enrolment": { summary: "List the enrolled projects and their Linear links", json: true, usage: "" },
-    "socrates settings health": { summary: "Print the install, webhook, reconcile and stuck-write health", json: true, usage: "" },
+    "socrates settings health": { summary: "Print the install (with its Linear scopes), webhook, reconcile and stuck-write health", json: true, usage: "" },
     "socrates settings usage": { summary: "Print the no-credit usage figures: entries, accept and reject rates, overrides", json: true, usage: "" },
     "socrates settings canon": {
       summary: "Show or choose the org's Canon doc (an org admin's)",
