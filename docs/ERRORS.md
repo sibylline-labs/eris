@@ -1233,6 +1233,50 @@ body. A timeout, an unreachable endpoint or a body that does not match the contr
 [`yak-admin-unavailable`](#yak-admin-unavailable) instead. Retry; `eris whoami` shows which org and url this
 directory uses. Exit 1.
 
+### doctrine-unknown-verb
+
+`eris doctrine <word>` named no doctrine command. The commands are `check`, `schema`, `gates` and
+`effect`; `eris doctrine --help` lists them. Exit 1.
+
+### doctrine-usage
+
+`eris doctrine effect` read stdin that is not one JSON object of the shape
+`{"contract": "policy"|"surfaces", "before": <value|null>, "after": <value|null>}`, or could not read
+stdin at all. Pipe the object in ([DOCTRINE.md](DOCTRINE.md#effect)). Exit 2.
+
+### doctrine-file-missing
+
+A doctrine verb needs a doctrine file and has none: `eris doctrine check` was given no `--file`
+and the build names no default doctrine file, or the file it names cannot be read. Pass
+`--file <path>`. `eris doctrine gates` with no doctrine file is not a failure: it prints nothing,
+since no posture then skips or defers a gate. Exit 3.
+
+### doctrine-policy-invalid
+
+A doctrine file does not parse as a doctrine, or a posture's `policy:` block breaks the contract:
+an unknown value, a `policy:` outside a ```` ```yaml ```` fence, more than one `policy:` block in a
+section, an `active:` that names no section, or a value that lowers the floor (a U2/U3
+requirement list without its floor, `final-gates` or `user-impact` set `off`, a `lifts` class
+other than U0/U1, a U3 ceiling above its cap, a `signoff.waive` key). `eris doctrine check` prints one
+`<file>:<line>: <message>` line per problem on stderr before the block and nothing on stdout;
+`eris doctrine gates` names the first. From `eris doctrine effect`, a `before` or `after` value
+that does not decode as a `policy:` block. Fix each line named; the floor is
+[DOCTRINE.md](DOCTRINE.md#the-floor). Exit 3, never a default posture in its place.
+
+### gate-profile-unreadable
+
+The `--profiles` file (or the build's default profiles file) cannot be read, is not YAML, or is
+not a map of kebab-case profile names to a non-empty list of kebab-case gate names, or to
+`{ require: [...], forbid: [...] }` with no gate in both lists. Exit 3.
+
+### gate-surfaces-invalid
+
+`eris doctrine effect` with `"contract": "surfaces"` was given a `before` or `after` value that
+does not decode as a `.claude/surfaces.yml`: a missing or empty `surfaces:` map, a surface name
+that is not kebab-case, an unknown key at any level, a malformed `audit_ttl`, `change_budget`,
+`ledger` or unlock gate, or two surfaces sharing a ledger. The block names the side and the first
+problem. Exit 3.
+
 ## Adding a new slug
 
 Call `reportFailure({ slug, what, fix, docs })` (it writes the block and

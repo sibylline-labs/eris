@@ -20,7 +20,7 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
 - **`src/main.ts`** routes every command line.
 - **`plugins/index.ts`** lists the plugins this build compiles in.
 - **`src/sdk.ts`** is `eris/sdk`, the one module through which another repository reaches core
-  (the `exports` map names `eris/sdk/testing`, `eris/yak-contract`, `eris/outbound-scan`, `eris/yak-redact` and `eris/socrates-core` beside it,
+  (the `exports` map names `eris/sdk/testing`, `eris/yak-contract`, `eris/outbound-scan`, `eris/yak-redact`, `eris/socrates-core` and `eris/gates-contract` beside it,
   nothing deeper).
   A **distribution** depends on this package, composes core with this build's plugins and its own,
   and compiles its own binary with `build()` ([`dev/PLUGINS.md`](dev/PLUGINS.md#distributions)).
@@ -34,6 +34,12 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
   and a change is a new one beside it), so a server reclassifies a
   stamped submission with the client's own definition. It imports nothing but `zod`; its tsconfig
   carries no Bun or Node types, because its consumer is a Cloudflare Worker.
+- **`packages/gates-contract`** is the doctrine `policy:` contract, a bun workspace package exported
+  as `eris/gates-contract`: the Effect Schema with each knob's plain-English explanation, the
+  doctrine.md reader, the active-posture evaluators, the profiles reader and the effect-sentence
+  engine. It imports only `effect`, `yaml` and `node:` builtins, and returns a failure as data for
+  its caller to render; `plugins/doctrine` (`eris doctrine`, [`DOCTRINE.md`](DOCTRINE.md)) is
+  its CLI.
 
 eris installs from npm only (`npx`, `bunx`, `bun add -g @sibylline-labs/eris`); the package's
 `bin/eris.ts` is the command. A checkout needs `bun install --frozen-lockfile` and no build step:
@@ -156,6 +162,8 @@ it is not a verb, but it renders JSON under `--output` and reads no file from th
   the client's rules; it imports nothing (`tests/distribution.test.ts`).
   `eris/socrates-core` is the workspace package `packages/socrates-core`, which imports nothing
   but `zod` (`bunx tsc --noEmit -p packages/socrates-core`, a CI step; `tests/socrates-rubric.test.ts`).
+  `eris/gates-contract` is the workspace package `packages/gates-contract`, which imports nothing of
+  core (`tests/doctrine.test.ts`).
 - **Completion imports the registry and nothing else.** `source <(eris completion bash)` runs on
   every shell start, so a broken source file elsewhere must not break a login shell.
   `tests/completion.test.ts` corrupts every other verb and every plugin's handler code in a copied

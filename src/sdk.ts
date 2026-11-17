@@ -6,7 +6,8 @@
  * export, so no binary carries them), `eris/yak-contract` (the Yaks wire
  * contract, a workspace package of its own rather than core),
  * `eris/outbound-scan` (the outbound secret scan and redaction pass, another
- * workspace package), `eris/yak-redact` (that package's redaction pass,
+ * workspace package), `eris/gates-contract` (the doctrine `policy:` contract,
+ * a workspace package with no CLI runtime), `eris/yak-redact` (that package's redaction pass,
  * packages/outbound-scan/src/redact.ts, which imports nothing) and nothing deeper, so a core file can move without breaking a
  * distribution.
  *
@@ -35,6 +36,10 @@
  *   - the skill-kind contract lint (`lintSkills`, `readSkillKind`,
  *     `SKILL_KINDS`), the check `eris skills lint` runs, for a repository that
  *     runs it over its own skills in-process;
+ *   - the doctrine plugin with a distribution's own defaults (`doctrinePlugin`)
+ *     and its handler (`doctrineHandler`, loaded on its first call), so a
+ *     distribution points `eris doctrine` at its organisation's doctrine file
+ *     (docs/DOCTRINE.md#a-distributions-defaults);
  *   - `build()`, which compiles a distribution (src/build.ts), loaded on its
  *     first call so a plugin manifest importing this module stays light on the
  *     completion path.
@@ -43,6 +48,8 @@
  */
 
 import type { BuildOptions, BuildResult } from "./build";
+import type { VerbHandler } from "./cli/plugin";
+import type { DoctrineDefaultsSource } from "../plugins/doctrine";
 
 export * from "./cli/plugin";
 export type { VerbPath } from "./cli/registry";
@@ -59,6 +66,8 @@ export { composeCli, NO_ENTITLEMENTS, PluginCompositionError } from "./cli/compo
 export type { MainOptions, ProgramOptions } from "./main";
 export { HANDLERS, main, runProgram } from "./main";
 export { PLUGINS } from "../plugins";
+export type { DoctrineDefaults, DoctrineDefaultsSource } from "../plugins/doctrine";
+export { doctrinePlugin } from "../plugins/doctrine";
 export type { RunJob, RunOptions, RunResult, Runner } from "./runtime/process";
 export { childEnv, nodeRunner, runMany, signalTree } from "./runtime/process";
 export { resolveConcurrency, resolveDeadlineMs, runPool } from "../ts/lib/pool";
@@ -73,4 +82,9 @@ export type { BuildOptions, BuildResult, BuildStub } from "./build";
 /** Compile a distribution into one executable (src/build.ts). */
 export async function build(opts: BuildOptions): Promise<BuildResult> {
   return (await import("./build")).build(opts);
+}
+
+/** `eris doctrine`'s handler, reading `defaults` when a verb's file flag is absent; its code loads on the first call. */
+export function doctrineHandler(defaults: DoctrineDefaultsSource = {}): VerbHandler {
+  return async (args, ctx) => (await import("../plugins/doctrine/doctrine")).doctrineHandler(defaults)(args, ctx);
 }

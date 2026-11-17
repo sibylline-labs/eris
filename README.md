@@ -173,6 +173,23 @@ fetch, a splice that would drop an entry or a register row, and a title Linear w
 refuse with a typed reason before anything is written. How an entry is identified is a function
 the caller passes.
 
+## Doctrine
+
+`eris doctrine` reads a doctrine file: named postures (a prototype, business as usual, a lock-in),
+one of them active, each with an optional `policy:` block that sets which review gates run, who
+signs off which kind of change, and what evidence each user-impact class owes. No posture can lower
+the U2/U3 floor. Every verb is offline.
+
+```sh
+eris doctrine check --file doctrine.md      # validate every posture; one line each
+eris doctrine gates --file doctrine.md      # the active posture's effective gate map
+eris doctrine schema                        # the contract as JSON Schema, with each knob explained
+eris doctrine effect < change.json          # one plain-English sentence per changed knob
+```
+
+The contract is [`packages/gates-contract`](packages/gates-contract), exported as
+`eris/gates-contract`; [docs/DOCTRINE.md](docs/DOCTRINE.md) is the reference.
+
 ## Documentation
 
 [docs/README.md](docs/README.md) indexes the references: the architecture,

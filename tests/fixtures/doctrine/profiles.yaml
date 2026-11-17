@@ -1,0 +1,6 @@
+quick:
+  - plan-review
+  - final-gates
+guarded:
+  require: [premise-gate, final-gates, user-impact]
+  forbid: [research]

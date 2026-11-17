@@ -46,6 +46,9 @@ src/                    # The TS program the shim and the bin run
 ts/lib/eris-fail.ts     # the ERROR/slug/fix/docs failure block, and the WARN lines
 ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany uses
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
+plugins/doctrine/       # `eris doctrine check|schema|gates|effect`: index.ts (the manifest, and doctrinePlugin(defaults), the
+                        #   same plugin reading a distribution's doctrine and profiles files), doctrine.ts (the
+                        #   handlers); the contract is packages/gates-contract, imported by name (docs/DOCTRINE.md)
 plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consult|status|policy|evidence|settings`: index.ts (the manifest), submit.ts
                         #   (submit, its unfit and stamp rules, and the group dispatch), client.ts (the credentialed GET,
                         #   POST or PUT every endpoint verb shares), classify.ts (local rubric scoring, HAL override
@@ -74,6 +77,13 @@ packages/yak-contract/  # the Yaks wire contract v2, a bun workspace package tha
                         #   `eris/yak-contract` (package.json exports) is its src/index.ts.
                         #   src/v2.ts (Zod + inferred types), scripts/emit-json-schema.ts →
                         #   schema/yak-v2.schema.json (committed; `bun run emit-schema` in the package re-emits)
+packages/gates-contract/ # the doctrine policy: contract, `eris/gates-contract`: src/doctrine.ts (the base Schema and
+                        #   the gate-mode, gate-map, requirement, lift and remediation evaluators), src/policy.ts
+                        #   (DoctrinePolicy: sign-off and ask controls composed on), src/explains.ts and
+                        #   src/explain.ts (each knob's explanation and the machinery that reads it),
+                        #   src/surfaces.ts (the .claude/surfaces.yml Schema), src/file.ts (the doctrine.md
+                        #   reader), src/active.ts, src/profile.ts, src/effect.ts (one sentence per changed knob),
+                        #   src/schema.ts (the JSON Schema document), src/decode.ts (value-stripping decode)
 packages/socrates-core/ # Socrates living-doc surgery, `eris/socrates-core`: src/doc-surgery.ts (applyOps, the pure
                         #   splices and guards; writeDoc, the fetch-splice-check-write-verify pipe over an injected
                         #   LinearDocPort; ensureDoc; parseTitle). Web APIs only: its tsconfig has no Bun/Node types.

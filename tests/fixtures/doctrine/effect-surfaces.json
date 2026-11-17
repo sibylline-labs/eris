@@ -1,0 +1,3 @@
+{"contract": "surfaces",
+ "before": {"surfaces": {"auth": {"paths": ["src/auth/**"], "severity_floor": "medium", "ledger": "ABC-1"}}},
+ "after": {"surfaces": {"auth": {"paths": ["src/auth/**", "src/session/*.ts"], "class_taxonomy": "docs/vocab/auth.md", "audit_ttl": "7d", "change_budget": 3, "ledger": "ABC-2", "one_way_unlock": {"merge": ["plan-review", "final-gates:clean"]}}, "secrets": {"paths": ["config/secrets/**"]}}}}
