@@ -27,6 +27,9 @@ surfaces:
       - plugins/doctrine/set.ts
       - plugins/gate/store.ts
       - plugins/gate/ci-verb.ts
+      - plugins/loop/deps.ts
+      - plugins/loop/claims.ts
+      - plugins/loop/target.ts
       - scripts/vendor-gitleaks.ts
       - tests/yak-redact.test.ts
       - tests/tokens.test.ts
@@ -42,6 +45,8 @@ surfaces:
       - tests/gate-verbs.test.ts
       - tests/gate-ci.test.ts
       - tests/loop-client.test.ts
+      - tests/loop-body.test.ts
+      - tests/helpers/loop-fixture.ts
     class_taxonomy: docs/dev/surfaces/secrets.md
     description: |
       Client-side secret scanning and redaction for `eris yak` and `eris
@@ -56,6 +61,6 @@ surfaces:
       client (packages/gates-contract/src/client.ts, which also refuses a
       non-https, non-loopback URL), doctrine/pull.ts, doctrine/push.ts and doctrine/set.ts (the same bearer, over PUT and POST) and gate/store.ts, gate/ci-verb.ts (which carries
       the bearer GET-only: `eris gate ci` builds its one endpoint on a fetch
-      that refuses any other method before the network), tokens.ts mints and prints a service token's secret once, discover.ts strips a remote url's
+      that refuses any other method before the network), loop/deps.ts, loop/claims.ts and loop/target.ts carry it to the /v1/linear and yak routes (deps.ts also keeps it out of every loop child's env), tokens.ts mints and prints a service token's secret once, discover.ts strips a remote url's
       credentials before keeping it; the test files
       pin each class and each secret shape.

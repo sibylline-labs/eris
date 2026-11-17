@@ -1370,6 +1370,50 @@ Exit 3.
 yak is unknown, has no cluster yet, or its cluster has no tracker issue yet. Nothing was claimed or
 spawned. Pass the issue key instead, or re-run once the yak has an issue. Exit 2.
 
+### loop-usage
+
+An `eris loop` operand was refused before anything was claimed, requested or spawned: a loop name with
+`/`, `\` or `..`, an issue that is not a key, a `--cwd` that is relative, missing or `$HOME`, a missing
+`--model`, a `--context` or `--prompt` over 1,024 characters, a blank or oversized hand-back, a loop body
+off its caps, or the `claude` CLI not on PATH. The block names the operand. Correct it and re-run
+(`eris loop <command> --help`). Exit 2.
+
+### loop-unknown
+
+The org's pulled policy carries no loop by that name. The block lists the loops it does carry. Name one
+of them (`eris loop list`), or author the loop in the org's Gates settings, run `eris doctrine pull`, and
+re-run. Exit 2.
+
+### loop-launch-failed
+
+The `claude` CLI failed to start or stop a background session: it exited non-zero, printed no
+`backgrounded · <id> · <name>` receipt, timed out, or could not run. A launch that had claimed the issue
+released the claim (`aborted`, the reason as its body) before failing. Fix what the detail names (the
+CLI, its background daemon, the working directory) and re-run. Exit 1.
+
+### loop-hand-back-failed
+
+`eris loop hand-back` posted on some targets but not on the ones the block names; a WARN line above it
+says why for each. The receipt lines for the targets that did get the hand-back were printed first.
+Fix the cause (sign-in, the issue key, the gateway) and re-run the hand-back with the same body on the
+target that got nothing. Exit 1.
+
+### loop-session-not-found
+
+A `<ref>` (a session id, its exact name, or the issue key of a loop session) names no background
+session under `~/.claude/jobs/`. `claude agents` lists the sessions there. Exit 2.
+
+### loop-session-ambiguous
+
+A `<ref>` names more than one background session (two jobs with one name, or two working loops on one
+issue). The block lists their ids; pass one of them. Exit 2.
+
+### loop-claim-ledger-unwritable
+
+The claim ledger, `~/.eris/loop/claims/`, could not be written. A launch or resume that had reserved a
+claim released it (`aborted`) first, so no claim is held that this machine cannot name. Make the
+directory writable by you (it is created 0700) and re-run. Exit 3.
+
 ### asks-store-unreachable
 
 The asks API (`GET /v1/asks`) gave no answer within the deadline, the network failed, or it answered

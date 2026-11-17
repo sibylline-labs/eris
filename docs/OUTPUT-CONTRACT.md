@@ -154,6 +154,8 @@ surface. A plugin's surfaces are documented with that plugin, not here.
 
 | `eris doctrine pull` | text: one `<orgId>\t<bundle_sha>` line. JSON: one bare record `{org, bundle_sha, dir}`. Every failure is the §4 block with nothing on stdout, exit `3`, and the previous tree left in place ([DOCTRINE.md](DOCTRINE.md#pull-and-path)) | accepted | experimental |
 | `eris doctrine path` | one line: the pulled `doctrine.md` through the org's link, `~/.eris/doctrine/<orgId>/doctrine.md`, printed only after the tree verifies; none pulled or an edited tree is the §4 block, exit `3` ([DOCTRINE.md](DOCTRINE.md#pull-and-path)) | refused | experimental |
+| `eris loop list` | text: one loop slug per line, sorted. JSON: one bare record `{loops: [...]}`. An edited tree is the §4 block (`doctrine-local-modified`), exit `3` ([LOOP.md](LOOP.md#list)) | accepted | experimental |
+| `eris loop resolve` | text: one issue key. JSON: one bare record `{issue, yak?}`. An operand that is neither a key nor a yak id is `loop-usage`, exit `2` ([LOOP.md](LOOP.md#resolve)) | accepted | experimental |
 
 Everything not listed is a **human surface**. Its stdout may change shape in any
 release. Parsing it is unsupported — ask for a machine surface instead.

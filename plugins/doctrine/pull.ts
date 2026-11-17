@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { BUNDLE_DOCTRINE_FILE, BUNDLE_PROFILES_FILE, type ContractFailure, fail, fetchOrgPolicy, gatesEndpoint, type Outcome, succeed } from "eris/gates-contract";
 import { CliExit, readArgs, renderFailureBlock, renderWarnLines, resolveOrgBearer, type VerbContext } from "../../src/cli/plugin";
 import plugin from "./index";
-import { linkedDoctrineFile, materialize, orgPath, orgTree } from "./org-tree";
+import { linkedDoctrineFile, localModified, materialize, orgPath, orgTree } from "./org-tree";
 
 const ROWS = plugin.rows;
 
@@ -181,4 +181,40 @@ export async function runPath(args: string[], ctx: VerbContext, deps: PullDeps =
   if (tree.value === null) stop(ctx, missing(`no org policy is pulled for org ${org}`));
   ctx.stdout.write(`${linkedDoctrineFile(h, org)}\n`);
   return 0;
+}
+
+/** A loop slug in a verified tree's manifest: `loops/<slug>.md`. */
+const LOOP_FILE = /^loops\/([^/]+)\.md$/;
+
+/**
+ * The org's verified tree as the loop verbs read it (composed in plugins/index.ts): pulled first when
+ * this machine has none, or when `claimSha` (the claim reply's view of the org's policy) names another
+ * bundle; read as it is otherwise. An edited tree is refused (`doctrine-local-modified`), never pulled
+ * over and never pushed: saving it is the operator's act. A pull that lands a bundle newer than the
+ * claim's is used as it is.
+ */
+export async function freshTree(ctx: VerbContext, claimSha: string | undefined, deps: PullDeps = {}): Promise<Outcome<{ org: string; dir: string; bundleSha: string; loops: string[] }>> {
+  const resolved = await resolveOrg(ctx, deps, "there is no org policy to run a loop from");
+  if (!resolved.ok) return resolved;
+  const { org, home: h } = resolved.value;
+  let tree = await orgTree(h, org);
+  if (!tree.ok) {
+    const f = tree.failure;
+    return f.slug === "doctrine-local-modified" ? fail({ ...f, fix: `Run 'eris doctrine push' to save the edits as the org's policy, or 'eris doctrine pull' to discard them, then re-run.` }) : tree;
+  }
+  if (tree.value === null || (claimSha !== undefined && claimSha !== tree.value.manifest.bundle_sha)) {
+    const pulled = await pullOrg(ctx, deps);
+    if (!pulled.ok) return pulled;
+    tree = await orgTree(h, org);
+    if (!tree.ok) return tree;
+    if (tree.value === null) return fail(localModified(org, "the pull reported success but left no tree"));
+  }
+  const { dir, manifest } = tree.value;
+  const loops = Object.keys(manifest.files)
+    .flatMap((rel) => {
+      const m = LOOP_FILE.exec(rel);
+      return m === null ? [] : [m[1]!];
+    })
+    .sort();
+  return succeed({ org, dir, bundleSha: manifest.bundle_sha, loops });
 }
