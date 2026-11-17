@@ -31,6 +31,7 @@ export type GateSlug =
   | "gate-monotone-unresolved"
   | "gate-unlock-human"
   | "gate-unlock-unresolved"
+  | "surface-lock-unauthorized"
   | "asks-listing-truncated";
 
 export class GateFailure extends Error {

@@ -1,6 +1,6 @@
 /**
- * The gate plugin's manifest: `eris gate record`, `skip`, `check` and `ci` as registry rows plus a lazy
- * handler thunk (docs/dev/PLUGINS.md, docs/GATE.md). The verbs write and read gate receipts through the
+ * The gate plugin's manifest: `eris gate record`, `skip`, `check` and `ci`, and `eris surface lock`, `unlock` and
+ * `digest`, as registry rows plus a lazy handler thunk (docs/dev/PLUGINS.md, docs/GATE.md). The verbs write and read gate receipts through the
  * gates client (docs/dev/GATES-CLIENT.md) on the `eris login` bearer; `ci` only reads.
  *
  * `gatePlugin(defaults)` is the same plugin with what a build supplies: the door-class ladder file
@@ -35,6 +35,7 @@ const b = <const N extends `--${string}`>(name: N) => ({ name, takesValue: false
 
 const ROWS = {
   gate: { impl: "ts", summary: "Gate receipts on tracker issues (record, skip, check, ci); not feature flags" },
+  surface: { impl: "ts", summary: "The per-surface kill switch and the unlock roll-up (lock, unlock, digest)" },
   "gate record": {
     summary: "Append a gate-receipt@v2 comment to an issue",
     flags: [
@@ -74,6 +75,23 @@ const ROWS = {
     usage:
       "--issue <KEY> (--gates <a,b,...> | --profile <name> [--profiles <file>]) [--doctrine <file>] [--ladder <file>] [--expect <comment-id,...>] [--burden <rubric.yaml> --base <ref>] [--pr <N>] [--asks] [--dry-run]",
   },
+  "surface lock": {
+    summary: "Stop a surface from unlocking any one-way action: a human write, recorded on the surface's ledger issue",
+    flags: [v("--reason"), v("--authorized"), f("--registry"), v("--actor")],
+    pos: ["name?"],
+    usage: "<name> --reason <why> --authorized <grant> [--registry <path>] [--actor <who>]",
+  },
+  "surface unlock": {
+    summary: "Lift a surface lock: a human write, recorded on the surface's ledger issue",
+    flags: [v("--reason"), v("--authorized"), f("--registry"), v("--actor")],
+    pos: ["name?"],
+    usage: "<name> --authorized <grant> [--reason <why>] [--registry <path>] [--actor <who>]",
+  },
+  "surface digest": {
+    summary: "One row per registry surface of the unlocked one-way actions in a window, then one '@digest' line",
+    flags: [v("--since"), f("--registry")],
+    usage: "[--since <n>h|<n>d] [--registry <path>]",
+  },
 } as const;
 
 /** The gate plugin, with what the build supplies. */
@@ -83,6 +101,7 @@ export function gatePlugin(defaults: GateDefaults = {}) {
     rows: ROWS,
     handlers: {
       gate: async () => (await import("./gate")).gateHandler(defaults),
+      surface: async () => (await import("./surface-verb")).surfaceHandler(defaults),
     },
   });
 }

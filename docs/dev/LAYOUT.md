@@ -57,7 +57,8 @@ plugins/gate/           # `eris gate record|skip|check|ci`: index.ts (the manife
                         #   actor.ts (who recorded it), store.ts (the endpoint and the bounded 429 retry); `ci`: ci.ts (the event,
                         #   the route, the GET-only fetch), ci-verb.ts (the verb and its legs), registry.ts (.claude/surfaces.yml read
                         #   and matched), monotone.ts (the monotone leg), unlock.ts (the unlock leg), ledger.ts (lock and budget
-                        #   reads off a surface's ledger) (docs/GATE.md)
+                        #   reads off a surface's ledger) (docs/GATE.md); `eris surface lock|unlock|digest`: surface-verb.ts (the command
+                        #   line), surface-lock.ts (a lock and its lift as ledger receipts), surface-digest.ts (the roll-up)
 plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consult|status|policy|evidence|settings`: index.ts (the manifest), submit.ts
                         #   (submit, its unfit and stamp rules, and the group dispatch), client.ts (the credentialed GET,
                         #   POST or PUT every endpoint verb shares), classify.ts (local rubric scoring, HAL override
