@@ -9,6 +9,7 @@
 import type { ErisPlugin } from "../src/cli/plugin";
 import doctrine from "./doctrine";
 import { gatePlugin } from "./gate";
+import { type LoopDefaults, loopPlugin } from "./loop";
 import socrates from "./socrates";
 import { yakPlugin } from "./yak";
 
@@ -18,4 +19,11 @@ const yak = yakPlugin({ afterLogin: async () => (await import("./doctrine/pull")
 /** The gate verbs read the org's pulled, verified tree for their doctrine, profiles and policy sha. */
 const gate = gatePlugin({ pulled: async (ctx) => (await import("./doctrine/pull")).pulledTree(ctx) });
 
-export const PLUGINS: readonly ErisPlugin[] = [yak, socrates, doctrine, gate];
+/** The loop verbs read loop bodies only from the org's pulled, verified tree, pulled again when a claim names a newer bundle. */
+export const LOOP_DEFAULTS: LoopDefaults = {
+  policy: async (ctx, req) => (await import("./doctrine/pull")).freshTree(ctx, req.claimSha, { home: req.home, cwd: req.cwd, ...(req.fetch !== undefined ? { fetch: req.fetch } : {}) }),
+};
+
+const loop = loopPlugin(LOOP_DEFAULTS);
+
+export const PLUGINS: readonly ErisPlugin[] = [yak, socrates, doctrine, gate, loop];

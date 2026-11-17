@@ -16,7 +16,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { activePosture, type ContractFailure, fetchOrgPolicy, gateProfilesOf, type GatesEndpoint, invalidDoctrine } from "eris/gates-contract";
+import { activePosture, type ContractFailure, fetchOrgPolicy, gateProfilesOf, type GatesEndpoint, invalidDoctrine, type RetryOpts } from "eris/gates-contract";
 import { readArgs, type VerbContext } from "../../src/cli/plugin";
 import { checkGates } from "./check";
 import { decideCi, decodeEvent, eventInvalid, getOnlyFetch, issueKeyFrom, issueMissing, postureFromBundle, type PullRequestEvent, untrackedSurface, type WriteRefusal, writeRefused } from "./ci";
@@ -25,7 +25,7 @@ import { changedPaths, type Git, liveGit, memoReads, mergeBase, repoRoot } from 
 import plugin from "./index";
 import { judgeMonotone } from "./monotone";
 import { matchSurfaces } from "./registry";
-import { type RetryOpts, type StoreOptions, storeEndpoint } from "./store";
+import { type StoreOptions, storeEndpoint } from "./store";
 import { checkUnlock, humanSignoff, registryAt } from "./unlock";
 
 /** What the verb takes from the caller in a test; the process's own when absent. */

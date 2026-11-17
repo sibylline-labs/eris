@@ -4,9 +4,9 @@
  * window, and whether it is locked.
  */
 
-import { decodePayload, listReceipts, type GatesEndpoint, type SurfacesFile, UNLOCK_ACTIONS } from "eris/gates-contract";
+import { decodePayload, listReceipts, type GatesEndpoint, type RetryOpts, retryRateLimited, type SurfacesFile, UNLOCK_ACTIONS } from "eris/gates-contract";
+import { unwrap } from "./failure";
 import { lockState, monDd, UNLOCKED_GATES, type UnlockAction } from "./ledger";
-import { type RetryOpts, retryRateLimited } from "./store";
 
 export interface DigestRow {
   readonly name: string;
@@ -31,7 +31,7 @@ export async function surfaceDigest(ep: GatesEndpoint, retry: RetryOpts, registr
       rows.push({ name, ledger: undefined, counts, lock: "-" });
       continue;
     }
-    const { receipts } = await retryRateLimited(() => listReceipts(ep, spec.ledger!), retry);
+    const { receipts } = unwrap(await retryRateLimited(() => listReceipts(ep, spec.ledger!), retry));
     for (const c of receipts) {
       if (Date.parse(c.createdAt) < from) continue;
       const parsed = decodePayload(c.version, c.payload);

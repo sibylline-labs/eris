@@ -40,7 +40,9 @@ usage) plus the plugins a build composes in. This build's plugin is `eris yak`
   engine, plus the hosted org policy bundle (`bundle.ts`) and the client for the hosted gates API
   (`client.ts`, [`dev/GATES-CLIENT.md`](dev/GATES-CLIENT.md)). It imports only `effect`, `yaml`,
   `node:` builtins and the Web `fetch`/`crypto`, and returns a failure as data for its caller to render; `plugins/doctrine` (`eris doctrine`, [`DOCTRINE.md`](DOCTRINE.md)) and `plugins/gate`
-  (`eris gate`, [`GATE.md`](GATE.md)) are its CLI.
+  (`eris gate`, [`GATE.md`](GATE.md)) are its CLI, and `plugins/loop` (`eris loop`, [`LOOP.md`](LOOP.md))
+  claims, comments on and moves tracker issues through its `/v1/linear` routes, reading loop bodies
+  only from the doctrine plugin's pulled tree, which `plugins/index.ts` hands it (`loopPlugin({ policy })`).
 
 eris installs from npm only (`npx`, `bunx`, `bun add -g @sibylline-labs/eris`); the package's
 `bin/eris.ts` is the command. A checkout needs `bun install --frozen-lockfile` and no build step:

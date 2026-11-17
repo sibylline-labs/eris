@@ -48,13 +48,20 @@ ts/lib/pool.ts          # the bounded-concurrency runner process.ts's runMany us
 plugins/index.ts        # the plugins this build compiles in, composed by src/main.ts (docs/dev/PLUGINS.md)
 plugins/doctrine/       # `eris doctrine check|schema|gates|effect|pull|path`: index.ts (the manifest, and doctrinePlugin(defaults), the
                         #   same plugin reading a distribution's doctrine and profiles files), doctrine.ts (the
-                        #   handlers), pull.ts (pull and path), org-tree.ts (the pulled tree: write, verify, swap); the contract is packages/gates-contract, imported by name (docs/DOCTRINE.md)
+                        #   handlers), pull.ts (pull and path, and freshTree, the tree the loop verbs read), org-tree.ts (the pulled tree: write, verify, swap); the contract is packages/gates-contract, imported by name (docs/DOCTRINE.md)
+plugins/loop/           # `eris loop list|resolve|launch|status|resume|stop|reap|hand-back`: index.ts (the manifest, and loopPlugin(defaults): the org's verified
+                        #   tree a build supplies), handlers.ts (the dispatch and the one failure render), help.ts, deps.ts (the
+                        #   endpoint, the child env and the subprocess seam), names.ts (operand normalisers), target.ts (key or
+                        #   yak id), claims.ts (the claim and its ledger), body.ts (a body from the verified tree), prompt.ts
+                        #   (the header), claude.ts (the background-job runtime: ~/.claude/jobs, claude --bg, stop, agents),
+                        #   transitions.ts (In Progress and Todo moves), launch.ts, hand-back.ts, stop.ts, resume.ts, status.ts
+                        #   (a job's state, in-flight calls, newest message), reap.ts and reap-worktrees.ts (docs/LOOP.md)
 plugins/gate/           # `eris gate record|skip|check|ci`: index.ts (the manifest, and gatePlugin(defaults): the ladder file and the
                         #   org's pulled tree a build supplies), gate.ts (the command line and the one failure render), record.ts
                         #   (record and skip), check.ts (the statuses and the derived rows), artifact.ts and git.ts (where an
                         #   artifact lives, read through git), floor.ts, ladder.ts, burden.ts, surfaces.ts (the floor, the door rung,
                         #   the evidence burden and the surfaces a change crosses), render.ts and templates/ (the comment prose),
-                        #   actor.ts (who recorded it), store.ts (the endpoint and the bounded 429 retry); `ci`: ci.ts (the event,
+                        #   actor.ts (who recorded it), store.ts (the endpoint); `ci`: ci.ts (the event,
                         #   the route, the GET-only fetch), ci-verb.ts (the verb and its legs), registry.ts (.claude/surfaces.yml read
                         #   and matched), monotone.ts (the monotone leg), unlock.ts (the unlock leg), ledger.ts (lock and budget
                         #   reads off a surface's ledger) (docs/GATE.md); `eris surface lock|unlock|digest`: surface-verb.ts (the command
@@ -95,7 +102,8 @@ packages/gates-contract/ # the doctrine policy: contract, `eris/gates-contract`:
                         #   reader), src/active.ts, src/profile.ts, src/effect.ts (one sentence per changed knob),
                         #   src/schema.ts (the JSON Schema document), src/decode.ts (value-stripping decode),
                         #   src/bundle.ts (the hosted policy bundle, bundle_sha, its files), src/client.ts (the
-                        #   hosted gates API client, docs/dev/GATES-CLIENT.md)
+                        #   hosted gates API client, docs/dev/GATES-CLIENT.md), src/linear.ts (the /v1/linear and
+                        #   yak lookup replies), src/retry.ts (the bounded 429 retry the verbs share)
 packages/socrates-core/ # Socrates living-doc surgery, `eris/socrates-core`: src/doc-surgery.ts (applyOps, the pure
                         #   splices and guards; writeDoc, the fetch-splice-check-write-verify pipe over an injected
                         #   LinearDocPort; ensureDoc; parseTitle). Web APIs only: its tsconfig has no Bun/Node types.

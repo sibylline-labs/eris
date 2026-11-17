@@ -154,6 +154,13 @@ surface. A plugin's surfaces are documented with that plugin, not here.
 
 | `eris doctrine pull` | text: one `<orgId>\t<bundle_sha>` line. JSON: one bare record `{org, bundle_sha, dir}`. Every failure is the §4 block with nothing on stdout, exit `3`, and the previous tree left in place ([DOCTRINE.md](DOCTRINE.md#pull-and-path)) | accepted | experimental |
 | `eris doctrine path` | one line: the pulled `doctrine.md` through the org's link, `~/.eris/doctrine/<orgId>/doctrine.md`, printed only after the tree verifies; none pulled or an edited tree is the §4 block, exit `3` ([DOCTRINE.md](DOCTRINE.md#pull-and-path)) | refused | experimental |
+| `eris loop list` | text: one loop slug per line, sorted. JSON: one bare record `{loops: [...]}`. An edited tree is the §4 block (`doctrine-local-modified`), exit `3` ([LOOP.md](LOOP.md#list)) | accepted | experimental |
+| `eris loop resolve` | text: one issue key. JSON: one bare record `{issue, yak?}`. An operand that is neither a key nor a yak id is `loop-usage`, exit `2` ([LOOP.md](LOOP.md#resolve)) | accepted | experimental |
+| `eris loop launch` | text: one `delegated <ISSUE>[ (yak <8>)] → loop <slug> · <session> · model <model>` line. JSON: one bare record `{issue, slug, session, runtime, model, claimId?, yak?}`. An operand refused before anything is claimed is exit `2`; a runtime that failed to start is `loop-launch-failed`, exit `1`, after the claim was released ([LOOP.md](LOOP.md#launch)) | accepted | experimental |
+| `eris loop resume` | text: one `resumed <ISSUE> → loop <slug> · <id>` line per session. JSON: one bare record `{lines: [...]}` ([LOOP.md](LOOP.md#resume)) | accepted | experimental |
+| `eris loop stop` | text: one `stopped <ISSUE> → loop <slug> · <id>` line. JSON: one bare record `{lines: [...]}` ([LOOP.md](LOOP.md#stop)) | accepted | experimental |
+| `eris loop reap` | text: one line per session stopped, claim released and worktree removed (`dry-run:` lines with `--dry-run`), then one `reap: …` summary line. JSON: one bare record `{lines: [...]}`, the summary last ([LOOP.md](LOOP.md#reap)) | accepted | experimental |
+| `eris loop hand-back` | text: one `handed back <ISSUE> · …` line per write that landed. JSON: one bare record `{lines: [...], failed: [...]}`. A target that got nothing is `loop-hand-back-failed`, exit `1`, after the lines for what landed ([LOOP.md](LOOP.md#hand-back)) | accepted | experimental |
 
 Everything not listed is a **human surface**. Its stdout may change shape in any
 release. Parsing it is unsupported — ask for a machine surface instead.

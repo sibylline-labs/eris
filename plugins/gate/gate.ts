@@ -25,6 +25,7 @@ import {
   type GatesEndpoint,
   readDoctrineFile,
   readProfiles,
+  type RetryOpts,
 } from "eris/gates-contract";
 import { CliExit, groupArgs, readArgs, renderFailureBlock, type VerbContext, type VerbHandler } from "../../src/cli/plugin";
 import { resolveActor } from "./actor";
@@ -35,7 +36,7 @@ import { type Git, liveGit, memoReads } from "./git";
 import plugin, { type GateDefaults, type PulledTree } from "./index";
 import { readLadder } from "./ladder";
 import { type EvidenceInput, recordGate, skipGate, type WriteRun } from "./record";
-import { type RetryOpts, storeEndpoint } from "./store";
+import { storeEndpoint } from "./store";
 import { discoverPathsSurfaces } from "./surfaces";
 
 const ROWS = plugin.rows;

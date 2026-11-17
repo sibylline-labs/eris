@@ -1350,6 +1350,77 @@ The gate receipt store answered HTTP 429 and the verb's bounded retry (it waits 
 written; a write that was retried reused its comment id, so it was never stored twice. Wait the time
 the block names and re-run. Exit 3.
 
+### linear-issue-claimed
+
+`eris loop launch` or `resume` asked the gateway to claim an issue another loop holds (HTTP 409
+`issue_already_claimed`). The block names the holder's loop, runtime, session and when its claim
+expires. Nothing was claimed or spawned. Message that loop or wait for its hand-back; `eris loop stop`
+releases a claim this machine holds. Exit 3.
+
+### linear-state-not-found
+
+A loop asked the gateway to move an issue to a state its team's workflow does not have (HTTP 404
+`state_not_found`): `In Progress` on launch, `Todo` on stop. The loop verbs only warn with it; the
+session already started or stopped. Add the state to the team's workflow, or move the issue by hand.
+Exit 3.
+
+### yak-unresolved
+
+`eris loop resolve` or `launch` was given a yak id the gateway could not turn into an issue key: the
+yak is unknown, has no cluster yet, or its cluster has no tracker issue yet. Nothing was claimed or
+spawned. Pass the issue key instead, or re-run once the yak has an issue. Exit 2.
+
+### loop-usage
+
+An `eris loop` operand was refused before anything was claimed, requested or spawned: a loop name with
+`/`, `\` or `..`, an issue that is not a key, a `--cwd` that is relative, missing or `$HOME`, a missing
+`--model`, a `--context` or `--prompt` over 1,024 characters, a blank or oversized hand-back, a loop body
+off its caps, or the `claude` CLI not on PATH. The block names the operand. Correct it and re-run
+(`eris loop <command> --help`). Exit 2.
+
+### loop-unknown
+
+The org's pulled policy carries no loop by that name. The block lists the loops it does carry. Name one
+of them (`eris loop list`), or author the loop in the org's Gates settings, run `eris doctrine pull`, and
+re-run. Exit 2.
+
+### loop-launch-failed
+
+The `claude` CLI failed to start or stop a background session: it exited non-zero, printed no
+`backgrounded · <id> · <name>` receipt, timed out, or could not run. A launch that had claimed the issue
+released the claim (`aborted`, the reason as its body) before failing. Fix what the detail names (the
+CLI, its background daemon, the working directory) and re-run. Exit 1.
+
+### loop-hand-back-failed
+
+`eris loop hand-back` posted on some targets but not on the ones the block names; a WARN line above it
+says why for each. The receipt lines for the targets that did get the hand-back were printed first.
+Fix the cause (sign-in, the issue key, the gateway) and re-run the hand-back with the same body on the
+target that got nothing. Exit 1.
+
+### loop-session-not-found
+
+A `<ref>` (a session id, its exact name, or the issue key of a loop session) names no background
+session under `~/.claude/jobs/`. `claude agents` lists the sessions there. Exit 2.
+
+### loop-session-ambiguous
+
+A `<ref>` names more than one background session (two jobs with one name, or two working loops on one
+issue). The block lists their ids; pass one of them. Exit 2.
+
+### loop-claim-ledger-unwritable
+
+The claim ledger, `~/.eris/loop/claims/`, could not be written. A launch or resume that had reserved a
+claim released it (`aborted`) first, so no claim is held that this machine cannot name. Make the
+directory writable by you (it is created 0700) and re-run. Exit 3.
+
+### loop-secret-detected
+
+`eris loop hand-back` found a secret in the body: a vendored gitleaks rule (`packages/outbound-scan`)
+matched it. The `ERROR` line names the rule ids, never the text. Nothing was sent: the claim is still
+held and no comment was posted. This check cannot be overridden. Remove the secret from the hand-back
+and run it again. Exit 2.
+
 ### asks-store-unreachable
 
 The asks API (`GET /v1/asks`) gave no answer within the deadline, the network failed, or it answered

@@ -19,6 +19,19 @@
 import * as Schema from "effect/Schema";
 import { computeGatesBundleSha, GATES_POLICY_CONTRACT_VERSION, GatesBundleSha, type GatesOrgBundle, GatesPolicyReply, type GatesSettings, GatesSettingsReply } from "./bundle";
 import { decodeResult } from "./decode";
+import {
+  LINEAR_PATH,
+  type LinearClaim,
+  LinearClaimHolder,
+  LinearClaimReply,
+  LinearCommentReply,
+  LinearIssueReply,
+  LinearReleaseReply,
+  type TRANSITION_STATE_TYPES,
+  YAK_ULID_RE,
+  YakClusterReply,
+  YakObservationReply,
+} from "./linear";
 import { type ContractFailure, fail, type Outcome, succeed } from "./failure";
 
 export const POLICY_PATH = "/v1/gates/policy";
@@ -90,7 +103,10 @@ export type GatesClientSlug =
   | "doctrine-push-stale"
   | "doctrine-push-invalid"
   | "linear-issue-not-found"
+  | "linear-issue-claimed"
+  | "linear-state-not-found"
   | "linear-rate-limited"
+  | "yak-unresolved"
   | "asks-store-forbidden"
   | "asks-store-unreachable"
   | "asks-contract-mismatch"
@@ -171,6 +187,8 @@ interface Exchange {
   readonly body?: string | Uint8Array;
   /** Who is unreachable when the exchange fails: the gates store (default) or the asks API. */
   readonly unreachable?: (what: string) => ContractFailure;
+  /** `manual`: a 3xx is the answer, never followed, so the bearer cannot be carried to the host it names. */
+  readonly redirect?: "manual";
 }
 
 /** One request, its reply read under the cap and parsed; a timeout, network error or oversize reply is a failure. */
@@ -186,6 +204,7 @@ async function exchange(ep: GatesEndpoint, x: Exchange): Promise<Outcome<Answer>
       headers: { authorization: `Bearer ${ep.token}`, accept: "application/json, application/problem+json", ...x.headers },
       ...(x.body !== undefined ? { body: typeof x.body === "string" ? x.body : new Uint8Array(x.body) } : {}),
       signal: AbortSignal.timeout(x.timeoutMs ?? ep.timeoutMs),
+      ...(x.redirect !== undefined ? { redirect: x.redirect } : {}),
     });
     status = res.status;
     headers = res.headers;
@@ -667,4 +686,174 @@ export async function listAsks(ep: GatesEndpoint, q: AskQuery): Promise<Outcome<
   if (!ok2xx(a.value)) return fail(asksMismatch(`the asks API refused ${what} (HTTP ${status}, ${code})`));
   const d = decoded(a.value, what, AskListing, "ask@1", asksMismatch);
   return d.ok ? succeed(d.value.asks) : d;
+}
+
+// --- the /v1/linear routes and the yak lookup -------------------------------------------------------
+
+/** A reply is one issue, claim or comment: well under this. */
+const LINEAR_REPLY_MAX_BYTES = 1024 * 1024;
+const YAKS_REPLY_MAX_BYTES = 256 * 1024;
+
+/** An issue as a loop reads it: its key, state and parent. */
+export interface LinearIssueState {
+  readonly identifier: string;
+  readonly state: { readonly name: string; readonly type: string };
+  readonly parent: { readonly identifier: string; readonly state: { readonly name: string; readonly type: string } } | null;
+}
+
+/** What `claimIssue` sends: a reserve (no `sessionId`), or the same `claimId` with one to bind it. */
+export interface LinearClaimRequest {
+  readonly claimId: string;
+  readonly loop: string;
+  readonly runtime: string;
+  readonly sessionId?: string | undefined;
+}
+
+export interface ClaimedIssue {
+  readonly claim: LinearClaim;
+  readonly delegateStatus: string;
+  /** The org's live policy sha, when the gateway sends it. */
+  readonly bundleSha?: string;
+}
+
+export interface LinearReleaseRequest {
+  readonly claimId: string;
+  readonly outcome: "handed_back" | "aborted";
+  /** The hand-back (or the abort reason); absent, the gateway writes its own line. */
+  readonly body?: string | undefined;
+}
+
+export interface ReleasedClaim {
+  readonly released: boolean;
+  readonly reason?: string;
+}
+
+export interface LinearStateTarget {
+  readonly type: (typeof TRANSITION_STATE_TYPES)[number];
+  readonly name?: string | undefined;
+}
+
+const issuePath = (key: string) => `${LINEAR_PATH}/issues/${encodeURIComponent(key)}`;
+
+/** One `/v1/linear` POST: JSON body, never a followed redirect. */
+function linearPost(ep: GatesEndpoint, path: string, what: string, body: Record<string, unknown>): Promise<Outcome<Answer>> {
+  return exchange(ep, { method: "POST", path, what, maxBytes: LINEAR_REPLY_MAX_BYTES, headers: { "content-type": "application/json" }, body: JSON.stringify(body), redirect: "manual" });
+}
+
+const linearRefusal = (a: Answer, what: string): ContractFailure => storeRefusal(a, what, { receipt: true, issue: true });
+
+const issueState = (i: (typeof LinearIssueReply.Type)["issue"]): LinearIssueState => ({
+  identifier: i.identifier,
+  state: { name: i.state.name, type: i.state.type },
+  parent: i.parent === undefined || i.parent === null ? null : { identifier: i.parent.identifier, state: { name: i.parent.state.name, type: i.parent.state.type } },
+});
+
+/** The issue's state and its parent's (`GET /v1/linear/issues/{key}`). */
+export async function getIssue(ep: GatesEndpoint, key: string): Promise<Outcome<LinearIssueState>> {
+  const what = `the read of ${key}`;
+  const a = await exchange(ep, { method: "GET", path: issuePath(key), what, maxBytes: LINEAR_REPLY_MAX_BYTES, redirect: "manual" });
+  if (!a.ok) return a;
+  if (!ok2xx(a.value)) return fail(linearRefusal(a.value, what));
+  const d = decoded(a.value, what, LinearIssueReply, "linear-contract/v1");
+  return d.ok ? succeed(issueState(d.value.issue)) : d;
+}
+
+/** The 409's `fields.holder`, or null when the body carries none this client can read. */
+function claimHolder(body: unknown): typeof LinearClaimHolder.Type | null {
+  const fields = body !== null && typeof body === "object" ? (body as { fields?: { holder?: unknown } | null }).fields : undefined;
+  const d = decodeResult(LinearClaimHolder, fields?.holder);
+  return d._tag === "Success" ? d.success : null;
+}
+
+/**
+ * Reserve `key` for a loop, or bind (refresh) the caller's reservation to a session
+ * (`POST /v1/linear/issues/{key}/claim`). Another `claimId`'s live claim is `linear-issue-claimed`,
+ * naming the holder. One attempt.
+ */
+export async function claimIssue(ep: GatesEndpoint, key: string, req: LinearClaimRequest): Promise<Outcome<ClaimedIssue>> {
+  const what = `the claim of ${key}`;
+  const a = await linearPost(ep, `${issuePath(key)}/claim`, what, {
+    claim_id: req.claimId,
+    loop: req.loop,
+    runtime: req.runtime,
+    ...(req.sessionId !== undefined ? { session_id: req.sessionId } : {}),
+  });
+  if (!a.ok) return a;
+  if (a.value.status === 409 && a.value.code === "issue_already_claimed") {
+    const h = claimHolder(a.value.body);
+    if (h !== null) {
+      return fail(
+        failure(
+          "linear-issue-claimed",
+          `${key} is claimed by loop ${h.loop} (runtime ${h.runtime}, session ${h.session_id ?? "none bound"}) since ${h.claimed_at}, until ${h.expires_at}`,
+          "Message that loop or wait for its hand-back; nothing was claimed or spawned.",
+        ),
+      );
+    }
+  }
+  if (!ok2xx(a.value)) return fail(linearRefusal(a.value, what));
+  const d = decoded(a.value, what, LinearClaimReply, "linear-contract/v1");
+  if (!d.ok) return d;
+  return succeed({ claim: d.value.claim, delegateStatus: d.value.delegate_status, ...(d.value.bundle_sha !== undefined ? { bundleSha: d.value.bundle_sha } : {}) });
+}
+
+/** Release `claimId`'s claim on `key` (`POST .../release`); a stale id answers `released: false` with its reason. One attempt. */
+export async function releaseIssue(ep: GatesEndpoint, key: string, req: LinearReleaseRequest): Promise<Outcome<ReleasedClaim>> {
+  const what = `the release of ${key}`;
+  const a = await linearPost(ep, `${issuePath(key)}/release`, what, { claim_id: req.claimId, outcome: req.outcome, ...(req.body !== undefined ? { body: req.body } : {}) });
+  if (!a.ok) return a;
+  if (!ok2xx(a.value)) return fail(linearRefusal(a.value, what));
+  const d = decoded(a.value, what, LinearReleaseReply, "linear-contract/v1");
+  return d.ok ? succeed({ released: d.value.released, ...(d.value.reason !== undefined ? { reason: d.value.reason } : {}) }) : d;
+}
+
+/** Post one comment on `key` as the org's app (`POST .../comments`). One attempt. */
+export async function commentIssue(ep: GatesEndpoint, key: string, body: string): Promise<Outcome<{ readonly id: string }>> {
+  const what = `the comment on ${key}`;
+  const a = await linearPost(ep, `${issuePath(key)}/comments`, what, { body });
+  if (!a.ok) return a;
+  if (!ok2xx(a.value)) return fail(linearRefusal(a.value, what));
+  const d = decoded(a.value, what, LinearCommentReply, "linear-contract/v1");
+  return d.ok ? succeed({ id: d.value.comment.id }) : d;
+}
+
+/** Move `key` to a state of `to.type` (named `to.name` when given) (`POST .../transition`). A team with no such state is `linear-state-not-found`. */
+export async function transitionIssue(ep: GatesEndpoint, key: string, to: LinearStateTarget): Promise<Outcome<LinearIssueState>> {
+  const what = `the state update of ${key}`;
+  const a = await linearPost(ep, `${issuePath(key)}/transition`, what, { state_type: to.type, ...(to.name !== undefined ? { state: to.name } : {}) });
+  if (!a.ok) return a;
+  if (a.value.status === 404 && a.value.code === "state_not_found") {
+    return fail(failure("linear-state-not-found", `${key}'s team has no ${to.name ?? to.type} state (${to.type})`, "Add the state to the team's workflow, or move the issue by hand."));
+  }
+  if (!ok2xx(a.value)) return fail(linearRefusal(a.value, what));
+  const d = decoded(a.value, what, LinearIssueReply, "linear-contract/v1");
+  return d.ok ? succeed(issueState(d.value.issue)) : d;
+}
+
+const yakUnresolved = (what: string, fix: string): ContractFailure => ({ ...failure("yak-unresolved", what, fix), exit: 2 });
+
+/**
+ * The issue key yak `id` was filed under, on the same host and bearer: `GET /<v>/yaks/observations/<id>`
+ * names its cluster, and `GET /<v>/yaks/clusters/<cluster>` its current issue (a ULID reads `/v1`, a
+ * UUID `/v0`). A redirect is never followed. The key comes back as the server wrote it; the caller
+ * validates it as it would a typed one.
+ */
+export async function resolveYakIssue(ep: GatesEndpoint, id: string): Promise<Outcome<string>> {
+  const prefix = YAK_ULID_RE.test(id) ? "/v1/yaks" : "/v0/yaks";
+  const get = async <S extends Schema.Top>(path: string, what: string, missing: string, schema: S): Promise<Outcome<S["Type"]>> => {
+    const a = await exchange(ep, { method: "GET", path, what, maxBytes: YAKS_REPLY_MAX_BYTES, redirect: "manual" });
+    if (!a.ok) return a;
+    if (a.value.status === 404) return fail(yakUnresolved(missing, "Pass the issue key, or check the yak id against its 'recorded:' receipt."));
+    if (!ok2xx(a.value)) return fail(storeRefusal(a.value, what));
+    return decoded(a.value, what, schema);
+  };
+  const obs = await get(`${prefix}/observations/${encodeURIComponent(id)}`, `the lookup of yak ${id}`, `yak ${id} was not found`, YakObservationReply);
+  if (!obs.ok) return obs;
+  const cluster = obs.value.cluster_id ?? "";
+  if (cluster === "") return fail(yakUnresolved(`yak ${id} has no cluster yet`, "Re-run once the yak is clustered, or pass the issue key."));
+  const c = await get(`${prefix}/clusters/${encodeURIComponent(cluster)}`, `the lookup of yak ${id}'s cluster`, `yak ${id}'s cluster was not found`, YakClusterReply);
+  if (!c.ok) return c;
+  const key = c.value.current_issue_identifier ?? "";
+  if (key === "") return fail(yakUnresolved(`yak ${id} has no tracker issue yet`, "File an issue for the yak or wait for one to be filed, then pass its key."));
+  return succeed(key);
 }

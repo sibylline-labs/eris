@@ -53,13 +53,14 @@ import {
   repoGrantShaped,
   sha256Hex,
   uploadAsset,
+  type RetryOpts,
+  retryRateLimited,
 } from "eris/gates-contract";
 import { scanStrings } from "eris/outbound-scan";
 import { locateArtifact } from "./artifact";
 import { precondition, stop, unwrap, usage } from "./failure";
 import { type Git, repoRoot } from "./git";
 import { renderProse } from "./render";
-import { type RetryOpts, retryRateLimited } from "./store";
 
 /** What a write needs from its run: the store, git, where relative paths resolve from, the clock and the 429 policy. */
 export interface WriteRun {
@@ -196,7 +197,7 @@ function snapshotDoctrine(path: string, bytes: Buffer): GateDoctrine {
 
 /** The issue's prior decoded receipts, oldest first, so the prose omits unchanged fields. */
 async function priorReceipts(run: WriteRun, issue: string): Promise<GateReceipt[]> {
-  const listing = await retryRateLimited(() => listReceipts(run.ep, issue), run.retry);
+  const listing = unwrap(await retryRateLimited(() => listReceipts(run.ep, issue), run.retry));
   const dated: { readonly receipt: GateReceipt; readonly at: string }[] = [];
   for (const c of listing.receipts) {
     const parsed = decodePayload(c.version, c.payload);
@@ -294,7 +295,7 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
   };
   const prose = renderProse(receipt, await priorReceipts(run, input.issue));
   const commentId = input.commentId ?? randomUUID();
-  const comment = await retryRateLimited(() => appendReceipt(run.ep, { commentId, issue: input.issue, receipt, prose }), run.retry);
+  const comment = unwrap(await retryRateLimited(() => appendReceipt(run.ep, { commentId, issue: input.issue, receipt, prose }), run.retry));
   return { receipt, commentId: comment.id, recordSha256: comment.recordSha256, copied, secretRules };
 }
 

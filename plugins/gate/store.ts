@@ -1,14 +1,14 @@
 /**
  * store.ts — how the gate verbs reach the gates store: the gates client's endpoint on the `eris login`
- * bearer of the org this directory acts as, and the one bounded retry of a rate-limited call.
+ * bearer of the org this directory acts as.
  *
  * The client tries each call once and returns a 429 as a failure carrying `retryAfterMs`. Only calls
- * that are safe to repeat come through `retryRateLimited`: a receipt listing, and a receipt write keyed
- * by a comment id the caller chose, which the gateway dedupes on. An asset upload is never retried
- * (the store keeps every upload as a new asset).
+ * that are safe to repeat go through the client's `retryRateLimited` (eris/gates-contract): a receipt
+ * listing, and a receipt write keyed by a comment id the caller chose, which the gateway dedupes on. An
+ * asset upload is never retried (the store keeps every upload as a new asset).
  */
 
-import { type GatesEndpoint, gatesEndpoint, type Outcome } from "eris/gates-contract";
+import { type GatesEndpoint, gatesEndpoint } from "eris/gates-contract";
 import { resolveOrgBearer } from "../../src/cli/plugin";
 import { stop, unwrap } from "./failure";
 
@@ -33,36 +33,4 @@ export async function storeEndpoint(o: StoreOptions): Promise<GatesEndpoint> {
     return stop({ slug, what: bearer.reason, fix, docs: `docs/ERRORS.md#${slug}`, exit: 3 });
   }
   return unwrap(gatesEndpoint(bearer.value.url, bearer.value.token, { fetch: o.fetch, policySha: o.policySha, onStale: o.onStale }));
-}
-
-// lift-candidate: retry-after — bounded, jittered retry of a 429 on an idempotent call, waiting the reply's Retry-After
-
-export interface RetryOpts {
-  /** Fallback waits (ms) per retry when the reply names no `Retry-After`; the length is the retry bound. */
-  readonly delaysMs: ReadonlyArray<number>;
-  /** Upper bound (ms) on any single wait before jitter. */
-  readonly maxWaitMs: number;
-  /** How a wait is slept (tests pass one that returns at once). */
-  readonly sleep: (ms: number) => Promise<void>;
-  /** A source of numbers in [0, 1) for the jitter. */
-  readonly jitter: () => number;
-  /** Told of each retry before it sleeps: the unjittered wait and the 1-based attempt. */
-  readonly onRetry?: ((waitMs: number, attempt: number) => void) | undefined;
-}
-
-/** Largest fraction of a wait added as jitter, so loops that share one `Retry-After` do not wake together. */
-const JITTER_FRACTION = 0.25;
-
-/** Run `op`, retrying a rate-limited failure up to `delaysMs.length` times; any other failure, or the last, stops the verb. */
-export async function retryRateLimited<A>(op: () => Promise<Outcome<A>>, o: RetryOpts): Promise<A> {
-  for (let attempt = 0; ; attempt += 1) {
-    const res = await op();
-    if (res.ok) return res.value;
-    const hinted = res.failure.retryAfterMs;
-    if (!("retryAfterMs" in res.failure) || attempt >= o.delaysMs.length) return stop(res.failure);
-    const raw = hinted !== undefined && hinted !== null && hinted > 0 ? hinted : (o.delaysMs[attempt] ?? 0);
-    const waitMs = Math.max(0, Math.min(raw, o.maxWaitMs));
-    o.onRetry?.(waitMs, attempt + 1);
-    if (waitMs > 0) await o.sleep(waitMs + Math.floor(waitMs * JITTER_FRACTION * Math.min(Math.max(o.jitter(), 0), 0.999999)));
-  }
 }
