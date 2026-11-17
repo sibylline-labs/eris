@@ -1542,6 +1542,12 @@ merge-base, the head or in the working tree is one of those, is not valid YAML, 
 document, an anchor, alias or merge key, or is a symlink; the block names the side and each line.
 Exit 3.
 
+### surface-lock-unauthorized
+
+`eris surface lock` or `unlock` was given no `--authorized` grant, or a grant that is not a human
+one (`doctrine:<posture>` never signs). A lock and its lift are human writes: pass
+`--authorized 'Dan asked: <request>'`. Nothing was read or sent. Exit 3.
+
 ## Adding a new slug
 
 Call `reportFailure({ slug, what, fix, docs })` (it writes the block and

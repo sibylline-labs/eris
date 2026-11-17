@@ -10,6 +10,10 @@ eris gate record <gate> --issue <KEY> --verdict PASS|AMENDED|BLOCKING --artifact
 eris gate skip   <gate> --issue <KEY> --reason <why> --authorized <grant> --artifact <path>
 eris gate check  --issue <KEY> (--gates <a,b,...> | --profile <name>) [--expect <id,...>]
 eris gate ci     [--event <file>] [--registry <path>]
+
+eris surface lock   <name> --reason <why> --authorized <grant> [--registry <path>]
+eris surface unlock <name> --authorized <grant> [--reason <why>] [--registry <path>]
+eris surface digest [--since <n>h|<n>d] [--registry <path>]
 ```
 
 Every verb signs in with `eris login` (the org this directory acts as: `ERIS_ORG`, else `repo.org` in
@@ -153,3 +157,19 @@ registered surface (the registry at the fork or at the head) or the registry its
 
 The check needs the PR's base and head commits in the checkout (`fetch-depth: 0`); it accepts the
 merge commit a `pull_request` workflow checks out, judging the PR head that is its second parent.
+
+## surface
+
+The per-surface kill switch and the unlock roll-up over the registry (`.claude/surfaces.yml`,
+`--registry`). A surface that names a `ledger:` issue can be locked: `lock` records a `surface-lock`
+PASS receipt on that issue, `unlock` an AMENDED one, and the unlock leg of `eris gate ci` reads the
+latest of them, so a locked surface never unlocks a merge without a human signing it. Both are human
+writes: `--authorized` must be a human grant (`Dan asked: <request>`), and `doctrine:` or no grant stops
+with `surface-lock-unauthorized` before anything is sent. Locking a locked surface, or lifting an open
+one, records nothing and prints `-`; otherwise stdout is the receipt's comment id. An unreadable lock
+receipt reads locked, and so does a timestamp tie. The registry is the receipt's artifact, so inside a
+git checkout it must be committed and pushed first, as for `record --artifact`.
+
+`digest` prints one row per registry surface, `<surface>\t<ledger|->\t<merge>\t<deploy>\t<effect>\t<locked|open|->`,
+counting the `unlocked-<action>` receipts on its ledger inside `--since` (default `24h`), then one
+`@digest` line for the pulse.

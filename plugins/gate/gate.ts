@@ -227,7 +227,7 @@ function required(ctx: VerbContext, path: "gate record" | "gate skip" | "gate ch
 }
 
 /** Everything a sub-verb shares: the context, the pulled tree (or null), and how to reach the store. */
-interface Verb {
+export interface Verb {
   readonly ctx: VerbContext;
   readonly deps: GateDeps;
   readonly cwd: string;
@@ -240,13 +240,13 @@ interface Verb {
 }
 
 /** Fallback waits (ms) across 3 retries when a 429 on a write carries no `Retry-After`; at most 15 s each. */
-const RECORD_RETRY_DELAYS_MS: ReadonlyArray<number> = [1000, 2000, 4000];
-const RECORD_RETRY_MAX_WAIT_MS = 15_000;
+export const RECORD_RETRY_DELAYS_MS: ReadonlyArray<number> = [1000, 2000, 4000];
+export const RECORD_RETRY_MAX_WAIT_MS = 15_000;
 /** Fallback waits (ms) across 5 retries of a receipt read: about 95 s; at most 60 s each. */
-const CHECK_RATE_LIMIT_DELAYS_MS: ReadonlyArray<number> = [5000, 10_000, 20_000, 30_000, 30_000];
-const CHECK_RATE_LIMIT_MAX_WAIT_MS = 60_000;
+export const CHECK_RATE_LIMIT_DELAYS_MS: ReadonlyArray<number> = [5000, 10_000, 20_000, 30_000, 30_000];
+export const CHECK_RATE_LIMIT_MAX_WAIT_MS = 60_000;
 
-async function verbFor(ctx: VerbContext, defaults: GateDefaults, deps: GateDeps): Promise<Verb> {
+export async function verbFor(ctx: VerbContext, defaults: GateDefaults, deps: GateDeps): Promise<Verb> {
   const cwd = deps.cwd ?? process.cwd();
   const home = deps.home ?? ctx.env.HOME ?? homedir();
   let pulled: PulledTree | null = null;
@@ -280,7 +280,7 @@ async function verbFor(ctx: VerbContext, defaults: GateDefaults, deps: GateDeps)
   };
 }
 
-const writeRun = async (v: Verb, g = v.g): Promise<WriteRun> => ({ ep: await v.endpoint(), g, cwd: v.cwd, now: v.now, retry: v.retry(RECORD_RETRY_DELAYS_MS, RECORD_RETRY_MAX_WAIT_MS) });
+export const writeRun = async (v: Verb, g = v.g): Promise<WriteRun> => ({ ep: await v.endpoint(), g, cwd: v.cwd, now: v.now, retry: v.retry(RECORD_RETRY_DELAYS_MS, RECORD_RETRY_MAX_WAIT_MS) });
 
 function verdictOf(raw: string): GateVerdict {
   return (GATE_VERDICTS as readonly string[]).includes(raw) ? (raw as GateVerdict) : usage(`--verdict ${raw}: not PASS, AMENDED or BLOCKING`, "Pass --verdict PASS|AMENDED|BLOCKING.");
