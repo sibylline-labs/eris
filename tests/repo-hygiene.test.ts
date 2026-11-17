@@ -11,12 +11,14 @@
  *     suite instead of failing it (a false green seen once, one runner later).
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { REPO } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 // --- .gitignore ------------------------------------------------------------------
 

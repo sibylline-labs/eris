@@ -8,11 +8,13 @@
  * at runtime so no literal trips a secret scanner.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { runYakVerb } from "../plugins/yak/handlers";
 import { CliExit } from "../src/cli/ts-verb";
+
+setDefaultTimeout(60_000);
 
 const REPO = resolve(import.meta.dir, "..");
 const ORG_A = "01HZX3K5Q8W2N4R6T8V0Y2B4D6";

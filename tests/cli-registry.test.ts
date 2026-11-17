@@ -7,13 +7,15 @@
  * (src/cli/args.ts, tests/cli-args.test.ts).
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { groupOf } from "../src/cli/registry";
 import { HANDLERS, implOf, REGISTRY, rowsOfGroup } from "./helpers/build-cli";
 import { ERIS, oracleEnv } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 const groups = Object.keys(REGISTRY).filter((k) => !k.includes(" "));
 

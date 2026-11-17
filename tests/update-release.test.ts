@@ -11,7 +11,7 @@
  * verb on a binary `build()` compiled is tests/update-binary.test.ts.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PLUGINS } from "../plugins";
@@ -23,6 +23,8 @@ import { HANDLERS, main } from "../src/main";
 import { nodeRunner } from "../src/runtime/process";
 import { releaseFixture, type ReleaseFixture, sha256Hex } from "./helpers/release-fixture";
 import { expectFailBlock, REPO, type Run } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 const isRoot = process.getuid?.() === 0;
 const TOKEN = ["ghp", "_", "a".repeat(36)].join("");

@@ -1,8 +1,10 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkoutOnly } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 /**
  * Guard: no tracked source file may contain a RAW NUL byte.

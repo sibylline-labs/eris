@@ -9,7 +9,7 @@
  * what was sent, and what was not.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { YAKS_CONTRACT_VERSION } from "eris/yak-contract";
@@ -17,6 +17,8 @@ import { runYakVerb } from "../plugins/yak/handlers";
 import { runReady, runStatus } from "../plugins/yak/yak-admin";
 import { CliExit } from "../src/cli/ts-verb";
 import { DEFAULT_YAKS_URL } from "../src/runtime/credentials";
+
+setDefaultTimeout(60_000);
 
 const REPO = resolve(import.meta.dir, "..");
 

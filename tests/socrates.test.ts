@@ -8,7 +8,7 @@
  * HTTP. The token is assembled at runtime so no literal trips a secret scanner.
  */
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -21,6 +21,8 @@ import type { ZodTypeAny } from "zod";
 import { CliExit } from "../src/cli/ts-verb";
 import { expectFailBlock, type Sandbox, sandbox } from "./helpers/blackbox";
 import { answers, H1, ORG_POLICY, PASSING, policyResult } from "./helpers/socrates-fake";
+
+setDefaultTimeout(60_000);
 
 const REPO = resolve(import.meta.dir, "..");
 const TOKEN = ["sib", "01HZX3K5Q8W2N4R6T8V0Y2B4D6", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");

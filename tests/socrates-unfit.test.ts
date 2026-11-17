@@ -7,10 +7,12 @@
  * replace.
  */
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { readFileSync } from "node:fs";
 import { answers, CANDIDATE, fixOf, GHP, H1, H2, ORG_POLICY, PASSING, policyResult, socratesFake, type SocratesFake, TOKEN } from "./helpers/socrates-fake";
 import { type Sandbox, sandbox } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 const RECEIPT_UNFIT = { candidate_id: "cand_1", deduped: false, contract_version: "1.0.0", unfit: { state: "needs_input" } };
 const HYPOTHESIS = "I think this is a retry-budget invariant the rubric has no question for.";

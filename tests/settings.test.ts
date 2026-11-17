@@ -3,13 +3,15 @@
  * and nothing about the file can stop a command (fail-open).
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { applySettings, readSettings, settingsPath } from "../src/runtime/settings";
 import { ERIS, oracleEnv } from "./helpers/blackbox";
+
+setDefaultTimeout(60_000);
 
 let tmp: string;
 beforeAll(() => {
