@@ -224,6 +224,7 @@ describe("gatherProvenance — repo: a raw single-file peek, not a config merge"
   );
 
   // Fails (red) when an unreadable `.git` reads as "no checkout here": the walk crosses the nested checkout and reports the outer repo's service. Observed at provenance.repo.
+  // admits: boundary-io: nearestErisYaml crossing a nested checkout whose `.git` cannot be inspected; file modes are a runtime filesystem fact no checker sees
   it.skipIf(isRoot)(
     "halts at a nested `.git` directory or pointer file it cannot inspect, never reading the " +
       "manifest above it — observed at provenance.repo being absent",

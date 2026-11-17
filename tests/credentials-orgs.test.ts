@@ -132,7 +132,7 @@ describe("resolveOrgSelection", () => {
   });
 
   // Fails (red) when an unreadable `.git` reads as "no checkout here": the walk crosses the nested checkout and selects the enclosing manifest's repo.org (NFR-FAILCLOSED-1). Observed in the org resolution result.
-  // admits: a parent repo's org lent to a nested checkout whose marker cannot be inspected; file modes are a runtime fact
+  // admits: boundary-io: a parent repo's org lent to a nested checkout whose `.git` cannot be inspected; file modes are a runtime filesystem fact no checker sees
   it.skipIf(isRoot)("fails closed when a nested `.git` directory or pointer file cannot be inspected", async () => {
     const outer = checkout("outer-locked", `service: outer\nrepo:\n  org: ${ORG_B}\n`);
     const dirMarker = checkout("outer-locked/nested-dir");
