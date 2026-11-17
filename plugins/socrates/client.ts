@@ -92,7 +92,7 @@ export function printableMarkdown(text: string): string {
   return text.replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
 }
 
-export function fail(ctx: VerbContext, slug: SocratesSlug | OrgSlug | "yak-config-permissive" | "yak-config-malformed" | "yak-token-unresolved" | "yak-url-unresolved", what: string, fix: string): never {
+export function fail(ctx: VerbContext, slug: SocratesSlug | OrgSlug | "yak-config-permissive" | "yak-config-malformed" | "yak-token-unresolved" | "yak-url-unresolved" | "login-url-refused", what: string, fix: string): never {
   ctx.stderr.write(renderFailureBlock({ slug, what, fix }, ctx.erisDir));
   throw new CliExit(1);
 }

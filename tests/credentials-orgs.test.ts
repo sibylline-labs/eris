@@ -284,4 +284,29 @@ describe("the store on disk", () => {
     const rc = await resolveOrgBearer({ home, env: {}, cwd: c });
     expect("slug" in rc && [rc.slug, rc.fix.includes("eris login")]).toEqual(["org-not-signed-in", true]);
   });
+  // admits: a bearer resolved for a cleartext non-loopback URL, which the caller then sends; observed on the resolver's slug, per URL source
+  it("refuses a login URL that is not https or loopback http, whichever source named it", async () => {
+    const home = join(root, "home");
+    const cwd = checkout("repo-a", "service: a\n");
+    const refused = ["http://example.invalid", "http://10.0.0.1", "ftp://x", "not a url"];
+    const allowed = ["https://gates.example.com", "http://localhost:8080", "http://127.0.0.1:1", "http://[::1]:2"];
+    for (const url of refused) {
+      writeStore(home, { url, token: TOKEN_A });
+      const fromFile = await resolveOrgBearer({ home, env: {}, cwd });
+      expect("slug" in fromFile && fromFile.slug).toBe("login-url-refused");
+      expect(JSON.stringify(fromFile)).not.toContain(B64);
+      writeStore(home, { url: URL_A, token: TOKEN_A });
+      const fromEnv = await resolveOrgBearer({ home, env: { ERIS_YAKS_URL: url }, cwd });
+      expect("slug" in fromEnv && fromEnv.slug).toBe("login-url-refused");
+      const fromFlag = await resolveOrgBearer({ home, env: {}, cwd, flag: url });
+      expect("slug" in fromFlag && fromFlag.slug).toBe("login-url-refused");
+      const envToken = await resolveOrgBearer({ home, env: { ERIS_YAKS_TOKEN: TOKEN_A, ERIS_YAKS_URL: url }, cwd });
+      expect("slug" in envToken && envToken.slug).toBe("login-url-refused");
+    }
+    for (const url of allowed) {
+      writeStore(home, { url, token: TOKEN_A });
+      const r = await resolveOrgBearer({ home, env: {}, cwd });
+      expect("value" in r && r.value.url).toBe(url);
+    }
+  });
 });

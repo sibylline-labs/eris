@@ -1269,9 +1269,11 @@ machine, or set `ERIS_YAKS_TOKEN` to a `sib_` service token with its `ERIS_YAKS_
 
 ### login-url-refused
 
-The `eris login` URL the gates client would send the bearer to is not `https:`, or is `http:` on a
-host other than `localhost`, `127.0.0.1` or `[::1]`, or is not a URL at all. Nothing was sent: the
-bearer never crosses a cleartext link. Set `ERIS_YAKS_URL` (or the `url` in `~/.eris/yaks.json`) to
+The `eris login` URL a verb would send the bearer to is not `https:`, or is `http:` on a
+host other than `localhost`, `127.0.0.1` or `[::1]`, or is not a URL at all. Every verb that sends the
+bearer (`eris yak`, `eris socrates`, `eris gate`, `eris doctrine`, `eris loop`, `eris org`) resolves it
+through one check and stops before any request: the bearer never crosses a cleartext link. `eris yak`
+prints it as a warning and exits 0, as for every other sign-in problem. Set `ERIS_YAKS_URL` (or the `url` in `~/.eris/yaks.json`) to
 the gateway's `https` URL. Exit 3.
 
 ### gate-store-forbidden

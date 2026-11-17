@@ -15,7 +15,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { isatty } from "node:tty";
 import { type GatesEndpoint, gatesEndpoint, type RetryOpts } from "eris/gates-contract";
-import { readEnv, resolveOrgBearer, runCommand, type VerbContext } from "../../src/cli/plugin";
+import { readEnv, RESOLVER_OWN_HEADING_SLUGS, resolveOrgBearer, runCommand, type VerbContext } from "../../src/cli/plugin";
 import { stop, unwrap } from "./failure";
 import type { LoopDefaults, LoopTree } from "./index";
 
@@ -62,14 +62,11 @@ export function runOf(ctx: VerbContext, deps: LoopDeps): Run {
   };
 }
 
-/** The slugs the bearer resolver names that keep their own heading; every other miss is a login to run. */
-const RESOLVER_SLUGS = new Set(["yak-url-unresolved", "org-not-signed-in", "org-selector-invalid", "org-token-mismatch"]);
-
 /** The gates endpoint on the `eris login` bearer of the org `cwd` acts as; no login stops with `eris-login-required`. */
 export async function endpoint(run: Run, cwd = run.cwd): Promise<GatesEndpoint> {
   const bearer = await resolveOrgBearer({ home: run.home, env: run.env, cwd });
   if ("reason" in bearer) {
-    const slug = RESOLVER_SLUGS.has(bearer.slug) ? bearer.slug : "eris-login-required";
+    const slug = RESOLVER_OWN_HEADING_SLUGS.has(bearer.slug) ? bearer.slug : "eris-login-required";
     const fix = slug === "eris-login-required" ? "Run 'eris login' once on this machine (or set ERIS_YAKS_TOKEN to a sib_ service token), then re-run." : bearer.fix;
     return stop({ slug, what: bearer.reason, fix, docs: `docs/ERRORS.md#${slug}`, exit: 3 });
   }

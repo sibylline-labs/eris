@@ -38,6 +38,7 @@ export {
   readYaksFileConfig,
   readYaksFileConfigSync,
   removeOrgLogin,
+  RESOLVER_OWN_HEADING_SLUGS,
   resolveOrgBearer,
   resolveOrgSelection,
   resolveOrgSelectionSync,

@@ -83,6 +83,7 @@ describe("the package's exports", () => {
       "PluginCompositionError",
       "REGISTRY",
       "RELEASE_UPDATE",
+      "RESOLVER_OWN_HEADING_SLUGS",
       "SKILL_KINDS",
       "VERSION",
       "addOrgLogin",

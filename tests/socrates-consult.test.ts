@@ -81,6 +81,24 @@ describe("eris socrates consult: one doc", () => {
     expect(requests).toEqual([{ method: "GET", path: "/v1/socrates/consult", search: "?doc=canon", auth: `Bearer ${TOKEN}`, contentType: null, body: "" }]);
   });
 
+  it("refuses a plain-http login URL before sending the bearer", async () => {
+    /** When the scheme check is missing from the shared resolver, the socrates client sends the org bearer in cleartext to a non-loopback host: observed at the slug and the loopback endpoint's empty request log. */
+    const insecure = { ERIS_YAKS_URL: "http://example.invalid", ERIS_YAKS_TOKEN: TOKEN };
+    let stderr = "";
+    const ctx = { erisDir: REPO, env: { HOME: join(REPO, ".scratch", "no-such-home"), ...insecure }, format: "text" as const, stdout: { write: () => true }, stderr: { write: (s: string) => ((stderr += s), true) } };
+    let code = 0;
+    try {
+      code = await runSocrates(["consult", "--canon"], ctx);
+    } catch (e) {
+      if (!(e instanceof CliExit)) throw e;
+      code = e.code;
+    }
+    expect(code).not.toBe(0);
+    expect(stderr).toContain("slug: login-url-refused");
+    expect(stderr).not.toContain(TOKEN);
+    expect(requests).toEqual([]);
+  });
+
   it("sends the project hint with --practices", async () => {
     /** When --project is not carried into the query, an org with several enrolled projects answers 404 and the user cannot reach the doc; observed in the request's query. */
     expect(await drive(["consult", "--practices", "--project", "Platform Core"])).toMatchObject({ rc: 0, stdout: "# practices\nbody of practices\n" });

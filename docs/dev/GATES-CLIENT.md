@@ -10,7 +10,7 @@ and the order the gate verbs move onto it.
 | Concern | Rule |
 |---|---|
 | Credential | The `eris login` bearer for the org the directory acts as, resolved by the SDK's `resolveOrgBearer` (`ERIS_ORG`, else `repo.org` in the nearest `eris.yaml`, else the default org). The verb resolves it; the client takes `{ url, token }` and never reads a file or the environment. |
-| Origin | `gatesEndpoint(url, token)` refuses any URL that is not `https:`, or `http:` on `localhost`, `127.0.0.1` or `[::1]` (`login-url-refused`), before a client exists. The bearer never crosses a cleartext link. |
+| Origin | `resolveOrgBearer` refuses a login URL that is not `https:`, or `http:` on `localhost`, `127.0.0.1` or `[::1]` (`login-url-refused`) for every verb, and `gatesEndpoint(url, token)` repeats the check as the client's own guard: it refuses any URL that is not `https:`, or `http:` on `localhost`, `127.0.0.1` or `[::1]` (`login-url-refused`), before a client exists. The bearer never crosses a cleartext link. |
 | Transport | Plain `fetch` (injectable for tests), one attempt, a deadline over the whole exchange (20 s), a reply cap (1 MiB for the policy routes). No retry inside the client; a retry is the verb's decision, through the package's one bounded `retryRateLimited`. |
 | Decoding | A reply body is `unknown` until it decodes through its Effect Schema. A body that does not decode is `gate-contract-mismatch`; nothing undecoded reaches a verb. |
 | Trust | A bundle is trusted only when the client's own `computeGatesBundleSha` over the decoded values equals the server's `bundle_sha`. |
