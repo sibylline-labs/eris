@@ -17,13 +17,14 @@
  */
 
 import * as Schema from "effect/Schema";
-import { computeGatesBundleSha, type GatesBundleSha, type GatesOrgBundle, GatesPolicyReply, type GatesSettings, GatesSettingsReply } from "./bundle";
+import { computeGatesBundleSha, GATES_POLICY_CONTRACT_VERSION, GatesBundleSha, type GatesOrgBundle, GatesPolicyReply, type GatesSettings, GatesSettingsReply } from "./bundle";
 import { decodeResult } from "./decode";
 import { type ContractFailure, fail, type Outcome, succeed } from "./failure";
 
 export const POLICY_PATH = "/v1/gates/policy";
 export const SETTINGS_PATH = "/v1/gates/settings";
 export const RECEIPTS_PATH = "/v1/gates/receipts";
+export const DOCTRINE_COMMENTS_PATH = "/v1/gates/doctrine-comments";
 export const ASSETS_PATH = "/v1/gates/assets";
 export const ARTIFACTS_PATH = "/v1/gates/artifacts";
 export const ASKS_PATH = "/v1/asks";
@@ -85,6 +86,9 @@ export type GatesClientSlug =
   | "gate-store-unreachable"
   | "gate-contract-mismatch"
   | "doctrine-out-of-date"
+  | "doctrine-push-refused"
+  | "doctrine-push-stale"
+  | "doctrine-push-invalid"
   | "linear-issue-not-found"
   | "linear-rate-limited"
   | "asks-store-forbidden"
@@ -158,7 +162,7 @@ interface Answer {
 }
 
 interface Exchange {
-  readonly method: "GET" | "POST";
+  readonly method: "GET" | "POST" | "PUT";
   readonly path: string;
   readonly what: string;
   readonly maxBytes: number;
@@ -280,6 +284,133 @@ export async function fetchOrgPolicy(ep: GatesEndpoint): Promise<Outcome<PulledP
     return succeed({ bundle: policy.value.bundle, settings: settings.value.settings, bundle_sha: sha });
   }
   return fail(unreachable("the org's policy could not be read as one bundle"));
+}
+
+// --- the policy save and the doctrine-comment routes ----------------------------------------------
+
+const POLICY_SAVE_REPLY_MAX_BYTES = 64 * 1024;
+
+const PolicySaveReply = Schema.Struct({
+  contract: Schema.Literal(GATES_POLICY_CONTRACT_VERSION),
+  version: Schema.Number.check(Schema.makeFilter((n) => Number.isSafeInteger(n) && n > 0, { expected: "a positive integer" })),
+  bundle_sha: GatesBundleSha,
+  saved_at: Schema.String,
+});
+
+/** The version a policy save made. */
+export interface SavedPolicy {
+  readonly version: number;
+  readonly bundle_sha: GatesBundleSha;
+  readonly saved_at: string;
+}
+
+/** The refusal of a policy save, one slug per class; never names the bearer or the body. */
+function pushRefusal(a: Answer): ContractFailure | null {
+  const { status, code } = a;
+  if (status === 403 || status === 405) {
+    return failure(
+      "doctrine-push-refused",
+      `the gateway does not take policy saves on this bearer (HTTP ${status}, ${code})`,
+      "Policy saves from eris need an org admin's login and the org's gates_policy_dev_push flag on; otherwise change the policy in the org's Gates settings (Portal), then run 'eris doctrine pull'.",
+    );
+  }
+  if (status === 409) {
+    return failure(
+      "doctrine-push-stale",
+      `the org's policy changed while it was saved (HTTP 409, ${code})`,
+      "Copy your edited files out of ~/.eris/doctrine/<orgId>/, run 'eris doctrine pull', re-apply them, then 'eris doctrine push'.",
+    );
+  }
+  if (status === 400 || status === 413 || status === 422) {
+    return failure(
+      "doctrine-push-invalid",
+      `the gateway refused the policy (HTTP ${status}, ${code}): it is not a valid bundle, is over 256 KiB, or holds a credential`,
+      "Fix the edited files ('eris doctrine check --file <doctrine.md>' names doctrine problems), then 'eris doctrine push' again.",
+    );
+  }
+  return null;
+}
+
+/**
+ * Save `bundle` as the org's policy (`PUT /v1/gates/policy`). Sent once and never retried: a retry is the
+ * caller's decision, after it reads the live policy again.
+ */
+export async function putOrgPolicy(ep: GatesEndpoint, bundle: GatesOrgBundle): Promise<Outcome<SavedPolicy>> {
+  const what = "the org policy save";
+  const a = await exchange(ep, { method: "PUT", path: POLICY_PATH, what, maxBytes: POLICY_SAVE_REPLY_MAX_BYTES, headers: { "content-type": "application/json" }, body: JSON.stringify({ bundle }) });
+  if (!a.ok) return a;
+  if (!ok2xx(a.value)) return fail(pushRefusal(a.value) ?? (a.value.status === 401 || a.value.status >= 500 ? storeRefusal(a.value, what) : mismatch(`the gateway refused ${what} (HTTP ${a.value.status}, ${a.value.code})`)));
+  const d = decoded(a.value, what, PolicySaveReply);
+  return d.ok ? succeed({ version: d.value.version, bundle_sha: d.value.bundle_sha, saved_at: d.value.saved_at }) : d;
+}
+
+/** The doctrine-comment routes' contract version (the receipts' `gates-contract/v1`). */
+const DOCTRINE_CONTRACT_VERSION = GATES_RECEIPTS_CONTRACT_VERSION;
+const DOCTRINE_REPLY_MAX_BYTES = 1024 * 1024;
+
+const OpenIssuesReply = Schema.Struct({ issues: Schema.Array(Schema.String), contract_version: Schema.Literal(DOCTRINE_CONTRACT_VERSION) });
+const DoctrineCommentReply = Schema.Struct({
+  id: Schema.String,
+  issue: Schema.String,
+  body: Schema.String,
+  createdAt: Schema.String,
+  coalesced: Schema.Boolean,
+  contract_version: Schema.Literal(DOCTRINE_CONTRACT_VERSION),
+});
+
+/** A gzip+base64 copy of a posture section, as the doctrine-comment route stores it. */
+export interface PostureSnapshot {
+  readonly sha256: string;
+  readonly encoding: "gzip+base64";
+  readonly content: string;
+  readonly bytes: number;
+}
+
+/** What `postDoctrineComment` sends: a new comment, or an update of `replaceCommentId` in place. */
+export interface DoctrineCommentWrite {
+  readonly issue: string;
+  readonly commentId: string;
+  readonly replaceCommentId?: string | undefined;
+  readonly body: string;
+  readonly fromSnapshot: PostureSnapshot;
+  readonly toSnapshot: PostureSnapshot;
+}
+
+export interface DoctrineCommentWritten {
+  readonly id: string;
+  readonly issue: string;
+  readonly body: string;
+  readonly createdAt: string;
+  readonly coalesced: boolean;
+}
+
+/** The open issues among `candidates`, else every open issue holding a gate receipt (`GET /v1/gates/doctrine-comments`). */
+export async function listOpenIssues(ep: GatesEndpoint, candidates?: ReadonlyArray<string>): Promise<Outcome<ReadonlyArray<string>>> {
+  const what = "the open issues listing";
+  const qs = candidates !== undefined && candidates.length > 0 ? `?candidates=${encodeURIComponent(candidates.join(","))}` : "";
+  const a = await exchange(ep, { method: "GET", path: `${DOCTRINE_COMMENTS_PATH}${qs}`, what, maxBytes: DOCTRINE_REPLY_MAX_BYTES });
+  if (!a.ok) return a;
+  if (!ok2xx(a.value)) return fail(storeRefusal(a.value, what, { receipt: true }));
+  const d = decoded(a.value, what, OpenIssuesReply);
+  return d.ok ? succeed(d.value.issues) : d;
+}
+
+/** Post one doctrine-change comment, or coalesce into `replaceCommentId` (`POST /v1/gates/doctrine-comments`). One attempt: a retry reuses the same comment id. */
+export async function postDoctrineComment(ep: GatesEndpoint, write: DoctrineCommentWrite): Promise<Outcome<DoctrineCommentWritten>> {
+  const what = "the doctrine comment write";
+  const body = JSON.stringify({
+    issue: write.issue,
+    comment_id: write.commentId,
+    ...(write.replaceCommentId !== undefined ? { replace_comment_id: write.replaceCommentId } : {}),
+    body: write.body,
+    from_snapshot: write.fromSnapshot,
+    to_snapshot: write.toSnapshot,
+  });
+  const a = await exchange(ep, { method: "POST", path: DOCTRINE_COMMENTS_PATH, what, maxBytes: DOCTRINE_REPLY_MAX_BYTES, headers: { "content-type": "application/json" }, body });
+  if (!a.ok) return a;
+  if (!ok2xx(a.value)) return fail(storeRefusal(a.value, what, { receipt: true, issue: true }));
+  const d = decoded(a.value, what, DoctrineCommentReply);
+  return d.ok ? succeed({ id: d.value.id, issue: d.value.issue, body: d.value.body, createdAt: d.value.createdAt, coalesced: d.value.coalesced }) : d;
 }
 
 // --- the receipt routes ---------------------------------------------------------------------------

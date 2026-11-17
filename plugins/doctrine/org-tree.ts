@@ -20,7 +20,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import * as Schema from "effect/Schema";
 import {
@@ -34,6 +34,7 @@ import {
   GatesBundleSha,
   GatesOrgBundle,
   GatesSettings,
+  isBundleFile,
   type Outcome,
   type PulledPolicy,
   renderBundle,
@@ -134,6 +135,63 @@ export async function verifyTree(dir: string, org: string): Promise<Outcome<Doct
   return { ok: true, value: manifest };
 }
 
+/** An edited tree's bundle: the manifest it was pulled on, the bundle its files hold, and that bundle's sha over the manifest's settings. */
+export interface LocalBundle {
+  readonly manifest: DoctrineManifest;
+  readonly bundle: GatesOrgBundle;
+  readonly bundle_sha: string;
+}
+
+function pushInvalid(org: string, what: string): ContractFailure {
+  return {
+    slug: "doctrine-push-invalid",
+    what: `~/.eris/doctrine/${org}/: ${what}, so it cannot be pushed`,
+    fix: "Fix or remove the named file ('eris doctrine check --file <doctrine.md>' names doctrine problems), then 'eris doctrine push' again.",
+    docs: "docs/ERRORS.md#doctrine-push-invalid",
+    exit: 3,
+  };
+}
+
+/**
+ * Read an edited tree for a push, trusting none of its file hashes: the manifest (for the base `bundle_sha`
+ * and the settings), then every file, decoded as `verifyTree` decodes them. A file a bundle would not carry
+ * is refused rather than dropped, because the swap after a push removes the old tree and everything in it.
+ */
+export async function readLocalBundle(dir: string, org: string): Promise<Outcome<LocalBundle>> {
+  const invalid = (what: string): Outcome<never> => ({ ok: false, failure: pushInvalid(org, what) });
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(join(dir, MANIFEST), "utf8"));
+  } catch {
+    return invalid(`${MANIFEST} is unreadable`);
+  }
+  const decoded = decodeResult(DoctrineManifest, raw);
+  if (decoded._tag !== "Success") return invalid(`${MANIFEST} is not a manifest`);
+  const manifest = decoded.success;
+  if (manifest.org !== org) return invalid(`${MANIFEST} names org ${manifest.org}`);
+  let present: string[];
+  try {
+    present = listTree(dir);
+  } catch {
+    return invalid("its files are unreadable");
+  }
+  const stray = present.find((p) => !isBundleFile(p));
+  if (stray !== undefined) return invalid(`${stray} is not part of a policy bundle (doctrine.md, profiles.yaml, loops/<slug>.md)`);
+  const files: Record<string, string> = {};
+  for (const rel of present) {
+    try {
+      files[rel] = readFileSync(join(dir, rel), "utf8");
+    } catch {
+      return invalid(`${rel} is unreadable`);
+    }
+  }
+  const input = bundleFromFiles(files);
+  if ("bad" in input) return invalid(input.bad);
+  const bundle = decodeResult(GatesOrgBundle, input.value);
+  if (bundle._tag !== "Success") return invalid("its files do not decode as a policy bundle");
+  return { ok: true, value: { manifest, bundle: bundle.success, bundle_sha: await computeGatesBundleSha(bundle.success, manifest.settings) } };
+}
+
 /** The org's verified tree, null when it has none; `doctrine-local-modified` when it was edited. */
 export async function orgTree(home: string, org: string): Promise<Outcome<OrgTree | null>> {
   const link = orgPath(home, org);
@@ -228,3 +286,15 @@ export async function materialize(home: string, org: string, pulled: PulledPolic
 
 /** The doctrine file through the org's link, as `doctrine path` prints it. */
 export const linkedDoctrineFile = (home: string, org: string): string => join(orgPath(home, org), BUNDLE_DOCTRINE_FILE);
+
+/** Whether `file` lies inside the doctrine store: a pulled tree is changed in the org's Gates settings, never edited in place. */
+export function inDoctrineStore(home: string, file: string): boolean {
+  const root = doctrineRoot(home);
+  let real = file;
+  try {
+    real = realpathSync(file);
+  } catch {
+    real = file;
+  }
+  return real.startsWith(`${root}/`) || (existsSync(root) && real.startsWith(`${realpathSync(root)}/`));
+}

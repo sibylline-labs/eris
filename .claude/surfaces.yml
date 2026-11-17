@@ -23,6 +23,8 @@ surfaces:
       - plugins/socrates/settings-panels.ts
       - packages/gates-contract/src/client.ts
       - plugins/doctrine/pull.ts
+      - plugins/doctrine/push.ts
+      - plugins/doctrine/set.ts
       - plugins/gate/store.ts
       - plugins/gate/ci-verb.ts
       - scripts/vendor-gitleaks.ts
@@ -33,6 +35,9 @@ surfaces:
       - tests/org-send-sites.test.ts
       - tests/yak-reports.test.ts
       - tests/doctrine-pull.test.ts
+      - tests/doctrine-push.test.ts
+      - tests/doctrine-set.test.ts
+      - tests/doctrine-push-set-e2e.test.ts
       - tests/gates-client-receipts.test.ts
       - tests/gate-verbs.test.ts
       - tests/gate-ci.test.ts
@@ -48,7 +53,7 @@ surfaces:
       credentials.ts resolves the bearer and the URL it may go to, and
       yak.ts, yak-admin.ts, org.ts and client.ts carry it, as do the gates
       client (packages/gates-contract/src/client.ts, which also refuses a
-      non-https, non-loopback URL), doctrine/pull.ts and gate/store.ts, gate/ci-verb.ts (which carries
+      non-https, non-loopback URL), doctrine/pull.ts, doctrine/push.ts and doctrine/set.ts (the same bearer, over PUT and POST) and gate/store.ts, gate/ci-verb.ts (which carries
       the bearer GET-only: `eris gate ci` builds its one endpoint on a fetch
       that refuses any other method before the network), tokens.ts mints and prints a service token's secret once, discover.ts strips a remote url's
       credentials before keeping it; the test files

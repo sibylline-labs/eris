@@ -1236,7 +1236,7 @@ directory uses. Exit 1.
 ### doctrine-unknown-verb
 
 `eris doctrine <word>` named no doctrine command. The commands are `check`, `schema`, `gates`,
-`effect`, `pull` and `path`; `eris doctrine --help` lists them. Exit 1.
+`effect`, `set`, `pull`, `push` and `path`; `eris doctrine --help` lists them. Exit 1.
 
 ### doctrine-org-unresolved
 
@@ -1257,8 +1257,8 @@ The org's pulled tree under `~/.eris/doctrine/<orgId>/` no longer matches what w
 edited, added or removed, the manifest does not decode, or the files no longer hash to the manifest's
 `bundle_sha`. The block names the first difference. Every verb that reads the tree checks it first
 (`eris doctrine path` does), so an edited policy is never read as the org's. Run `eris doctrine pull`
-to restore it; it replaces the tree without reading it. Change the policy in the org's Gates
-settings, not on disk. Exit 3.
+to restore it; it replaces the tree without reading it. To keep the edit instead, `eris doctrine
+push` saves it as the org's policy. Exit 3.
 
 ### eris-login-required
 
@@ -1295,6 +1295,40 @@ contract), a reply over the size cap, or a policy bundle whose values do not has
 `bundle_sha` the server named. A pulled bundle that does not survive being written to disk and read
 back is also this slug. Nothing was written. Update eris (`eris update`); if it persists, the gateway
 and this client disagree on the gates contract. Exit 3.
+
+### doctrine-push-refused
+
+The gateway does not take a policy save on this bearer (HTTP 403 or 405 from `PUT /v1/gates/policy`):
+the login is not an org admin's, or the org has not turned on policy saves from eris. Nothing was
+saved and the tree under `~/.eris/doctrine/<orgId>/` is as you left it. Change the policy in the
+org's Gates settings, then run `eris doctrine pull`; or have an org admin sign in and enable saves.
+Exit 3.
+
+### doctrine-push-stale
+
+The org's live policy is not the one your edited tree was pulled on, so pushing would revert the
+newer save (or the gateway answered HTTP 409 to the save). Nothing was saved and the tree is
+untouched. Copy your edited files out of `~/.eris/doctrine/<orgId>/`, run `eris doctrine pull`,
+re-apply them, then push again. Exit 3.
+
+### doctrine-push-invalid
+
+The tree cannot be pushed: it holds a file a policy bundle does not carry, a file that does not
+decode (the block names it), or the gateway refused the bundle (HTTP 400, 413 or 422: not a valid
+bundle, over 256 KiB, or holding a credential). Nothing was saved and the tree is untouched. Fix or
+remove the named file (`eris doctrine check --file <doctrine.md>` names doctrine problems), then push
+again. Exit 3.
+
+### doctrine-org-managed
+
+`eris doctrine set` was pointed at a file inside `~/.eris/doctrine/`, the org's pulled policy, which
+this machine never edits in place. Change the active posture in the org's Gates settings, then run
+`eris doctrine pull`; or pass `--file` naming a local doctrine file. Exit 3.
+
+### doctrine-posture-unknown
+
+`eris doctrine set <posture>` named a posture the doctrine file has no `## <posture>` section for. The
+block lists the slugs it does have (`eris doctrine check` lists them too). Exit 3.
 
 ### doctrine-out-of-date
 

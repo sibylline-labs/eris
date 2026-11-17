@@ -61,8 +61,15 @@ export interface Pulled {
   readonly dir: string;
 }
 
-/** Pull the org this directory acts as: its bundle fetched, verified and swapped in, or the failure. */
-export async function pullOrg(ctx: VerbContext, deps: PullDeps = {}): Promise<Outcome<Pulled>> {
+/** The org this directory acts as, its login bearer and the home its trees live under. */
+export interface ResolvedOrg {
+  readonly org: string;
+  readonly home: string;
+  readonly bearer: { readonly url: string; readonly token: string };
+}
+
+/** The org bearer: the org this directory acts as, or the slugged failure that names the login to run. `why` ends the sentence "so there is no org policy to ..." */
+export async function resolveOrg(ctx: VerbContext, deps: PullDeps, why: string): Promise<Outcome<ResolvedOrg>> {
   const h = home(ctx, deps);
   const bearer = await resolveOrgBearer({ home: h, env: ctx.env, cwd: deps.cwd ?? process.cwd() });
   if ("reason" in bearer) {
@@ -74,13 +81,21 @@ export async function pullOrg(ctx: VerbContext, deps: PullDeps = {}): Promise<Ou
   if (org === null) {
     return fail({
       slug: "doctrine-org-unresolved",
-      what: "the eris login bearer for this directory names no org, so there is no org policy to pull",
+      what: `the eris login bearer for this directory names no org, so ${why}`,
       fix: "Run 'eris login' to mint an org bearer (sib_<org>_...), or set ERIS_ORG to the org this directory acts as.",
       docs: "docs/ERRORS.md#doctrine-org-unresolved",
       exit: 3,
     });
   }
-  const ep = gatesEndpoint(bearer.value.url, bearer.value.token, { fetch: deps.fetch });
+  return succeed({ org, home: h, bearer: { url: bearer.value.url, token: bearer.value.token } });
+}
+
+/** Pull the org this directory acts as: its bundle fetched, verified and swapped in, or the failure. */
+export async function pullOrg(ctx: VerbContext, deps: PullDeps = {}): Promise<Outcome<Pulled>> {
+  const resolved = await resolveOrg(ctx, deps, "there is no org policy to pull");
+  if (!resolved.ok) return resolved;
+  const { org, home: h, bearer } = resolved.value;
+  const ep = gatesEndpoint(bearer.url, bearer.token, { fetch: deps.fetch });
   if (!ep.ok) return ep;
   const pulled = await fetchOrgPolicy(ep.value);
   if (!pulled.ok) return pulled;
