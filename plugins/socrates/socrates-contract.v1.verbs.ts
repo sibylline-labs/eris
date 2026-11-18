@@ -62,6 +62,7 @@ export const SOCRATES_ROUTES = {
   settings: { method: "GET", path: "/v1/socrates/settings" },
   settings_policy: { method: "PUT", path: "/v1/socrates/settings/policy" },
   settings_canon: { method: "PUT", path: "/v1/socrates/settings/canon" },
+  settings_enrolment: { method: "PUT", path: "/v1/socrates/settings/enrolment" },
 } as const;
 
 export const SOCRATES_GATE_REASON_MAX_LENGTH = 500;
@@ -272,6 +273,20 @@ export type SocratesSettingsPolicyRequest = z.infer<typeof SocratesSettingsPolic
 /** `doc` is a Linear document id; `null` clears the Canon doc. */
 export const SocratesSettingsCanonRequest = z.object({ schema_version: Version, doc: Id.nullable(), expected_version: NonNegativeInt.optional() });
 export type SocratesSettingsCanonRequest = z.infer<typeof SocratesSettingsCanonRequest>;
+
+/** `project` is a Linear project id or name, sent as typed and resolved by the server; `enrolled: false` removes it. */
+export const SocratesSettingsEnrolmentRequest = z.object({ schema_version: Version, project: ProjectHint, enrolled: z.boolean() });
+export type SocratesSettingsEnrolmentRequest = z.infer<typeof SocratesSettingsEnrolmentRequest>;
+
+/** The Linear id the project resolved to, and its enrolment state after the write. */
+export const SocratesSettingsEnrolmentReceipt = z.object({
+  project: Id,
+  enrolled: z.boolean(),
+  source: z.enum(["label", "stub"]).nullable(),
+  contract_version: Version,
+});
+export type SocratesSettingsEnrolmentReceipt = z.infer<typeof SocratesSettingsEnrolmentReceipt>;
+export const SocratesSettingsEnrolmentResponse = z.union([SocratesSettingsEnrolmentReceipt, SocratesProblem]);
 
 /** What every settings write answers: the version it stored and the hash that version carries. */
 export const SocratesSettingsReceipt = z.object({

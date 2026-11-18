@@ -456,6 +456,36 @@
           {"rubric_version": "rubric@v1", "policy_version": 2, "policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": {"gates": {"reversibility": {"enabled": true, "weight": 0}, "scope": {"enabled": false, "weight": 2.5}}, "threshold": 3, "verbosity": "load_bearing", "escalation": "evidence", "auto_resolve": false, "reporting": "none"}, "canon_doc_id": "", "contract_version": "1.0.0"}
         ]
       }
+    },
+    "settings_enrolment": {
+      "request": {
+        "accept": [
+          {"schema_version": "1.0.0", "project": "Platform", "enrolled": true},
+          {"schema_version": "1.0.0", "project": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "enrolled": false}
+        ],
+        "reject": [
+          {"schema_version": "1.0.0"},
+          {"schema_version": "1.0.0", "project": "", "enrolled": true},
+          {"schema_version": "1.0.0", "project": "Platform"},
+          {"schema_version": "1.0.0", "project": "Platform", "enrolled": "yes"},
+          {"project": "Platform", "enrolled": true},
+          {"schema_version": "1.0.0", "project": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp", "enrolled": true}
+        ]
+      },
+      "response": {
+        "accept": [
+          {"project": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "enrolled": true, "source": "stub", "contract_version": "1.0.0"},
+          {"project": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "enrolled": false, "source": null, "contract_version": "1.0.0"},
+          {"type": "urn:hera:error:forbidden", "title": "Forbidden", "status": 403, "detail": "Only an admin can enrol or unenrol a project", "code": "admin_required"},
+          {"type": "urn:hera:error:conflict", "title": "Conflict", "status": 409, "detail": "More than one Linear project is named Platform", "code": "conflict"}
+        ],
+        "reject": [
+          {},
+          {"project": "x", "enrolled": true, "source": "dash", "contract_version": "1.0.0"},
+          {"project": "", "enrolled": true, "source": null, "contract_version": "1.0.0"},
+          {"project": "x", "enrolled": true, "source": null}
+        ]
+      }
     }
   }
 }

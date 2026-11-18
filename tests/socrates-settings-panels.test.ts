@@ -19,6 +19,7 @@ const golden = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "socrat
   messages: { settings: { response: { accept: Record<string, any>[] } } };
 };
 const SERVED = golden.messages.settings.response.accept[1]!;
+const ENROLLED_ID = "da12bb11-7add-4cd3-a4a7-8057a1475c72";
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 
@@ -56,6 +57,9 @@ beforeAll(() => {
       if (req.method === "PUT" && url.pathname === "/v1/socrates/settings/canon") {
         state.canon = body.doc;
         return Response.json(receipt());
+      }
+      if (req.method === "PUT" && url.pathname === "/v1/socrates/settings/enrolment") {
+        return Response.json({ project: ENROLLED_ID, enrolled: body.enrolled, source: body.enrolled ? "stub" : null, contract_version: "1.0.0" });
       }
       if (req.method === "GET" && url.pathname === "/v1/socrates/consult") {
         if (state.canon === null) return problem(409, "conflict", "no Canon doc is chosen");
@@ -271,6 +275,51 @@ describe("settings canon", () => {
   it("refuses a secret in the document id before anything leaves the machine", async () => {
     /** When the id is not scanned, a pasted token travels in the PUT body; observed as the slug and an empty request log. */
     const r = await drive(["settings", "canon", "--doc", GITHUB_TOKEN]);
+    expect(r.slug).toBe("socrates-secret-detected");
+    expect(requests).toHaveLength(0);
+  });
+});
+
+describe("enrol", () => {
+  // admits: boundary-io: the verb sending a project name the server cannot match, or reporting success on a refused write; the request and the exit code only exist over real HTTP.
+  it("enrol <project> sends the name and enrolled: true to the route and prints the id it resolved to", async () => {
+    const r = await drive(["enrol", "Platform"]);
+    expect(r.rc).toBe(0);
+    expect(r.stdout).toBe(`enrolled Platform: ${ENROLLED_ID} (stub)\n`);
+    expect(puts()).toHaveLength(1);
+    expect(puts()[0]).toMatchObject({ path: "/v1/socrates/settings/enrolment", auth: `Bearer ${TOKEN}`, body: { schema_version: "1.0.0", project: "Platform", enrolled: true } });
+  });
+
+  it("--remove sends enrolled: false, `settings enrolment <project>` is the same write, and --output json prints the receipt", async () => {
+    const off = await drive(["enrol", "Platform", "--remove"]);
+    expect(off.stdout).toBe(`unenrolled Platform: ${ENROLLED_ID}\n`);
+    const alias = await drive(["settings", "enrolment", "Platform"], { format: "json" });
+    expect(JSON.parse(alias.stdout)).toEqual({ project: ENROLLED_ID, enrolled: true, source: "stub", contract_version: "1.0.0" });
+    expect(puts().map((r) => r.body.enrolled)).toEqual([false, true]);
+  });
+
+  it("a refused write exits non-zero with the endpoint's detail and a fix line, and a missing <project> sends nothing", async () => {
+    refuse = { method: "PUT", path: "/v1/socrates/settings/enrolment", status: 403, code: "admin_required" };
+    const denied = await drive(["enrol", "Platform"]);
+    expect(denied.rc).not.toBe(0);
+    expect(denied.slug).toBe("socrates-refused");
+    expect(denied.stderr).toContain("admin_required");
+    expect(denied.stderr).toContain("ask an org admin to run this command");
+
+    refuse = { method: "PUT", path: "/v1/socrates/settings/enrolment", status: 409, code: "conflict" };
+    const clash = await drive(["enrol", "Platform"]);
+    expect(clash.stderr).toContain("pass the project's id");
+
+    refuse = undefined;
+    requests.length = 0;
+    const none = await drive(["enrol"]);
+    expect(none.rc).not.toBe(0);
+    expect(none.slug).toBe("socrates-flag-required");
+    expect(requests).toHaveLength(0);
+  });
+
+  it("a secret-shaped argument is refused before anything is sent", async () => {
+    const r = await drive(["enrol", GITHUB_TOKEN]);
     expect(r.slug).toBe("socrates-secret-detected");
     expect(requests).toHaveLength(0);
   });

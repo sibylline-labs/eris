@@ -80,7 +80,7 @@ plugins/socrates/       # `eris socrates submit|classify|resolve|discover|consul
                         #   resolve.ts (a closed review Epic, resolved on the server), discover.ts (first-parent
                         #   commits after the per-repo cursor in ~/.eris/socrates/cursors.json), consult.ts (a living
                         #   doc, or a brief of six, read whole over the consult route), settings.ts (`settings team`, and the group's routing) and
-                        #   settings-panels.ts (`settings policy|enrolment|health|usage|canon` over the settings read model),
+                        #   settings-panels.ts (`settings policy|enrolment|health|usage|canon` over the settings read model, and `enrol`),
                         #   socrates-contract.v1.ts (the vendored submit contract, unfit included) and
                         #   socrates-contract.v1.verbs.ts (classify, policy, evidence, consult, resolve,
                         #   status, settings); their golden file is tests/fixtures/socrates-contract-v1.json

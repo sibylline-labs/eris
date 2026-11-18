@@ -76,6 +76,7 @@ Never invent a house rule.
 | `eris socrates policy` | Print the org's policy that `classify` and `submit` apply |
 | `eris socrates discover` | List the commits in this repo that no candidate has covered yet |
 | `eris socrates resolve` | Resolve a closed review Epic |
+| `eris socrates enrol` | Enrol a Linear project in Socrates, by name or id (an org admin's); `--remove` unenrols it |
 | `eris socrates settings team` | Set which Linear team reviews file on (an org admin's); takes a team key, name or id |
 
 Before you run a verb for the first time, run `eris socrates <verb> --help` and follow it.
