@@ -1160,8 +1160,9 @@ team is not one of the project's teams (the detail lists them). For
 policy change means it was saved by someone else since it was read: run the
 command again. For `enrol` (and `settings enrolment <project>`) a 403 means
 only an org admin may enrol, a 404 that no project readable to Socrates has
-that name or id, and a 409 that more than one project has that name (the detail
-lists their ids: pass one). For
+that name or id, and a 409 `linear_ref_ambiguous` that more than one project has that name (the
+`fix:` line lists each candidate's id and name: pass one id), and a 409
+`linear_disconnected` that the org's Linear connection must be restored first. For
 `consult`, a 404 means the org has several enrolled projects and `--project`
 was not passed (the detail lists them) or the project has not created that doc,
 and a 409 means no Canon doc has been chosen; when the endpoint sent a settings

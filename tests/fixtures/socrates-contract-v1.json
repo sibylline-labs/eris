@@ -477,13 +477,16 @@
           {"project": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "enrolled": true, "source": "stub", "contract_version": "1.0.0"},
           {"project": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "enrolled": false, "source": null, "contract_version": "1.0.0"},
           {"type": "urn:hera:error:forbidden", "title": "Forbidden", "status": 403, "detail": "Only an admin can enrol or unenrol a project", "code": "admin_required"},
-          {"type": "urn:hera:error:conflict", "title": "Conflict", "status": 409, "detail": "More than one Linear project is named Platform", "code": "conflict"}
+          {"type": "urn:hera:error:linear_ref_ambiguous", "title": "Conflict", "status": 409, "detail": "More than one Linear object matches the reference", "code": "linear_ref_ambiguous", "kind": "project", "candidates": [{"id": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "name": "Platform"}, {"id": "2310e01c-1762-4859-b05c-26d53e1edbb1", "name": "platform"}]},
+          {"type": "urn:hera:error:linear_ref_not_found", "title": "Not Found", "status": 404, "detail": "No Linear object matches the reference", "code": "linear_ref_not_found", "kind": "project"},
+          {"type": "urn:hera:error:linear_disconnected", "title": "Conflict", "status": 409, "detail": "The org's Linear connection is missing or revoked", "code": "linear_disconnected"}
         ],
         "reject": [
           {},
           {"project": "x", "enrolled": true, "source": "dash", "contract_version": "1.0.0"},
           {"project": "", "enrolled": true, "source": null, "contract_version": "1.0.0"},
-          {"project": "x", "enrolled": true, "source": null}
+          {"project": "x", "enrolled": true, "source": null},
+          {"type": "urn:hera:error:linear_ref_ambiguous", "title": "Conflict", "status": 409, "detail": "d", "code": "linear_ref_ambiguous", "kind": "project", "candidates": ["da12bb11-7add-4cd3-a4a7-8057a1475c72"]}
         ]
       }
     }

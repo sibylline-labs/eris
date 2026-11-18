@@ -22,7 +22,7 @@ import { scanStrings } from "eris/outbound-scan";
 import { readArgs, type VerbContext } from "../../src/cli/plugin";
 import { fail, postSocrates, printable, type SocratesDeps, type SocratesEndpoint, socratesEndpoint } from "./client";
 import plugin from "./index";
-import { SOCRATES_CONTRACT_VERSION } from "./socrates-contract.v1";
+import { SOCRATES_CONTRACT_VERSION, type SocratesProblem } from "./socrates-contract.v1";
 import { SOCRATES_ROUTES, SocratesPolicy, SocratesSettingsCanonRequest, SocratesSettingsEnrolmentRequest, SocratesSettingsEnrolmentResponse, SocratesSettingsPolicyRequest, SocratesSettingsResponse, type SocratesSettingsResult, SocratesSettingsWriteResponse } from "./socrates-contract.v1.verbs";
 
 type Policy = ReturnType<typeof SocratesPolicy.parse>;
@@ -143,10 +143,14 @@ const onOff = (b: boolean): string => (b ? "on" : "off");
 const pct = (r: number | null): string => (r === null ? "-" : `${Math.round(r * 1000) / 10}%`);
 const json = (ctx: VerbContext, value: unknown): number => (ctx.stdout.write(`${JSON.stringify(value)}\n`), 0);
 
-const enrolFix = (status: number): string | undefined => {
+const enrolFix = (status: number, problem: SocratesProblem): string | undefined => {
   if (status === 403) return "ask an org admin to run this command";
-  if (status === 404) return "check the project's name in Linear, or pass its id; the Linear app must be able to read the project's team";
-  if (status === 409) return "pass the project's id from the candidates the detail lists";
+  if (status === 404) return problem.code === "linear_ref_not_found" ? "check the project's name in Linear, or pass its id" : "pass the id of a project the Linear app can read";
+  if (status === 409 && problem.code === "linear_ref_ambiguous") {
+    const candidates = problem.candidates ?? [];
+    return candidates.length === 0 ? "pass the project's id" : `run it again with one project's id: ${candidates.map((c) => `${printable(c.id)} (${printable(c.name)})`).join(", ")}`;
+  }
+  if (status === 409 && problem.code === "linear_disconnected") return "an org admin reconnects Linear from the dashboard, then run the command again";
   return undefined;
 };
 
@@ -163,6 +167,7 @@ async function writeEnrolment(project: string, enrolled: boolean, usage: string,
     decoder: SocratesSettingsEnrolmentResponse,
     subject: "the enrolment change",
     refusalFix: enrolFix,
+    ambiguousFails: true,
     badResponseFix: badWriteFix(SOCRATES_ROUTES.settings_enrolment.path),
   });
   if (ctx.format === "json") return json(ctx, receipt);
