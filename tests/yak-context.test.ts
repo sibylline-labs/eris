@@ -9,13 +9,14 @@
  */
 
 import { describe, it, expect, afterEach } from "bun:test";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gatherProvenance } from "../plugins/yak/yak-context";
 import type { BoundedResult, Runner } from "../plugins/yak/yak-identity";
 
 const cleanupDirs: string[] = [];
+const isRoot = process.getuid?.() === 0;
 
 afterEach(async () => {
   while (cleanupDirs.length > 0) {
@@ -219,6 +220,34 @@ describe("gatherProvenance — repo: a raw single-file peek, not a config merge"
 
       const provenance = await gatherProvenance({ cwd: stray, env: {}, run: stubRunner({}) });
       expect(provenance.repo).toEqual({ service: "outer-service" });
+    },
+  );
+
+  // Fails (red) when an unreadable `.git` reads as "no checkout here": the walk crosses the nested checkout and reports the outer repo's service. Observed at provenance.repo.
+  // admits: boundary-io: nearestErisYaml crossing a nested checkout whose `.git` cannot be inspected; file modes are a runtime filesystem fact no checker sees
+  it.skipIf(isRoot)(
+    "halts at a nested `.git` directory or pointer file it cannot inspect, never reading the " +
+      "manifest above it — observed at provenance.repo being absent",
+    async () => {
+      const outer = await freshDir("yak-ctx-repo-locked-");
+      await writeFile(join(outer, "eris.yaml"), "service: outer-service\nenvs: {}\n");
+      const dirMarker = join(outer, "nested-dir");
+      await mkdir(join(dirMarker, ".git"), { recursive: true });
+      await writeFile(join(dirMarker, ".git", "HEAD"), "ref: refs/heads/main\n");
+      const fileMarker = join(outer, "nested-file");
+      await mkdir(fileMarker, { recursive: true });
+      await writeFile(join(fileMarker, ".git"), "gitdir: /elsewhere/.git/worktrees/nested\n");
+      await chmod(join(dirMarker, ".git"), 0o000);
+      await chmod(join(fileMarker, ".git"), 0o000);
+      try {
+        for (const cwd of [dirMarker, fileMarker]) {
+          const provenance = await gatherProvenance({ cwd, env: {}, run: stubRunner({}) });
+          expect("repo" in provenance).toBe(false);
+        }
+      } finally {
+        await chmod(join(dirMarker, ".git"), 0o755);
+        await chmod(join(fileMarker, ".git"), 0o644);
+      }
     },
   );
 

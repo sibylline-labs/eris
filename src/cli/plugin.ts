@@ -156,7 +156,9 @@ const ERIS_YAML_WALK_MAX_DEPTH = 64;
  * at a hard depth bound. The nearest manifest wins even when it is unreadable
  * or not YAML: that is `{ok: false, path, error}`, never a throw, and the walk
  * does not go past it, so a caller that must not ignore a broken manifest can
- * refuse it. No manifest is `undefined`. The fs modules load on the first
+ * refuse it. A `.git` on the walk that cannot be inspected (EACCES, EIO, ...)
+ * is `{ok: false}` too, with that `.git` as the path: whether the walk has left
+ * the checkout is unknown, so it stops. No manifest is `undefined`. The fs modules load on the first
  * call, not at shell start.
  */
 export type NearestErisYaml =
@@ -164,7 +166,7 @@ export type NearestErisYaml =
   | { readonly ok: false; readonly path: string; readonly error: string };
 
 export async function nearestErisYaml(startDir: string): Promise<NearestErisYaml | undefined> {
-  const [{ promises: fs }, { dirname, join }, { isGitCheckoutRoot }] = await Promise.all([import("node:fs"), import("node:path"), import("../runtime/git-checkout")]);
+  const [{ promises: fs }, { dirname, join }, { probeGitCheckoutRoot }] = await Promise.all([import("node:fs"), import("node:path"), import("../runtime/git-checkout")]);
   let dir = startDir;
   for (let i = 0; i < ERIS_YAML_WALK_MAX_DEPTH; i++) {
     const path = join(dir, "eris.yaml");
@@ -182,7 +184,9 @@ export async function nearestErisYaml(startDir: string): Promise<NearestErisYaml
         return { ok: false, path, error: `not YAML (${err instanceof Error ? err.message : "parse failed"})` };
       }
     }
-    if (isGitCheckoutRoot(dir)) return undefined;
+    const checkout = probeGitCheckoutRoot(dir);
+    if (checkout.kind === "unknown") return { ok: false, path: checkout.path, error: `checkout marker cannot be inspected (${checkout.code})` };
+    if (checkout.kind === "root") return undefined;
     const parent = dirname(dir);
     if (parent === dir) return undefined;
     dir = parent;

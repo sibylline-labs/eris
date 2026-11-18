@@ -111,7 +111,8 @@ export const runWidgets: VerbHandler = async (args, ctx) => {
   nearest one at or above `startDir`, stopping at the git checkout's root, as
   `{ok: true, path, value}` (parsed, never merged), `{ok: false, path, error}`
   when the nearest one cannot be read or is not YAML (the walk does not go past
-  it), or `undefined` when there is none. It never throws.
+  it) or a `.git` on the walk cannot be inspected (the path is that `.git`), or
+  `undefined` when there is none. It never throws.
 
 ## What a plugin may import
 

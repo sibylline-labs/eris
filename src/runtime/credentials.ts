@@ -40,7 +40,7 @@
 import { promises as fs, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { isGitCheckoutRoot } from "./git-checkout";
+import { probeGitCheckoutRoot } from "./git-checkout";
 
 /** `{ value }` on success, `{ reason, slug }` on failure: `"reason" in outcome` tells them apart. */
 export type CredentialOutcome<T, TSlug extends string> = { value: T } | { reason: string; slug: TSlug };
@@ -349,7 +349,8 @@ function manifestOrg(value: unknown): { kind: "absent" } | { kind: "org"; org: s
  * the default org. A manifest inside a `node_modules` tree is a dependency's, never
  * the repo's, so it is not read. A malformed id, or a manifest on the walk that cannot be read
  * or parsed, fails `org-selector-invalid`: a broken manifest might be the one
- * selecting an org, so it is never skipped.
+ * selecting an org, so it is never skipped. So does a `.git` on the walk that
+ * cannot be inspected: whether the walk has left the checkout is then unknown.
  */
 export async function resolveOrgSelection(
   env: Record<string, string | undefined>,
@@ -398,7 +399,15 @@ export function resolveOrgSelectionSync(env: Record<string, string | undefined>,
         return { reason: `repo.org in ${path} is not an org id (26 uppercase Crockford base32 characters)`, slug: "org-selector-invalid", fix: `set repo.org in ${path} to the org id 'eris whoami' prints, or remove it` };
       }
     }
-    if (isGitCheckoutRoot(dir)) break;
+    const checkout = probeGitCheckoutRoot(dir);
+    if (checkout.kind === "unknown") {
+      return {
+        reason: `${checkout.path} cannot be inspected (${checkout.code}), so whether ${dir} is a checkout root, and the org it acts as, is unknown`,
+        slug: "org-selector-invalid",
+        fix: `make ${checkout.path} readable, then run the command again`,
+      };
+    }
+    if (checkout.kind === "root") break;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
