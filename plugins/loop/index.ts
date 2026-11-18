@@ -6,11 +6,19 @@
  *
  * `loopPlugin(defaults)` is the same plugin with what a build supplies: the org's pulled, verified
  * policy tree, refreshed when a claim names a newer bundle, which is the only place a loop body is read
- * from. The default export has none, so its verbs that need a body refuse.
+ * from, and the distribution seams (docs/LOOP.md#distribution-seams). The default export has none, so
+ * its verbs that need a body refuse, and every seam behaves as if it were never supplied.
+ *
+ * Invariants:
+ *  - `loopRows(defaults)` is the one place the rows are built: the manifest composes them and the
+ *    handler parses with them, so a flag a runtime adds is the flag the parser accepts;
+ *  - no build replaces the built-in `claude` runtime, and no runtime flag shadows a built-in launch flag.
  */
 
 import type { Outcome } from "eris/gates-contract";
 import { definePlugin, type VerbContext } from "../../src/cli/plugin";
+import type { ComposePromptInput } from "./prompt";
+import type { LoopRuntime, LoopRuntimeFlag } from "./runtime";
 
 /** The org's verified policy tree, as the loop verbs read it. */
 export interface LoopTree {
@@ -31,10 +39,30 @@ export interface PolicyRequest {
   readonly fetch?: typeof globalThis.fetch | undefined;
 }
 
-/** What a build supplies the loop verbs. */
+/** Names a build used for its loops before this plugin's: read, never written. */
+export interface LoopLegacy {
+  /** Session-name prefixes (`<prefix><slug>-<issue>`) read beside `eris-loop-`. */
+  readonly sessionPrefixes: ReadonlyArray<string>;
+  /** Claim-ledger directories read after `~/.eris/loop/claims`. */
+  readonly claimDirs: (home: string) => ReadonlyArray<string>;
+}
+
+/** What a build supplies the loop verbs. Each seam left out behaves as it does in the public build. */
 export interface LoopDefaults {
   /** The org's verified tree, pulled first when absent or older than the claim's view; an edited tree is refused. */
   readonly policy?: (ctx: VerbContext, req: PolicyRequest) => Promise<Outcome<LoopTree>>;
+  /** Runtimes beside the built-in `claude`, by the name `--runtime` takes. */
+  readonly runtimes?: Readonly<Record<string, LoopRuntime>>;
+  /** Lines a launch prompt carries after its `Hand-back:` line, before the loop's body. */
+  readonly promptLines?: (input: ComposePromptInput & { readonly cwd: string }) => ReadonlyArray<string>;
+  /** Older session names and ledger directories that status, stop, resume, reap and the live check also read. */
+  readonly legacy?: LoopLegacy;
+  /** Loop slugs that run with no claim and no status write, as if launched or resumed `--unclaimed`. */
+  readonly claimless?: ReadonlyArray<string>;
+  /** Env names no loop child inherits, beside the built-in ones; `X*` drops every name starting `X`. */
+  readonly scrubEnv?: ReadonlyArray<string>;
+  /** Run once a hand-back reached every target, best effort: a failure only warns. */
+  readonly afterHandBack?: (ctx: VerbContext, input: { readonly issue: string }) => Promise<void>;
 }
 
 const v = <const N extends `--${string}`>(name: N) => ({ name, takesValue: true }) as const;
@@ -48,8 +76,8 @@ const ROWS = {
     summary: "Claim an issue and start a loop on it as a background session",
     json: true,
     pos: ["loop", "issue"],
-    flags: [v("--cwd"), v("--model"), v("--report-to"), v("--caller"), v("--context"), b("--force"), b("--unclaimed")],
-    usage: "<loop> <ISSUE|YAK-ID> --cwd <abs> --model <m> [--report-to <KEY>] [--caller <name>] [--context <text>] [--force] [--unclaimed]",
+    flags: [v("--cwd"), v("--model"), v("--runtime"), v("--report-to"), v("--caller"), v("--context"), b("--force"), b("--unclaimed")],
+    usage: "<loop> <ISSUE|YAK-ID> --cwd <abs> --model <m> [--runtime <name>] [--report-to <KEY>] [--caller <name>] [--context <text>] [--force] [--unclaimed]",
   },
   "loop resume": {
     summary: "Continue a finished loop session, holding its claim again",
@@ -82,11 +110,50 @@ const JSON_FIX = `  eris loop list                           {loops}
   eris loop hand-back                      {lines, failed}
 `;
 
+export type LoopRows = typeof ROWS;
+
+/** The built-in runtime, which `--runtime` defaults to and no build replaces. */
+const BUILT_IN_RUNTIME = "claude";
+
+/**
+ * The runtimes a build supplies, in its order; a runtime named `claude`, or a runtime flag that is a
+ * built-in launch flag, is a build error (thrown when the plugin or the handler is built).
+ */
+export function runtimesOf(defaults: LoopDefaults): ReadonlyArray<readonly [string, LoopRuntime]> {
+  const builtIn = new Set<string>(ROWS["loop launch"].flags.map((f) => f.name));
+  const entries = Object.entries(defaults.runtimes ?? {});
+  for (const [name, rt] of entries) {
+    if (name === BUILT_IN_RUNTIME) throw new Error(`loop runtime '${BUILT_IN_RUNTIME}' is built in and cannot be replaced`);
+    for (const f of rt.flags ?? []) if (builtIn.has(f.name)) throw new Error(`loop runtime '${name}' declares ${f.name}, a built-in launch flag`);
+  }
+  return entries;
+}
+
+/** Each launch flag the build's runtimes declare, once. */
+export function runtimeFlagsOf(defaults: LoopDefaults): ReadonlyArray<LoopRuntimeFlag> {
+  const seen = new Map<string, LoopRuntimeFlag>();
+  for (const [, rt] of runtimesOf(defaults)) for (const f of rt.flags ?? []) if (!seen.has(f.name)) seen.set(f.name, { name: f.name, takesValue: true });
+  return [...seen.values()];
+}
+
+/**
+ * The plugin's rows for what the build supplies: `loop launch` also takes each runtime-declared flag,
+ * and its usage line lists them. The type stays the public rows' (the parser accepts the added flags;
+ * the launch handler reads them by name).
+ */
+export function loopRows(defaults: LoopDefaults): LoopRows {
+  const extra = runtimeFlagsOf(defaults);
+  if (extra.length === 0) return ROWS;
+  const launch = ROWS["loop launch"];
+  const row = { ...launch, flags: [...launch.flags, ...extra], usage: `${launch.usage} ${extra.map((f) => `[${f.name} <value>]`).join(" ")}` };
+  return { ...ROWS, "loop launch": row } as unknown as LoopRows;
+}
+
 /** The loop plugin, with what the build supplies. */
 export function loopPlugin(defaults: LoopDefaults = {}) {
   return definePlugin({
     name: "loop",
-    rows: ROWS,
+    rows: loopRows(defaults),
     handlers: {
       loop: async () => (await import("./handlers")).loopHandler(defaults),
     },

@@ -1,0 +1,19 @@
+id: loop-ledger-every-dir
+valid:
+  # The run's ledger reads every directory a build names.
+  - |
+    const held = heldClaim(run.ledger, issue);
+  - |
+    dropHeldClaim(run.ledger, issue, claimId);
+  - |
+    await releaseClaim(ep, { ledger: run.ledger, issue, claimId, outcome: "aborted", body, warn: run.warn });
+invalid:
+  # A stop that read only the primary directory left a legacy loop's claim held.
+  - |
+    const record = readClaim(run.home, l.issue);
+  - |
+    dropClaim(run.home, issue, claimId);
+  - |
+    const files = readdirSync(claimsDir(run.home));
+  - |
+    statSync(claimPath(run.home, issue));

@@ -6,7 +6,8 @@
  * Invariants:
  *  - the body is refused before anything is sent: blank, over `HAND_BACK_MAX` characters, or holding a
  *    secret a vendored gitleaks rule matches (`loop-secret-detected`, the same scan `gate record` runs);
- *  - a release that answered (released or not) drops the ledger entry while it still names the claim;
+ *  - a release that answered (released or not) drops the ledger entry while it still names the claim,
+ *    in whichever ledger directory holds it;
  *    a stale claim (`superseded`, `not_claimed`) or a failed release falls back to the comment;
  *  - each target gets one write, retried only on a 429 (shed before the route ran, so never doubled),
  *    bounded; a target that got nothing fails the verb `loop-hand-back-failed` (exit 1) after every
@@ -15,7 +16,7 @@
 
 import { commentIssue, releaseIssue, type RetryOpts, retryRateLimited } from "eris/gates-contract";
 import { scanStrings } from "eris/outbound-scan";
-import { dropClaim } from "./claims";
+import { dropHeldClaim } from "./claims";
 import { endpoint, type Run } from "./deps";
 import { block, stop, usage } from "./failure";
 import { CLAIM_ID_RE, HAND_BACK_MAX, normaliseIssue, normaliseReportTo } from "./names";
@@ -74,7 +75,7 @@ export async function handBack(run: Run, input: HandBackInput): Promise<HandBack
     if (!res.ok) {
       run.warn(`eris loop: could not release ${issue}'s claim: ${res.failure.slug}: ${res.failure.what}`);
     } else {
-      dropClaim(run.home, issue, claimId);
+      dropHeldClaim(run.ledger, issue, claimId);
       if (res.value.released) {
         posted = true;
         lines.push(`handed back ${issue} · released claim ${claimId.slice(0, 8)} with the hand-back as its response`);

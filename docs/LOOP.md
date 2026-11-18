@@ -9,7 +9,7 @@ the verbs make is a request to the gateway on the `eris login` bearer
 ```
 eris loop list                    [--output json]
 eris loop resolve <ISSUE|YAK-ID>   [--output json]
-eris loop launch <loop> <ISSUE|YAK-ID> --cwd <abs> --model <m> [--report-to <KEY>]
+eris loop launch <loop> <ISSUE|YAK-ID> --cwd <abs> --model <m> [--runtime <name>] [--report-to <KEY>]
                  [--caller <name>] [--context <text>] [--force] [--unclaimed] [--output json]
 eris loop status <ref>
 eris loop resume <ref> | --all [--prompt <text>] [--unclaimed] [--output json]
@@ -24,6 +24,8 @@ name, or the issue key of a loop session. A loop session is named `eris-loop-<sl
 The runtime is Claude Code: a session is a `claude --bg` background job, kept under
 `~/.claude/jobs/<id>/state.json`. Every `claude` child runs under a deadline, with the caller's env less
 its Claude Code session markers (`CLAUDECODE`, `CLAUDE_CODE_*`) and eris's bearer (`ERIS_YAKS_TOKEN`).
+A build can add other runtimes and older names beside these ([Distribution seams](#distribution-seams));
+this build adds none.
 
 ## Where a loop body comes from
 
@@ -69,6 +71,7 @@ successor's entry survives its predecessor's late hand-back.
 
 1. Normalise every operand. A refusal here (`loop-usage`, exit 2) has claimed, requested and spawned
    nothing. `--cwd` must be an absolute directory that is not `$HOME`; `--model` is required.
+   `--runtime` is `claude` (the default) or a runtime the build supplies; anything else is refused.
 2. The `claude` CLI on PATH, then a yak id resolved to its issue.
 3. Unless `--force`: refuse while a local loop session on the issue is still at work. With
    `--unclaimed`, only a session of the same loop counts.
@@ -83,7 +86,7 @@ successor's entry survives its predecessor's late hand-back.
    reopened; a failed move only warns.
 
 Any failure after step 5 releases the claim (`aborted`, the reason as its body) before the verb stops.
-The receipt is `delegated <ISSUE>[ (yak <8>)] → loop <slug> · <session> · model <m>`.
+The receipt is `delegated <ISSUE>[ (yak <8>)] → loop <slug> · <session>[ · model <m>]` (Claude always names its model).
 
 ## hand-back
 
@@ -162,6 +165,33 @@ Hand-back: post your hand-back once, with `eris loop hand-back <ISSUE> --claim <
 
 Each line but the first and the last appears only when its value was given. The whole prompt is one
 argv word, so it is capped at 256 KiB (`loop-usage`).
+
+## Distribution seams
+
+`loopPlugin(defaults)` (from `eris/sdk`) takes, beside `policy`, the seams a distribution uses to run
+its own loops through these verbs. Each one left out behaves as described above, so a build that
+supplies none behaves exactly as this one.
+
+| `LoopDefaults` field | What it does |
+|---|---|
+| `runtimes` | Runtimes beside the built-in `claude`, keyed by the name `--runtime` takes. Each implements `LoopRuntime`: `prepare` (normalise the model and its flags before any request, refusing with `loop-usage`), `spawn`, `live`, `find`, `stop`, `resume`, `failed`, `status` and `working`. Its `flags` join the `loop launch` row, and each is refused unless that runtime is selected. A runtime named `claude`, or a flag that is a built-in launch flag, is a build error. |
+| `promptLines` | Lines the launch prompt carries after its `Hand-back:` line, before the blank line and the body. It is handed the header's values and `--cwd`. The lines count toward the 256 KiB cap. |
+| `legacy` | Older session-name prefixes (`<prefix><slug>-<issue>`) and claim-ledger directories. Status, stop, resume, reap and the live check read them beside `eris-loop-` and `~/.eris/loop/claims`. Nothing is named or written with them: a re-bound claim moves to the primary ledger, and a released one is removed from whichever directory held it. Reap treats each ledger file as its own record. |
+| `claimless` | Loop slugs that launch and resume as if `--unclaimed`: no claim, no status write, and only a session of the same loop counts in the live check. |
+| `scrubEnv` | Env names no loop child inherits, beside the built-in ones. An entry ending `*` drops every name it prefixes. It applies to every `claude` child and to the env a supplied runtime is handed. |
+| `afterHandBack` | Runs once a hand-back reached every target. A failure prints a `WARN` line and the verb still exits 0. |
+
+With runtimes supplied, a `<ref>` resolves over the Claude jobs and every runtime's `find` together:
+several matches are `loop-session-ambiguous` for `stop` and `resume`, and `status` shows the one
+working, else the newest. The owning runtime stops, resumes and renders its own session. `stop`
+releases the claim and `resume` re-binds it, as for a Claude job. `resume --all` adds each runtime's
+`failed` sessions. The ledger and the receipt name the runtime. `reap` stops only Claude jobs and
+releases only claims recorded for `claude`.
+
+A distribution verb that starts a loop itself calls `launchLoopSession(ctx, defaults, input, deps)`.
+It runs the launch above without argv and returns the receipt's record, and it throws `LoopFailure`
+on a refusal. A supplied runtime refuses the same way. The runtime contract is exported as
+`LoopRuntime`, `LoopRuntimeEnv` and `LoopRuntimeSession`, and the prompt input as `ComposePromptInput`.
 
 ## Exit status
 

@@ -5,8 +5,8 @@
  *
  * Invariants:
  *  - a ref resolves by id (job id, `sessionId`, `resumeSessionId`), then exact name (any case), then
- *    the issue key in an `eris-loop-<slug>-<issue>` name; the first tier with a match decides, and more
- *    than one match there is `loop-session-ambiguous`;
+ *    the issue key in an `eris-loop-<slug>-<issue>` name (or a build's legacy prefix); the first tier
+ *    with a match decides (sessions.ts adds a supplied runtime's matches to it);
  *  - every JSON read from disk or from claude is decoded from `unknown`; a state file that does not
  *    decode reads as an empty state (the job is still found by its id);
  *  - every claude child goes through `runChild` (a deadline, `childEnv`).
@@ -88,7 +88,7 @@ export function listJobs(home: string): ReadonlyArray<ClaudeJob> {
 }
 
 /** The jobs `ref` names in the first tier that matches (id, then exact name, then issue key), empty when none. */
-export function matchJobs(home: string, ref: string): ReadonlyArray<ClaudeJob> {
+export function matchJobs(home: string, ref: string, legacyPrefixes: ReadonlyArray<string>): ReadonlyArray<ClaudeJob> {
   const clean = ref.trim();
   if (clean === "") return [];
   const lower = clean.toLowerCase();
@@ -100,7 +100,7 @@ export function matchJobs(home: string, ref: string): ReadonlyArray<ClaudeJob> {
     const name = trimmed(job.state.name);
     if (clean === job.id || clean === job.state.sessionId || clean === job.state.resumeSessionId) byId.push(job);
     else if (name !== "" && name.toLowerCase() === lower) byName.push(job);
-    else if (isIssue && loopOf(name)?.issue === clean.toUpperCase()) byIssue.push(job);
+    else if (isIssue && loopOf(name, legacyPrefixes)?.issue === clean.toUpperCase()) byIssue.push(job);
   }
   return byId.length > 0 ? byId : byName.length > 0 ? byName : byIssue;
 }
@@ -109,22 +109,17 @@ export function sessionAmbiguous(ref: string, ids: ReadonlyArray<string>): never
   return stop(block("loop-session-ambiguous", `${JSON.stringify(ref)} names ${ids.length} sessions (${ids.join(", ")}); pass a session id`, "Pass one of the listed session ids instead of the name or issue key.", 2));
 }
 
-export function sessionNotFound(ref: string, home: string): never {
+/** No session matched; `runtimes` names the supplied runtimes that were asked too. */
+export function sessionNotFound(ref: string, home: string, runtimes: ReadonlyArray<string> = []): never {
+  const where = runtimes.length === 0 ? `under ${jobsDir(home)}` : `under ${jobsDir(home)} or in runtime ${runtimes.join(", ")}`;
   return stop(
     block(
       "loop-session-not-found",
-      `no background session ${JSON.stringify(ref)} under ${jobsDir(home)}`,
+      `no background session ${JSON.stringify(ref)} ${where}`,
       "Pass a session id, its exact name or the issue key of a loop session ('claude agents' lists them).",
       2,
     ),
   );
-}
-
-/** The one job `ref` names, or null; several is `loop-session-ambiguous`. */
-export function findJob(home: string, ref: string): ClaudeJob | null {
-  const matches = matchJobs(home, ref);
-  if (matches.length > 1) sessionAmbiguous(ref, matches.map((j) => j.id));
-  return matches[0] ?? null;
 }
 
 /** The `claude` CLI on PATH, or `loop-usage`. */
@@ -216,10 +211,10 @@ export async function claudeAgents(run: Run): Promise<ClaudeAgents> {
 }
 
 /** Each local loop session on `issue` still at work, as `<id> · <name> · <state>`; with `slug`, only that loop's. */
-export function liveSessions(home: string, issue: string, slug?: string): ReadonlyArray<string> {
+export function liveSessions(home: string, legacyPrefixes: ReadonlyArray<string>, issue: string, slug?: string): ReadonlyArray<string> {
   return listJobs(home).flatMap((job) => {
     const name = trimmed(job.state.name);
-    const l = loopOf(name);
+    const l = loopOf(name, legacyPrefixes);
     const state = job.state.state ?? "unknown";
     return l !== null && l.issue === issue && (slug === undefined || l.slug === slug) && !FINISHED_JOB_STATES.has(state) ? [`${job.id} · ${name} · ${state}`] : [];
   });

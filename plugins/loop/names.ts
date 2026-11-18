@@ -6,7 +6,9 @@
  *  - a slug never holds `/`, `\` or `..` (checked before anything is stripped), so it is one safe path
  *    segment and one session-name word;
  *  - `sessionName` is the name `SESSION_RE` reads back, so stop, status and the live check find a
- *    loop by its issue.
+ *    loop by its issue;
+ *  - `loopOf` also reads a build's legacy prefixes (`LoopDefaults.legacy`), passed by every caller, so a
+ *    loop started under an older name is still found by its issue; nothing is ever named with one.
  */
 
 import { realpathSync, statSync } from "node:fs";
@@ -113,8 +115,17 @@ export function checkCwd(raw: string, home: string): string {
 /** The loop's session name: `eris-loop-<slug>-<issue lower>`. */
 export const sessionName = (slug: string, issue: string): string => `eris-loop-${slug}-${issue.toLowerCase()}`;
 
-/** The slug and issue (upper-case) a session name carries, or null for a session that is not a loop's. */
-export function loopOf(name: string): { readonly slug: string; readonly issue: string } | null {
-  const m = SESSION_RE.exec(name.trim());
-  return m === null ? null : { slug: m[1]!.toLowerCase(), issue: m[2]!.toUpperCase() };
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The slug and issue (upper-case) a session name carries, or null for a session that is not a loop's.
+ * Reads `eris-loop-<slug>-<issue>` and `<prefix><slug>-<issue>` for each legacy prefix (`[]` for none).
+ */
+export function loopOf(name: string, legacyPrefixes: ReadonlyArray<string>): { readonly slug: string; readonly issue: string } | null {
+  const clean = name.trim();
+  for (const re of [SESSION_RE, ...legacyPrefixes.filter((p) => p !== "").map((p) => new RegExp(`^${escapeRe(p)}([a-z0-9_-]+)-([a-z]+-[0-9]+)$`, "i"))]) {
+    const m = re.exec(clean);
+    if (m !== null) return { slug: m[1]!.toLowerCase(), issue: m[2]!.toUpperCase() };
+  }
+  return null;
 }

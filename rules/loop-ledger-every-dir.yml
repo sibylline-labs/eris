@@ -1,0 +1,28 @@
+# A loop verb reaches the claim ledger only through the ledger a run carries
+# (`run.ledger`, plugins/loop/claims.ts): `heldClaim`, `dropHeldClaim`,
+# `reserveClaim`, `bindClaim`, `releaseClaim`. Those read every directory a build
+# names (the primary one, then any legacy ones it supplies) and write only the
+# primary one. The home-based helpers (`readClaim`, `writeClaim`, `dropClaim`,
+# `claimPath`, `claimsDir`) see the primary directory alone, so a verb that calls
+# one misses a claim a build's older name still holds: stop leaves it held, reap
+# never frees it, a forced relaunch is refused by its own predecessor.
+id: loop-ledger-every-dir
+language: typescript
+severity: error
+message: >-
+  A loop verb reads or writes the claim ledger through a home-based helper,
+  which sees only the primary directory. Go through the run's ledger
+  (heldClaim, dropHeldClaim, reserveClaim, bindClaim, releaseClaim with
+  run.ledger) so a build's legacy ledger directories are read too.
+note: |
+  The home-based helpers stay for the ledger module itself and for tests that
+  inspect the primary directory directly.
+files:
+  - plugins/loop/**/*.ts
+ignores:
+  - plugins/loop/claims.ts
+rule:
+  kind: call_expression
+  has:
+    field: function
+    regex: ^(?:readClaim|writeClaim|dropClaim|claimPath|claimsDir)$

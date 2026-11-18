@@ -4,7 +4,10 @@
  * runners, what a PR body cites) belongs in the org's loop body, never in this header.
  *
  * Header order: `Loop <slug> · target issue <ISSUE>`, then `Yak:`, `Report to:`, `Caller:`, `Model:`,
- * `Context:`, `Claim:` (each when given), then the `Hand-back:` line, a blank line, and the body.
+ * `Context:`, `Claim:` (each when given), then the `Hand-back:` line, the lines a build supplies
+ * (`LoopDefaults.promptLines`, none in this build), a blank line, and the body. The build's lines come
+ * after the `Hand-back:` line, so the generic contract reads the same whatever a build adds, and they
+ * count toward the prompt's cap.
  */
 
 import { usage } from "./failure";
@@ -35,8 +38,8 @@ export interface ComposePromptInput {
 
 const given = (s: string | undefined): s is string => s !== undefined && s !== "";
 
-/** The loop's prompt; over `BODY_MAX_BYTES` (one argv word) it is refused with `loop-usage`. */
-export function composePrompt(input: ComposePromptInput): string {
+/** The loop's prompt, with `extra` (a build's lines) after the `Hand-back:` line; over `BODY_MAX_BYTES` (one argv word) it is refused with `loop-usage`. */
+export function composePrompt(input: ComposePromptInput, extra: ReadonlyArray<string> = []): string {
   const { slug, issue, body, context, yak, reportTo, caller, model, claimId } = input;
   const header = [`Loop ${slug} · target issue ${issue}`];
   if (given(yak)) header.push(`Yak: ${yak}`);
@@ -45,7 +48,7 @@ export function composePrompt(input: ComposePromptInput): string {
   if (given(model)) header.push(`Model: ${model}`);
   if (given(context)) header.push(`Context: ${context}`);
   if (given(claimId)) header.push(claimLine(issue, claimId));
-  header.push(handBackLine(handBackArgs(issue, claimId, reportTo), issue));
+  header.push(handBackLine(handBackArgs(issue, claimId, reportTo), issue), ...extra);
   const prompt = `${header.join("\n")}\n\n${body}`;
   const bytes = Buffer.byteLength(prompt, "utf8");
   if (bytes > BODY_MAX_BYTES) {
