@@ -74,7 +74,7 @@ describe("eris doctrine: output parity with the reference implementation", () =>
   it("with no --profiles, the gate map is taken over the built-in spine and deep", async () => {
     const s = box();
     const builtins = join(s.dir, "builtins.yaml");
-    await Bun.write(builtins, "spine: [premise-gate, plan-review, final-gates]\ndeep: [premise-gate, define-future, sdk-check, plan-review, final-gates]\n");
+    await Bun.write(builtins, "spine: [premise-gate, plan-review, final-gates]\ndeep: [premise-gate, define-future, sdk-check, state-machine-gate, plan-review, final-gates]\n");
     const file = join(FIX, "doctrine.md");
     const bare = await s.run(["doctrine", "gates", "--file", file]);
     const named = await s.run(["doctrine", "gates", "--file", file, "--profiles", builtins]);

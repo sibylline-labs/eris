@@ -119,6 +119,12 @@ export const GATE_EXPLAINS: Readonly<Record<string, KeyExplain>> = {
     raise: "Each plan gets a catalogue lookup and gaps are filed against the SDK, a short pass before code.",
     lower: "A lighter, later or skipped lookup saves time, but local copies of shared plumbing pile up and drift apart.",
   },
+  "state-machine-gate": {
+    summary: "Checks, before a pull request is marked ready, that a change touching a state machine declares its states and transitions, that every status write on a governed object goes through them, and that interleavings of awaited steps (step-k faults) leave the object in a valid state.",
+    protects: "a status write that skips a declared transition, or a crash or interleaving between two awaited steps that leaves an object half-moved.",
+    raise: "Each change that writes a governed status gets its transitions declared and its step-by-step fault cases run, a few extra minutes per such change.",
+    lower: "Declared transitions and fault runs are lighter, later or skipped, so an undeclared status write or a half-applied transition can ship.",
+  },
   "plan-review": {
     summary: "Reviews the written plan against the design rules and the codebase's own patterns before any code is written.",
     protects: "a design flaw that is cheap to fix in a plan reaching code, where it costs a rewrite or a review round.",

@@ -19,7 +19,7 @@ export type Profile = GateProfile;
 
 export const BUILTIN_PROFILES: Readonly<Record<string, Profile>> = {
   spine: { require: ["premise-gate", "plan-review", "final-gates"], forbid: [] },
-  deep: { require: ["premise-gate", "define-future", "sdk-check", "plan-review", "final-gates"], forbid: [] },
+  deep: { require: ["premise-gate", "define-future", "sdk-check", "state-machine-gate", "plan-review", "final-gates"], forbid: [] },
 };
 
 const KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
