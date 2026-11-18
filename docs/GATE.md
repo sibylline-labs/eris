@@ -173,3 +173,11 @@ git checkout it must be committed and pushed first, as for `record --artifact`.
 `digest` prints one row per registry surface, `<surface>\t<ledger|->\t<merge>\t<deploy>\t<effect>\t<locked|open|->`,
 counting the `unlocked-<action>` receipts on its ledger inside `--since` (default `24h`), then one
 `@digest` line for the pulse.
+
+## A distribution's gate
+
+A distribution composes these verbs from `eris/sdk` alone: `gatePlugin({ ladderFile, pulled })` in
+place of this build's gate plugin, with `pulledTree` as `pulled` to read the org's verified policy
+tree. `ladderFile` is the door-class ladder `check` reads with no `--ladder`; without it every class
+reads the human-after rung. `loopPlugin` and `freshTree` compose the loop verbs the same way, and
+`examples/distribution` composes all three.

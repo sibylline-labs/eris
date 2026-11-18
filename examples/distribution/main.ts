@@ -12,7 +12,8 @@
  * ./build.ts compiles from this file. It is not part of this repository's build.
  */
 
-import { composeCli, type DistributionIdentity, type ErisPlugin, HANDLERS, PLUGINS, REGISTRY, RELEASE_UPDATE, runProgram } from "eris/sdk";
+import { join } from "node:path";
+import { composeCli, type DistributionIdentity, type ErisPlugin, gatePlugin, HANDLERS, loopPlugin, PLUGINS, pulledTree, REGISTRY, RELEASE_UPDATE, runProgram } from "eris/sdk";
 import demo from "./plugins/demo";
 
 /**
@@ -26,7 +27,14 @@ export const IDENTITY: DistributionIdentity = {
   docsBase: "https://github.com/example-org/eris-distribution/blob/main",
 };
 
-export const DISTRIBUTION_PLUGINS: readonly ErisPlugin[] = [...PLUGINS, demo];
+/** The door-class ladder this distribution's `eris gate check` reads with no `--ladder`: U0 stands at the first rung. */
+export const LADDER_FILE = join(import.meta.dir, "assets", "ladder.yaml");
+
+/** The public gate and loop verbs composed from `eris/sdk` alone, the gate reading this distribution's ladder. */
+const gate = gatePlugin({ ladderFile: LADDER_FILE, pulled: pulledTree });
+const loop = loopPlugin();
+
+export const DISTRIBUTION_PLUGINS: readonly ErisPlugin[] = [...PLUGINS.filter((p) => p.name !== "gate" && p.name !== "loop"), gate, loop, demo];
 
 export const DISTRIBUTION = composeCli({ ...REGISTRY, update: RELEASE_UPDATE.row }, { ...HANDLERS, update: RELEASE_UPDATE.handler }, DISTRIBUTION_PLUGINS, {
   menu: async () => (await import("./menu")).runMenu,
