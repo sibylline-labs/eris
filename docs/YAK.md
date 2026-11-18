@@ -592,6 +592,38 @@ Failures are the failure block on stderr, nothing on stdout, exit `1`:
 [`yak-reports-unavailable`](ERRORS.md#yak-reports-unavailable) and
 [`yak-admin-unavailable`](ERRORS.md#yak-admin-unavailable). The request is bounded at 15 seconds.
 
+### `eris yak clusters` and `eris yak show`: the hot clusters
+
+`eris yak clusters` ranks this org's yak clusters by sightings in a window, most first, so a triage pass
+reads the hot ones in one call instead of listing every issue:
+
+```sh
+eris yak clusters                                  # issue, recent, total, last_seen, summary
+eris yak clusters --days 7 --min-sightings 6       # seen at least 6 times in the last 7 days
+eris --output json yak clusters --days 30 --limit 20
+eris yak show <id>                                 # one cluster (its issue history and observations) or one observation
+```
+
+It reads `GET /v1/yaks/clusters?days=&limit=` with the directory's org bearer. `--days` is `7` or `30`
+(default `7`), `--limit` is `1` to `50` (default `10`) and both are refused before any request when out of
+range, as the endpoint would. `--min-sightings <n>` keeps the clusters seen at least `n` times in the
+window (`recent_count >= n`); it filters after the read. `recent` is the sightings in the window, `total`
+every sighting the cluster has had, and the issue column is the Linear issue new sightings land on (`-` for
+none). `--output json` is `{days, clusters: [{id, kind, summary, recent_count, total_count, last_seen,
+issue_identifier, recent_by_status: {filed, pending, failed}}]}`, bare, with any key this eris does not
+know dropped.
+
+`eris yak show <id>` reads `GET /v1/yaks/clusters/:id`, and when that is `404` reads `GET
+/v1/yaks/observations/:id?detail=1`. An observation's `data` is `null` once the server's retention strip has
+cleared it. Reporter text is printed with control characters removed.
+
+Failures are the failure block on stderr, nothing on stdout, exit `1`:
+[`yak-unauthorized`](ERRORS.md#yak-unauthorized), [`yak-clusters-invalid`](ERRORS.md#yak-clusters-invalid),
+[`yak-clusters-unavailable`](ERRORS.md#yak-clusters-unavailable),
+[`yak-show-missing-id`](ERRORS.md#yak-show-missing-id), [`yak-show-not-found`](ERRORS.md#yak-show-not-found),
+[`yak-show-unavailable`](ERRORS.md#yak-show-unavailable) and
+[`yak-admin-unavailable`](ERRORS.md#yak-admin-unavailable).
+
 ## What a receipt does not promise
 
 **A receipt is not a promise that an issue was created.** The endpoint accepts,

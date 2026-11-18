@@ -53,6 +53,24 @@ export default definePlugin({
       json: true,
       example: "eris yak reports",
     },
+    "yak clusters": {
+      summary: "This org's most-reported recent yak clusters, most sightings first",
+      json: true,
+      usage: "[--days 7|30] [--limit <1..50>] [--min-sightings <n>]",
+      flags: [
+        { name: "--days", takesValue: true },
+        { name: "--limit", takesValue: true },
+        { name: "--min-sightings", takesValue: true },
+      ],
+      example: "eris yak clusters --days 7 --min-sightings 6",
+    },
+    "yak show": {
+      summary: "One yak cluster, or one observation, in full",
+      json: true,
+      pos: ["id?"],
+      usage: "<cluster-or-observation-id>",
+      example: "eris yak show 01M75PC29DE94YJYJHQZNJ4M47",
+    },
     "yak ready": { summary: "Whether this machine can file yaks, and when to file; always exits 0 (a SessionStart hook runs it)", json: true },
     "yak discover": {
       summary: "The Linear teams, projects, states and labels this org can file yaks into",
@@ -140,6 +158,14 @@ export default definePlugin({
   eris yak status                          {configured, observation_count, last_filed_issue_identifier}
   eris yak reports                         {reports: [{id, summary, issue_identifier, issue_url,
                                             state: {name, type}, submitted_at}]}
+  eris yak clusters                        {days, clusters: [{id, kind, summary, recent_count, total_count,
+                                            last_seen, issue_identifier, recent_by_status: {filed, pending,
+                                            failed}}]}
+  eris yak show <id>                       a cluster {id, kind, canonical_summary, observation_count,
+                                            first_seen, last_seen, current_issue_identifier, issue_history,
+                                            observations} or an observation {id, verb, route, summary, source,
+                                            received_at, status, cluster_id, delivered_at, attempts,
+                                            last_error, data}
   eris yak ready                           {ready, signed_in, endpoint, configured,
                                             last_filed_issue_identifier, fix}
   eris yak discover                        {teams, team_id, projects, workflow_states, labels,
