@@ -91,12 +91,14 @@ describe("router table", () => {
       "skills install": "ts",
       "skills lint": "ts",
       yak: "ts",
+      "yak clusters": "ts",
       "yak config": "ts",
       "yak discover": "ts",
       "yak fatal": "ts",
       "yak issue": "ts",
       "yak ready": "ts",
       "yak reports": "ts",
+      "yak show": "ts",
       "yak status": "ts",
       "yak suggest": "ts",
     });
@@ -212,7 +214,7 @@ describe("the --output json surfaces, from the registry", () => {
       docs: true,
       skills: ["install", "lint"],
       whoami: true,
-      yak: ["fatal", "issue", "suggest", "status", "reports", "ready", "discover", "config"],
+      yak: ["fatal", "issue", "suggest", "status", "reports", "clusters", "show", "ready", "discover", "config"],
     });
   });
 
