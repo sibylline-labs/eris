@@ -21,7 +21,7 @@ export interface DoctrineDefaults {
 export type DoctrineDefaultsSource = DoctrineDefaults | ((ctx: VerbContext) => DoctrineDefaults | Promise<DoctrineDefaults>);
 
 const ROWS = {
-  doctrine: { impl: "ts", summary: "Doctrine policy: blocks (check, schema, gates, effect, set, pull, push, path); the U2/U3 floor cannot be waived" },
+  doctrine: { impl: "ts", summary: "Doctrine policy: blocks (check, schema, gates, effect, set, pull, push, settings, history, path); the U2/U3 floor cannot be waived" },
   "doctrine check": {
     summary: "Validate every posture's policy: block in a doctrine file",
     json: true,
@@ -49,6 +49,14 @@ const ROWS = {
   },
   "doctrine pull": { summary: "Fetch the org's hosted policy on the eris login bearer and write it to ~/.eris/doctrine/<orgId>/", json: true },
   "doctrine push": { summary: "Save the org's edited policy tree as its hosted policy (PUT /v1/gates/policy); an unedited tree saves nothing", json: true },
+  "doctrine settings": {
+    summary: "Show the org's Gates settings, or set one (skills repo, staleness, ci.*, spend cap; an org admin's)",
+    json: true,
+    pos: ["action?", "key?", "value?"],
+    usage: "[show | set <key> <value>]",
+    complete: [["show", "set"]],
+  },
+  "doctrine history": { summary: "List every saved version of the org's policy, oldest first, with who saved it and whether it loosened the policy", json: true },
   "doctrine set": {
     summary: "Switch a doctrine file's active posture and have the gateway comment every impacted open issue",
     flags: [
@@ -69,6 +77,9 @@ const JSON_FIX = `  eris doctrine check                      {active, policy_has
   eris doctrine effect                     {effects: [{path, knob, before, after, direction, sentence}]}
   eris doctrine pull                       {org, bundle_sha, dir}
   eris doctrine push                       {org, bundle_sha, version, saved_at, dir, pushed}
+  eris doctrine settings                   {org, bundle_sha, settings}
+  eris doctrine settings set <key> <value> {org, bundle_sha, version, saved_at, pushed, widened, reasons, auth_mode, changed, settings}
+  eris doctrine history                    {org, versions: [{version, bundle_sha, saved_at, widened, reasons, auth_mode, settings}]}
 `;
 
 /** The doctrine plugin, reading `defaults` when a verb's file flag is absent. */
