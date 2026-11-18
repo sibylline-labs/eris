@@ -229,6 +229,23 @@ open, and a platform with no dashboard address is
 [`org-connect-unconfigured`](ERRORS.md#org-connect-unconfigured). A link that is not an `http(s)` url is
 never opened. `--output json` prints the org's own body from the last read.
 
+### `eris org connect-github`: bind a GitHub App installation
+
+`eris org connect-github --account <github-org>` connects the org's bus to a GitHub organization's pull
+request, review, comment and CI events. It reads the org's binding (`GET /v1/github`); a bound org prints
+`already bound: …` and exits 0. Otherwise it asks `gh api orgs/<github-org>/installations` whether the
+platform's App is installed there. If not, it opens the App's install page (printed on stderr either way,
+only printed under `--no-browser`) and asks `gh` every few seconds, for up to 10 minutes
+([`org-github-timeout`](ERRORS.md#org-github-timeout)). Once the App is listed it binds that installation
+(`POST /v1/github/installation`), sending your own `gh auth token` once as proof that you own the GitHub
+organization: the server lists the installation with it through GitHub's owner-only API, under the
+platform's App id, and keeps nothing. Only an org admin may
+([`org-admin-required`](ERRORS.md#org-admin-required)), and only an owner of the GitHub organization can
+prove it ([`org-github-not-owner`](ERRORS.md#org-github-not-owner),
+[`org-github-unproven`](ERRORS.md#org-github-unproven)). Personal accounts cannot be proven. `eris org
+github` shows the binding and the install link; `eris org disconnect-github` unbinds it (the installation
+stays held by this org). All three print the server's body under `--output json`.
+
 ### `eris org delete`: schedule or cancel the org's deletion
 
 `eris org delete --confirm <workspace>` schedules the org's deletion
