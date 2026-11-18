@@ -40,6 +40,10 @@
  *     and its handler (`doctrineHandler`, loaded on its first call), so a
  *     distribution points `eris doctrine` at its organisation's doctrine file
  *     (docs/DOCTRINE.md#a-distributions-defaults);
+ *   - the gate plugin (`gatePlugin`, with `GateDefaults`: the door-class ladder file and the pulled
+ *     tree) and the loop plugin (`loopPlugin`, with `LoopDefaults`), and the readers of the org's
+ *     pulled, verified policy tree they take as defaults (`pulledTree`, `freshTree`, loaded on their
+ *     first call), so a distribution composes the public gate, doctrine and loop verbs from here alone;
  *   - `build()`, which compiles a distribution (src/build.ts), loaded on its
  *     first call so a plugin manifest importing this module stays light on the
  *     completion path.
@@ -48,8 +52,11 @@
  */
 
 import type { BuildOptions, BuildResult } from "./build";
-import type { VerbHandler } from "./cli/plugin";
+import type { VerbContext, VerbHandler } from "./cli/plugin";
 import type { DoctrineDefaultsSource } from "../plugins/doctrine";
+import type { PullDeps } from "../plugins/doctrine/pull";
+import type { GateDefaults } from "../plugins/gate";
+import type { LoopDefaults } from "../plugins/loop";
 
 export * from "./cli/plugin";
 export type { VerbPath } from "./cli/registry";
@@ -68,6 +75,11 @@ export { HANDLERS, main, runProgram } from "./main";
 export { PLUGINS } from "../plugins";
 export type { DoctrineDefaults, DoctrineDefaultsSource } from "../plugins/doctrine";
 export { doctrinePlugin } from "../plugins/doctrine";
+export type { PullDeps } from "../plugins/doctrine/pull";
+export type { GateDefaults, PulledTree } from "../plugins/gate";
+export { gatePlugin } from "../plugins/gate";
+export type { LoopDefaults, LoopTree, PolicyRequest } from "../plugins/loop";
+export { loopPlugin } from "../plugins/loop";
 export type { RunJob, RunOptions, RunResult, Runner } from "./runtime/process";
 export { childEnv, nodeRunner, runMany, signalTree } from "./runtime/process";
 export { resolveConcurrency, resolveDeadlineMs, runPool } from "../ts/lib/pool";
@@ -87,4 +99,14 @@ export async function build(opts: BuildOptions): Promise<BuildResult> {
 /** `eris doctrine`'s handler, reading `defaults` when a verb's file flag is absent; its code loads on the first call. */
 export function doctrineHandler(defaults: DoctrineDefaultsSource = {}): VerbHandler {
   return async (args, ctx) => (await import("../plugins/doctrine/doctrine")).doctrineHandler(defaults)(args, ctx);
+}
+
+/** The org's pulled, verified tree for `GateDefaults.pulled` (null: none pulled); its code loads on the first call. */
+export async function pulledTree(ctx: VerbContext, deps: PullDeps = {}): ReturnType<NonNullable<GateDefaults["pulled"]>> {
+  return (await import("../plugins/doctrine/pull")).pulledTree(ctx, deps);
+}
+
+/** The org's tree, pulled again when `claimSha` names a newer bundle, for `LoopDefaults.policy`; its code loads on the first call. */
+export async function freshTree(ctx: VerbContext, claimSha: string | undefined, deps: PullDeps = {}): ReturnType<NonNullable<LoopDefaults["policy"]>> {
+  return (await import("../plugins/doctrine/pull")).freshTree(ctx, claimSha, deps);
 }

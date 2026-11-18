@@ -63,7 +63,7 @@ const STANDARD_PREFIXES = new Set(["ABC", "RFC", "UTF", "SHA", "ISO", "CVE", "CW
 
 /** Public autonomy-rung enum values (`GateRung`), allowed only in the doctrine contract, the doctrine and gate plugins, docs and fixtures. */
 const GATE_RUNG_LITERALS = new Set(["R0", "R1", "R2"]);
-const DOCTRINE_RUNG_PREFIXES = ["packages/gates-contract/", "plugins/doctrine/", "plugins/gate/", "tests/fixtures/doctrine/"];
+const DOCTRINE_RUNG_PREFIXES = ["packages/gates-contract/", "plugins/doctrine/", "plugins/gate/", "tests/fixtures/doctrine/", "examples/distribution/assets/ladder.yaml"];
 const isDoctrineRungPath = (path: string) =>
   path === "docs/DOCTRINE.md" || DOCTRINE_RUNG_PREFIXES.some((p) => path.startsWith(p));
 

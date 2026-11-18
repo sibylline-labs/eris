@@ -495,3 +495,20 @@ describe("the pulled tree", () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe("a distribution's composition of the gate plugin through eris/sdk", () => {
+  // admits: integration: when gatePlugin or its ladderFile default stops being reachable from eris/sdk, or the composed plugin stops handing the ladder to check, a distribution's @door row silently reads the default rung for every class; observed at the @door row of the example distribution's composed gate verb.
+  it("reads the distribution's own ladder rung at @door, a rung the default ladder does not state", async () => {
+    const { DISTRIBUTION_PLUGINS, LADDER_FILE } = await import("../examples/distribution/main");
+    const plugin = DISTRIBUTION_PLUGINS.find((p) => p.name === "gate")!;
+    put(receipt({ gate: "final-gates", artifact: { _tag: "file", path: "/nowhere/plan.md", sha256: sha256Hex("plan"), copy: { encoding: "gzip+base64", content: gzipSync(Buffer.from("plan")).toString("base64"), bytes: 4 } } }));
+    put(receipt({ gate: "understand-scope", user_impact: "U0" }));
+    let out = "";
+    const ctx = { erisDir: REPO, env: { HOME: home, PATH: process.env.PATH, GIT_CEILING_DIRECTORIES: sandbox }, stdout: { write: (s: string) => ((out += s), true) }, stderr: { write: () => true }, format: "text" as const };
+    const handler = await plugin.handlers.gate!();
+    const code = await handler(["check", "--issue", ISSUE, "--gates", "final-gates"], ctx).catch((e: unknown) => (e instanceof CliExit ? e.code : Promise.reject(e)));
+    expect(LADDER_FILE).toEndWith("assets/ladder.yaml");
+    expect(code).toBe(3);
+    expect(out).toContain(`@door\t${HUMAN_BEFORE}\tU0\n`);
+  });
+});
