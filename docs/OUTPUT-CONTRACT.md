@@ -42,6 +42,7 @@ so nothing is lost.
 | `1` | hard failure (an unslugged `ERROR` line, or the §4 failure block) |
 | `2` | **idempotent no-op** — nothing was written and this is not an error, where a command documents one. The payload is emitted either way |
 | `10` | **an update is available**, from `eris update --check` only. Not a failure: the answer a script asked for |
+| `141` | **the reader closed stdout early** (`eris <verb> | head`): 128 + SIGPIPE, with nothing on stderr. Core ends the run here for every verb |
 
 `2` and `10` never mean failure. A consumer that treats "non-zero" as "broken" will
 report a successful no-op, or an available update, as an incident.
