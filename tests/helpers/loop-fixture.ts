@@ -7,7 +7,8 @@
  *
  * Everything lives under the gitignored `data/scratch/` (never the system temp dir). The gateway keeps
  * one claim per issue as the real one does, records every request, and lets a test refuse any route.
- * The fake records each `claude` call's argv in `calls.log` (fields `\x1f`, records `\x1e`). The bearer
+ * The fake records each `claude` call's argv in `calls.log` (fields `\x1f`, records `\x1e`), and each
+ * call's env markers (plus any name listed in `FAKE_CLAUDE_ENV_KEYS`) in `calls.log.env`. The bearer
  * is assembled at runtime so no literal trips a secret scanner.
  */
 
@@ -15,6 +16,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { join, resolve } from "node:path";
 import { computeGatesBundleSha, type GatesOrgBundle, type GatesSettings } from "eris/gates-contract";
 import { LOOP_DEFAULTS } from "../../plugins/index";
+import type { LoopDefaults } from "../../plugins/loop";
 import { loopHandler, type LoopDeps } from "../../plugins/loop/handlers";
 import { CliExit } from "../../src/cli/ts-verb";
 
@@ -64,7 +66,8 @@ const args = process.argv.slice(2);
 const home = process.env.HOME;
 const jobs = join(home, ".claude", "jobs");
 appendFileSync(process.env.FAKE_CLAUDE_LOG, args.join("\\x1f") + "\\x1e");
-appendFileSync(process.env.FAKE_CLAUDE_LOG + ".env", JSON.stringify({ cwd: process.cwd(), CLAUDECODE: process.env.CLAUDECODE ?? null, CLAUDE_CODE_ENTRYPOINT: process.env.CLAUDE_CODE_ENTRYPOINT ?? null, ERIS_YAKS_TOKEN: process.env.ERIS_YAKS_TOKEN ?? null }) + "\\n");
+const extraKeys = (process.env.FAKE_CLAUDE_ENV_KEYS ?? "").split(",").filter((k) => k !== "");
+appendFileSync(process.env.FAKE_CLAUDE_LOG + ".env", JSON.stringify({ cwd: process.cwd(), CLAUDECODE: process.env.CLAUDECODE ?? null, CLAUDE_CODE_ENTRYPOINT: process.env.CLAUDE_CODE_ENTRYPOINT ?? null, ERIS_YAKS_TOKEN: process.env.ERIS_YAKS_TOKEN ?? null, ...Object.fromEntries(extraKeys.map((k) => [k, process.env[k] ?? null])) }) + "\\n");
 const flag = (n) => { const i = args.indexOf(n); return i < 0 ? undefined : args[i + 1]; };
 if (args[0] === "--bg") {
   if (process.env.FAKE_CLAUDE_FAIL) { process.stderr.write("claude: the daemon is down\\n"); process.exit(1); }
@@ -234,13 +237,17 @@ export interface Ran {
   stderr: string;
 }
 
-/** Drive `eris loop <args>` through the build's own loop wiring, in `cwd` (the world's repo by default). */
-export async function loop(w: LoopWorld, args: string[], o: { format?: "text" | "json"; stdin?: string; cwd?: string; deps?: Partial<LoopDeps>; env?: Record<string, string | undefined> } = {}): Promise<Ran> {
+/** Drive `eris loop <args>` through the build's own loop wiring (or `o.defaults`), in `cwd` (the world's repo by default). */
+export async function loop(
+  w: LoopWorld,
+  args: string[],
+  o: { format?: "text" | "json"; stdin?: string; cwd?: string; deps?: Partial<LoopDeps>; env?: Record<string, string | undefined>; defaults?: LoopDefaults } = {},
+): Promise<Ran> {
   let stdout = "";
   let stderr = "";
   let rc: number;
   try {
-    rc = await loopHandler(LOOP_DEFAULTS, {
+    rc = await loopHandler(o.defaults ?? LOOP_DEFAULTS, {
       home: w.home,
       cwd: o.cwd ?? w.repo,
       sleep: async () => undefined,

@@ -4,12 +4,14 @@
  * line is the `reap:` summary.
  *
  * Invariants:
- *  - only a background loop session (`eris-loop-<slug>-<issue>`) in `done` or `blocked` is stopped; a
- *    working one is kept, and a session that is not a loop's is never touched;
+ *  - only a background loop session (`eris-loop-<slug>-<issue>`, or a build's legacy prefix) in `done`
+ *    or `blocked` is stopped; a working one is kept, and a session that is not a loop's is never touched;
  *  - a session-bound claim is released only when `claude agents` was read and its session is done,
  *    blocked or absent: a listing that could not be read releases nothing; an unbound reservation is
  *    released once its ledger `claimed_at` is `ORPHAN_RESERVATION_MS` old, so a launch between its
  *    reserve and its bind keeps its claim;
+ *  - every ledger directory is walked (the primary, then a build's legacy ones) and each file is its
+ *    own record, so a stale legacy record beside a fresh primary one is reaped on its own merits;
  *  - a `--repo` that is not an absolute directory refuses (`loop-usage`) before any child runs;
  *  - `--dry-run` runs no stop, release, remove or prune: it prints and counts what it would do.
  */
@@ -17,7 +19,7 @@
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { GatesEndpoint } from "eris/gates-contract";
-import { claimPath, claimsDir, readClaim, releaseClaim, RUNTIME } from "./claims";
+import { readClaimIn, recordPath, releaseClaim, RUNTIME } from "./claims";
 import { type AgentRow, claudeAgents, jobsDir, trimmed } from "./claude";
 import { endpoint, type Run, runChild, which } from "./deps";
 import { checkCwd, loopOf } from "./names";
@@ -59,7 +61,7 @@ async function reapSessions(run: Run, dryRun: boolean, out: string[]): Promise<S
       }
       continue;
     }
-    if (kind !== "background" || sid === "" || !REAPED_AGENT_STATES.has(state) || loopOf(name) === null) continue;
+    if (kind !== "background" || sid === "" || !REAPED_AGENT_STATES.has(state) || loopOf(name, run.legacyPrefixes) === null) continue;
     if (dryRun) {
       out.push(`dry-run: stop session ${sid} (${name}, ${state})`);
       n.stopped += 1;
@@ -81,34 +83,39 @@ async function reapSessions(run: Run, dryRun: boolean, out: string[]): Promise<S
 const agentRowFor = (session: string, rows: ReadonlyArray<AgentRow>): AgentRow | undefined => rows.find((row) => session === row.id || session === (row.sessionId ?? ""));
 
 /** When the ledger says the claim was taken: its `claimed_at`, else the file's mtime. */
-function claimedAt(run: Run, issue: string, raw: string): number | null {
+function claimedAt(dir: string, issue: string, raw: string): number | null {
   const at = Date.parse(raw);
   if (!Number.isNaN(at)) return at;
   try {
-    return statSync(claimPath(run.home, issue)).mtimeMs;
+    return statSync(recordPath(dir, issue)).mtimeMs;
   } catch {
     return null;
   }
 }
 
+/** Each ledger file, directory by directory (primary first), each its own record. */
+function ledgerFiles(run: Run): ReadonlyArray<{ readonly dir: string; readonly issue: string }> {
+  return run.ledger.dirs.flatMap((dir) => {
+    try {
+      return readdirSync(dir)
+        .filter((f) => f.endsWith(".json") && !f.startsWith("."))
+        .sort()
+        .map((f) => ({ dir, issue: f.slice(0, -".json".length) }));
+    } catch {
+      return [];
+    }
+  });
+}
+
 async function reapClaims(run: Run, sess: SessionReap, dryRun: boolean, out: string[]): Promise<[number, number]> {
   let [released, failed] = [0, 0];
-  let files: string[];
-  try {
-    files = readdirSync(claimsDir(run.home))
-      .filter((f) => f.endsWith(".json") && !f.startsWith("."))
-      .sort();
-  } catch {
-    return [0, 0];
-  }
   let ep: GatesEndpoint | undefined;
-  for (const file of files) {
-    const issue = file.slice(0, -".json".length);
-    const record = readClaim(run.home, issue);
+  for (const { dir, issue } of ledgerFiles(run)) {
+    const record = readClaimIn(dir, issue);
     if (record === null || record.runtime !== RUNTIME) continue;
     let why: string;
     if (record.session_id === null || record.session_id === "") {
-      const at = claimedAt(run, issue, record.claimed_at);
+      const at = claimedAt(dir, issue, record.claimed_at);
       if (at === null || run.now() - at < ORPHAN_RESERVATION_MS) continue;
       why = "its launch never bound a session";
     } else {
@@ -125,7 +132,7 @@ async function reapClaims(run: Run, sess: SessionReap, dryRun: boolean, out: str
       continue;
     }
     ep ??= await endpoint(run);
-    if (await releaseClaim(ep, { home: run.home, issue, claimId: record.claim_id, outcome: "aborted", body: `eris loop reap released this claim: ${why}.`, warn: run.warn })) {
+    if (await releaseClaim(ep, { ledger: run.ledger, issue, claimId: record.claim_id, outcome: "aborted", body: `eris loop reap released this claim: ${why}.`, warn: run.warn })) {
       out.push(`released claim ${short} on ${issue} (${why})`);
       released += 1;
     } else failed += 1;

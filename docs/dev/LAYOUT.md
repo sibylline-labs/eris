@@ -50,9 +50,10 @@ plugins/doctrine/       # `eris doctrine check|schema|gates|effect|pull|path`: i
                         #   same plugin reading a distribution's doctrine and profiles files), doctrine.ts (the
                         #   handlers), pull.ts (pull and path, and freshTree, the tree the loop verbs read), org-tree.ts (the pulled tree: write, verify, swap); the contract is packages/gates-contract, imported by name (docs/DOCTRINE.md)
 plugins/loop/           # `eris loop list|resolve|launch|status|resume|stop|reap|hand-back`: index.ts (the manifest, and loopPlugin(defaults): the org's verified
-                        #   tree a build supplies), handlers.ts (the dispatch and the one failure render), help.ts, deps.ts (the
+                        #   tree and the distribution seams a build supplies, and loopRows), runtime.ts (the LoopRuntime contract a
+                        #   build's runtime implements), sessions.ts (a ref resolved over every runtime), handlers.ts (the dispatch and the one failure render), help.ts, deps.ts (the
                         #   endpoint, the child env and the subprocess seam), names.ts (operand normalisers), target.ts (key or
-                        #   yak id), claims.ts (the claim and its ledger), body.ts (a body from the verified tree), prompt.ts
+                        #   yak id), claims.ts (the claim and its ledger, primary and legacy directories), body.ts (a body from the verified tree), prompt.ts
                         #   (the header), claude.ts (the background-job runtime: ~/.claude/jobs, claude --bg, stop, agents),
                         #   transitions.ts (In Progress and Todo moves), launch.ts, hand-back.ts, stop.ts, resume.ts, status.ts
                         #   (a job's state, in-flight calls, newest message), reap.ts and reap-worktrees.ts (docs/LOOP.md)

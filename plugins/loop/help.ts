@@ -3,6 +3,8 @@
  * is the long form.
  */
 
+import type { LoopRuntime } from "./runtime";
+
 export const USAGE = `Usage: eris loop <command>
 
 Launch and tend the org's loops: each runs as a background Claude Code session
@@ -13,8 +15,9 @@ bodies come only from the org's policy, pulled to ~/.eris/doctrine/<orgId>/loops
 Commands:
   list                    The loops the org's policy carries
   resolve <ISSUE|YAK-ID>  The issue key an operand names
-  launch <loop> <ISSUE|YAK-ID> --cwd <abs> --model <m> [--report-to <KEY>]
-         [--caller <name>] [--context <text>] [--force] [--unclaimed]
+  launch <loop> <ISSUE|YAK-ID> --cwd <abs> --model <m> [--runtime <name>]
+         [--report-to <KEY>] [--caller <name>] [--context <text>] [--force]
+         [--unclaimed]
                           Claim the issue and start the loop; prints
                           'delegated <ISSUE> → loop <slug> · <session> · model <m>'
   status <ref>            A session's state, detail, claim and newest message
@@ -62,8 +65,9 @@ Flags:
   --output json  Print {"issue": "...", "yak"?: "..."}
 
 ${EXIT}`,
-  launch: `Usage: eris loop launch <loop> <ISSUE|YAK-ID> --cwd <abs> --model <m> [--report-to <KEY>]
-         [--caller <name>] [--context <text>] [--force] [--unclaimed] [--output json]
+  launch: `Usage: eris loop launch <loop> <ISSUE|YAK-ID> --cwd <abs> --model <m> [--runtime <name>]
+         [--report-to <KEY>] [--caller <name>] [--context <text>] [--force]
+         [--unclaimed] [--output json]
 
 Claim the issue, pull the org's policy when the claim names a newer one, read
 the loop's body from it, and start the loop as a background Claude Code session
@@ -77,6 +81,8 @@ parallel on distinct names.
 Flags:
   --cwd          The target repo (absolute, not $HOME); its org's policy is used
   --model        Claude's model (an alias such as sonnet or opus, or a full name)
+  --runtime      The runtime the session runs on: claude (the default), or one
+                 this build supplies
   --report-to    An issue key the hand-back is also posted on
   --caller       The launching session's name, for the loop to message
   --context      One line of context for the loop (at most 1024 characters)
@@ -151,3 +157,10 @@ Exit status: 0 every target got the hand-back; 1 a target got nothing
 operand was refused (loop-usage); 3 not signed in. See docs/LOOP.md.
 `,
 } as const;
+
+/** `loop launch`'s help: the public text, then the runtimes this build supplies and the flags each reads. */
+export function launchHelp(runtimes: ReadonlyArray<readonly [string, LoopRuntime]>): string {
+  if (runtimes.length === 0) return HELP.launch;
+  const lines = runtimes.map(([name, rt]) => `  ${name}${(rt.flags ?? []).length > 0 ? `  (reads ${(rt.flags ?? []).map((f) => `${f.name} <value>`).join(", ")})` : ""}`);
+  return `${HELP.launch}\nRuntimes this build supplies beside claude:\n${lines.join("\n")}\n`;
+}

@@ -44,6 +44,10 @@
  *     tree) and the loop plugin (`loopPlugin`, with `LoopDefaults`), and the readers of the org's
  *     pulled, verified policy tree they take as defaults (`pulledTree`, `freshTree`, loaded on their
  *     first call), so a distribution composes the public gate, doctrine and loop verbs from here alone;
+ *   - the loop plugin's distribution seams (docs/LOOP.md#distribution-seams): the runtime contract
+ *     (`LoopRuntime`, `LoopRuntimeEnv`, `LoopRuntimeSession`), the prompt-lines input
+ *     (`ComposePromptInput`), `LoopFailure` (how a runtime refuses), and `launchLoopSession`, a
+ *     launch without argv for a distribution verb that starts a loop itself (loaded on its first call);
  *   - `build()`, which compiles a distribution (src/build.ts), loaded on its
  *     first call so a plugin manifest importing this module stays light on the
  *     completion path.
@@ -57,6 +61,8 @@ import type { DoctrineDefaultsSource } from "../plugins/doctrine";
 import type { PullDeps } from "../plugins/doctrine/pull";
 import type { GateDefaults } from "../plugins/gate";
 import type { LoopDefaults } from "../plugins/loop";
+import type { LoopDeps } from "../plugins/loop/deps";
+import type { Launched, LaunchInput } from "../plugins/loop/launch";
 
 export * from "./cli/plugin";
 export type { VerbPath } from "./cli/registry";
@@ -78,8 +84,13 @@ export { doctrinePlugin } from "../plugins/doctrine";
 export type { PullDeps } from "../plugins/doctrine/pull";
 export type { GateDefaults, PulledTree } from "../plugins/gate";
 export { gatePlugin } from "../plugins/gate";
-export type { LoopDefaults, LoopTree, PolicyRequest } from "../plugins/loop";
+export type { LoopDefaults, LoopLegacy, LoopTree, PolicyRequest } from "../plugins/loop";
 export { loopPlugin } from "../plugins/loop";
+export type { LoopDeps } from "../plugins/loop/deps";
+export { LoopFailure } from "../plugins/loop/failure";
+export type { Launched, LaunchInput } from "../plugins/loop/launch";
+export type { ComposePromptInput } from "../plugins/loop/prompt";
+export type { LoopRuntime, LoopRuntimeEnv, LoopRuntimeFlag, LoopRuntimeFlags, LoopRuntimeSession } from "../plugins/loop/runtime";
 export type { RunJob, RunOptions, RunResult, Runner } from "./runtime/process";
 export { childEnv, nodeRunner, runMany, signalTree } from "./runtime/process";
 export { resolveConcurrency, resolveDeadlineMs, runPool } from "../ts/lib/pool";
@@ -109,4 +120,14 @@ export async function pulledTree(ctx: VerbContext, deps: PullDeps = {}): ReturnT
 /** The org's tree, pulled again when `claimSha` names a newer bundle, for `LoopDefaults.policy`; its code loads on the first call. */
 export async function freshTree(ctx: VerbContext, claimSha: string | undefined, deps: PullDeps = {}): ReturnType<NonNullable<LoopDefaults["policy"]>> {
   return (await import("../plugins/doctrine/pull")).freshTree(ctx, claimSha, deps);
+}
+
+/**
+ * Launch a loop as `eris loop launch` does, from a distribution verb that has no argv for it: the same
+ * order, refusals and claim handling (plugins/loop/launch.ts), with `defaults` as the build supplies
+ * them. A failure is thrown as a `LoopFailure`; its code loads on the first call.
+ */
+export async function launchLoopSession(ctx: VerbContext, defaults: LoopDefaults, input: LaunchInput, deps: LoopDeps = {}): Promise<Launched> {
+  const [{ runOf }, { launchLoop }] = await Promise.all([import("../plugins/loop/deps"), import("../plugins/loop/launch")]);
+  return launchLoop(runOf(ctx, defaults, deps), input);
 }

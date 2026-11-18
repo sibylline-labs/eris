@@ -4,9 +4,12 @@
  * (the other sessions the ref names), one `in-flight:` line per running tool call (and a `stalled:` line
  * for one past the budget), then the newest message.
  *
+ * A ref resolves over the Claude jobs and every supplied runtime's sessions together (sessions.ts); a
+ * supplied runtime's session is rendered by its runtime, handed the `claim:` and `also:` values.
+ *
  * Invariants:
  *  - several sessions matching one ref show the single working one, else the newest (`updatedAt`, then
- *    `createdAt`, then the later id); more than one working is `loop-session-ambiguous`;
+ *    `createdAt`, then the later id), across runtimes; more than one working is `loop-session-ambiguous`;
  *  - elapsed time is the verb's clock against the job's own timestamps;
  *  - the newest message keeps its last `STATUS_TEXT_MAX` characters (a blocked session's question ends it);
  *  - every line read from disk is decoded from `unknown`; one that does not decode is skipped.
@@ -16,11 +19,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as Schema from "effect/Schema";
 import { decodeResult } from "eris/gates-contract";
-import { readClaim } from "./claims";
-import { type ClaudeJob, matchJobs, readJobState, sessionAmbiguous, sessionNotFound, trimmed } from "./claude";
-import type { Run } from "./deps";
+import { heldClaim } from "./claims";
+import { type ClaudeJob, readJobState, sessionAmbiguous, trimmed } from "./claude";
+import { type Run, runtimeEnv } from "./deps";
 import { usage } from "./failure";
 import { loopOf, oneLine } from "./names";
+import { isWorking, type LoopSession, matchSessions, notFound, sessionIdOf, sessionNameOf, sessionStateOf } from "./sessions";
 
 /** Longest message `status` prints; the tail is kept. */
 export const STATUS_TEXT_MAX = 4000;
@@ -148,25 +152,32 @@ function lastMessage(job: ClaudeJob): string | null {
 
 const field = (name: string, v: string | null | undefined): ReadonlyArray<string> => (v !== null && v !== undefined && v !== "" ? [`${name}: ${v}`] : []);
 const jobTime = (job: ClaudeJob): number => isoMs(job.state.updatedAt) ?? isoMs(job.state.createdAt) ?? 0;
+const sessionTime = (s: LoopSession): number => (s.kind === "claude" ? jobTime(s.job) : (s.session.updatedAt ?? 0));
 
 /** The session a read of several matches shows: the single working one, else the newest. */
-function pick(ref: string, jobs: ReadonlyArray<ClaudeJob>): ClaudeJob {
-  const working = jobs.filter((j) => j.state.state === "working");
-  if (working.length > 1) sessionAmbiguous(ref, working.map((j) => j.id));
-  return working[0] ?? [...jobs].sort((a, b) => jobTime(b) - jobTime(a) || (a.id < b.id ? 1 : -1))[0]!;
+function pick(ref: string, matches: ReadonlyArray<LoopSession>): LoopSession {
+  const working = matches.filter(isWorking);
+  if (working.length > 1) sessionAmbiguous(ref, working.map(sessionIdOf));
+  return working[0] ?? [...matches].sort((a, b) => sessionTime(b) - sessionTime(a) || (sessionIdOf(a) < sessionIdOf(b) ? 1 : -1))[0]!;
 }
 
 /** The status text for the session `ref` names (ends with a newline). */
-export function loopStatus(run: Run, ref: string | undefined): string {
+export async function loopStatus(run: Run, ref: string | undefined): Promise<string> {
   const clean = ref?.trim() ?? "";
   if (clean === "") usage("status requires <session id|name|ISSUE>");
-  const matches = matchJobs(run.home, clean);
-  if (matches.length === 0) sessionNotFound(clean, run.home);
-  const job = pick(clean, matches);
-  const name = trimmed(job.state.name);
-  const l = loopOf(name);
-  const record = l === null ? null : readClaim(run.home, l.issue);
+  const matches = await matchSessions(run, clean);
+  if (matches.length === 0) notFound(run, clean);
+  const s = pick(clean, matches);
+  const name = sessionNameOf(s);
+  const l = loopOf(name, run.legacyPrefixes);
+  const record = l === null ? null : (heldClaim(run.ledger, l.issue)?.record ?? null);
   const claim = record === null ? null : `${record.claim_id.slice(0, 8)} · ${record.issue} · session ${record.session_id || "reserved, no session bound"} · since ${record.claimed_at || "unknown"}`;
+  const also = matches.filter((m) => m !== s).map((m) => `${sessionIdOf(m)} ${sessionStateOf(m)}`);
+  if (s.kind === "runtime") {
+    const text = await s.rt.status(runtimeEnv(run), s.session, { claim, also });
+    return text.endsWith("\n") ? text : `${text}\n`;
+  }
+  const job = s.job;
   const budgetM = COMMAND_BUDGET_MS / 60_000;
   const calls = inFlightCalls(job.dir, run.now()).flatMap((c) => {
     const [mins, secs] = [Math.floor(c.elapsedS / 60), c.elapsedS % 60];
@@ -180,7 +191,7 @@ export function loopStatus(run: Run, ref: string | undefined): string {
     ...field("detail", job.state.detail),
     ...field("needs", job.state.needs),
     ...field("claim", claim),
-    ...field("also", matches.filter((j) => j !== job).map((j) => `${j.id} ${j.state.state || "unknown"}`).join(", ")),
+    ...field("also", also.join(", ")),
     ...calls,
     ...message,
   ];
