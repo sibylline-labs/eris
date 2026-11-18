@@ -36,7 +36,7 @@ import { defaultOpenBrowser } from "./login";
 import { problemCode } from "./yak-admin";
 
 // A `…Slug`-named union: `tests/errors-doc.test.ts` harvests its members.
-export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied" | "org-delete-flags" | "org-confirmation-mismatch" | "org-workspace-name-unknown" | "org-tokens-revoked" | "org-connect-unconfigured" | "org-connect-timeout";
+export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied" | "org-delete-flags" | "org-confirmation-mismatch" | "org-workspace-name-unknown" | "org-tokens-revoked" | "org-connect-unconfigured" | "org-connect-timeout" | "org-admin-action-invalid" | "org-last-admin";
 
 const ORG_TIMEOUT_MS = 15_000;
 
@@ -52,6 +52,7 @@ const Member = z
   .passthrough();
 // passthrough: --output json prints the server's body, fields this build does not know included.
 const Members = z.object({ members: z.array(Member) }).passthrough();
+const AdminGrant = z.object({ memberId: z.string(), role: z.string(), roleSource: z.string().nullable().optional() }).passthrough();
 const Deactivated = z.object({ memberId: z.string(), status: z.string() }).passthrough();
 const Scheduled = z.object({ dueAt: z.string(), cause: z.string() }).passthrough();
 const Cancelled = z.object({ cancelled: z.boolean() }).passthrough();
@@ -76,6 +77,8 @@ export const ORG_USAGE = `Usage: eris org <command>
 Commands:
   members                        List this org's members: name, email, role, status, seats, id
   members deactivate <member-id> Deactivate a member (an org admin's)
+  members admin grant <member-id>  Make a member an admin (an org admin's)
+  members admin revoke <member-id> Demote an admin to member (an org admin's)
   delete --confirm <workspace>   Schedule this org's deletion (an org admin's)
   delete --cancel                Cancel a scheduled deletion
   connect-linear [--no-browser]  Connect this org's Linear workspace through the browser (an org admin's)
@@ -83,7 +86,7 @@ Commands:
 The org is the one this directory acts as ('eris whoami').
 `;
 
-export const MEMBERS_USAGE = `Usage: eris org members [deactivate <member-id>]
+export const MEMBERS_USAGE = `Usage: eris org members [deactivate <member-id> | admin grant|revoke <member-id>]
 
 List the members of the org this directory acts as: name (else the email's
 local part), email, role, status, seats and the member id. 'eris --output json org members'
@@ -93,6 +96,12 @@ prints the server's body.
   CLI tokens and seats end now. Only an org admin may; anyone else is refused
   (org-admin-required). The id is the memberId in 'eris org members'. You
   cannot deactivate yourself.
+
+  eris org members admin grant <member-id>    make a member an admin at once
+  eris org members admin revoke <member-id>   demote an admin to member; refused
+  while it would leave the org no other active admin (org-last-admin)
+  Both are an org admin's and print the member's role afterwards; the server
+  decides who may, never this command.
 `;
 
 export const CONNECT_USAGE = `Usage: eris org connect-linear [--no-browser]
@@ -140,7 +149,7 @@ interface Failure {
 
 type Outcome<T> = { ok: true; value: T } | { ok: false; failure: Failure };
 
-type Action = "deactivate a member" | "delete the org" | "cancel the org's deletion" | "connect Linear";
+type Action = "grant admin" | "revoke admin" | "deactivate a member" | "delete the org" | "cancel the org's deletion" | "connect Linear";
 
 function refusal(status: number, code: string | undefined, target: string, action: Action = "deactivate a member"): Failure {
   const answered = `the org endpoint answered ${status}${code ? ` ${code}` : ""} for ${target}`;
@@ -157,7 +166,9 @@ function refusal(status: number, code: string | undefined, target: string, actio
       slug: "org-admin-required",
       what: `${answered}: only an admin of this org can ${action}`,
       fix:
-        action === "deactivate a member"
+        action === "grant admin" || action === "revoke admin"
+          ? "ask an org admin to run it, or to change the member's role in the dashboard's Members page"
+          : action === "deactivate a member"
           ? "ask an org admin to run it, or to deactivate the member in the dashboard's Members page"
           : action === "connect Linear"
             ? "ask an org admin to run: eris org connect-linear"
@@ -176,6 +187,9 @@ function refusal(status: number, code: string | undefined, target: string, actio
   }
   if (status === 409 && code === "workspace_name_unknown") {
     return { slug: "org-workspace-name-unknown", what: `${answered}: this org has no stored workspace name to confirm against; nothing was scheduled`, fix: "connect or reconnect the org's Linear workspace in the dashboard, then run it again" };
+  }
+  if (status === 409 && code === "last_admin") {
+    return { slug: "org-last-admin", what: `${answered}: this would leave the org with no other active admin; nothing changed`, fix: "grant admin to another member first: eris org members admin grant <member-id>" };
   }
   if (status === 400 && code === "cannot_deactivate_self") return { slug: "org-cannot-deactivate-self", what: `${answered}: you cannot deactivate your own member`, fix: "have another admin deactivate it" };
   return { slug: "org-unavailable", what: answered, fix: "retry; 'eris whoami' shows which org and url this directory uses" };
@@ -276,6 +290,26 @@ async function runDeactivate(id: string | undefined, ctx: VerbContext, deps: Org
     return 0;
   }
   ctx.stdout.write(`deactivated ${got.value.memberId}\n`);
+  return 0;
+}
+
+async function runAdmin(op: string | undefined, id: string | undefined, ctx: VerbContext, deps: OrgDeps): Promise<number> {
+  if (op !== "grant" && op !== "revoke") {
+    return fail(ctx, { slug: "org-admin-action-invalid", what: `eris org members admin was given ${op === undefined ? "no action" : `'${plain(op)}'`}`, fix: "eris org members admin grant <member-id>   or   eris org members admin revoke <member-id>" });
+  }
+  if (id === undefined || id === "") {
+    return fail(ctx, { slug: "org-member-id-missing", what: `eris org members admin ${op} was given no member id`, fix: `eris org members admin ${op} <member-id>   (the ids: eris org members)` });
+  }
+  if (!MEMBER_ID.test(id)) {
+    return fail(ctx, { slug: "org-member-not-found", what: `'${plain(id)}' is not a member id (a member id is a 26-character ULID); nothing was sent`, fix: "list the ids: eris org members" });
+  }
+  const got = await request(op === "grant" ? "POST" : "DELETE", `/v1/org/members/${id}/admin`, AdminGrant, ctx, deps, { action: op === "grant" ? "grant admin" : "revoke admin" });
+  if (!got.ok) return fail(ctx, got.failure);
+  if (ctx.format === "json") {
+    ctx.stdout.write(`${JSON.stringify(got.value)}\n`);
+    return 0;
+  }
+  ctx.stdout.write(`${got.value.memberId} is now ${plain(got.value.role)}\n`);
   return 0;
 }
 
@@ -388,8 +422,9 @@ export async function runOrg(args: string[], ctx: VerbContext, deps: OrgDeps = {
   }
   const a = readArgs(plugin.rows, "org members", g.rest, ctx, { help: MEMBERS_USAGE });
   if (a === null) return 0;
-  const [action, id] = a.pos;
+  const [action, first, second] = a.pos;
   if (action === undefined) return runList(ctx, deps);
-  if (action !== "deactivate") return unknown(ctx, `members ${action}`, "members, members deactivate <member-id>");
-  return runDeactivate(id, ctx, deps);
+  if (action === "admin") return runAdmin(first, second, ctx, deps);
+  if (action !== "deactivate") return unknown(ctx, `members ${action}`, "members, members deactivate <member-id>, members admin grant|revoke <member-id>");
+  return runDeactivate(first, ctx, deps);
 }

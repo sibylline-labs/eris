@@ -206,6 +206,15 @@ page. `--output json` prints the server's body. `eris org members deactivate
 may, and a member's `403` is the [`org-admin-required`](ERRORS.md#org-admin-required)
 refusal. The member list carries no last-active time.
 
+`eris org members admin grant <member-id>` makes a member an admin at once
+(`POST /v1/org/members/:id/admin`), and `eris org members admin revoke <member-id>`
+demotes an admin to member (`DELETE` on the same route). Both print `{memberId, role,
+roleSource}` under `--output json`. Only an org admin may
+([`org-admin-required`](ERRORS.md#org-admin-required)); the server decides, the CLI does not pre-check the
+role. A revoke that would leave the org no other active admin is refused
+([`org-last-admin`](ERRORS.md#org-last-admin)) and changes nothing. A bad sub-action is
+[`org-admin-action-invalid`](ERRORS.md#org-admin-action-invalid).
+
 ### `eris org connect-linear`: connect the org's Linear workspace
 
 Linear's install is browser-only, so the verb hands off to the browser the way device-code login does.
@@ -623,6 +632,28 @@ Failures are the failure block on stderr, nothing on stdout, exit `1`:
 [`yak-show-missing-id`](ERRORS.md#yak-show-missing-id), [`yak-show-not-found`](ERRORS.md#yak-show-not-found),
 [`yak-show-unavailable`](ERRORS.md#yak-show-unavailable) and
 [`yak-admin-unavailable`](ERRORS.md#yak-admin-unavailable).
+
+### `eris yak retry` and `eris events`: requeue an observation, read the archive
+
+```bash
+eris yak retry <observation-id>                          # POST /v1/yaks/observations/:id/retry (an org admin's)
+eris events list --product yak [--day YYYY-MM-DD] [--cursor c] [--limit 1..500]   # GET /v1/events
+eris events parked [--day YYYY-MM-DD] [--cursor c] [--limit 1..500]               # GET /v1/events/parked
+```
+
+`yak retry` requeues one `failed` observation and prints `{requeued, status}` under `--output json`; any
+other row is left as it is and answers `requeued: false` with its status (exit 0). Only an org admin may
+([`yak-retry-admin-required`](ERRORS.md#yak-retry-admin-required)); an unknown id is
+[`yak-retry-not-found`](ERRORS.md#yak-retry-not-found), a missing one
+[`yak-retry-missing-id`](ERRORS.md#yak-retry-missing-id), anything else
+[`yak-retry-unavailable`](ERRORS.md#yak-retry-unavailable).
+
+`events list` reads one org's archived events for a product and UTC day (default: today); the org is the
+bearer's. `events parked` reads the lines the archive parked as invalid, which is the operator org's read:
+every other org is answered `404`, reported as [`events-not-found`](ERRORS.md#events-not-found). A page's
+`next_cursor` is printed on stderr; pass it back as `--cursor`. A bad `--product`, `--day`, `--limit` or
+`--cursor` is [`events-invalid`](ERRORS.md#events-invalid), refused before a request is sent;
+a 403 or other status is [`events-unavailable`](ERRORS.md#events-unavailable).
 
 ## What a receipt does not promise
 

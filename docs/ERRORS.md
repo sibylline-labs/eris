@@ -657,6 +657,17 @@ is refused with this slug before anything is sent. Exit 1.
 `eris org members deactivate <id>` named the caller's own member (`400
 cannot_deactivate_self`). Have another admin do it. Exit 1.
 
+### org-last-admin
+
+`eris org members admin revoke <id>` was refused (`409 last_admin`): the demotion would leave the org no
+other active admin, and nothing changed. Grant admin to another member first (`eris org members admin
+grant <member-id>`). Exit 1.
+
+### org-admin-action-invalid
+
+`eris org members admin` was given no action, or one other than `grant` or `revoke`. Run `eris org members
+admin grant <member-id>` or `eris org members admin revoke <member-id>`. Exit 1.
+
 ### org-member-id-missing
 
 `eris org members deactivate` was given no member id. Run `eris org members deactivate
@@ -1266,6 +1277,47 @@ with `eris yak clusters`. Exit 1.
 `eris yak show` was refused with a status eris has no remedy for (a `5xx`, a `403`). The block names the
 status and the server's error code, never the response body. A timeout, an unreachable endpoint or a body
 that does not match the contract is [`yak-admin-unavailable`](#yak-admin-unavailable) instead. Retry. Exit 1.
+
+### yak-retry-missing-id
+
+`eris yak retry` was given no observation id. Run `eris yak retry <observation-id>`; find one with `eris yak
+show <cluster-id>`. Exit 1.
+
+### yak-retry-not-found
+
+`eris yak retry` named an observation this org does not hold (`404`), or an id that is not shaped like one
+(nothing was sent). Exit 1.
+
+### yak-retry-admin-required
+
+`eris yak retry` was refused `403 admin_required`: only an admin of the org can requeue a failed observation.
+Ask an org admin to run it. Exit 1.
+
+### yak-retry-unavailable
+
+`eris yak retry` was refused with a status eris has no remedy for (a `5xx`). The block names the status and
+the server's error code. Retry. Exit 1.
+
+### events-invalid
+
+`eris events list` or `parked` was given a `--product`, `--day`, `--limit` or `--cursor` the endpoint would
+refuse (a day that is not a real UTC date, a limit outside 1..500, a cursor over 64 characters, no product
+for `list`). Nothing was sent. Exit 1.
+
+### events-not-found
+
+`eris events` read a route that is not served to this org (`404`). `events parked` is the operator org's
+read, so every other org gets this. Exit 1.
+
+### events-unavailable
+
+`eris events` was refused with a status eris has no remedy for (`403` for a credential without the
+`linear-proxy` product, or a `5xx`). The block names the status and the server's error code. Retry, or run
+`eris login`. Exit 1.
+
+### events-unknown-command
+
+`eris events` was given a command other than `list` or `parked`. Run `eris events --help`. Exit 1.
 
 ### doctrine-unknown-verb
 

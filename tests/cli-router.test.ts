@@ -43,6 +43,9 @@ describe("router table", () => {
       "org connect-linear": "ts",
       "org delete": "ts",
       "org members": "ts",
+      events: "ts",
+      "events list": "ts",
+      "events parked": "ts",
       whoami: "ts",
       tokens: "ts",
       "tokens ls": "ts",
@@ -98,6 +101,7 @@ describe("router table", () => {
       "yak issue": "ts",
       "yak ready": "ts",
       "yak reports": "ts",
+      "yak retry": "ts",
       "yak show": "ts",
       "yak status": "ts",
       "yak suggest": "ts",
@@ -210,11 +214,12 @@ describe("the --output json surfaces, from the registry", () => {
       doctrine: ["check", "effect", "pull", "push"],
       loop: ["list", "resolve", "launch", "resume", "reap", "stop", "hand-back"],
       org: ["members", "connect-linear", "delete"],
+      events: ["list", "parked"],
       update: true,
       docs: true,
       skills: ["install", "lint"],
       whoami: true,
-      yak: ["fatal", "issue", "suggest", "status", "reports", "clusters", "show", "ready", "discover", "config"],
+      yak: ["fatal", "issue", "suggest", "status", "reports", "clusters", "show", "retry", "ready", "discover", "config"],
     });
   });
 

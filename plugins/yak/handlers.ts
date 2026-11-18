@@ -62,6 +62,7 @@ Commands:
   reports   This org's own vendor reports with their Linear state
   clusters  This org's most-reported recent yak clusters (--days 7|30, --limit, --min-sightings)
   show      One cluster or observation in full, by id
+  retry     Requeue one failed observation (an org admin's)
   discover  The Linear teams, projects, states and labels it can file into
   config    Read or set that destination (get, set)
 
@@ -77,7 +78,7 @@ Run 'eris yak <command> --help' for the full flag reference.
 /** The admin verbs (./yak-admin.ts): `status`, `ready`, `discover`, `config get|set`.
  *  Null for a filing verb. A bare or unknown `config` word answers here. */
 async function adminHandler(verb: string, rest: string[], ctx: VerbContext): Promise<((deps: YakVerbDeps) => Promise<number>) | null> {
-  if (verb !== "status" && verb !== "ready" && verb !== "reports" && verb !== "clusters" && verb !== "show" && verb !== "discover" && verb !== "config") return null;
+  if (verb !== "status" && verb !== "ready" && verb !== "reports" && verb !== "clusters" && verb !== "show" && verb !== "retry" && verb !== "discover" && verb !== "config") return null;
   let admin: typeof import("./yak-admin");
   try {
     admin = await import("./yak-admin");
@@ -91,6 +92,7 @@ async function adminHandler(verb: string, rest: string[], ctx: VerbContext): Pro
   if (verb === "reports") return async (deps) => (await import("./yak-reports")).runReports(rest, ctx, adminDeps(deps));
   if (verb === "clusters") return async (deps) => (await import("./yak-clusters")).runClusters(rest, ctx, adminDeps(deps));
   if (verb === "show") return async (deps) => (await import("./yak-clusters")).runShow(rest, ctx, adminDeps(deps));
+  if (verb === "retry") return async (deps) => (await import("./yak-retry")).runRetry(rest, ctx, adminDeps(deps));
   if (verb === "discover") return async (deps) => admin.runDiscover(rest, ctx, adminDeps(deps));
   const c = groupArgs(plugin.rows, "yak config", rest);
   if ((c.kind === "bare" || c.kind === "help") && ctx.format === "json") {
