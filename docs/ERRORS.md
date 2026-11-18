@@ -754,8 +754,9 @@ the platform operator's act. Exit 1.
 
 ### org-github-org-bound
 
-The bind was refused with `409 org_already_bound`: this org already has a different installation bound.
-Run `eris org disconnect-github`, then connect the other. Exit 1.
+This org already has a different installation bound than the platform App's installation on
+`--account` (seen before any bind, or refused by the server with `409 org_already_bound`). Nothing was
+bound. Run `eris org disconnect-github`, then connect the other. Exit 1.
 
 ### org-tokens-revoked
 

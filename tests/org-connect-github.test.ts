@@ -11,7 +11,7 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { runOrg, type GhResult } from "../plugins/yak/org";
 import { CliExit } from "../src/cli/ts-verb";
@@ -32,6 +32,7 @@ let server: ReturnType<typeof Bun.serve>;
 let installation: { installation_id: number; bound_at: string } | null;
 let bindAnswer: (body: unknown) => Response;
 let unbindAnswer: () => Response;
+let appOverride: typeof APP | null;
 const seen: { method: string; path: string; auth: string | null; body: string }[] = [];
 
 beforeAll(() => {
@@ -44,7 +45,7 @@ beforeAll(() => {
       const path = new URL(req.url).pathname;
       const body = await req.text();
       seen.push({ method: req.method, path, auth: req.headers.get("authorization"), body });
-      if (req.method === "GET" && path === "/v1/github") return Response.json({ installation, app: APP });
+      if (req.method === "GET" && path === "/v1/github") return Response.json({ installation, app: appOverride ?? APP });
       if (req.method === "POST" && path === "/v1/github/installation") return bindAnswer(JSON.parse(body));
       if (req.method === "POST" && path === "/v1/github/installation/unbind") return unbindAnswer();
       return problem(404, "not_found");
@@ -61,6 +62,7 @@ afterAll(() => {
 beforeEach(() => {
   seen.length = 0;
   installation = null;
+  appOverride = null;
   bindAnswer = (body) => {
     installation = { installation_id: (body as { installation_id: number }).installation_id, bound_at: "2026-11-18T21:00:00.000Z" };
     return Response.json({ installation, app: APP });
@@ -72,29 +74,30 @@ beforeEach(() => {
 });
 
 /** A `gh` stand-in: the App appears on the org after `listsUntilInstalled` lists; every call is kept. */
-function fakeGh(opts: { listsUntilInstalled?: number; listCode?: number; token?: string } = {}) {
+function fakeGh(opts: { listsUntilInstalled?: number; listCode?: number; token?: string; listedId?: number; failListCalls?: readonly number[] } = {}) {
   const calls: string[][] = [];
   let lists = 0;
   const run = async (args: readonly string[]): Promise<GhResult> => {
     calls.push([...args]);
-    if (args[0] === "auth" && args[1] === "token") return { code: 0, stdout: `${opts.token ?? GH_TOKEN}\n`, stderr: "" };
-    if (args[0] === "api") {
+    if (args.includes("auth") && args.includes("token")) return { code: 0, stdout: `${opts.token ?? GH_TOKEN}\n`, stderr: "" };
+    if (args.includes("api")) {
       if (opts.listCode !== undefined) return { code: opts.listCode, stdout: "", stderr: "gh: Not Found (HTTP 404)" };
       lists++;
-      return { code: 0, stdout: lists > (opts.listsUntilInstalled ?? 0) ? `${INSTALLATION}\n` : "", stderr: "" };
+      if (opts.failListCalls?.includes(lists)) return { code: 1, stdout: "", stderr: "gh: connection reset" };
+      return { code: 0, stdout: lists > (opts.listsUntilInstalled ?? 0) ? `${opts.listedId ?? INSTALLATION}\n` : "", stderr: "" };
     }
     return { code: 1, stdout: "", stderr: "unexpected" };
   };
   return { run, calls };
 }
 
-async function run(args: string[], gh = fakeGh(), format: "text" | "json" = "text") {
+async function run(args: string[], gh: ReturnType<typeof fakeGh> | null = fakeGh(), format: "text" | "json" = "text", over: { PATH?: string; ghTimeoutMs?: number } = {}) {
   const out = { stdout: "", stderr: "" };
   const opened: string[] = [];
   let clock = Date.now();
   const ctx = {
     erisDir: REPO,
-    env: { PATH: process.env.PATH, HOME: home },
+    env: { PATH: over.PATH ?? process.env.PATH, HOME: home },
     format,
     stdout: { write: (s: string) => ((out.stdout += s), true) },
     stderr: { write: (s: string) => ((out.stderr += s), true) },
@@ -107,13 +110,14 @@ async function run(args: string[], gh = fakeGh(), format: "text" | "json" = "tex
       openBrowser: async (url) => void opened.push(url),
       sleep: async (ms) => void (clock += ms),
       now: () => clock,
-      runGh: gh.run,
+      ...(gh === null ? {} : { runGh: gh.run }),
+      ...(over.ghTimeoutMs === undefined ? {} : { ghTimeoutMs: over.ghTimeoutMs }),
     });
   } catch (e) {
     if (!(e instanceof CliExit)) throw e;
     code = e.code;
   }
-  return { code, opened, gh: gh.calls, ...out };
+  return { code, opened, gh: gh?.calls ?? [], ...out };
 }
 
 describe("eris org connect-github", () => {
@@ -123,8 +127,10 @@ describe("eris org connect-github", () => {
     expect(r.code).toBe(0);
     expect(r.opened).toEqual([APP.install_url]);
     expect(r.stdout).toBe(`bound: installation ${INSTALLATION} since 2026-11-18T21:00:00.000Z\n`);
-    expect(r.gh.filter((c) => c[0] === "api")).toHaveLength(3);
-    expect(r.gh[0]).toEqual(["api", "--paginate", "orgs/acme/installations", "--jq", `.installations[] | select(.app_id == ${APP.id}) | .id`]);
+    expect(r.gh.filter((c) => c.includes("api"))).toHaveLength(3);
+    // Both gh calls name github.com, so a GH_HOST or enterprise login never answers for it.
+    expect(r.gh[0]).toEqual(["api", "--hostname", "github.com", "--paginate", "orgs/acme/installations", "--jq", `.installations[] | select(.app_id == ${APP.id}) | .id`]);
+    expect(r.gh.at(-1)).toEqual(["auth", "token", "--hostname", "github.com"]);
     const bind = seen.find((s) => s.method === "POST");
     expect(JSON.parse(bind!.body)).toEqual({ installation_id: INSTALLATION, account: "acme", github_token: GH_TOKEN });
     for (const s of seen) expect(s.auth).toBe(`Bearer ${TOKEN}`);
@@ -140,14 +146,27 @@ describe("eris org connect-github", () => {
     expect(seen.map((s) => `${s.method} ${s.path}`)).toEqual(["GET /v1/github", "POST /v1/github/installation"]);
   });
 
-  it("says already bound and runs no gh when the org has an installation", async () => {
-    /** When a bound org is walked through the install again, the admin may bind a second org's installation over it: observed as a gh call or a POST. */
-    installation = { installation_id: 1, bound_at: "2026-11-01T00:00:00.000Z" };
+  it("says already bound, and binds nothing, when the org holds this --account's installation", async () => {
+    /** When a bound org is walked through the install again, the admin may bind a second org's installation over it: observed as a POST or an opened url. */
+    installation = { installation_id: INSTALLATION, bound_at: "2026-11-01T00:00:00.000Z" };
     const r = await run(["connect-github", "--account", "acme"]);
     expect(r.code).toBe(0);
-    expect(r.stdout).toBe("already bound: installation 1 since 2026-11-01T00:00:00.000Z\n");
-    expect(r.gh).toEqual([]);
+    expect(r.stdout).toBe(`already bound: installation ${INSTALLATION} since 2026-11-01T00:00:00.000Z\n`);
+    expect(r.opened).toEqual([]);
     expect(seen.map((s) => s.method)).toEqual(["GET"]);
+  });
+
+  it("refuses with org-github-org-bound when the org holds another GitHub org's installation", async () => {
+    /** An exit 0 for a write that did not happen tells the admin acme is connected while its events never arrive: observed as the exit code, the slug and no POST. */
+    installation = { installation_id: 1, bound_at: "2026-11-01T00:00:00.000Z" };
+    for (const gh of [fakeGh(), fakeGh({ listsUntilInstalled: Number.POSITIVE_INFINITY })]) {
+      seen.length = 0;
+      const r = await run(["connect-github", "--account", "acme"], gh);
+      expect(r.code).toBe(1);
+      expect(r.stderr).toContain("slug: org-github-org-bound");
+      expect(r.opened).toEqual([]);
+      expect(seen.map((s) => s.method)).toEqual(["GET"]);
+    }
   });
 
   it("refuses before any browser hand-off when gh cannot list the org (not an owner, or not an org)", async () => {
@@ -183,6 +202,55 @@ describe("eris org connect-github", () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("slug: org-github-timeout");
     expect(seen.map((s) => s.method)).toEqual(["GET"]);
+  });
+});
+
+describe("connect-github's github.com pins and gh resilience", () => {
+  it("opens no install link that is not https://github.com/apps/...", async () => {
+    /** A server answer naming another host would send the admin, mid-install, to a page that is not GitHub's: observed as the opened urls and the slug. */
+    for (const url of ["https://evil.example/apps/platform-app/installations/new", "https://github.com/login/oauth/authorize", "http://github.com/apps/platform-app/installations/new"]) {
+      appOverride = { ...APP, install_url: url };
+      const r = await run(["connect-github", "--account", "acme"], fakeGh({ listsUntilInstalled: 1 }));
+      expect([url, r.code]).toEqual([url, 1]);
+      expect(r.opened).toEqual([]);
+      expect(r.stderr).toContain("slug: org-unavailable");
+    }
+  });
+
+  it("never follows a redirect with the GitHub token in the body", async () => {
+    /** A 307 from the bind would re-send the JSON body, github_token included, to whatever host it names: observed as the other server's request log. */
+    const other: string[] = [];
+    const elsewhere = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (req) => (other.push(await req.text()), Response.json({ installation: null, app: APP })) });
+    try {
+      bindAnswer = () => new Response(null, { status: 307, headers: { location: `http://127.0.0.1:${elsewhere.port}/v1/github/installation` } });
+      const r = await run(["connect-github", "--account", "acme"]);
+      expect(r.code).toBe(1);
+      expect(other).toEqual([]);
+      expect(r.stderr).not.toContain(GH_TOKEN);
+    } finally {
+      elsewhere.stop(true);
+    }
+  });
+
+  it("waits out a transient gh failure during the install wait", async () => {
+    /** One dropped gh call during a ten-minute wait would abandon an install the admin is finishing: observed as the exit code and the bind. */
+    const r = await run(["connect-github", "--account", "acme"], fakeGh({ listsUntilInstalled: 3, failListCalls: [2] }));
+    expect(r.code).toBe(0);
+    expect(seen.map((s) => s.method)).toEqual(["GET", "POST"]);
+  });
+
+  it("runs the real gh from the caller's PATH and kills one that hangs", async () => {
+    /** A gh found outside the caller's env, or one that never exits, leaves the command reading the wrong login or hanging: observed through a stand-in gh executable on ctx.env's PATH. */
+    const bin = join(sandbox, "bin");
+    mkdirSync(bin, { recursive: true });
+    const marker = join(sandbox, "gh-ran");
+    writeFileSync(join(bin, "gh"), `#!/bin/sh\necho "$@" > '${marker}'\nexec sleep 30\n`, { mode: 0o755 });
+    const started = Date.now();
+    const r = await run(["connect-github", "--account", "acme"], null, "text", { PATH: `${bin}:/usr/bin:/bin`, ghTimeoutMs: 300 });
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("slug: org-github-not-owner");
+    expect(readFileSync(marker, "utf8")).toContain("--hostname github.com");
   });
 });
 
