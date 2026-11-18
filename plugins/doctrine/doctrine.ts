@@ -233,34 +233,31 @@ async function runGates(args: string[], ctx: VerbContext, defaults: Fallback): P
   if (policy === undefined || policy === null) return 0;
   const profiles = readProfiles(a.flags["--profiles"] ?? (await defaults()).profilesFile);
   if (!profiles.ok) stop(ctx, profiles.failure);
-  // One write: a reader that closes the pipe early (`| head`) then ends a single write, not a loop of them.
-  const out: string[] = [];
   const explain = (lines: string[]) => {
-    if (a.flags["--explain"] === true) out.push(...lines);
+    if (a.flags["--explain"] === true) ctx.stdout.write(lines.join(""));
   };
   for (const row of effectiveGateMap(profiles.value, policy)) {
-    out.push(`${row.profile}\t${row.gate}\t${row.mode}\n`);
+    ctx.stdout.write(`${row.profile}\t${row.gate}\t${row.mode}\n`);
     explain(gateExplanation(row.gate, row.mode));
   }
   const reqMeaning = meaningsOf(Requirement.ast)?.values ?? {};
   for (const row of effectiveRequirements(policy)) {
-    out.push(`@user-impact\t${row.cls}\t${row.reqs.join(",")}\n`);
+    ctx.stdout.write(`@user-impact\t${row.cls}\t${row.reqs.join(",")}\n`);
     explain(row.reqs.map((r) => `${INDENT}${r}: ${reqMeaning[r] ?? "(undocumented)"}\n`));
   }
   const rungMeaning = meaningsOf(Rung.ast)?.values ?? {};
   for (const row of effectiveLifts(policy)) {
-    out.push(`@lift\t${row.door}\t${row.rung}\n`);
+    ctx.stdout.write(`@lift\t${row.door}\t${row.rung}\n`);
     explain([`${INDENT}${row.rung}: ${rungMeaning[row.rung] ?? "(undocumented)"}\n`]);
   }
   for (const [key, value] of remediateRows(policy)) {
-    out.push(`@remediate\t${key}\t${value}\n`);
+    ctx.stdout.write(`@remediate\t${key}\t${value}\n`);
     explain([`${INDENT}${fieldSummary(Remediate.fields as Fields, key)}\n`]);
   }
   for (const [key, value] of askRows(policy)) {
-    out.push(`@ask\t${key}\t${value}\n`);
+    ctx.stdout.write(`@ask\t${key}\t${value}\n`);
     explain([`${INDENT}${fieldSummary(AskPolicy.fields as Fields, key)}\n`]);
   }
-  ctx.stdout.write(out.join(""));
   return 0;
 }
 

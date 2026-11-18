@@ -183,6 +183,14 @@ function exitAfterFlush(code: number): void {
   setTimeout(() => process.exit(code), 10_000).unref();
 }
 
+/** What a reader that closed stdout early (`eris <verb> | head`) leaves: 128 + SIGPIPE. */
+const CLOSED_PIPE_STATUS = 141;
+
+/** A write to a pipe whose reader has gone: bun throws it synchronously from `write`, node emits it. */
+function isClosedPipe(e: unknown): boolean {
+  return typeof e === "object" && e !== null && (e as { code?: unknown }).code === "EPIPE";
+}
+
 export interface ProgramOptions extends Pick<MainOptions, "cli" | "entitlements"> {
   /**
    * The distribution's root, an absolute path: what a run from source reads its
@@ -224,7 +232,13 @@ export function runProgram(opts: ProgramOptions = {}): void {
   // written, mid idempotency-key digest) — and a loop that drains
   // with `main` still pending ends the process as a silent success.
   const hold = setInterval(() => {}, 1 << 30);
+  // A closed reader ends the run quietly, here once for every verb, whether the
+  // write threw (bun) or the stream emitted (node).
+  process.stdout.on("error", (e) => {
+    if (isClosedPipe(e)) process.exit(CLOSED_PIPE_STATUS);
+  });
   main(process.argv.slice(2), process.env, mainOpts).finally(() => clearInterval(hold)).then(exitAfterFlush, (e) => {
+    if (isClosedPipe(e)) return exitAfterFlush(CLOSED_PIPE_STATUS);
     process.stderr.write(`ERROR ${e instanceof Error ? e.message : String(e)}\n`);
     exitAfterFlush(1);
   });
