@@ -28,10 +28,10 @@ Ask the Socrates endpoint what is waiting and print it:
 'pending candidates: <n>', 'open review Epics: <n>' and one line per Epic
 ('  <epic>  <project>  <n> open  <url>', <project> being the project UUID or name
 the endpoint reports). With --candidate, then
-'candidate <id>: <state>', the issue it is filed as and, when the review Epic's
+'candidate <id>: <state>', the issue it is filed as, the living doc and entry it was written to (a practice, or a resolved entry) and, when the review Epic's
 verbosity cap holds it, '  held by the verbosity cap until <Mon-DD HH:MMZ>'. --output json prints
 {rubric_version, policy_hash, pending_candidates, open_epics: [{epic, project,
-url, open_children}], candidate?: {candidate_id, state, issue_url?, held_until?, held_reason?},
+url, open_children}], candidate?: {candidate_id, state, issue_url?, held_until?, held_reason?, doc_url?, entry_id?},
 contract_version}.
 
   --candidate <id>   a candidate id, as 'eris socrates submit' prints it. State
@@ -79,6 +79,8 @@ export async function runStatus(args: string[], ctx: VerbContext, deps: Socrates
   if (candidate_id !== undefined && reply.candidate !== undefined) {
     out += `candidate ${printable(reply.candidate.candidate_id)}: ${reply.candidate.state}\n`;
     if (reply.candidate.issue_url !== undefined) out += `  issue: ${printable(reply.candidate.issue_url)}\n`;
+    if (reply.candidate.doc_url !== undefined) out += `  doc: ${printable(reply.candidate.doc_url)}\n`;
+    if (reply.candidate.entry_id !== undefined) out += `  entry: ${printable(reply.candidate.entry_id)}\n`;
     if (reply.candidate.held_until !== undefined) out += `  ${heldLine(reply.candidate.held_until)}\n`;
   }
   ctx.stdout.write(out);

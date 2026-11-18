@@ -171,7 +171,7 @@ export default definePlugin({
   eris socrates discover --advance         {repo, cursor}
   eris socrates status                     {rubric_version, policy_hash, pending_candidates,
                                             open_epics: [{epic, project, url, open_children}],
-                                            candidate?: {candidate_id, state, issue_url?},
+                                            candidate?: {candidate_id, state, issue_url?, doc_url?, entry_id?},
                                             contract_version}
   eris socrates policy                     {rubric_version, policy_hash, cached, fetched_at,
                                             org_policy, policy, repo_policy, repo_policy_path,
