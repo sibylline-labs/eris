@@ -14,6 +14,9 @@ surfaces:
       - plugins/yak/org.ts
       - plugins/yak/yak-submit.ts
       - plugins/yak/yak-reports.ts
+      - plugins/yak/whoami.ts
+      - plugins/yak/handlers.ts
+      - plugins/yak/login.ts
       - plugins/socrates/submit.ts
       - plugins/socrates/client.ts
       - plugins/socrates/resolve.ts
@@ -41,6 +44,8 @@ surfaces:
       - tests/outbound-scan.test.ts
       - tests/org.test.ts
       - tests/org-send-sites.test.ts
+      - tests/org-send-sites-admin.test.ts
+      - tests/login.test.ts
       - tests/yak-reports.test.ts
       - tests/doctrine-pull.test.ts
       - tests/doctrine-push.test.ts
@@ -66,7 +71,9 @@ surfaces:
       vendored gitleaks rules and the scan that refuses on them (scan.ts);
       yak-submit.ts, yak-reports.ts and socrates/submit.ts, resolve.ts, consult.ts, settings.ts and settings-panels.ts are the call sites,
       credentials.ts resolves the bearer and the URL it may go to, and
-      yak.ts, yak-admin.ts, org.ts and client.ts carry it, as do the gates
+      yak.ts, yak-admin.ts, org.ts, whoami.ts and client.ts carry it, handlers.ts
+      forwards the caller's directory the bearer is resolved from, login.ts
+      receives the bearer and writes it to yaks.json, as do the gates
       client (packages/gates-contract/src/client.ts, which also refuses a
       non-https, non-loopback URL), doctrine/pull.ts, doctrine/push.ts and doctrine/set.ts (the same bearer, over PUT and POST) and gate/store.ts, gate/ci-verb.ts (which carries
       the bearer GET-only: `eris gate ci` builds its one endpoint on a fetch

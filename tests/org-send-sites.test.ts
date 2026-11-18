@@ -2,7 +2,8 @@
  * Where a bearer is sent: a repo whose `eris.yaml` names org B sends org B's
  * bearer to org B's url, never the default org's, from every site that
  * resolves one (`eris yak` submit, `eris yak status` and `ready`, the
- * socrates client, `eris org members`, `eris org members deactivate`, `eris org delete` and `eris org connect-linear`).
+ * socrates client, `eris whoami`, `eris org members`, `eris org members deactivate`, `eris org delete` and `eris org connect-linear`).
+ * The dispatcher hop for the `eris yak` admin verbs is driven in org-send-sites-admin.test.ts.
  *
  * The seam is each verb's entry point with an injected `fetch` and `cwd` over a
  * sandbox HOME holding two orgs. The resolver itself is covered by
@@ -21,6 +22,7 @@ import { runYak } from "../plugins/yak/yak";
 import { runReports } from "../plugins/yak/yak-reports";
 import { runReady, runStatus } from "../plugins/yak/yak-admin";
 import { runTokens } from "../plugins/yak/tokens";
+import { runWhoami } from "../plugins/yak/whoami";
 
 setDefaultTimeout(60_000);
 
@@ -148,6 +150,16 @@ describe("a repo that selects org B sends org B's bearer and url", () => {
         await swallow(() => runTokens(args, ctx().ctx, { cwd, home, fetchImpl: f }));
         expect(seen[0]).toEqual({ url: `${url}${path}`, authorization: `Bearer ${token}`, method });
       }
+    }
+  });
+
+  // admits: whoami resolving from the process cwd; its one send is the org read
+  it("eris whoami", async () => {
+    /** When whoami.ts resolves from process.cwd() instead of the caller's, an org-B repo reports the default org's role and tier with the default bearer, so the operator believes the wrong identity is in force: observed in the request the injected fetch receives, from an org-B repo, a default repo and a directory (`/`) with no eris.yaml. */
+    for (const [cwd, token, url] of [[repoB, TOKEN_B, URL_B], [repoDefault, TOKEN_A, URL_A], ["/", TOKEN_A, URL_A]] as const) {
+      const { seen, fetch } = recorder(() => ({ orgId: ORG_A, memberId: "m", role: "member" }));
+      await swallow(() => runWhoami([], ctx().ctx, { cwd, home, fetchImpl: fetch }));
+      expect(seen).toEqual([{ url: `${url}/v1/org/me`, authorization: `Bearer ${token}` }]);
     }
   });
 

@@ -91,15 +91,19 @@ export async function resolveEndpoint(env: Record<string, string | undefined>, h
   return { ok: true, value: { url: bearer.value.url.replace(/\/+$/, ""), token: bearer.value.token } };
 }
 
-/** The problem body's `code`: top level (RFC 7807, as the gateway sends it), else the `{error: {code}}` shape. */
-function errorCode(body: unknown): string | undefined {
+/**
+ * The problem body's `code`: top level (RFC 7807, as Hera sends it), else the legacy `{error: {code}}`
+ * shape. A code that is not a short snake_case word is dropped, so a server cannot put text of its
+ * choosing (escape sequences, a credential) into a failure block; the refusal then maps to its
+ * status's generic slug.
+ */
+export function problemCode(body: unknown): string | undefined {
   if (typeof body !== "object" || body === null) return undefined;
   const top = (body as { code?: unknown }).code;
-  if (typeof top === "string") return top;
   const error = (body as { error?: unknown }).error;
-  if (typeof error !== "object" || error === null) return undefined;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === "string" ? code : undefined;
+  const nested = typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
+  const code = typeof top === "string" ? top : nested;
+  return typeof code === "string" && /^[a-z][a-z0-9_]{0,63}$/.test(code) ? code : undefined;
 }
 
 function refusal(status: number, code: string | undefined, target: string): Failure {
@@ -162,7 +166,7 @@ export async function request<S extends z.ZodTypeAny>(
       const what = name === "AbortError" || name === "TimeoutError" ? `the yaks endpoint did not answer within ${timeoutMs}ms (${target})` : `cannot reach the yaks endpoint (${target}): ${(err as Error).message}`;
       return failed({ slug: "yak-admin-unavailable", what, fix: "check the network, and ERIS_YAKS_URL or the url in ~/.eris/yaks.json" });
     }
-    if (!response.ok) return failed(refuse(response.status, errorCode(parsed), target));
+    if (!response.ok) return failed(refuse(response.status, problemCode(parsed), target));
     const shaped = schema.safeParse(parsed);
     if (!shaped.success) {
       return failed({ slug: "yak-admin-unavailable", what: `the yaks endpoint answered ${response.status} with a body that does not match the contract (${target})`, fix: "update eris: eris update" });

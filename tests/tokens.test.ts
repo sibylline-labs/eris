@@ -40,7 +40,7 @@ const listBody = () => ({
 });
 const mintedBody = () => ({ token: MINTED, tokenId: TOKEN_ID, name: "ci", scopes: [{ product: "yak", access: "write" }] });
 const problem = (status: number, code: string, extra: Record<string, unknown> = {}) =>
-  Response.json({ type: "about:blank", status, error: { code }, ...extra }, { status, headers: { "content-type": "application/problem+json" } });
+  Response.json({ type: `urn:hera:error:${code}`, title: "Refused", status, detail: "refused", code, ...extra }, { status, headers: { "content-type": "application/problem+json" } });
 
 beforeAll(() => {
   mkdirSync(join(REPO, ".scratch"), { recursive: true });

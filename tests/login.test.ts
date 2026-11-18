@@ -29,6 +29,10 @@ const USER_CODE = "BCDF-GHJK";
 
 type Handler = (req: Request, body: Record<string, string>) => Response | Promise<Response>;
 
+/** A refusal as the gateway sends it outside the RFC 6749 poll codes: RFC 7807 problem+json, the code at the top level. */
+const problem = (status: number, code: string, detail: string, headers: Record<string, string> = {}) =>
+  Response.json({ type: `urn:hera:error:${code}`, title: "Refused", status, detail, code }, { status, headers: { "content-type": "application/problem+json", ...headers } });
+
 let sandbox: string;
 let home: string;
 let server: ReturnType<typeof Bun.serve>;
@@ -58,7 +62,7 @@ beforeAll(() => {
       }
       if (path === "/v1/yaks") {
         const parsed = body as unknown as { idempotency_key: string };
-        if (req.headers.get("authorization") !== `Bearer ${TOKEN}`) return Response.json({ error: { code: "unauthorized", message: "bad bearer" } }, { status: 401 });
+        if (req.headers.get("authorization") !== `Bearer ${TOKEN}`) return problem(401, "invalid_token", "bad bearer");
         return Response.json({ id: "obs-1", idempotency_key: parsed.idempotency_key, replay: false, contract_version: YAKS_CONTRACT_VERSION });
       }
       return new Response("not found", { status: 404 });
@@ -231,27 +235,38 @@ describe("eris login — the device-code grant", () => {
     expect(existsSync(yaksJson())).toBe(false);
   });
 
-  it("reads both error shapes: RFC {error} on a 400, the gateway's {error:{code}} on a 503, and waits out a 429", async () => {
-    /** When the client reads only one error shape, a misconfigured scope or a rate limit surfaces as "unknown error" (or kills an approved login) — observed at stderr and the outcome. */
+  it("reads both error shapes: RFC {error} on a 400, Hera problem+json on a 503 and a 429, and waits out the 429", async () => {
+    /** When the client reads only one error shape, a misconfigured scope or a rate limit surfaces as "HTTP 503" (or kills an approved login) — observed at stderr and the outcome. */
     start = () => Response.json({ error: "invalid_device" }, { status: 400 });
     const bad = await drive(runLogin, ["--url", url()]);
     expect(bad.rc).toBe(1);
     expect(bad.stderr).toContain("slug: login-refused");
     expect(bad.stderr).toContain("invalid_device");
 
-    start = () => Response.json({ error: { code: "device_unconfigured", message: "device login is not configured in this scope" } }, { status: 503 });
+    start = () => problem(503, "device_unconfigured", "device login is not configured in this scope");
     const off = await drive(runLogin, ["--url", url()]);
     expect(off.rc).toBe(1);
     expect(off.stderr).toContain("slug: login-refused");
-    expect(off.stderr).toContain("device_unconfigured");
+    expect(off.stderr).toContain("device_unconfigured: device login is not configured in this scope");
 
     start = () => started();
-    const limited = () => new Response(JSON.stringify({ error: { code: "rate_limited", message: "retry after 30s" } }), { status: 429, headers: { "retry-after": "30", "content-type": "application/json" } });
+    const limited = () => problem(429, "rate_limited", "retry after 30s", { "retry-after": "30" });
     polls = [limited, minted()];
     const ok = await drive(runLogin, ["--url", url()]);
     expect(ok.rc).toBe(0);
     expect(ok.sleeps).toEqual([5000, 30000]);
     expect(JSON.parse(readFileSync(yaksJson(), "utf8")).token).toBe(TOKEN);
+  });
+
+  // admits: a poll-time outage reported without its cause; the transient path is the one that gives up
+  it("a poll that keeps answering Hera 503s gives up as login-unreachable naming the code, with control characters stripped", async () => {
+    /** When the poll reader misses Hera's top-level code, a lost endpoint reads as a bare "HTTP 503", and an unstripped detail lets the server drive the terminal: observed on stderr. */
+    polls = Array.from({ length: 4 }, () => () => problem(503, "accounts_unavailable", "accounts \u001b[2Jdid not answer"));
+    const r = await drive(runLogin, ["--url", url()]);
+    expect(r.rc).toBe(1);
+    expect(r.stderr).toContain("slug: login-unreachable");
+    expect(r.stderr).toContain("accounts_unavailable: accounts [2Jdid not answer");
+    expect(r.stderr).not.toContain("\u001b");
   });
 
   it("--no-browser prints the code without opening anything, and an ERIS_YAKS_TOKEN in the environment is called out", async () => {

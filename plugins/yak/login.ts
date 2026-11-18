@@ -36,8 +36,9 @@
  *     (to the interval it carries, else by 5 s); a 429 waits out `retry-after`
  *     for one poll. The code's `expires_in` ends the loop locally even if the
  *     server never says `expired_token`.
- *   - Two error shapes are read: RFC 6749's `{error: "<code>"}` (every 400) and
- *     the gateway's `{error: {code, message}}` (429, 503). A 5xx or a dropped
+ *   - Three error shapes are read: Hera's RFC 7807 problem+json (top-level
+ *     `code` and `detail`; the gateway's 429 and 503), RFC 6749's
+ *     `{error: "<code>"}` (every 400) and the legacy `{error: {code, message}}`. A 5xx or a dropped
  *     connection while polling is retried up to `MAX_TRANSIENT` times in a
  *     row, so a blip after the user approved does not throw the approval away.
  *   - Text from the server is shown only after control characters are
@@ -137,14 +138,22 @@ function printable(text: string): string {
   return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
 }
 
-/** The error code from either shape: RFC `{error: "<code>"}` or the gateway's `{error: {code}}`. */
+/** Longest server `detail` a refusal shows; the rest is cut. */
+const MAX_DETAIL = 200;
+
+/**
+ * The error code from any of the three shapes, control characters stripped: Hera's RFC 7807
+ * problem+json (top-level `code`, with its `detail`), RFC 6749's `{error: "<code>"}`, or the legacy
+ * `{error: {code, message}}`.
+ */
 function errorCode(status: number, body: unknown): string {
   if (typeof body === "object" && body !== null) {
-    const error = (body as Record<string, unknown>).error;
+    const { code, detail, error } = body as Record<string, unknown>;
+    if (typeof code === "string") return printable(typeof detail === "string" ? `${code}: ${detail.slice(0, MAX_DETAIL)}` : code);
     if (typeof error === "string") return printable(error);
     if (typeof error === "object" && error !== null) {
-      const { code, message } = error as Record<string, unknown>;
-      if (typeof code === "string") return printable(typeof message === "string" ? `${code}: ${message}` : code);
+      const { code: legacy, message } = error as Record<string, unknown>;
+      if (typeof legacy === "string") return printable(typeof message === "string" ? `${legacy}: ${message.slice(0, MAX_DETAIL)}` : legacy);
     }
   }
   return `HTTP ${status}`;
