@@ -232,14 +232,17 @@ never opened. `--output json` prints the org's own body from the last read.
 ### `eris org connect-github`: bind a GitHub App installation
 
 `eris org connect-github --account <github-org>` connects the org's bus to a GitHub organization's pull
-request, review, comment and CI events. It reads the org's binding (`GET /v1/github`); a bound org prints
-`already bound: …` and exits 0. Otherwise it asks `gh api orgs/<github-org>/installations` whether the
-platform's App is installed there. If not, it opens the App's install page (printed on stderr either way,
+request, review, comment and CI events. It reads the org's binding (`GET /v1/github`) and asks
+`gh api orgs/<github-org>/installations` whether the platform's App is installed there. An org already
+bound to that installation prints `already bound: …` and exits 0; one bound to any other installation is
+[`org-github-org-bound`](ERRORS.md#org-github-org-bound). If not, it opens the App's install page (printed on stderr either way,
 only printed under `--no-browser`) and asks `gh` every few seconds, for up to 10 minutes
 ([`org-github-timeout`](ERRORS.md#org-github-timeout)). Once the App is listed it binds that installation
 (`POST /v1/github/installation`), sending your own `gh auth token` once as proof that you own the GitHub
-organization: the server lists the installation with it through GitHub's owner-only API, under the
-platform's App id, and keeps nothing. Only an org admin may
+organization: the server checks it is an active owner of the organization and lists the installation
+with it through GitHub's owner-only API, under the platform's App id, and keeps nothing. Every `gh` call
+names `--hostname github.com`, the install link must be a `https://github.com/apps/` page, and no
+request follows a redirect. Only an org admin may
 ([`org-admin-required`](ERRORS.md#org-admin-required)), and only an owner of the GitHub organization can
 prove it ([`org-github-not-owner`](ERRORS.md#org-github-not-owner),
 [`org-github-unproven`](ERRORS.md#org-github-unproven)). Personal accounts cannot be proven. `eris org

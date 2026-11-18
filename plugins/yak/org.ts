@@ -174,8 +174,10 @@ export interface OrgDeps {
   now?: () => number;
   /** Time between asks of `connect-linear`'s wait. */
   pollMs?: number;
-  /** Runs the GitHub CLI; `gh` on PATH when absent. */
+  /** Runs the GitHub CLI; `gh` on the caller's PATH (`ctx.env`) when absent. */
   runGh?: (args: readonly string[]) => Promise<GhResult>;
+  /** How long one `gh` run may take before it is killed. */
+  ghTimeoutMs?: number;
 }
 
 /** What one `gh` run answered; `code` -1 when it could not be started. */
@@ -284,6 +286,8 @@ async function request<S extends z.ZodTypeAny>(
         method,
         headers: { authorization: `Bearer ${bearer.value.token}`, ...(opts.body !== undefined ? { "content-type": "application/json" } : {}) },
         ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+        // A redirect would re-send the body (a GitHub token, on a bind) to whatever host it names.
+        redirect: "error",
         signal: controller.signal,
       });
       const text = await response.text();
@@ -470,9 +474,14 @@ const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const GITHUB_WAIT_MS = 10 * 60_000;
 const GITHUB_POLL_MS = 3_000;
 
-async function defaultRunGh(args: readonly string[]): Promise<GhResult> {
+/** One `gh` run's limit: a listing or a token read, never an interactive one. */
+const GH_TIMEOUT_MS = 30_000;
+/** Every `gh` call names github.com, so a `GH_HOST` or an enterprise login never answers for it. */
+const GH_HOST = ["--hostname", "github.com"] as const;
+
+async function defaultRunGh(args: readonly string[], env: VerbContext["env"], timeoutMs: number): Promise<GhResult> {
   try {
-    const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+    const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe", stdin: "ignore", env: { ...env }, timeout: timeoutMs, killSignal: "SIGKILL" });
     const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
     return { code, stdout, stderr };
   } catch (err) {
@@ -506,7 +515,7 @@ async function runDisconnectGithub(ctx: VerbContext, deps: OrgDeps): Promise<num
 
 /** This App's installation on `account` as `gh` lists it: the id, null when not (yet) installed, or the failure. */
 async function listedInstallation(account: string, appId: number, runGh: NonNullable<OrgDeps["runGh"]>): Promise<{ ok: true; id: number | null } | { ok: false; failure: Failure }> {
-  const r = await runGh(["api", "--paginate", `orgs/${account}/installations`, "--jq", `.installations[] | select(.app_id == ${appId}) | .id`]);
+  const r = await runGh(["api", ...GH_HOST, "--paginate", `orgs/${account}/installations`, "--jq", `.installations[] | select(.app_id == ${appId}) | .id`]);
   if (r.code === -1) {
     return { ok: false, failure: { slug: "org-gh-unavailable", what: "the GitHub CLI (gh) could not be started; nothing was bound", fix: "install it (https://cli.github.com) and run: gh auth login" } };
   }
@@ -535,15 +544,12 @@ async function runConnectGithub(account: string | undefined, noBrowser: boolean,
   const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
   const openBrowser = deps.openBrowser ?? defaultOpenBrowser;
-  const runGh = deps.runGh ?? defaultRunGh;
+  const ghTimeoutMs = deps.ghTimeoutMs ?? GH_TIMEOUT_MS;
+  const runGh = deps.runGh ?? ((args: readonly string[]) => defaultRunGh(args, ctx.env, ghTimeoutMs));
   const pollMs = deps.pollMs ?? GITHUB_POLL_MS;
 
   const first = await request("GET", "/v1/github", GithubView, ctx, deps, { action: "connect GitHub" });
   if (!first.ok) return fail(ctx, first.failure);
-  if (first.value.installation !== null) {
-    ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify(first.value)}\n` : `already ${describeGithub(first.value)}`);
-    return 0;
-  }
   const app = first.value.app;
   if (app === null) {
     return fail(ctx, { slug: "org-github-unconfigured", what: "this platform has no GitHub App configured (GET /v1/github answered app: null); nothing was opened", fix: "this is the platform's setup, not this machine's: tell the platform's operator" });
@@ -551,6 +557,19 @@ async function runConnectGithub(account: string | undefined, noBrowser: boolean,
 
   let listed = await listedInstallation(account, app.id, runGh);
   if (!listed.ok) return fail(ctx, listed.failure);
+  const held = first.value.installation;
+  if (held !== null) {
+    // Bound already: done only when the binding is this account's installation (NFR-ERR-1).
+    if (listed.id === held.installation_id) {
+      ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify(first.value)}\n` : `already ${describeGithub(first.value)}`);
+      return 0;
+    }
+    return fail(ctx, {
+      slug: "org-github-org-bound",
+      what: `this org already has installation ${held.installation_id} bound, which is not the App's installation on '${account}'; nothing was bound`,
+      fix: "unbind it first: eris org disconnect-github",
+    });
+  }
   if (listed.id === null) {
     let link: URL;
     try {
@@ -558,24 +577,33 @@ async function runConnectGithub(account: string | undefined, noBrowser: boolean,
     } catch {
       link = new URL("about:blank");
     }
-    if (link.protocol !== "https:") {
-      return fail(ctx, { slug: "org-unavailable", what: "the org endpoint answered an install link that is not an https url; nothing was opened", fix: "update eris: eris update   (or tell the platform's operator)" });
+    if (link.protocol !== "https:" || link.hostname !== "github.com" || link.port !== "" || !link.pathname.startsWith("/apps/")) {
+      return fail(ctx, { slug: "org-unavailable", what: "the org endpoint answered an install link that is not a https://github.com/apps/ page; nothing was opened", fix: "update eris: eris update   (or tell the platform's operator)" });
     }
     ctx.stderr.write(`Install the GitHub App '${plain(app.slug)}' on the GitHub organization '${account}':\n\n  ${link.href}\n\nWaiting for it to appear on ${account} (up to ${GITHUB_WAIT_MS / 60_000} min)...\n`);
     if (!noBrowser) await openBrowser(link.href).catch(() => undefined);
     const deadline = now() + GITHUB_WAIT_MS;
-    while (listed.id === null) {
+    let transient = 0;
+    let found: number | null = null;
+    while (found === null) {
       await sleep(pollMs);
       if (now() >= deadline) {
         return fail(ctx, { slug: "org-github-timeout", what: `the App did not appear on '${account}' within ${GITHUB_WAIT_MS / 60_000} min; nothing was bound`, fix: `install it on ${account}, then run: eris org connect-github --account ${account}` });
       }
-      listed = await listedInstallation(account, app.id, runGh);
-      if (!listed.ok) return fail(ctx, listed.failure);
+      const polled = await listedInstallation(account, app.id, runGh);
+      if (!polled.ok) {
+        // The first listing already proved access; a failure now is waited out a few times, as connect-linear does.
+        if (++transient <= MAX_TRANSIENT) continue;
+        return fail(ctx, polled.failure);
+      }
+      transient = 0;
+      found = polled.id;
     }
+    listed = { ok: true, id: found };
   }
 
   // The proof: the caller's own token, sent once to the server, which lists the installation with it.
-  const token = await runGh(["auth", "token"]);
+  const token = await runGh(["auth", "token", ...GH_HOST]);
   const githubToken = token.stdout.trim();
   if (token.code !== 0 || githubToken === "") {
     return fail(ctx, { slug: "org-gh-unavailable", what: "'gh auth token' printed no token; nothing was bound", fix: "run: gh auth login" });
