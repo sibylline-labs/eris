@@ -47,8 +47,9 @@ const PATTERN_FILES = new Set([SELF, "packages/outbound-scan/src/gitleaks-rules.
  *  points an agent at the hosted install steps and the dash, both on that domain. */
 const CONTACT_FILES = new Set(["README.md", "CONTRIBUTING.md", "SECURITY.md", "skills/eris-yaks/SKILL.md"]);
 const LICENCE_FILES = new Set(["LICENSE", "NOTICE"]);
-/** The public Yaks endpoint, eris's built-in default URL: allowed in any file. */
-const PUBLIC_HOSTS = new Set(["api.sibylline.group"]);
+/** The public product hosts, allowed in any file: the Yaks endpoint (eris's built-in default URL) and the
+ *  dash, whose pages a fix line sends the operator to (the policy-save approval). */
+const PUBLIC_HOSTS = new Set(["api.sibylline.group", "dash.sibylline.group"]);
 /** The public mailboxes, allowed only in the contact files. */
 const CONTACT_ADDRESSES = new Set(["security@sibylline.group", "support@sibylline.group"]);
 

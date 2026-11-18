@@ -12,7 +12,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { computeGatesBundleSha, type GatesOrgBundle, type GatesSettings } from "eris/gates-contract";
+import { bundleChanges, computeGatesBundleSha, type GatesOrgBundle, type GatesSettings } from "eris/gates-contract";
 import { doctrineHandler } from "../plugins/doctrine/doctrine";
 import { CliExit } from "../src/cli/ts-verb";
 
@@ -21,6 +21,7 @@ setDefaultTimeout(60_000);
 const REPO = resolve(import.meta.dir, "..");
 const ORG = "01HZX3K5Q8W2N4R6T8V0Y2B4D6";
 const LOGIN = ["sib", ORG, "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
+const APPROVAL = ["mnd", ORG, "ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210_-ZyXwV"].join("_");
 
 const BUNDLE: GatesOrgBundle = {
   active: "business-as-usual",
@@ -40,7 +41,7 @@ let live: GatesOrgBundle;
 let liveSha: string;
 let puts: { auth: string | null; body: unknown }[];
 let hits: string[];
-let putAnswer: (() => Response) | null;
+let putAnswer: ((body: Record<string, unknown>) => Response | null) | null;
 
 const problem = (status: number, code: string) => Response.json({ type: "about:blank", status, code }, { status, headers: { "content-type": "application/problem+json" } });
 
@@ -56,12 +57,22 @@ beforeAll(() => {
       if (req.method === "GET" && url.pathname === "/v1/gates/policy") return Response.json({ contract: "gates-contract/v1.5", bundle: live, bundle_sha: liveSha });
       if (req.method === "GET" && url.pathname === "/v1/gates/settings") return Response.json({ contract: "gates-contract/v1.5", settings: SETTINGS, bundle_sha: liveSha });
       if (req.method === "PUT" && url.pathname === "/v1/gates/policy") {
-        const body = (await req.json()) as { bundle: GatesOrgBundle };
+        const body = (await req.json()) as { bundle: GatesOrgBundle; mandate_handle?: string };
         puts.push({ auth: req.headers.get("authorization"), body });
-        if (putAnswer !== null) return putAnswer();
+        const answer = putAnswer?.(body) ?? null;
+        if (answer !== null) return answer;
         live = body.bundle;
         liveSha = await computeGatesBundleSha(live, SETTINGS);
-        return Response.json({ contract: "gates-contract/v1.5", version: 7, bundle_sha: liveSha, saved_at: "2026-11-17T12:30:00.000Z", widened: false, reasons: [], auth_mode: "portal_admin" });
+        const passkey = body.mandate_handle !== undefined;
+        return Response.json({
+          contract: "gates-contract/v1.5",
+          version: 7,
+          bundle_sha: liveSha,
+          saved_at: "2026-11-17T12:30:00.000Z",
+          widened: passkey,
+          reasons: passkey ? ["loop one-shot edited", "posture business-as-usual loosened"] : [],
+          auth_mode: passkey ? "mandate_passkey" : "portal_admin",
+        });
       }
       return problem(404, "not_found");
     },
@@ -84,14 +95,14 @@ beforeEach(async () => {
   putAnswer = null;
 });
 
-async function doctrine(args: string[], format: "text" | "json" = "text") {
+async function doctrine(args: string[], format: "text" | "json" = "text", env: Record<string, string> = {}) {
   let stdout = "";
   let stderr = "";
   let rc: number;
   try {
     rc = await doctrineHandler({}, () => "", { home, cwd: sandbox, now: () => new Date("2026-11-17T12:00:00.000Z") })(args, {
       erisDir: REPO,
-      env: { PATH: process.env.PATH, HOME: home },
+      env: { PATH: process.env.PATH, HOME: home, ...env },
       format,
       stdout: { write: (s: string) => ((stdout += s), true) },
       stderr: { write: (s: string) => ((stderr += s), true) },
@@ -141,7 +152,7 @@ describe("eris doctrine push", () => {
     edit();
     const r = await doctrine(["push"]);
     expect(r.rc).toBe(0);
-    expect(r.stderr).toBe("");
+    expect(r.stderr).toBe("INFO changed: posture business-as-usual changed\n");
     expect(puts).toHaveLength(1);
     expect(puts[0]!.auth).toBe(`Bearer ${LOGIN}`);
     expect((puts[0]!.body as { bundle: GatesOrgBundle }).bundle.postures["business-as-usual"]!.bullets).toEqual(["The default, edited.", "The established process."]);
@@ -154,13 +165,25 @@ describe("eris doctrine push", () => {
     expect(readFileSync(join(linked(), "doctrine.md"), "utf8")).toContain("The default, edited.");
   });
 
-  it("json: { org, bundle_sha, version, saved_at, dir, pushed }", async () => {
+  it("json: { org, bundle_sha, version, saved_at, dir, pushed, widened, reasons, auth_mode, changed }", async () => {
     /** When json mode prints the text row, a caller parsing the push breaks: observed on stdout. */
     expect((await doctrine(["pull"])).rc).toBe(0);
     edit();
     const r = await doctrine(["push"], "json");
     expect(r.rc).toBe(0);
-    expect(JSON.parse(r.stdout)).toEqual({ org: ORG, bundle_sha: liveSha, version: 7, saved_at: "2026-11-17T12:30:00.000Z", dir: realpathSync(linked()), pushed: true });
+    expect(JSON.parse(r.stdout)).toEqual({
+      org: ORG,
+      bundle_sha: liveSha,
+      version: 7,
+      saved_at: "2026-11-17T12:30:00.000Z",
+      dir: realpathSync(linked()),
+      pushed: true,
+      widened: false,
+      reasons: [],
+      auth_mode: "portal_admin",
+      changed: ["posture business-as-usual changed"],
+    });
+    expect(r.stderr).toBe("");
   });
 
   it("refuses a stale base without a PUT and leaves the edited tree byte for byte as it was", async () => {
@@ -180,6 +203,7 @@ describe("eris doctrine push", () => {
 
   it.each([
     [403, "admin_required", "doctrine-push-refused"],
+    [403, "policy_widening_requires_passkey", "doctrine-push-needs-approval"],
     [405, "method_not_allowed", "doctrine-push-refused"],
     [409, "policy_version_conflict", "doctrine-push-stale"],
     [413, "payload_too_large", "doctrine-push-invalid"],
@@ -196,9 +220,96 @@ describe("eris doctrine push", () => {
     const r = await doctrine(["push"]);
     expect(r.rc).toBe(3);
     expect(slugOf(r.stderr)).toBe(slug);
+    expect(r.stderr).not.toContain("INFO");
     expect(puts).toHaveLength(1);
     expect(treeState()).toEqual(before);
     expect(r.stderr).not.toContain(LOGIN);
+  });
+
+  // admits: integration: a widening save without an approval must tell the operator where to get one; the slug, the dash URL and the env var are the whole recovery path, and only the gateway's answer reaches them.
+  it("names the approval page and ERIS_GATES_APPROVAL when the gateway wants a passkey approval", async () => {
+    expect((await doctrine(["pull"])).rc).toBe(0);
+    edit();
+    putAnswer = () => problem(403, "policy_widening_requires_passkey");
+    const r = await doctrine(["push"]);
+    expect(slugOf(r.stderr)).toBe("doctrine-push-needs-approval");
+    expect(r.stderr).toContain("https://dash.sibylline.group/gates/approve");
+    expect(r.stderr).toContain("ERIS_GATES_APPROVAL=<handle> eris doctrine push");
+  });
+
+  // admits: integration: an admin refusal must send the operator to 'eris login' as an admin, never to a per-org switch the gateway no longer reads.
+  it("tells a non-admin bearer to sign in as an org admin, naming no flag", async () => {
+    expect((await doctrine(["pull"])).rc).toBe(0);
+    edit();
+    putAnswer = () => problem(403, "admin_required");
+    const r = await doctrine(["push"]);
+    expect(slugOf(r.stderr)).toBe("doctrine-push-refused");
+    expect(r.stderr).toContain("eris login");
+    expect(r.stderr.toLowerCase()).not.toContain("flag");
+  });
+
+  // admits: boundary-io: the approval must ride in the one PUT as mandate_handle beside bundle, or a widening save never lands; and it is a bearer capability, so no output may echo it.
+  it("sends ERIS_GATES_APPROVAL as mandate_handle in the one PUT, saves, and never prints it", async () => {
+    expect((await doctrine(["pull"])).rc).toBe(0);
+    edit();
+    putAnswer = (body) => (body.mandate_handle === undefined ? problem(403, "policy_widening_requires_passkey") : null);
+    const r = await doctrine(["push"], "text", { ERIS_GATES_APPROVAL: APPROVAL });
+    expect(r.rc).toBe(0);
+    expect(puts).toHaveLength(1);
+    expect(Object.keys(puts[0]!.body as object)).toEqual(["bundle", "mandate_handle"]);
+    expect((puts[0]!.body as { mandate_handle: string }).mandate_handle).toBe(APPROVAL);
+    expect(r.stdout).toBe(`${ORG}\t${liveSha}\t7\n`);
+    expect(r.stderr).toBe("INFO changed: posture business-as-usual changed\nINFO widened (mandate_passkey): loop one-shot edited; posture business-as-usual loosened\n");
+    const json = await doctrine(["push"], "json", { ERIS_GATES_APPROVAL: APPROVAL });
+    expect(`${r.stdout}${r.stderr}${json.stdout}${json.stderr}`).not.toContain(APPROVAL);
+  });
+
+  // admits: boundary-io: a mistyped approval must stop before the network, without echoing the value, rather than spend a request on a 400 the server will not explain.
+  it("refuses a malformed ERIS_GATES_APPROVAL before any request, without echoing it", async () => {
+    expect((await doctrine(["pull"])).rc).toBe(0);
+    edit();
+    const before = treeState();
+    hits = [];
+    const bad = `mnd_${"x".repeat(20)}-not-a-handle`;
+    const r = await doctrine(["push"], "text", { ERIS_GATES_APPROVAL: bad });
+    expect(r.rc).toBe(3);
+    expect(slugOf(r.stderr)).toBe("doctrine-push-needs-approval");
+    expect(r.stderr).not.toContain(bad);
+    expect(hits).toEqual([]);
+    expect(treeState()).toEqual(before);
+  });
+
+  // admits: integration: when the mandate service refuses the sent approval (401 revoked included), the operator must be sent to approve again, not to 'eris login' or a contract-mismatch dead end.
+  it.each([
+    [403, "expired"],
+    [403, "exhausted"],
+    [403, "not_covered"],
+    [401, "revoked"],
+    [404, "unknown_mandate"],
+    [403, "mandate_out_of_path"],
+  ])("maps a refusal of the sent approval (%i %s) to doctrine-push-needs-approval, approve again", async (status, code) => {
+    expect((await doctrine(["pull"])).rc).toBe(0);
+    edit();
+    const before = treeState();
+    putAnswer = () => problem(status, code);
+    const r = await doctrine(["push"], "text", { ERIS_GATES_APPROVAL: APPROVAL });
+    expect(r.rc).toBe(3);
+    expect(slugOf(r.stderr)).toBe("doctrine-push-needs-approval");
+    expect(r.stderr).toContain("approve again at https://dash.sibylline.group/gates/approve");
+    expect(r.stderr).not.toContain(APPROVAL);
+    expect(treeState()).toEqual(before);
+  });
+
+  // admits: integration: a 409 after an approval was sent may have spent it; the stale refusal must say so, or the rerun after a pull fails again on a used approval.
+  it("says the approval may have been used when the save is stale after one was sent", async () => {
+    expect((await doctrine(["pull"])).rc).toBe(0);
+    edit();
+    putAnswer = () => problem(409, "policy_version_conflict");
+    const r = await doctrine(["push"], "text", { ERIS_GATES_APPROVAL: APPROVAL });
+    expect(slugOf(r.stderr)).toBe("doctrine-push-stale");
+    expect(r.stderr).toContain("Your approval may have been used; approve again at https://dash.sibylline.group/gates/approve.");
+    const plain = await doctrine(["push"]);
+    expect(plain.stderr).not.toContain("Your approval");
   });
 
   it("refuses a file a bundle does not carry before any request, naming it", async () => {
@@ -241,5 +352,42 @@ describe("eris doctrine push", () => {
     expect(r.rc).toBe(3);
     expect(slugOf(r.stderr)).toBe("eris-login-required");
     expect(hits).toEqual([]);
+  });
+});
+
+describe("bundleChanges", () => {
+  // admits: algorithmic: the changed list is the operator's only summary of what a save touched; a missed or misnamed part (a removed posture read as unchanged, a loop edit hidden) misreports the save.
+  it("names active, each posture and loop by kind of change, and profiles; none for an equal bundle", () => {
+    expect(bundleChanges(BUNDLE, structuredClone(BUNDLE))).toEqual([]);
+    const next = structuredClone(BUNDLE) as { -readonly [K in keyof GatesOrgBundle]: GatesOrgBundle[K] } & Record<string, unknown>;
+    const postures = next.postures as Record<string, unknown>;
+    const loops = next.loops as Record<string, string>;
+    next.active = "rapid-prototype";
+    delete postures["business-as-usual"];
+    postures["lock-in"] = { name: "Lock in", bullets: ["Careful."], policy: {} };
+    (postures["rapid-prototype"] as { bullets: string[] }).bullets = ["Faster."];
+    (next.profiles as Record<string, unknown>).extra = ["final-gates"];
+    loops["one-shot"] = "# One shot\n\nEdited.\n";
+    loops["sweep"] = "# Sweep\n";
+    expect(bundleChanges(BUNDLE, next as GatesOrgBundle)).toEqual([
+      "active",
+      "posture business-as-usual removed",
+      "posture lock-in added",
+      "posture rapid-prototype changed",
+      "profiles",
+      "loop one-shot edited",
+      "loop sweep added",
+    ]);
+    const dropped = structuredClone(BUNDLE) as GatesOrgBundle;
+    delete (dropped.loops as Record<string, string>)["one-shot"];
+    expect(bundleChanges(BUNDLE, dropped)).toEqual(["loop one-shot removed"]);
+  });
+
+  // admits: algorithmic: a re-rendered tree reorders object keys; reading key order as a change would report every untouched posture as changed.
+  it("ignores key order", () => {
+    const reversed = <T extends object>(o: T): T => Object.fromEntries(Object.entries(o).reverse()) as T;
+    const postures = Object.fromEntries(Object.entries(BUNDLE.postures).map(([slug, p]) => [slug, reversed(p)]));
+    const reordered = { loops: BUNDLE.loops, profiles: reversed(BUNDLE.profiles), postures, active: BUNDLE.active } as GatesOrgBundle;
+    expect(bundleChanges(BUNDLE, reordered)).toEqual([]);
   });
 });

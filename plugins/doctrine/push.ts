@@ -7,10 +7,12 @@
  *    the tree manifest's: the edits were made on that base, so saving them over a newer save would revert it.
  *  - A tree whose files decode to the base bundle saves nothing: the live policy is re-materialized.
  *  - The save is sent once. On any refusal the tree is left exactly as the operator left it.
+ *  - `ERIS_GATES_APPROVAL`, when set, is shape-checked before any request and rides only as the PUT body's
+ *    `mandate_handle`: it is a bearer capability, so no output, failure or log line carries it.
  */
 
 import { lstatSync, realpathSync } from "node:fs";
-import { type ContractFailure, fail, fetchOrgPolicy, gatesEndpoint, type Outcome, putOrgPolicy, succeed } from "eris/gates-contract";
+import { type ContractFailure, fail, fetchOrgPolicy, GATES_APPROVE_URL, gatesEndpoint, type MandateHandle, type Outcome, parseMandateHandle, putOrgPolicy, succeed } from "eris/gates-contract";
 import { CliExit, readArgs, renderFailureBlock, resolveOrgBearer, type VerbContext } from "../../src/cli/plugin";
 import plugin from "./index";
 import { materialize, orgPath, readLocalBundle } from "./org-tree";
@@ -22,19 +24,27 @@ export const PUSH_USAGE = `Usage: eris doctrine push [--output json]
 
 Save the org's policy as you edited it under ~/.eris/doctrine/<orgId>/
 (doctrine.md, profiles.yaml, loops/<slug>.md; manifest.json is read for the
-base only) with PUT /v1/gates/policy on the 'eris login' bearer, then replace
-the tree with the saved bundle, verified (so 'eris doctrine check' passes). The
-saved files are re-rendered from the bundle, so YAML comments and layout are
-normalized. Refused, with the tree left as it is, when the live policy moved
-since your pull (doctrine-push-stale), when the tree holds a file a bundle does
-not carry or does not decode (doctrine-push-invalid), or when the gateway does
-not take saves on this bearer (doctrine-push-refused: the bearer is not an org
-admin's, or the org's gates_policy_dev_push flag is off). An unedited tree
-saves nothing. Prints '<orgId>\\t<bundle_sha>\\t<version|unchanged>'; JSON:
-{ org, bundle_sha, version, saved_at, dir, pushed }.
+base only) with PUT /v1/gates/policy on the 'eris login' bearer of an org
+admin, then replace the tree with the saved bundle, verified (so 'eris doctrine
+check' passes). The saved files are re-rendered from the bundle, so YAML
+comments and layout are normalized. An unedited tree saves nothing.
+
+When the org has a Mandate, a save that loosens its policy needs a passkey
+approval: get one at ${GATES_APPROVE_URL} and rerun with
+ERIS_GATES_APPROVAL=<handle> eris doctrine push (it lasts 5 minutes and covers
+one save; it is spent only on a save that needs it, and never printed).
+
+Refused, with the tree left as it is, when the live policy moved since your
+pull (doctrine-push-stale), when the tree holds a file a bundle does not carry
+or does not decode (doctrine-push-invalid), when the save needs an approval or
+the one sent was refused (doctrine-push-needs-approval), or when the bearer is
+not an org admin's (doctrine-push-refused). Prints
+'<orgId>\\t<bundle_sha>\\t<version|unchanged>', then on stderr 'INFO changed: ...'
+and, for a widening, 'INFO widened (<auth_mode>): ...'; JSON:
+{ org, bundle_sha, version, saved_at, dir, pushed, widened, reasons, auth_mode, changed }.
 `;
 
-/** What a push did: the org, the bundle now live, the version it made (null when nothing was saved) and the tree swapped in. */
+/** What a push did: the org, the bundle now live, the version it made (null when nothing was saved), the tree swapped in, and how the save was judged. */
 export interface Pushed {
   readonly org: string;
   readonly bundle_sha: string;
@@ -42,6 +52,29 @@ export interface Pushed {
   readonly saved_at: string | null;
   readonly dir: string;
   readonly pushed: boolean;
+  /** Whether the save loosened the policy; null when nothing was saved or the gateway did not say. */
+  readonly widened: boolean | null;
+  readonly reasons: readonly string[];
+  /** What authorised the save; null when nothing was saved or the gateway did not say. */
+  readonly auth_mode: string | null;
+  /** The parts of the base the save changed; empty when nothing was saved. */
+  readonly changed: readonly string[];
+}
+
+const badApproval: ContractFailure = {
+  slug: "doctrine-push-needs-approval",
+  what: "ERIS_GATES_APPROVAL is set but is not an approval handle (mnd_...), so nothing was sent",
+  fix: `Copy the handle again from ${GATES_APPROVE_URL} (or unset ERIS_GATES_APPROVAL), then rerun 'eris doctrine push'.`,
+  docs: "docs/ERRORS.md#doctrine-push-needs-approval",
+  exit: 3,
+};
+
+/** `ERIS_GATES_APPROVAL` as a handle; undefined when unset or blank; the refusal when it is not handle-shaped. */
+function approvalFrom(env: Readonly<Record<string, string | undefined>>): Outcome<MandateHandle | undefined> {
+  const raw = env.ERIS_GATES_APPROVAL?.trim() ?? "";
+  if (raw === "") return succeed(undefined);
+  const handle = parseMandateHandle(raw);
+  return handle === null ? fail(badApproval) : succeed(handle);
 }
 
 const notPulled = (org: string): ContractFailure => ({
@@ -65,6 +98,8 @@ export async function pushOrg(ctx: VerbContext, deps: PullDeps = {}): Promise<Ou
   const resolved = await resolveOrg(ctx, deps, "there is no org policy to push");
   if (!resolved.ok) return resolved;
   const { org, home, bearer } = resolved.value;
+  const approval = approvalFrom(ctx.env);
+  if (!approval.ok) return approval;
   let dir: string;
   try {
     lstatSync(orgPath(home, org));
@@ -83,15 +118,16 @@ export async function pushOrg(ctx: VerbContext, deps: PullDeps = {}): Promise<Ou
   if (local.value.bundle_sha === live.value.bundle_sha) {
     const kept = await materialize(home, org, live.value, now);
     if (!kept.ok) return kept;
-    return succeed({ org, bundle_sha: live.value.bundle_sha, version: null, saved_at: null, dir: kept.value, pushed: false });
+    return succeed({ org, bundle_sha: live.value.bundle_sha, version: null, saved_at: null, dir: kept.value, pushed: false, widened: null, reasons: [], auth_mode: null, changed: [] });
   }
-  const saved = await putOrgPolicy(ep.value, local.value.bundle);
+  const saved = await putOrgPolicy(ep.value, local.value.bundle, { base: live.value.bundle, mandateHandle: approval.value });
   if (!saved.ok) return saved;
   const reread = await fetchOrgPolicy(ep.value);
   if (!reread.ok) return reread;
   const swapped = await materialize(home, org, reread.value, now);
   if (!swapped.ok) return swapped;
-  return succeed({ org, bundle_sha: reread.value.bundle_sha, version: saved.value.version, saved_at: saved.value.saved_at, dir: swapped.value, pushed: true });
+  const { version, saved_at, widened, reasons, auth_mode, changed } = saved.value;
+  return succeed({ org, bundle_sha: reread.value.bundle_sha, version, saved_at, dir: swapped.value, pushed: true, widened, reasons, auth_mode, changed });
 }
 
 /** `eris doctrine push`. */
@@ -103,7 +139,15 @@ export async function runPush(args: string[], ctx: VerbContext, deps: PullDeps =
     ctx.stderr.write(renderFailureBlock({ slug: pushed.failure.slug, what: pushed.failure.what, fix: pushed.failure.fix, docs: pushed.failure.docs }, ctx.erisDir));
     throw new CliExit(pushed.failure.exit);
   }
-  if (ctx.format === "json") ctx.stdout.write(`${JSON.stringify(pushed.value)}\n`);
-  else ctx.stdout.write(`${pushed.value.org}\t${pushed.value.bundle_sha}\t${pushed.value.version ?? "unchanged"}\n`);
+  const p = pushed.value;
+  if (ctx.format === "json") {
+    ctx.stdout.write(`${JSON.stringify(p)}\n`);
+    return 0;
+  }
+  ctx.stdout.write(`${p.org}\t${p.bundle_sha}\t${p.version ?? "unchanged"}\n`);
+  if (p.pushed) {
+    ctx.stderr.write(`INFO changed: ${p.changed.length > 0 ? p.changed.join(", ") : "nothing the bundle names"}\n`);
+    if (p.widened === true) ctx.stderr.write(`INFO widened (${p.auth_mode ?? "unknown"}): ${p.reasons.length > 0 ? p.reasons.join("; ") : "no reason given"}\n`);
+  }
   return 0;
 }

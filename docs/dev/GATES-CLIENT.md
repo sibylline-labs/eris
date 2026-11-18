@@ -31,8 +31,9 @@ The failure map, by what the gateway answered:
 | `POST /v1/linear/issues/<key>/claim`: HTTP 409 `issue_already_claimed` with `fields.holder` (the block names the holder's loop, runtime, session and expiry) | `linear-issue-claimed` |
 | `POST /v1/linear/issues/<key>/transition`: HTTP 404 `state_not_found` | `linear-state-not-found` |
 | the yak lookup: HTTP 404, no cluster, or a cluster with no issue | `yak-unresolved` |
-| `PUT /v1/gates/policy`: HTTP 403 or 405 | `doctrine-push-refused` |
-| `PUT /v1/gates/policy`: HTTP 409 | `doctrine-push-stale` |
+| `PUT /v1/gates/policy`: HTTP 403 `policy_widening_requires_passkey`, or (when the body carried `mandate_handle`) a Mandate refusal of it (`expired`, `exhausted`, `not_covered`, `revoked`, `unknown_mandate`, `mandate_*`, ...) | `doctrine-push-needs-approval` |
+| `PUT /v1/gates/policy`: any other HTTP 403, or 405 | `doctrine-push-refused` |
+| `PUT /v1/gates/policy`: HTTP 409 (names the approval as possibly used when one was sent) | `doctrine-push-stale` |
 | `PUT /v1/gates/policy`: HTTP 400, 413 or 422 | `doctrine-push-invalid` |
 | a receipt, asset, artifact or `/v1/linear` route: HTTP 429 (the failure carries `retryAfterMs` from `Retry-After`) | `linear-rate-limited` |
 | the asks route: 402/403, no answer or 5xx, 429, anything else | `asks-store-forbidden`, `asks-store-unreachable`, `asks-rate-limited`, `asks-contract-mismatch` |

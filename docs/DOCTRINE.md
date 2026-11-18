@@ -190,13 +190,25 @@ eris doctrine check --file "$(eris doctrine path)"   # the same file, named
   re-pulled, and the verb prints `unchanged`.
 - A file a bundle does not carry (anything but `doctrine.md`, `profiles.yaml` and `loops/<slug>.md`),
   or a file that no longer decodes, is `doctrine-push-invalid` before any request.
-- The save is sent once. The gateway refuses it unless the bearer is an org admin's and the org has
-  saves from eris turned on (`doctrine-push-refused`); a policy it will not take is
-  `doctrine-push-invalid`. After a save the tree is replaced by the saved bundle, re-rendered and
-  verified, so YAML comments and layout in your files are normalized.
+- The save is sent once, and judged as a save from the org's Gates settings is. The gateway refuses
+  it unless the bearer is an org admin's `eris login` (`doctrine-push-refused`); a policy it will
+  not take is `doctrine-push-invalid`. After a save the tree is replaced by the saved bundle,
+  re-rendered and verified, so YAML comments and layout in your files are normalized.
+- When the org has a Mandate, a save that loosens its policy (any loop edit, a looser posture, and so
+  on) needs a passkey approval (`doctrine-push-needs-approval`). Open
+  <https://dash.sibylline.group/gates/approve>, approve with your passkey, and rerun with the handle in
+  `ERIS_GATES_APPROVAL`. It lasts 5 minutes and covers one save. The gateway spends it only on a save
+  that needs it, so setting it on every push is safe; eris checks its shape before any request, sends
+  it only in the save's body as `mandate_handle`, and never prints it.
+- After a save, stderr names what it changed (`INFO changed: posture <name> changed, loop <slug>
+  edited, ...`: `active`, `posture <name> added|removed|changed`, `profiles`,
+  `loop <slug> added|removed|edited`) and, for a widening, how it was authorised and why
+  (`INFO widened (<auth_mode>): <reasons>`). `--output json` carries the same as `changed`,
+  `widened`, `reasons` and `auth_mode`.
 
 ```sh
 eris doctrine push                                   # <orgId>\t<bundle_sha>\t<version|unchanged>
+ERIS_GATES_APPROVAL=<handle> eris doctrine push      # a widening save, approved with your passkey
 ```
 
 ## `set`
