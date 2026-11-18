@@ -1233,6 +1233,38 @@ body. A timeout, an unreachable endpoint or a body that does not match the contr
 [`yak-admin-unavailable`](#yak-admin-unavailable) instead. Retry; `eris whoami` shows which org and url this
 directory uses. Exit 1.
 
+### yak-clusters-invalid
+
+`eris yak clusters` was given a `--days` that is not `7` or `30`, a `--limit` outside `1` to `50`, or a
+`--min-sightings` that is not a whole number. It is refused before any request, because the endpoint
+answers `400 invalid_query` for the same values. Fix: use `--days 7` or `--days 30`, `--limit <1..50>` and
+`--min-sightings <n>`. Exit 1.
+
+### yak-clusters-unavailable
+
+`eris yak clusters` was refused with a status eris has no remedy for (`404` from an endpoint that does not
+serve the route yet, a `5xx`). The block names the status and the server's error code, never the response
+body. A timeout, an unreachable endpoint or a body that does not match the contract is
+[`yak-admin-unavailable`](#yak-admin-unavailable) instead. Retry; `eris whoami` shows which org and url this
+directory uses. Exit 1.
+
+### yak-show-missing-id
+
+`eris yak show` was run without an id. Fix: `eris yak show <id>`, taking the id from `eris yak clusters`
+(a cluster) or from a cluster's observations table (an observation). Exit 1.
+
+### yak-show-not-found
+
+`eris yak show <id>` named no cluster and no observation in this org: the cluster read and the observation
+read both answered `404`, or the id is not a plain id (letters, digits, `_` and `-`, up to 64). Fix: list ids
+with `eris yak clusters`. Exit 1.
+
+### yak-show-unavailable
+
+`eris yak show` was refused with a status eris has no remedy for (a `5xx`, a `403`). The block names the
+status and the server's error code, never the response body. A timeout, an unreachable endpoint or a body
+that does not match the contract is [`yak-admin-unavailable`](#yak-admin-unavailable) instead. Retry. Exit 1.
+
 ### doctrine-unknown-verb
 
 `eris doctrine <word>` named no doctrine command. The commands are `check`, `schema`, `gates`,
