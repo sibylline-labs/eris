@@ -50,7 +50,14 @@ const UNTIL_SUNSET = new RegExp(
 /** "until" then a ticket key. Case-sensitive: keys are upper case, and "until utf-8" or "until http-2" is not one. */
 const UNTIL_TICKET = /\b[Uu]ntil\s+[A-Z][A-Z0-9]+-\d+\b/;
 const END_CONDITION = (s: string): boolean => TEMPORARY.test(s) || UNTIL_SUNSET.test(s) || UNTIL_TICKET.test(s);
-const PRACTICE = /\b(?:sign(?:s|ed|ing)?[- ]off|before (?:any |each |every )?(?:code|commit|merg\w*|review\w*|release\w*|deploy\w*)|(?:its|their) own commit|(?:development|engineering) work)\b/i;
+/** A shared resource a service takes and gives back: "release" beside one of these is an RPC verb, not a release step. */
+const RESOURCE_RELEASE = /\b(?:leases?|locks?|mutex(?:es)?|semaphores?|memory|handles?|connections?|slots?|claims?|heartbeats?|allocat\w*)\b/i;
+const PRACTICE_STEP = /\b(?:sign(?:s|ed|ing)?[- ]off|before (?:any |each |every )?(?:code|commit|merg\w*|review\w*|deploy\w*)|(?:its|their) own commit|(?:development|engineering) work)\b/i;
+const PRACTICE_BEFORE_RELEASE = /\bbefore (?:any |each |every )?release\w*\b/i;
+/** A step people take; "before release" counts unless the statement is about releasing a lease, lock or memory. */
+const PRACTICE = {
+  test: (s: string): boolean => PRACTICE_STEP.test(s) || (PRACTICE_BEFORE_RELEASE.test(s) && !RESOURCE_RELEASE.test(s)),
+};
 
 const HOLDER = String.raw`(?:gate|lint|linter|rule|rules|check|checker|kit|types?|tests?|CI|workflow|lockfile|config)`;
 const TOOL = String.raw`(?:lint|ast-grep|oxlint|eslint)`;

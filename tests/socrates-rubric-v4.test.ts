@@ -208,3 +208,23 @@ describe("rubric@v4 is published beside a frozen rubric@v3", () => {
     expect(asked(RUBRIC_V4)).toEqual(asked(RUBRIC_V3));
   });
 });
+
+describe("rubric@v4 practice_wording and resource release", () => {
+  const fires = (s: string) => extractFeatures(RUBRIC_V4, s, NOTHING_RECORDED).practice_wording;
+
+  it("admits: a lease/lock/memory release in an architecture statement is not a practice; no cheaper rung holds a regex", () => {
+    for (const s of [
+      "A Durable Object owns the lease: workers pick it, heartbeat it, and the owner must renew before release.",
+      "The lock is held until the writer finishes and must be checked before release of the mutex.",
+      "Memory is freed before releasing the handle, so a connection slot is never leaked before release.",
+    ]) expect([s, fires(s)]).toEqual([s, false]);
+  });
+
+  it("admits: the release-step practices still fire", () => {
+    for (const s of [
+      "Every change is signed off before release.",
+      "The owner reviews the changelog before each release.",
+      "Run the smoke checks before deploying.",
+    ]) expect([s, fires(s)]).toEqual([s, true]);
+  });
+});
