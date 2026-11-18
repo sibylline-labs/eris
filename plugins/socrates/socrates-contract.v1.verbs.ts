@@ -236,7 +236,7 @@ export const SocratesStatusResult = z.object({
   pending_candidates: NonNegativeInt,
   open_epics: z.array(z.object({ epic: Id, project: ProjectHint, url: Url, open_children: NonNegativeInt })),
   candidate: z
-    .object({ candidate_id: Id, state: SocratesCandidateState, issue_url: Url.optional(), held_until: SocratesHeldUntil.optional(), held_reason: SocratesHeldReason.optional() })
+    .object({ candidate_id: Id, state: SocratesCandidateState, issue_url: Url.optional(), held_until: SocratesHeldUntil.optional(), held_reason: SocratesHeldReason.optional(), doc_url: Url.optional(), entry_id: Id.optional() })
     .optional(),
   contract_version: Version,
 });
