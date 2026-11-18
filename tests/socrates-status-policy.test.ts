@@ -54,6 +54,18 @@ describe("eris socrates status", () => {
     expect(requests()).toEqual(["GET /v1/socrates/status?candidate_id=cand_1"]);
   });
 
+  // admits: a candidate written to a living doc (a practice) prints no doc or entry, so its submitter cannot find it; or an absent field prints an empty line. Observed at stdout and the JSON record.
+  it("prints the doc and entry a candidate was written to, and nothing when absent", async () => {
+    const written = { candidate_id: "cand_2", state: "filed", doc_url: "https://tracker.example.com/document/practices-1", entry_id: "entry_7" };
+    fake.answer.status = () => Response.json({ ...STATUS, candidate: written });
+    const r = await fake.drive(["status", "--candidate", "cand_2"]);
+    expect(r).toMatchObject({ rc: 0, stderr: "" });
+    expect(r.stdout).toContain("candidate cand_2: filed\n  doc: https://tracker.example.com/document/practices-1\n  entry: entry_7\n");
+    expect(JSON.parse((await fake.drive(["status", "--candidate", "cand_2"], { format: "json" })).stdout).candidate).toEqual(written);
+    fake.answer.status = () => Response.json({ ...STATUS, candidate: { candidate_id: "cand_2", state: "filed" } });
+    expect((await fake.drive(["status", "--candidate", "cand_2"])).stdout).not.toMatch(/doc:|entry:/);
+  });
+
   // admits: a held candidate reads as plain `pending`, so its submitter cannot tell a hold from a stall; also an old client schema (no held fields) failing to decode the new answer.
   it("says a candidate the verbosity cap holds is held, and until when", async () => {
     const held = { ...CANDIDATE_STATUS, state: "pending", held_until: "2026-11-12T00:00:00.000Z", held_reason: "verbosity_cap" };
