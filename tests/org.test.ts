@@ -143,6 +143,43 @@ describe("eris org members", () => {
   });
 });
 
+describe("eris org members admin", () => {
+  it("grants with POST and revokes with DELETE on the member's admin route", async () => {
+    /** When revoke is sent as POST (or grant as DELETE), the role change goes the wrong way silently: observed in the recorded method and path. */
+    reply = () => Response.json({ memberId: MIA, role: "admin", roleSource: "olympus" });
+    const g = await run(["members", "admin", "grant", MIA]);
+    expect(g.code).toBe(0);
+    expect(g.stdout).toBe(`${MIA} is now admin\n`);
+    reply = () => Response.json({ memberId: MIA, role: "member", roleSource: null });
+    const r = await run(["members", "admin", "revoke", MIA], "json");
+    expect(JSON.parse(r.stdout)).toEqual({ memberId: MIA, role: "member", roleSource: null });
+    expect(seen).toEqual([
+      { method: "POST", path: `/v1/org/members/${MIA}/admin`, auth: `Bearer ${TOKEN}` },
+      { method: "DELETE", path: `/v1/org/members/${MIA}/admin`, auth: `Bearer ${TOKEN}` },
+    ]);
+  });
+
+  it("leaves authorisation to the server: 403 and the last-admin 409 get their own slugs", async () => {
+    /** When the CLI pre-checks the role, or folds 409 into 'unavailable', a stale role refuses wrongly and the operator is told to retry a demotion that would lock the org out: observed in the slugs. */
+    reply = () => problem(403, "admin_required");
+    expect((await run(["members", "admin", "grant", MIA])).stderr).toContain("slug: org-admin-required");
+    reply = () => problem(409, "last_admin");
+    const r = await run(["members", "admin", "revoke", ADA]);
+    expect(r.code).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain("slug: org-last-admin");
+  });
+
+  it("sends nothing for a missing action, a missing id or a non-ULID id", async () => {
+    /** When `..` or a bare `admin` reaches fetch, the authenticated request lands on another route: observed in the recorded requests (none). */
+    expect((await run(["members", "admin"])).stderr).toContain("slug: org-admin-action-invalid");
+    expect((await run(["members", "admin", "promote", MIA])).stderr).toContain("slug: org-admin-action-invalid");
+    expect((await run(["members", "admin", "grant"])).stderr).toContain("slug: org-member-id-missing");
+    expect((await run(["members", "admin", "revoke", ".."])).stderr).toContain("slug: org-member-not-found");
+    expect(seen).toEqual([]);
+  });
+});
+
 describe("eris org members deactivate", () => {
   it("posts to the member's deactivate route and says so", async () => {
     /** When the id lands in the wrong path or the wrong verb is sent, a different member is changed or nothing is: observed in the recorded request. */

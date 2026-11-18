@@ -85,6 +85,13 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
         usage: "<cluster-or-observation-id>",
         example: "eris yak show 01M75PC29DE94YJYJHQZNJ4M47",
       },
+      "yak retry": {
+        summary: "Requeue one failed observation (an org admin's)",
+        json: true,
+        pos: ["id?"],
+        usage: "<observation-id>",
+        example: "eris yak retry 01M75PC29DE94YJYJHQZNJ4M47",
+      },
       "yak ready": { summary: "Whether this machine can file yaks, and when to file; always exits 0 (a SessionStart hook runs it)", json: true },
       "yak discover": {
         summary: "The Linear teams, projects, states and labels this org can file yaks into",
@@ -119,11 +126,11 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
       logout: { impl: "ts", summary: "Remove this directory's org's token from ~/.eris/yaks.json" },
       org: { impl: "ts", summary: "This org's members, Linear connection and deletion (members, connect-linear, delete)" },
       "org members": {
-        summary: "List this org's members, or deactivate one (an org admin's)",
+        summary: "List this org's members, deactivate one, or grant or revoke admin (an org admin's)",
         json: true,
-        pos: ["action?", "id?"],
-        usage: "[deactivate <member-id>]",
-        complete: [["deactivate"]],
+        pos: ["action?", "first?", "second?"],
+        usage: "[deactivate <member-id> | admin grant|revoke <member-id>]",
+        complete: [["deactivate", "admin"]],
       },
       "org connect-linear": {
         summary: "Connect this org's Linear workspace through the browser, then wait until it reads connected (an org admin's)",
@@ -141,6 +148,29 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
           { name: "--cancel", takesValue: false },
         ],
         example: "eris org delete --confirm Acme",
+      },
+      events: { impl: "ts", summary: "This org's archived events, and the operator's parked lines (list, parked)" },
+      "events list": {
+        summary: "This org's archived events for a product and UTC day",
+        json: true,
+        usage: "--product <product> [--day <YYYY-MM-DD>] [--cursor <c>] [--limit <1..500>]",
+        flags: [
+          { name: "--product", takesValue: true },
+          { name: "--day", takesValue: true },
+          { name: "--cursor", takesValue: true },
+          { name: "--limit", takesValue: true },
+        ],
+        example: "eris events list --product yak --day 2026-11-18",
+      },
+      "events parked": {
+        summary: "The lines the archive parked as invalid for a UTC day (the operator org's)",
+        json: true,
+        usage: "[--day <YYYY-MM-DD>] [--cursor <c>] [--limit <1..500>]",
+        flags: [
+          { name: "--day", takesValue: true },
+          { name: "--cursor", takesValue: true },
+          { name: "--limit", takesValue: true },
+        ],
       },
       whoami: { impl: "ts", summary: "Show the org this directory acts as, why, and where its token comes from (never the token)", json: true },
       tokens: { impl: "ts", summary: "List, create and revoke this org's API tokens (ls, create, revoke)" },
@@ -168,6 +198,7 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
       whoami: async () => (await import("./whoami")).runWhoami,
       tokens: async () => (await import("./tokens")).runTokens,
       org: async () => (await import("./org")).runOrg,
+      events: async () => (await import("./events")).runEvents,
     },
     jsonFix: `  eris yak issue|suggest|fatal             {verb, delivered, id?, idempotency_key?, replay?,
                                             contract_version?, key_mismatch?, configured?,
@@ -179,6 +210,11 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
   eris yak clusters                        {days, clusters: [{id, kind, summary, recent_count, total_count,
                                             last_seen, issue_identifier, recent_by_status: {filed, pending,
                                             failed}}]}
+  eris yak retry <id>                      {requeued, status}
+  eris events list                         {events: [{event_id, org_id, product, stream, seq, type,
+                                            occurred_at, actor, payload}], next_cursor}
+  eris events parked                       {lines: [{message_id, enqueued_at, attempts?, body, ...}],
+                                            next_cursor}
   eris yak show <id>                       a cluster {id, kind, canonical_summary, observation_count,
                                             first_seen, last_seen, current_issue_identifier, issue_history,
                                             observations} or an observation {id, verb, route, summary, source,
@@ -198,6 +234,7 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
   eris tokens revoke                       {tokenId}
   eris org members                         {members: [{memberId, name, email, role, status, seats}]}
   eris org members deactivate <id>         {memberId, status}
+  eris org members admin grant|revoke <id> {memberId, role, roleSource}
   eris org connect-linear                  the org's body from GET /v1/org/me once Linear reads connected
                                             ({orgId, memberId, role, linear: {status}, ...})
   eris org delete --confirm <name>         {dueAt, cause}
