@@ -123,6 +123,30 @@ export async function computeGatesBundleSha(bundle: GatesOrgBundle, settings: Ga
   return hex.slice(0, 12);
 }
 
+/** Each slug of `from` and `to` (sorted) whose value differs, as `<label> <slug> added|removed|<edited>`. */
+function keyedChanges(label: string, edited: string, from: Readonly<Record<string, unknown>>, to: Readonly<Record<string, unknown>>): string[] {
+  const out: string[] = [];
+  for (const slug of [...new Set([...Object.keys(from), ...Object.keys(to)])].sort()) {
+    if (!Object.hasOwn(from, slug)) out.push(`${label} ${slug} added`);
+    else if (!Object.hasOwn(to, slug)) out.push(`${label} ${slug} removed`);
+    else if (canonicalJson(from[slug]) !== canonicalJson(to[slug])) out.push(`${label} ${slug} ${edited}`);
+  }
+  return out;
+}
+
+/**
+ * The parts of `base` that `next` changes, in bundle order: `active`, `posture <slug> added|removed|changed`,
+ * `profiles`, `loop <slug> added|removed|edited`. Key order is not a change; equal bundles answer `[]`.
+ */
+export function bundleChanges(base: GatesOrgBundle, next: GatesOrgBundle): string[] {
+  return [
+    ...(base.active === next.active ? [] : ["active"]),
+    ...keyedChanges("posture", "changed", base.postures, next.postures),
+    ...(canonicalJson(base.profiles) === canonicalJson(next.profiles) ? [] : ["profiles"]),
+    ...keyedChanges("loop", "edited", base.loops, next.loops),
+  ];
+}
+
 export const BUNDLE_DOCTRINE_FILE = "doctrine.md";
 export const BUNDLE_PROFILES_FILE = "profiles.yaml";
 export const BUNDLE_LOOPS_DIR = "loops";

@@ -17,7 +17,7 @@
  */
 
 import * as Schema from "effect/Schema";
-import { computeGatesBundleSha, GATES_POLICY_CONTRACT_VERSION, GatesBundleSha, type GatesOrgBundle, GatesPolicyReply, type GatesSettings, GatesSettingsReply } from "./bundle";
+import { bundleChanges, computeGatesBundleSha, GATES_POLICY_CONTRACT_VERSION, GatesBundleSha, type GatesOrgBundle, GatesPolicyReply, type GatesSettings, GatesSettingsReply } from "./bundle";
 import { decodeResult } from "./decode";
 import {
   LINEAR_PATH,
@@ -100,6 +100,7 @@ export type GatesClientSlug =
   | "gate-contract-mismatch"
   | "doctrine-out-of-date"
   | "doctrine-push-refused"
+  | "doctrine-push-needs-approval"
   | "doctrine-push-stale"
   | "doctrine-push-invalid"
   | "linear-issue-not-found"
@@ -314,30 +315,75 @@ const PolicySaveReply = Schema.Struct({
   version: Schema.Number.check(Schema.makeFilter((n) => Number.isSafeInteger(n) && n > 0, { expected: "a positive integer" })),
   bundle_sha: GatesBundleSha,
   saved_at: Schema.String,
+  widened: Schema.optionalKey(Schema.Boolean),
+  reasons: Schema.optionalKey(Schema.Array(Schema.String)),
+  auth_mode: Schema.optionalKey(Schema.String),
 });
 
-/** The version a policy save made. */
+/** The version a policy save made, how the gateway judged it, and the parts of the base it changed. */
 export interface SavedPolicy {
   readonly version: number;
   readonly bundle_sha: GatesBundleSha;
   readonly saved_at: string;
+  /** Whether the save loosened the policy; null when the gateway did not say. */
+  readonly widened: boolean | null;
+  /** Why the gateway judged the save a widening, one phrase each. */
+  readonly reasons: readonly string[];
+  /** What authorised the save (`portal_admin`, `mandate_passkey`, `seed`); null when the gateway did not say. */
+  readonly auth_mode: string | null;
+  /** `bundleChanges(base, bundle)`: the parts of the base the save changed. */
+  readonly changed: readonly string[];
 }
 
-/** The refusal of a policy save, one slug per class; never names the bearer or the body. */
-function pushRefusal(a: Answer): ContractFailure | null {
+declare const MandateHandleBrand: unique symbol;
+/** A passkey approval handle, `mnd_<orgUlid>_<43 base64url>`: a bearer capability, never printed or logged. */
+export type MandateHandle = string & { readonly [MandateHandleBrand]: true };
+
+const MANDATE_HANDLE = /^mnd_[0-9A-HJKMNP-TV-Z]{26}_[A-Za-z0-9_-]{43}$/;
+
+/** `raw` as a `MandateHandle` when it has the handle's shape, else null. Never echoes `raw`. */
+export function parseMandateHandle(raw: string): MandateHandle | null {
+  return MANDATE_HANDLE.test(raw) ? (raw as MandateHandle) : null;
+}
+
+/** The dash page that mints a policy-save approval. */
+export const GATES_APPROVE_URL = "https://dash.sibylline.group/gates/approve";
+
+/** The mandate service's refusals of a presented handle, as gates relays them (at 401, 403 or 404). */
+const MANDATE_REFUSALS = new Set(["agent_root", "widened", "mandate_out_of_path", "expired", "not_covered", "exhausted", "revoked", "unknown_mandate"]);
+const isMandateRefusal = (a: Answer): boolean => a.status >= 400 && a.status <= 499 && (MANDATE_REFUSALS.has(a.code) || a.code.startsWith("mandate_"));
+
+/** The refusal of a policy save, one slug per class; never names the bearer, the handle or the body. `sent`: an approval rode in the body. */
+function pushRefusal(a: Answer, sent: boolean): ContractFailure | null {
   const { status, code } = a;
+  if (status === 403 && code === "policy_widening_requires_passkey") {
+    return failure(
+      "doctrine-push-needs-approval",
+      `this save loosens the org's policy, and the org's Mandate requires a passkey approval for that (HTTP 403, ${code})`,
+      sent
+        ? `The approval did not cover this save; approve again at ${GATES_APPROVE_URL}, then rerun with ERIS_GATES_APPROVAL=<handle> eris doctrine push (the approval lasts 5 minutes and covers one save).`
+        : `Open ${GATES_APPROVE_URL}, approve with your passkey, then rerun with ERIS_GATES_APPROVAL=<handle> eris doctrine push (the approval lasts 5 minutes and covers one save).`,
+    );
+  }
+  if (sent && isMandateRefusal(a)) {
+    return failure(
+      "doctrine-push-needs-approval",
+      `the org's Mandate refused the approval sent with this save (HTTP ${status}, ${code}): it has expired, been used or revoked, or does not cover this save`,
+      `That approval cannot be used; approve again at ${GATES_APPROVE_URL}, then rerun with ERIS_GATES_APPROVAL=<handle> eris doctrine push (the approval lasts 5 minutes and covers one save).`,
+    );
+  }
   if (status === 403 || status === 405) {
     return failure(
       "doctrine-push-refused",
       `the gateway does not take policy saves on this bearer (HTTP ${status}, ${code})`,
-      "Policy saves from eris need an org admin's login and the org's gates_policy_dev_push flag on; otherwise change the policy in the org's Gates settings (Portal), then run 'eris doctrine pull'.",
+      "Sign in as an org admin with 'eris login', then rerun; service tokens and members cannot save the org's policy. Or change the policy in the org's Gates settings, then run 'eris doctrine pull'.",
     );
   }
   if (status === 409) {
     return failure(
       "doctrine-push-stale",
       `the org's policy changed while it was saved (HTTP 409, ${code})`,
-      "Copy your edited files out of ~/.eris/doctrine/<orgId>/, run 'eris doctrine pull', re-apply them, then 'eris doctrine push'.",
+      `Copy your edited files out of ~/.eris/doctrine/<orgId>/, run 'eris doctrine pull', re-apply them, then 'eris doctrine push'.${sent ? ` Your approval may have been used; approve again at ${GATES_APPROVE_URL}.` : ""}`,
     );
   }
   if (status === 400 || status === 413 || status === 422) {
@@ -350,17 +396,36 @@ function pushRefusal(a: Answer): ContractFailure | null {
   return null;
 }
 
+/** What a policy save sends beside the bundle: the base it was edited on, and an approval when the operator has one. */
+export interface PolicySave {
+  /** The live bundle the edits were made on; `changed` is taken against it. */
+  readonly base: GatesOrgBundle;
+  /** Sent as the body's `mandate_handle`; the gateway spends it only on a save it would otherwise refuse as a widening. */
+  readonly mandateHandle?: MandateHandle | undefined;
+}
+
 /**
- * Save `bundle` as the org's policy (`PUT /v1/gates/policy`). Sent once and never retried: a retry is the
- * caller's decision, after it reads the live policy again.
+ * Save `bundle` as the org's policy (`PUT /v1/gates/policy`, `{ bundle, mandate_handle? }`). Sent once and
+ * never retried: a retry is the caller's decision, after it reads the live policy again.
  */
-export async function putOrgPolicy(ep: GatesEndpoint, bundle: GatesOrgBundle): Promise<Outcome<SavedPolicy>> {
+export async function putOrgPolicy(ep: GatesEndpoint, bundle: GatesOrgBundle, save: PolicySave): Promise<Outcome<SavedPolicy>> {
   const what = "the org policy save";
-  const a = await exchange(ep, { method: "PUT", path: POLICY_PATH, what, maxBytes: POLICY_SAVE_REPLY_MAX_BYTES, headers: { "content-type": "application/json" }, body: JSON.stringify({ bundle }) });
+  const sent = save.mandateHandle !== undefined;
+  const body = JSON.stringify(sent ? { bundle, mandate_handle: save.mandateHandle } : { bundle });
+  const a = await exchange(ep, { method: "PUT", path: POLICY_PATH, what, maxBytes: POLICY_SAVE_REPLY_MAX_BYTES, headers: { "content-type": "application/json" }, body });
   if (!a.ok) return a;
-  if (!ok2xx(a.value)) return fail(pushRefusal(a.value) ?? (a.value.status === 401 || a.value.status >= 500 ? storeRefusal(a.value, what) : mismatch(`the gateway refused ${what} (HTTP ${a.value.status}, ${a.value.code})`)));
+  if (!ok2xx(a.value)) return fail(pushRefusal(a.value, sent) ?? (a.value.status === 401 || a.value.status >= 500 ? storeRefusal(a.value, what) : mismatch(`the gateway refused ${what} (HTTP ${a.value.status}, ${a.value.code})`)));
   const d = decoded(a.value, what, PolicySaveReply);
-  return d.ok ? succeed({ version: d.value.version, bundle_sha: d.value.bundle_sha, saved_at: d.value.saved_at }) : d;
+  if (!d.ok) return d;
+  return succeed({
+    version: d.value.version,
+    bundle_sha: d.value.bundle_sha,
+    saved_at: d.value.saved_at,
+    widened: d.value.widened ?? null,
+    reasons: d.value.reasons ?? [],
+    auth_mode: d.value.auth_mode ?? null,
+    changed: bundleChanges(save.base, bundle),
+  });
 }
 
 /** The doctrine-comment routes' contract version (the receipts' `gates-contract/v1`). */

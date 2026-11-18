@@ -1335,17 +1335,32 @@ and this client disagree on the gates contract. Exit 3.
 ### doctrine-push-refused
 
 The gateway does not take a policy save on this bearer (HTTP 403 or 405 from `PUT /v1/gates/policy`):
-the login is not an org admin's, or the org has not turned on policy saves from eris. Nothing was
-saved and the tree under `~/.eris/doctrine/<orgId>/` is as you left it. Change the policy in the
-org's Gates settings, then run `eris doctrine pull`; or have an org admin sign in and enable saves.
-Exit 3.
+the login is not an org admin's. Service tokens and members cannot save the org's policy. Nothing
+was saved and the tree under `~/.eris/doctrine/<orgId>/` is as you left it. Sign in as an org admin
+with `eris login` and push again; or change the policy in the org's Gates settings, then run
+`eris doctrine pull`. Exit 3.
+
+### doctrine-push-needs-approval
+
+The save loosens the org's policy (any loop edit, a looser posture, and so on), and the org's
+Mandate requires a passkey approval for that: `PUT /v1/gates/policy` answered HTTP 403
+`policy_widening_requires_passkey`. Open <https://dash.sibylline.group/gates/approve>, approve with
+your passkey, then rerun with `ERIS_GATES_APPROVAL=<handle> eris doctrine push`. The approval lasts
+5 minutes and covers one save; the gateway spends it only on a save that needs it, and eris never
+prints it.
+
+The same slug covers an approval that cannot be used: `ERIS_GATES_APPROVAL` is set but is not an
+approval handle (`mnd_...`; refused before any request, without echoing the value), or the Mandate
+refused the one sent (expired, already used, revoked, or not covering this save). Approve again and
+rerun. Nothing was saved and the tree is as you left it. Exit 3.
 
 ### doctrine-push-stale
 
 The org's live policy is not the one your edited tree was pulled on, so pushing would revert the
 newer save (or the gateway answered HTTP 409 to the save). Nothing was saved and the tree is
 untouched. Copy your edited files out of `~/.eris/doctrine/<orgId>/`, run `eris doctrine pull`,
-re-apply them, then push again. Exit 3.
+re-apply them, then push again. When the save carried an approval (`ERIS_GATES_APPROVAL`), it may
+have been used: approve again at <https://dash.sibylline.group/gates/approve> before you push. Exit 3.
 
 ### doctrine-push-invalid
 
