@@ -709,6 +709,13 @@ was abandoned, was not finished in the browser, or was finished for another work
 connect-linear` again for a new link (each link works once; a new one replaces the old); `eris whoami`
 shows the connection's state. Exit 1.
 
+### org-billing-unavailable
+
+`eris org billing checkout` or `portal` was refused because billing is not available on this
+platform: the org endpoint answered `404` (billing is not turned on, so the route does not exist) or
+`503 billing_unconfigured` (billing is on but Stripe is not configured). Nothing was opened and no URL
+was printed. This is the platform's setup, not this machine's: tell the platform's operator. Exit 1.
+
 ### org-github-account-invalid
 
 `eris org connect-github` was given no `--account`, or one that is not a GitHub organization name

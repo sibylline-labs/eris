@@ -124,7 +124,7 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
         ],
       },
       logout: { impl: "ts", summary: "Remove this directory's org's token from ~/.eris/yaks.json" },
-      org: { impl: "ts", summary: "This org's members, Linear and GitHub connections, and deletion (members, connect-linear, github, connect-github, disconnect-github, delete)" },
+      org: { impl: "ts", summary: "This org's members, Linear and GitHub connections, and deletion (members, connect-linear, github, connect-github, disconnect-github, billing, delete)" },
       "org members": {
         summary: "List this org's members, deactivate one, or grant or revoke admin (an org admin's)",
         json: true,
@@ -158,6 +158,17 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
         summary: "Unbind this org's GitHub App installation (an org admin's)",
         json: true,
         example: "eris org disconnect-github",
+      },
+      "org billing": { summary: "Print a Stripe Checkout or Billing Portal URL for this org (checkout, portal)" },
+      "org billing checkout": {
+        summary: "Print a Stripe Checkout URL for this org's subscription; pay on Stripe's page (an org admin's)",
+        json: true,
+        example: "eris org billing checkout",
+      },
+      "org billing portal": {
+        summary: "Print a Stripe Billing Portal URL for this org (an org admin's)",
+        json: true,
+        example: "eris org billing portal",
       },
       "org delete": {
         summary: "Schedule this org's deletion (--confirm <workspace>) or cancel it (--cancel); an org admin's",
@@ -260,6 +271,7 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
   eris org github                          {installation: {installation_id, bound_at} | null, app: {id, slug, install_url} | null}
   eris org connect-github --account <org>  the same body, once bound
   eris org disconnect-github               the same body, installation null
+  eris org billing checkout|portal         {url}
   eris org delete --confirm <name>         {dueAt, cause}
   eris org delete --cancel                 {cancelled}
   eris whoami                              {org, source, path?, default, token_source, url,

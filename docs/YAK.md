@@ -249,6 +249,17 @@ prove it ([`org-github-not-owner`](ERRORS.md#org-github-not-owner),
 github` shows the binding and the install link; `eris org disconnect-github` unbinds it (the installation
 stays held by this org). All three print the server's body under `--output json`.
 
+### `eris org billing`: print a Stripe Checkout or Billing Portal URL
+
+`eris org billing checkout` and `eris org billing portal` print the URL of a Stripe Checkout Session for
+the org's subscription, or of a Stripe Billing Portal session for its customer
+(`POST /v1/org/billing/checkout` and `/portal`, with that org's bearer). Open the URL in a browser and pay
+or manage billing on Stripe's page: eris never takes card details and opens nothing itself. Only an org
+admin may ([`org-admin-required`](ERRORS.md#org-admin-required)); a platform with billing off is
+[`org-billing-unavailable`](ERRORS.md#org-billing-unavailable). The printed URL must be an `https`
+page on `stripe.com`, else nothing is printed. Each run opens a new session. `--output json` prints the
+server's body, `{url}`.
+
 ### `eris org delete`: schedule or cancel the org's deletion
 
 `eris org delete --confirm <workspace>` schedules the org's deletion
