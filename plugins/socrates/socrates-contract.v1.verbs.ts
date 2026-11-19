@@ -63,6 +63,7 @@ export const SOCRATES_ROUTES = {
   settings_policy: { method: "PUT", path: "/v1/socrates/settings/policy" },
   settings_canon: { method: "PUT", path: "/v1/socrates/settings/canon" },
   settings_enrolment: { method: "PUT", path: "/v1/socrates/settings/enrolment" },
+  settings_projects: { method: "GET", path: "/v1/socrates/settings/projects" },
 } as const;
 
 export const SOCRATES_GATE_REASON_MAX_LENGTH = 500;
@@ -287,6 +288,23 @@ export const SocratesSettingsEnrolmentReceipt = z.object({
 });
 export type SocratesSettingsEnrolmentReceipt = z.infer<typeof SocratesSettingsEnrolmentReceipt>;
 export const SocratesSettingsEnrolmentResponse = z.union([SocratesSettingsEnrolmentReceipt, SocratesProblem]);
+
+/** Every Linear project the app can read, and whether each is enrolled now and how (`null` when it is not). */
+export const SocratesSettingsProjectsResult = z.object({
+  projects: z.array(
+    z.object({
+      id: Id,
+      name: ProjectHint,
+      url: Url.nullable(),
+      enrolled: z.boolean(),
+      source: z.enum(["label", "stub"]).nullable(),
+      readable: z.boolean(),
+    }),
+  ),
+  contract_version: Version,
+});
+export type SocratesSettingsProjectsResult = z.infer<typeof SocratesSettingsProjectsResult>;
+export const SocratesSettingsProjectsResponse = z.union([SocratesSettingsProjectsResult, SocratesProblem]);
 
 /** What every settings write answers: the version it stored and the hash that version carries. */
 export const SocratesSettingsReceipt = z.object({

@@ -31,6 +31,7 @@ export const SETTINGS_USAGE = `Usage: eris socrates settings <command>
 Commands:
   policy     Show the org's scoring policy, or change it (an org admin's); --preview shows a change first
   enrolment  List the enrolled projects and their Linear links, or enrol one (or --remove it); enrolling is an org admin's
+  projects   List the Linear projects that can be enrolled, and which already are (an org admin's)
   health     Print the install (with its Linear scopes), webhook, reconcile and stuck-write health
   usage      Print the no-credit usage figures
   canon      Show or choose the org's Canon doc (an org admin's)
@@ -85,8 +86,9 @@ export async function runSettings(args: string[], ctx: VerbContext, deps: Socrat
     ctx.stdout.write(SETTINGS_USAGE);
     return 0;
   }
-  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates settings command '${g.sub}'`, "use: policy, enrolment, health, usage, canon, team\nrun 'eris socrates settings --help' for the command list");
+  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates settings command '${g.sub}'`, "use: policy, enrolment, projects, health, usage, canon, team\nrun 'eris socrates settings --help' for the command list");
   if (g.sub === "policy") return (await import("./settings-panels")).runPolicy(g.rest, ctx, deps);
+  if (g.sub === "projects") return (await import("./settings-panels")).runProjects(g.rest, ctx, deps);
   if (g.sub === "enrolment") return (await import("./settings-panels")).runEnrolment(g.rest, ctx, deps);
   if (g.sub === "health") return (await import("./settings-panels")).runHealth(g.rest, ctx, deps);
   if (g.sub === "usage") return (await import("./settings-panels")).runUsage(g.rest, ctx, deps);

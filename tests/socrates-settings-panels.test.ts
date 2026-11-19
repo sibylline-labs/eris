@@ -16,7 +16,9 @@ const TOKEN = ["sib", "01HZX3K5Q8W2N4R6T8V0Y2B4D6", "AbCdEfGhIjKlMnOpQrStUvWxYz0
 const GITHUB_TOKEN = ["ghp", "_", "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"].join("");
 
 const golden = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "socrates-contract-v1.json"), "utf8")) as {
-  messages: { settings: { response: { accept: Record<string, any>[] } }; settings_enrolment: { response: { accept: Record<string, any>[] } } };
+  messages: { settings: { response: { accept: Record<string, any>[] } }; settings_enrolment: { response: { accept: Record<string, any>[] } };
+    settings_projects: { response: { accept: Record<string, any>[] } };
+  };
 };
 const SERVED = golden.messages.settings.response.accept[1]!;
 const ENROLLED_ID = "da12bb11-7add-4cd3-a4a7-8057a1475c72";
@@ -58,6 +60,10 @@ beforeAll(() => {
       if (req.method === "PUT" && url.pathname === "/v1/socrates/settings/canon") {
         state.canon = body.doc;
         return Response.json(receipt());
+      }
+      if (req.method === "GET" && url.pathname === "/v1/socrates/settings/projects") {
+        if (answer !== undefined) return Response.json(answer.body, { status: answer.status, headers: { "content-type": "application/problem+json" } });
+        return Response.json(golden.messages.settings_projects.response.accept[0]);
       }
       if (req.method === "PUT" && url.pathname === "/v1/socrates/settings/enrolment" && answer !== undefined) {
         return Response.json(answer.body, { status: answer.status, headers: { "content-type": "application/problem+json" } });
@@ -354,5 +360,53 @@ describe("enrol", () => {
     const r = await drive(["enrol", GITHUB_TOKEN]);
     expect(r.slug).toBe("socrates-secret-detected");
     expect(requests).toHaveLength(0);
+  });
+});
+
+describe("settings projects", () => {
+  // admits: boundary-io: the golden file's real list answer reaching the decoder and the printed lines an operator reads to pick a project.
+  it("prints each readable project with its state, then how to enrol one", async () => {
+    const r = await drive(["settings", "projects"]);
+    expect(r.rc).toBe(0);
+    expect(r.stdout).toBe(
+      "Platform (enrolled, stub) https://tracker.example.com/acme/project/platform-1a2b3c\nDocs (not enrolled) -\nenrol one with: eris socrates enrol <project>\n",
+    );
+    expect(requests.map((q) => `${q.method} ${q.path}`)).toEqual(["GET /v1/socrates/settings/projects"]);
+  });
+
+  // admits: boundary-io: --output json is the served body, the machine contract a script reads.
+  it("--output json prints the served body unchanged", async () => {
+    const r = await drive(["settings", "projects"], { format: "json" });
+    expect(JSON.parse(r.stdout)).toEqual(golden.messages.settings_projects.response.accept[0]);
+  });
+
+  // admits: boundary-io: a member's refusal is the admin fix on stderr and nothing on stdout.
+  it("a member's 403 exits non-zero with the admin fix and prints nothing on stdout", async () => {
+    answer = { status: 403, body: golden.messages.settings_projects.response.accept.find((x: Record<string, any>) => x.code === "admin_required")! };
+    const r = await drive(["settings", "projects"]);
+    expect(r.rc).not.toBe(0);
+    expect(r.slug).toBe("socrates-refused");
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain("ask an org admin to run this command");
+  });
+
+  // admits: boundary-io: the operator reads these lines to learn what a stub is.
+  it("an enrolment list with a stub project says what (stub) means; JSON stays the bare list", async () => {
+    const text = await drive(["settings", "enrolment"]);
+    expect(text.stdout).toContain("(stub) means Socrates itself holds the enrolment");
+    const json = await drive(["settings", "enrolment"], { format: "json" });
+    expect(Object.keys(JSON.parse(json.stdout)).sort()).toEqual(["contract_version", "projects"]);
+  });
+
+  // admits: boundary-io: the operator reads this line to decide the next step on a needs_labels install.
+  it("a needs_labels install names what it means and that enrolment still works", async () => {
+    state.served.health.install = { ...state.served.health.install, state: "needs_labels", missing_labels: ["Eng/socrates"] };
+    const r = await drive(["settings", "health"]);
+    expect(r.stdout).toContain("install: needs_labels; missing labels: Eng/socrates");
+    expect(r.stdout).toContain("fix: Linear did not let Socrates create the labels above");
+    expect(r.stdout).toContain("eris socrates enrol <project>");
+    state.served.health.install.state = "provisioned";
+    state.served.health.install.missing_labels = [];
+    expect((await drive(["settings", "health"])).stdout).not.toContain("fix:");
   });
 });

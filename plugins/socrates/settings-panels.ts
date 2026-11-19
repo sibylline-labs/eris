@@ -23,7 +23,7 @@ import { readArgs, type VerbContext } from "../../src/cli/plugin";
 import { fail, postSocrates, printable, type SocratesDeps, type SocratesEndpoint, socratesEndpoint } from "./client";
 import plugin from "./index";
 import { SOCRATES_CONTRACT_VERSION, type SocratesProblem } from "./socrates-contract.v1";
-import { SOCRATES_ROUTES, SocratesPolicy, SocratesSettingsCanonRequest, SocratesSettingsEnrolmentRequest, SocratesSettingsEnrolmentResponse, SocratesSettingsPolicyRequest, SocratesSettingsResponse, type SocratesSettingsResult, SocratesSettingsWriteResponse } from "./socrates-contract.v1.verbs";
+import { SOCRATES_ROUTES, SocratesPolicy, SocratesSettingsCanonRequest, SocratesSettingsEnrolmentRequest, SocratesSettingsEnrolmentResponse, SocratesSettingsPolicyRequest, SocratesSettingsProjectsResponse, SocratesSettingsResponse, type SocratesSettingsResult, SocratesSettingsWriteResponse } from "./socrates-contract.v1.verbs";
 
 type Policy = ReturnType<typeof SocratesPolicy.parse>;
 
@@ -65,6 +65,18 @@ the same write as 'eris socrates enrol'.
 
 --output json prints {projects: [{id, name, source, url}], contract_version}; with a <project>, the
 receipt {project, enrolled, source, contract_version}, where project is the Linear id it resolved to.
+
+Sign in first with 'eris login'.
+`;
+
+export const PROJECTS_USAGE = `Usage: eris socrates settings projects
+
+List the Linear projects Socrates can read, an org admin's: each with its Linear link and whether it is
+already enrolled (and how, label or stub). To enrol one, run 'eris socrates enrol <project>' with its
+name or id.
+
+--output json prints {projects: [{id, name, url, enrolled, source, readable}], contract_version}; readable
+is false for an enrolled project the Linear app's project listing lacks.
 
 Sign in first with 'eris login'.
 `;
@@ -186,6 +198,33 @@ export async function runEnrolment(args: string[], ctx: VerbContext, deps: Socra
   if (ctx.format === "json") return json(ctx, { projects: r.enrolment.projects, contract_version: r.contract_version });
   const rows = r.enrolment.projects;
   ctx.stdout.write(rows.length === 0 ? "no projects are enrolled\n" : `${rows.map((p) => `${printable(p.name ?? p.id)} (${p.source}) ${p.url === null ? "-" : printable(p.url)}`).join("\n")}\n`);
+  if (rows.some((p) => p.source === "stub")) ctx.stdout.write(`${STUB_NOTE}\n`);
+  return 0;
+}
+
+/** What the source in an enrolment line means: the stub is a full enrolment, kept in Socrates rather than on a Linear label. */
+const STUB_NOTE = "(stub) means Socrates itself holds the enrolment (set in the dash or with 'eris socrates enrol'), not a 'Socrates › Enrolled' label on the Linear project. The project is enrolled: nothing more is needed. (label) is the label form.";
+
+/** `settings projects`: every readable Linear project, enrolled or not. */
+export async function runProjects(args: string[], ctx: VerbContext, deps: SocratesDeps): Promise<number> {
+  if (readArgs(plugin.rows, "socrates settings projects", args, ctx, { help: PROJECTS_USAGE }) === null) return 0;
+  const r = await postSocrates(ctx, deps, await socratesEndpoint(ctx, deps), {
+    method: "GET",
+    path: SOCRATES_ROUTES.settings_projects.path,
+    query: {},
+    decoder: SocratesSettingsProjectsResponse,
+    subject: "the projects list",
+    refusalFix: (status) => (status === 403 ? "ask an org admin to run this command" : status === 409 ? "an org admin reconnects Linear from the dashboard, then run the command again" : undefined),
+    badResponseFix: badWriteFix(SOCRATES_ROUTES.settings_projects.path),
+  });
+  if (ctx.format === "json") return json(ctx, r);
+  if (r.projects.length === 0) {
+    ctx.stdout.write("no Linear projects are readable to Socrates\n");
+    return 0;
+  }
+  const state = (p: (typeof r.projects)[number]): string => (p.enrolled ? `enrolled, ${p.source ?? "-"}` : "not enrolled");
+  ctx.stdout.write(`${r.projects.map((p) => `${printable(p.name)} (${state(p)}${p.readable ? "" : ", unreadable"}) ${p.url === null ? "-" : printable(p.url)}`).join("\n")}\n`);
+  if (r.projects.some((p) => !p.enrolled)) ctx.stdout.write("enrol one with: eris socrates enrol <project>\n");
   return 0;
 }
 
@@ -205,6 +244,9 @@ function scopesLine(scopes: { granted: string[]; missing: string[] } | null): st
   return `linear scopes: ${scopes.missing.length} missing (${scopes.missing.map(printable).join(", ")}); a Linear workspace admin can re-install the app to grant them`;
 }
 
+/** What a `needs_labels` install means and the next step: no verb creates the labels, and nothing waits on them. */
+const NEEDS_LABELS_FIX = "fix: Linear did not let Socrates create the labels above, so review Epics file without them. Enrolment is unaffected ('eris socrates settings projects' lists what can be enrolled, 'eris socrates enrol <project>' enrols one). Socrates retries daily; to add them sooner, an org admin creates them in Linear (Settings > Labels).";
+
 /** `settings health`. */
 export async function runHealth(args: string[], ctx: VerbContext, deps: SocratesDeps): Promise<number> {
   if (readArgs(plugin.rows, "socrates settings health", args, ctx, { help: HEALTH_USAGE }) === null) return 0;
@@ -216,6 +258,7 @@ export async function runHealth(args: string[], ctx: VerbContext, deps: Socrates
   ctx.stdout.write(
     [
       `install: ${h.install.state ?? "unknown"}${labels} (checked ${when(h.install.checked_at)})`,
+      ...(h.install.state === "needs_labels" ? [NEEDS_LABELS_FIX] : []),
       scopesLine(scopes),
       `webhook: last delivery ${when(h.webhook.last_delivery_at)}`,
       `reconcile: last ${when(h.reconcile.last_at)}, watermark ${when(h.reconcile.watermark)}`,
