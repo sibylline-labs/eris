@@ -56,6 +56,11 @@ function serverLines(me: Record<string, unknown>): string[] {
   if (typeof entitlements === "object" && entitlements !== null) {
     const pairs = Object.entries(entitlements).map(([product, state]) => `${product} ${String(state)}`);
     lines.push(`entitlements: ${pairs.length === 0 ? "none" : pairs.join(", ")}`);
+    const bus = (entitlements as Record<string, unknown>).bus;
+    if (bus !== undefined && bus !== "active" && bus !== "trialing") {
+      lines.push(`needs bus (${String(bus)}): eris org github, connect-github, disconnect-github refuse; a Logfire webhook URL delivers nothing. Get it: eris org billing checkout (billing off here: ask the platform's operator)`);
+    }
+    if ("gates" in entitlements) lines.push("gates: this entitlement does not decide whether the doctrine and gate verbs work");
   }
   return lines;
 }

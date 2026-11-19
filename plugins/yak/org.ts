@@ -136,7 +136,7 @@ prints the org's own body once connected.
 export const GITHUB_CONNECT_USAGE = `Usage: eris org connect-github --account <github-org> [--no-browser]
 
 Bind a GitHub App installation to the org this directory acts as, so GitHub pull request,
-review, comment and CI events reach its bus ('eris bus subscribe gh:*'). Opens the platform
+review, comment and CI events reach its bus (a product the org needs: 'eris whoami' lists it). Opens the platform
 App's install page in the browser (or only prints it under --no-browser); install it on
 <github-org>. It then waits until 'gh api orgs/<github-org>/installations' lists the App,
 and binds that installation. The bind sends your own 'gh auth token' once, as proof that you
@@ -247,6 +247,9 @@ type Outcome<T> = { ok: true; value: T; base: string } | { ok: false; failure: F
 
 type Action = "grant admin" | "revoke admin" | "deactivate a member" | "delete the org" | "cancel the org's deletion" | "connect Linear" | "connect GitHub" | "disconnect GitHub" | "read the Logfire webhook URL" | "revoke the Logfire webhook URL" | "open Stripe billing";
 
+/** The way to get the bus product, for a refusal that names its absence. */
+const BUS_FIX = "get the bus product for this org: eris org billing checkout   (if billing is off on this platform, ask the platform's operator to grant it), then run it again";
+
 function refusal(status: number, code: string | undefined, target: string, action: Action = "deactivate a member"): Failure {
   const answered = `the org endpoint answered ${status}${code ? ` ${code}` : ""} for ${target}`;
   if (status === 401 && code === "revoked") {
@@ -298,7 +301,7 @@ function refusal(status: number, code: string | undefined, target: string, actio
   if (status === 402 && code === "entitlement_lapsed") {
     // The GitHub verbs reach a row verified for bus, so they meet this refusal too: say what was refused per action.
     const refused = action === "revoke the Logfire webhook URL" ? "no new webhook URL is issued" : `this org cannot ${action}`;
-    return { slug: "org-bus-lapsed", what: `${answered}: this org's bus product is not active, so ${refused}; nothing changed`, fix: "reactivate the bus product for this org (the dashboard's Billing page), then run it again" };
+    return { slug: "org-bus-lapsed", what: `${answered}: this org's bus product is not active, so ${refused}; nothing changed`, fix: BUS_FIX };
   }
   if (status === 503 && code === "github_app_unconfigured") {
     return { slug: "org-github-unconfigured", what: `${answered}: this platform has no GitHub App configured; nothing was bound`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
@@ -318,7 +321,7 @@ function refusal(status: number, code: string | undefined, target: string, actio
   }
   if (status === 403 && code === "scope_denied") {
     if (action === "connect GitHub" || action === "disconnect GitHub") {
-      return { slug: "org-scope-denied", what: `${answered}: this token does not carry the bus scope (the org may not have the bus product)`, fix: "run: eris login   (a CLI login carries every product the org has; 'eris whoami' lists them)" };
+      return { slug: "org-scope-denied", what: `${answered}: this token does not carry the bus scope. A login carries every product the org has, so the org lacks the bus product ('eris whoami' shows \`bus none\`); a second login cannot add it`, fix: BUS_FIX };
     }
     return { slug: "org-scope-denied", what: `${answered}: this token does not carry the accounts scope`, fix: "run: eris login   (a CLI login carries it; a service token without the accounts scope does not)" };
   }
@@ -622,6 +625,18 @@ async function runGithub(ctx: VerbContext, deps: OrgDeps): Promise<number> {
 const LOGFIRE_WEBHOOK_PATH = /^\/v1\/webhooks\/logfire\/[0-9A-HJKMNP-TV-Z]{26}\/[A-Za-z0-9_-]{43}$/;
 const LogfireUrl = z.object({ path: z.string(), generation: z.number().int().nonnegative() }).passthrough();
 
+/** A printed webhook URL delivers nothing while the org's bus product is inactive (deliveries answer 402): say so on stderr. A lookup that fails says nothing. */
+async function warnIfBusInactive(ctx: VerbContext, deps: OrgDeps): Promise<void> {
+  const bearer = await resolveOrgBearer({ home: deps.home ?? ctx.env.HOME ?? homedir(), env: ctx.env, cwd: deps.cwd ?? process.cwd() });
+  if ("reason" in bearer) return;
+  const { readOrgMe } = await import("./yak-admin");
+  const me = await readOrgMe(bearer.value.url, bearer.value.token, { ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}), ...(deps.timeoutMs ? { timeoutMs: deps.timeoutMs } : {}) });
+  if (!me.ok) return;
+  const state = (me.value as { entitlements?: Record<string, unknown> }).entitlements?.bus;
+  if (state === undefined || state === "active" || state === "trialing") return;
+  ctx.stderr.write(`WARN this org's bus product is ${plain(String(state))}: Logfire deliveries to this URL answer 402 and reach nothing. Get it: eris org billing checkout   (if billing is off on this platform, ask the platform's operator)\n`);
+}
+
 async function runWebhooks(source: string | undefined, action: string | undefined, ctx: VerbContext, deps: OrgDeps): Promise<number> {
   if (source !== "logfire") return unknown(ctx, `webhooks${source === undefined ? "" : ` ${source}`}`, "webhooks logfire, webhooks logfire revoke");
   if (action !== undefined && action !== "revoke") return unknown(ctx, `webhooks logfire ${action}`, "webhooks logfire, webhooks logfire revoke");
@@ -640,6 +655,7 @@ async function runWebhooks(source: string | undefined, action: string | undefine
   // `url` last: a server field of the same name never replaces the address joined to the org's own url.
   ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify({ ...got.value, url })}\n` : `${plain(url)}\n`);
   if (revoke) ctx.stderr.write("INFO the previous URL no longer works; update every Logfire alert channel that used it\n");
+  else await warnIfBusInactive(ctx, deps);
   return 0;
 }
 
