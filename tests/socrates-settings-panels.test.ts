@@ -30,6 +30,7 @@ let state: Record<string, any>;
 let refuse: { method: string; path: string; status: number; code: string } | undefined;
 let garble = false;
 let answer: { status: number; body: unknown } | undefined;
+let projectsBody: unknown;
 const requests: { method: string; path: string; search: string; auth: string | null; body: any }[] = [];
 
 const problem = (status: number, code: string, detail: string) =>
@@ -63,7 +64,7 @@ beforeAll(() => {
       }
       if (req.method === "GET" && url.pathname === "/v1/socrates/settings/projects") {
         if (answer !== undefined) return Response.json(answer.body, { status: answer.status, headers: { "content-type": "application/problem+json" } });
-        return Response.json(golden.messages.settings_projects.response.accept[0]);
+        return Response.json(projectsBody ?? golden.messages.settings_projects.response.accept[0]);
       }
       if (req.method === "PUT" && url.pathname === "/v1/socrates/settings/enrolment" && answer !== undefined) {
         return Response.json(answer.body, { status: answer.status, headers: { "content-type": "application/problem+json" } });
@@ -85,6 +86,7 @@ beforeEach(() => {
   refuse = undefined;
   garble = false;
   answer = undefined;
+  projectsBody = undefined;
   state = { served: structuredClone(SERVED), version: 3, hash: HASH_A, policy: structuredClone(SERVED.policy.policy), canon: null };
 });
 
@@ -369,7 +371,7 @@ describe("settings projects", () => {
     const r = await drive(["settings", "projects"]);
     expect(r.rc).toBe(0);
     expect(r.stdout).toBe(
-      "Platform (enrolled, stub) https://tracker.example.com/acme/project/platform-1a2b3c\nDocs (not enrolled) -\nenrol one with: eris socrates enrol <project>\n",
+      "Platform da12bb11-7add-4cd3-a4a7-8057a1475c72 (enrolled, stub) https://tracker.example.com/acme/project/platform-1a2b3c\nDocs 2310e01c-1762-4859-b05c-26d53e1edbb1 (not enrolled) -\nenrol one with: eris socrates enrol <project>\n",
     );
     expect(requests.map((q) => `${q.method} ${q.path}`)).toEqual(["GET /v1/socrates/settings/projects"]);
   });
@@ -388,6 +390,65 @@ describe("settings projects", () => {
     expect(r.slug).toBe("socrates-refused");
     expect(r.stdout).toBe("");
     expect(r.stderr).toContain("ask an org admin to run this command");
+  });
+
+  // admits: boundary-io: a 403 that is not the admin refusal (a token without the product scope) must not tell the operator to find an admin; and a disconnected Linear gets its own fix.
+  it("a 403 that is not admin_required gets no admin fix, and a 409 linear_disconnected says to reconnect Linear", async () => {
+    answer = { status: 403, body: { type: "urn:hera:error:forbidden", title: "Forbidden", status: 403, detail: "no socrates scope", code: "scope_denied" } };
+    const scope = await drive(["settings", "projects"]);
+    expect(scope.slug).toBe("socrates-refused");
+    expect(scope.stderr).toContain("scope_denied");
+    expect(scope.stderr).not.toContain("ask an org admin");
+    answer = { status: 409, body: golden.messages.settings_projects.response.accept.find((x: Record<string, any>) => x.code === "linear_disconnected")! };
+    const disconnected = await drive(["settings", "projects"]);
+    expect(disconnected.slug).toBe("socrates-refused");
+    expect(disconnected.stderr).toContain("reconnects Linear");
+  });
+
+  // admits: boundary-io: server text in a project's name, id or link reaches the operator's terminal; escapes and a forged line must not survive.
+  it("strips terminal escapes and forged lines from a project's name and link", async () => {
+    projectsBody = {
+      projects: [
+        {
+          id: "p-\u001b[2J1",
+          name: "Evil\u001b[31mRed\u001b]8;;https://evil.test\u0007Click\u009b2J\r\nFake (enrolled, label)",
+          url: "https://tracker.example.com/xy",
+          enrolled: true,
+          source: "label",
+          readable: true,
+        },
+      ],
+      contract_version: "1.0.0",
+    };
+    const r = await drive(["settings", "projects"]);
+    expect(r.rc).toBe(0);
+    // eslint-disable-next-line no-control-regex
+    expect(r.stdout).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+    expect(r.stdout.trimEnd().split("\n")).toHaveLength(1);
+    expect(r.stdout).toContain("Evil");
+    // The link is held to an http(s) URL without control characters by the decode, so a server cannot put one there at all.
+    projectsBody = { projects: [{ id: "p-1", name: "Held", url: "https://tracker.example.com/x\u001b[2Jy", enrolled: false, source: null, readable: true }], contract_version: "1.0.0" };
+    const refused = await drive(["settings", "projects"]);
+    expect(refused.rc).not.toBe(0);
+    expect(refused.stdout).toBe("");
+  });
+
+  // admits: boundary-io: the operator reads the empty line, the unreadable marker and the enrol hint to decide the next step; each is a branch a mutation can drop.
+  it("says so when nothing is readable, marks an unreadable project, and points to enrol only while one is not enrolled", async () => {
+    projectsBody = { projects: [], contract_version: "1.0.0" };
+    expect((await drive(["settings", "projects"])).stdout).toBe("no Linear projects are readable to Socrates\n");
+    projectsBody = { projects: [{ id: "p-1", name: "Held", url: null, enrolled: true, source: "stub", readable: false }], contract_version: "1.0.0" };
+    const held = await drive(["settings", "projects"]);
+    expect(held.stdout).toBe("Held p-1 (enrolled, stub, unreadable) -\n");
+    expect(held.stdout).not.toContain("enrol one with");
+  });
+
+  // admits: boundary-io: the (stub) note is only true to say when a stub project is listed; a label-only org must not read it.
+  it("prints the (stub) note only when a project is a stub", async () => {
+    state.served.enrolment.projects = state.served.enrolment.projects.map((p: Record<string, any>) => ({ ...p, source: "label" }));
+    const labels = await drive(["settings", "enrolment"]);
+    expect(labels.rc).toBe(0);
+    expect(labels.stdout).not.toContain("(stub) means");
   });
 
   // admits: boundary-io: the operator reads these lines to learn what a stub is.

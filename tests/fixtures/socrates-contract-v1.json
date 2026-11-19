@@ -503,6 +503,8 @@
           {"projects": [{"id": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "name": "Platform", "url": null, "enrolled": true, "source": "dash", "readable": true}], "contract_version": "1.0.0"},
           {"projects": [{"id": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "name": "Platform", "url": null, "enrolled": true, "source": null}], "contract_version": "1.0.0"},
           {"projects": [{"id": "", "name": "Platform", "url": null, "enrolled": true, "source": null, "readable": true}], "contract_version": "1.0.0"},
+          {"projects": [{"id": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "name": "", "url": null, "enrolled": true, "source": "stub", "readable": true}], "contract_version": "1.0.0"},
+          {"projects": [{"id": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "name": "Platform", "url": "javascript:alert(1)", "enrolled": true, "source": "stub", "readable": true}], "contract_version": "1.0.0"},
           {"projects": []}
         ]
       }

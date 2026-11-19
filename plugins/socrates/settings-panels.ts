@@ -71,8 +71,8 @@ Sign in first with 'eris login'.
 
 export const PROJECTS_USAGE = `Usage: eris socrates settings projects
 
-List the Linear projects Socrates can read, an org admin's: each with its Linear link and whether it is
-already enrolled (and how, label or stub). To enrol one, run 'eris socrates enrol <project>' with its
+List the Linear projects Socrates can read, an org admin's: each with its Linear id and link and whether it is
+already enrolled (and how, label or stub). Two projects can share a name: pass the id to 'enrol' then. To enrol one, run 'eris socrates enrol <project>' with its
 name or id.
 
 --output json prints {projects: [{id, name, url, enrolled, source, readable}], contract_version}; readable
@@ -214,7 +214,12 @@ export async function runProjects(args: string[], ctx: VerbContext, deps: Socrat
     query: {},
     decoder: SocratesSettingsProjectsResponse,
     subject: "the projects list",
-    refusalFix: (status) => (status === 403 ? "ask an org admin to run this command" : status === 409 ? "an org admin reconnects Linear from the dashboard, then run the command again" : undefined),
+    refusalFix: (status, problem) =>
+      status === 403 && problem.code === "admin_required"
+        ? "ask an org admin to run this command"
+        : status === 409 && problem.code === "linear_disconnected"
+          ? "an org admin reconnects Linear from the dashboard, then run the command again"
+          : undefined,
     badResponseFix: badWriteFix(SOCRATES_ROUTES.settings_projects.path),
   });
   if (ctx.format === "json") return json(ctx, r);
@@ -223,7 +228,7 @@ export async function runProjects(args: string[], ctx: VerbContext, deps: Socrat
     return 0;
   }
   const state = (p: (typeof r.projects)[number]): string => (p.enrolled ? `enrolled, ${p.source ?? "-"}` : "not enrolled");
-  ctx.stdout.write(`${r.projects.map((p) => `${printable(p.name)} (${state(p)}${p.readable ? "" : ", unreadable"}) ${p.url === null ? "-" : printable(p.url)}`).join("\n")}\n`);
+  ctx.stdout.write(`${r.projects.map((p) => `${printable(p.name)} ${printable(p.id)} (${state(p)}${p.readable ? "" : ", unreadable"}) ${p.url === null ? "-" : printable(p.url)}`).join("\n")}\n`);
   if (r.projects.some((p) => !p.enrolled)) ctx.stdout.write("enrol one with: eris socrates enrol <project>\n");
   return 0;
 }
