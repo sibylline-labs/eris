@@ -31,6 +31,7 @@ let server: ReturnType<typeof Bun.serve>;
 let mint: string;
 /** What `GET /v1/org/me` answers for the bearer it is sent: the org its prefix names, or a refusal. */
 let meStatus = 200;
+let meEntitlements: Record<string, string> | null = null;
 const ME_TAIL = {
   entitlements: { accounts: "active", yak: "trialing" },
   features: {},
@@ -56,7 +57,7 @@ beforeAll(() => {
       if (path === "/v1/org/me") {
         if (meStatus !== 200) return Response.json({ error: { code: "unauthorized" } }, { status: meStatus });
         const org = req.headers.get("authorization")?.split("_")[1] ?? "";
-        return Response.json({ orgId: org, memberId: "mem_1", role: "admin", ...ME_TAIL });
+        return Response.json({ orgId: org, memberId: "mem_1", role: "admin", ...ME_TAIL, ...(meEntitlements ? { entitlements: meEntitlements } : {}) });
       }
       if (path === "/v1/device/token") return Response.json({ access_token: mint, token_type: "Bearer", token_id: "tok_1", name: "laptop (eris)", scopes: [] });
       return new Response("not found", { status: 404 });
@@ -69,6 +70,7 @@ afterAll(() => {
 });
 beforeEach(() => {
   meStatus = 200;
+  meEntitlements = null;
   root = realpathSync(mkdtempSync(join(sandbox, "t-")));
   home = join(root, "home");
   mkdirSync(home);
@@ -192,6 +194,20 @@ describe("eris whoami", () => {
     );
     const jb = await drive(runWhoami as never, [], { cwd: b, format: "json" });
     expect(JSON.parse(jb.stdout)).toEqual({ orgId: ORG_B, memberId: "mem_1", role: "admin", ...ME_TAIL });
+  });
+
+  // admits: algorithmic: a newcomer on an org without bus reads `bus none` and cannot tell which verbs refuse; whoami must name them and the next step, and must not read gates none as a refusal: observed in the stdout lines.
+  it("says what bus none breaks and the next step, and that gates none does not gate the verbs", async () => {
+    const a = checkout("a");
+    await login(ORG_A, a);
+    meEntitlements = { accounts: "active", gates: "none", bus: "none" };
+    const t = await drive(runWhoami as never, [], { cwd: a });
+    expect(t.stdout).toContain("needs bus (none): eris org github, connect-github, disconnect-github refuse");
+    expect(t.stdout).toContain("eris org billing checkout");
+    expect(t.stdout).toContain("gates: this entitlement does not decide");
+    meEntitlements = { accounts: "active", gates: "active", bus: "active" };
+    const ok = await drive(runWhoami as never, [], { cwd: a });
+    expect(ok.stdout).not.toContain("needs bus");
   });
 
   // admits: whoami printing a guess when the org cannot be asked; the server's status is runtime
