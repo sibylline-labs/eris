@@ -54,9 +54,35 @@ Run 'eris <command> --help' for command-specific usage.
 ${cli.hasMenu ? "Run 'eris' without arguments for interactive mode.\n" : ""}`;
 }
 
+/**
+ * The first-run order: each step is a verb and what it is for. A step whose verb this composed CLI
+ * does not carry is left out, and the block is left out when fewer than two steps remain, so a
+ * distribution with other plugins never names a verb it lacks.
+ */
+const START_HERE: readonly { readonly verb: string; readonly run?: string; readonly what: string }[] = [
+  { verb: "login", what: "sign this machine in to your org (one login serves org, socrates, doctrine and gate)" },
+  { verb: "org connect-linear", what: "connect the org's Linear workspace" },
+  { verb: "org connect-github", what: "install the GitHub App on your GitHub org and bind it" },
+  { verb: "doctrine settings", what: "Gates: read the org's settings, then set the ones you need (login already pulled the policy)" },
+  { verb: "socrates settings", what: "Socrates: enrol projects, choose the Canon doc and the review team" },
+  { verb: "org webhooks", run: "org webhooks logfire", what: "print the alert webhook URL to paste into Logfire" },
+];
+
+/** The "Start here" block of one composed CLI, or "" when it carries too few of the steps. */
+function startHere(cli: Cli): string {
+  const steps = START_HERE.filter((s) => Object.hasOwn(cli.registry, s.verb));
+  if (steps.length < 2) return "";
+  const width = Math.max(...steps.map((s) => (s.run ?? s.verb).length));
+  const rows = steps.map((s, i) => `  ${i + 1}. eris ${(s.run ?? s.verb).padEnd(width)}  ${s.what}\n`).join("");
+  return `
+Start here (first run, in order):
+${rows}  Check where you are: 'eris whoami' (signed in?), 'eris doctrine settings', 'eris socrates settings health'.
+`;
+}
+
 /** The top-level usage of one session's composed CLI. */
 export function usageText(session: Session): string {
-  return `${HEADER}${commandLines(session)}${globals(session.cli)}`;
+  return `${HEADER}${commandLines(session)}${startHere(session.cli)}${globals(session.cli)}`;
 }
 
 /** This build's top-level usage (core plus plugins/index.ts), default entitlements. */

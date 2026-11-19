@@ -21,7 +21,7 @@ export interface DoctrineDefaults {
 export type DoctrineDefaultsSource = DoctrineDefaults | ((ctx: VerbContext) => DoctrineDefaults | Promise<DoctrineDefaults>);
 
 const ROWS = {
-  doctrine: { impl: "ts", summary: "Doctrine policy: blocks (check, schema, gates, effect, set, pull, push, settings, history, path); the U2/U3 floor cannot be waived" },
+  doctrine: { impl: "ts", summary: "Gates: the org's doctrine policy and settings (check, schema, gates, effect, set, pull, push, settings, history, path); the U2/U3 floor cannot be waived" },
   "doctrine check": {
     summary: "Validate every posture's policy: block in a doctrine file",
     json: true,

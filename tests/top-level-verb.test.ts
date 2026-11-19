@@ -6,6 +6,7 @@
 import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { defaultCli } from "../src/main";
 import { erisUsage } from "../src/cli/commands/usage";
 import { ERIS } from "./helpers/blackbox";
 
@@ -24,6 +25,8 @@ async function eris(argv: string[], path: string): Promise<{ rc: number; stdout:
   const [stdout, stderr, rc] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   return { rc, stdout, stderr };
 }
+
+const commands = (verb: string): boolean => Object.hasOwn(defaultCli().registry, verb.split(" ").slice(0, 2).join(" "));
 
 describe("eris -h / --help / bare, through the shim", () => {
   it("-h, --help and bare `eris` print the top-level usage on stdout, rc 0, with no yq on PATH", async () => {
@@ -54,5 +57,13 @@ describe("eris -h / --help / bare, through the shim", () => {
     const r = await eris(["--output", "json"], process.env.PATH ?? "");
     expect({ rc: r.rc, stderr: r.stderr }).toEqual({ rc: 0, stderr: "" });
     expect(JSON.parse(r.stdout)).toMatchObject({ schema: "eris-help/1", path: "", usage: "eris <command> [args]" });
+  });
+  it("the start-here block names only verbs this build carries, in first-run order, and Gates beside doctrine", () => {
+    /** When a step names a verb that was renamed or never shipped, a fresh agent follows the help into an unknown-command failure — observed at erisUsage(). */
+    const usage = erisUsage();
+    const steps = [...usage.matchAll(/^ {2}\d\. eris (.+?) {2,}/gm)].map((m) => m[1]!);
+    expect(steps.slice(0, 2)).toEqual(["login", "org connect-linear"]);
+    for (const verb of steps) expect(commands(verb)).toBe(true);
+    expect(usage).toMatch(/\n {2}doctrine +Gates: /);
   });
 });

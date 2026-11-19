@@ -203,7 +203,7 @@ describe("eris login — the device-code grant", () => {
     expect(JSON.parse(readFileSync(yaksJson(), "utf8"))).toEqual({ url: url(), token: TOKEN });
     // The pull ran on the token just written (the stub has no policy route, so it 404s).
     expect(requests.filter((q) => q.path === "/v1/gates/policy").map((q) => q.auth)).toEqual([`Bearer ${TOKEN}`]);
-    expect(r.stderr).toContain("WARN eris login: this org's policy was not pulled (gate-contract-mismatch); run 'eris doctrine pull'\nslug: gate-contract-mismatch\n");
+    expect(r.stderr).toContain("WARN eris login: signed in, but this org's policy was not pulled (gate-contract-mismatch); run 'eris doctrine pull'\nslug: gate-contract-mismatch\n");
     expectNoSecret(r);
   });
 

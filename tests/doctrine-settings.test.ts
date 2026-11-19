@@ -130,7 +130,7 @@ describe("eris doctrine settings", () => {
     expect(puts).toHaveLength(1);
     expect(puts[0]!.auth).toBe(`Bearer ${LOGIN}`);
     expect(puts[0]!.body).toEqual({ settings: { ...SEED, skills_repo: "acme/skills" }, expected_version: 1 });
-    expect(r.stdout.split("\t")).toEqual([ORG, latest().bundle_sha, "2\n"]);
+    expect(r.stdout.split("\t")).toEqual([`org ${ORG}`, `bundle_sha ${latest().bundle_sha}`, "version 2\n"]);
     expect(r.stderr).toContain("INFO changed: skills_repo");
   });
 
@@ -148,7 +148,7 @@ describe("eris doctrine settings", () => {
   it("set to the value a key already holds sends no PUT and prints 'unchanged'", async () => {
     const r = await doctrine(["settings", "set", "staleness", "soft"]);
     expect(r.rc).toBe(0);
-    expect(r.stdout).toBe(`${ORG}\t${versions[0]!.bundle_sha}\tunchanged\n`);
+    expect(r.stdout).toBe(`org ${ORG}\tbundle_sha ${versions[0]!.bundle_sha}\tversion unchanged\n`);
     expect(puts).toHaveLength(0);
   });
 

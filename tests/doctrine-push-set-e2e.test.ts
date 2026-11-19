@@ -104,7 +104,7 @@ describe("eris doctrine pull, push and set, as a subprocess", () => {
     expect((await sb.run(["doctrine", "path"])).status).toBe(0);
 
     const again = await sb.run(["doctrine", "push"]);
-    expect([again.status, again.stdout]).toEqual([0, `${ORG}\t${liveSha}\tunchanged\n`]);
+    expect([again.status, again.stdout]).toEqual([0, `org ${ORG}\tbundle_sha ${liveSha}\tversion unchanged\n`]);
     expect(requests.filter((r) => r === "PUT /v1/gates/policy")).toHaveLength(1);
 
     const file = join(sb.home, "local-doctrine.md");

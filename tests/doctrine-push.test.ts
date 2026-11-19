@@ -140,7 +140,7 @@ describe("eris doctrine push", () => {
     const before = treeState();
     hits = [];
     const r = await doctrine(["push"]);
-    expect(r).toEqual({ rc: 0, stdout: `${ORG}\t${liveSha}\tunchanged\n`, stderr: "" });
+    expect(r).toEqual({ rc: 0, stdout: `org ${ORG}\tbundle_sha ${liveSha}\tversion unchanged\n`, stderr: "" });
     expect(puts).toEqual([]);
     expect(hits.some((h) => h.startsWith("PUT"))).toBe(false);
     expect(treeState().files).toEqual(before.files);
@@ -157,7 +157,7 @@ describe("eris doctrine push", () => {
     expect(puts[0]!.auth).toBe(`Bearer ${LOGIN}`);
     expect((puts[0]!.body as { bundle: GatesOrgBundle }).bundle.postures["business-as-usual"]!.bullets).toEqual(["The default, edited.", "The established process."]);
     expect(Object.keys(puts[0]!.body as object)).toEqual(["bundle"]);
-    expect(r.stdout).toBe(`${ORG}\t${liveSha}\t7\n`);
+    expect(r.stdout).toBe(`org ${ORG}\tbundle_sha ${liveSha}\tversion 7\n`);
     expect(liveSha).not.toBe(await computeGatesBundleSha(BUNDLE, SETTINGS));
     const path = await doctrine(["path"]);
     expect(path.rc).toBe(0);
@@ -258,7 +258,7 @@ describe("eris doctrine push", () => {
     expect(puts).toHaveLength(1);
     expect(Object.keys(puts[0]!.body as object)).toEqual(["bundle", "mandate_handle"]);
     expect((puts[0]!.body as { mandate_handle: string }).mandate_handle).toBe(APPROVAL);
-    expect(r.stdout).toBe(`${ORG}\t${liveSha}\t7\n`);
+    expect(r.stdout).toBe(`org ${ORG}\tbundle_sha ${liveSha}\tversion 7\n`);
     expect(r.stderr).toBe("INFO changed: posture business-as-usual changed\nINFO widened (mandate_passkey): loop one-shot edited; posture business-as-usual loosened\n");
     const json = await doctrine(["push"], "json", { ERIS_GATES_APPROVAL: APPROVAL });
     expect(`${r.stdout}${r.stderr}${json.stdout}${json.stderr}`).not.toContain(APPROVAL);

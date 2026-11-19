@@ -206,7 +206,7 @@ export async function runSettings(args: string[], ctx: VerbContext, deps: PullDe
     ctx.stdout.write(`${JSON.stringify(p)}\n`);
     return 0;
   }
-  ctx.stdout.write(`${p.org}\t${p.bundle_sha}\t${p.version ?? "unchanged"}\n`);
+  ctx.stdout.write(`org ${p.org}\tbundle_sha ${p.bundle_sha}\tversion ${p.version ?? "unchanged"}\n`);
   if (p.pushed) {
     ctx.stderr.write(`INFO changed: ${p.changed.join(", ")}\n`);
     if (p.widened === true) ctx.stderr.write(`INFO widened (${p.auth_mode ?? "unknown"}): ${p.reasons.length > 0 ? p.reasons.join("; ") : "no reason given"}\n`);
