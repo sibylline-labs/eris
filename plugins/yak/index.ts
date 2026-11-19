@@ -61,7 +61,13 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
         flags: YAK_FLAGS,
         example: `eris yak suggest --summary "a --dry-run flag for eris yak" --body "I wanted to see the payload before it was sent"`,
       },
-      "yak status": { summary: "Whether this org has a destination for its yaks, and how many it holds", json: true },
+      "yak status": {
+        summary: "Whether this org has a destination for its yaks, and how many it holds; with an id, where one vendor report stands",
+        json: true,
+        pos: ["id?"],
+        usage: "[<vendor-report-id>]",
+        example: "eris yak status 01M75PC29DE94YJYJHQZNJ4M47",
+      },
       "yak reports": {
         summary: "This org's own vendor reports with their Linear state",
         json: true,
@@ -91,6 +97,20 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
         pos: ["id?"],
         usage: "<observation-id>",
         example: "eris yak retry 01M75PC29DE94YJYJHQZNJ4M47",
+      },
+      "yak checkpoint": {
+        summary: "Record where a vendor report stands (the vendor's own org)",
+        json: true,
+        pos: ["id?"],
+        usage: "<vendor-report-id> --stage <stage> --note <text> [--release <v>] [--command <cmd>] [--reason <text>]",
+        flags: [
+          { name: "--stage", takesValue: true },
+          { name: "--note", takesValue: true },
+          { name: "--release", takesValue: true },
+          { name: "--command", takesValue: true },
+          { name: "--reason", takesValue: true },
+        ],
+        example: `eris yak checkpoint 01M75PC29DE94YJYJHQZNJ4M47 --stage fixed --note "shipped" --release 0.42.0 --command "eris update"`,
       },
       "yak ready": { summary: "Whether this machine can file yaks, and when to file; always exits 0 (a SessionStart hook runs it)", json: true },
       "yak discover": {
@@ -259,12 +279,17 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
                                             redactions, error?}
                                             (nothing on stderr, unlike every other surface here)
   eris yak status                          {configured, observation_count, last_filed_issue_identifier}
+  eris yak status <id>                     {id, summary, issue_identifier, issue_url, state: {name, type},
+                                            submitted_at, checkpoints: [{id, stage, note, release?,
+                                            command?, reason?, created_at}]}
   eris yak reports                         {reports: [{id, summary, issue_identifier, issue_url,
                                             state: {name, type}, submitted_at}]}
   eris yak clusters                        {days, clusters: [{id, kind, summary, recent_count, total_count,
                                             last_seen, issue_identifier, recent_by_status: {filed, pending,
                                             failed}}]}
   eris yak retry <id>                      {requeued, status}
+  eris yak checkpoint <id>                 {checkpoint: {id, stage, note, release?, command?, reason?,
+                                            created_at}, replay}
   eris events list                         {events: [{event_id, org_id, product, stream, seq, type,
                                             occurred_at, actor, payload}], next_cursor}
   eris events parked                       {lines: [{message_id, enqueued_at, attempts?, body, ...}],

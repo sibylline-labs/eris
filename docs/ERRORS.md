@@ -1308,18 +1308,18 @@ or accept the window.
 
 ### yak-reports-forbidden
 
-`eris yak reports` was answered `403`: the credential in use cannot read vendor reports, for example a
+`eris yak reports` or `eris yak status <id>` was answered `403`: the credential in use cannot read vendor reports, for example a
 token that does not carry the yak product. Fix: `eris login`, which mints a login that does. Exit 1.
 
 ### yak-reports-unconfigured
 
-`eris yak reports` was answered `503 vendor_unconfigured`: the endpoint's vendor report mirror is not set
+`eris yak reports` or `eris yak status <id>` was answered `503 vendor_unconfigured`: the endpoint's vendor report mirror is not set
 up, so it has no reports to list for any org. Nothing in this org or on this machine changes it; retry
 later. Exit 1.
 
 ### yak-reports-unavailable
 
-`eris yak reports` was refused with a status eris has no remedy for (`404` from an endpoint that does not
+`eris yak reports` or `eris yak status <id>` was refused with a status eris has no remedy for (`404` from an endpoint that does not
 serve the route yet, a `5xx`). The block names the status and the server's error code, never the response
 body. A timeout, an unreachable endpoint or a body that does not match the contract is
 [`yak-admin-unavailable`](#yak-admin-unavailable) instead. Retry; `eris whoami` shows which org and url this
@@ -1376,6 +1376,31 @@ Ask an org admin to run it. Exit 1.
 
 `eris yak retry` was refused with a status eris has no remedy for (a `5xx`). The block names the status and
 the server's error code. Retry. Exit 1.
+
+### vendor-report-not-found
+
+`eris yak status <id>` or `eris yak checkpoint <id>` was answered `404 vendor_report_not_found`: there is
+no vendor report with that id that this org can see, or the id is not a plain id (letters, digits, `_` and
+`-`, up to 64; nothing was sent). Fix: `eris yak reports` lists this org's vendor reports. Exit 1.
+
+### vendor-operator-required
+
+`eris yak checkpoint` was refused `403 vendor_operator_required`: only the vendor's own org can post
+checkpoints on a vendor report. The org that filed the report reads them with `eris yak status <id>`.
+Exit 1.
+
+### yak-checkpoint-invalid
+
+`eris yak checkpoint` was given no report id, a `--stage` outside `triaged`, `fix-started`, `pr-open`,
+`merged`, `released`, `fixed`, `wont-fix`, a `--note` outside 1 to 500 characters, a `--release` over 80,
+a `--command` over 200 or a `--reason` over 500, or `fixed` without `--release` and `--command`, or
+`wont-fix` without `--reason`. Nothing was sent. The same slug answers the server's `422
+checkpoint_invalid`. Fix: as the `fix:` line shows. Exit 1.
+
+### yak-checkpoint-unavailable
+
+`eris yak checkpoint` was refused with a status eris has no remedy for (a `5xx`, a `403` without
+`vendor_operator_required`). The block names the status and the server's error code. Retry. Exit 1.
 
 ### events-invalid
 

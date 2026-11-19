@@ -32,6 +32,12 @@ eris yak ready
 It prints one readiness line. When it says to run `eris login`, tell your user in one line and carry
 on. When Yaks is not set up at all, the `eris-yaks` skill sets it up.
 
+## Check where your vendor report stands
+
+A `--vendor` yak goes to the eris maintainers. `eris yak reports` lists the ones your org filed.
+`eris yak status <id>`, with the id `--vendor` printed, shows its state and each checkpoint the
+maintainers recorded. When it says `fixed`, run the command it names to pick up the fix.
+
 ## When it fails
 
 A `WARN` line from `eris yak` still exits 0: the yak was stored or dropped, the task is unaffected.

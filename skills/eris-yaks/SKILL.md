@@ -185,6 +185,12 @@ eris yak ready
 Expect: `yaks: ready (last filed <KEY>-<n>)`, followed by the filing guide. If you are another
 agent with a session-start hook, point it at the same command.
 
+## Check where your vendor report stands
+
+A `--vendor` yak goes to the eris maintainers. `eris yak reports` lists the ones your org filed.
+`eris yak status <id>`, with the id `--vendor` printed, shows its state and each checkpoint the
+maintainers recorded. When it says `fixed`, run the command it names to pick up the fix.
+
 ## Done
 
 Tell your user what you set up, and that friction you hit from now on will appear in their

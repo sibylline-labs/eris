@@ -1,7 +1,8 @@
 /**
  * yak-reports.ts — `eris yak reports`: the caller's org's own `--vendor` yak
- * reports with their Linear state. Loaded only when `eris yak reports`
- * dispatches (the manifest is ./index.ts).
+ * reports with their Linear state; and `eris yak status <id>`: one of them with
+ * its checkpoints. Loaded only when one of them dispatches (the manifest is
+ * ./index.ts).
  *
  * The gateway answers `GET /v1/yaks/vendor-reports` for any authenticated
  * bearer, on the same product row as `eris yak status`. The dashboard's
@@ -16,6 +17,8 @@
  *     the server adds is not re-printed in either rendering.
  *   - A report's summary is the org's own text but arrives as data: it is
  *     printed on one line with control characters removed.
+ *   - A report id is checked before it enters the path, so a dot segment never
+ *     reaches fetch (which would resolve it onto another route).
  *   - Every failure is the failure block on stderr, nothing on stdout, exit 1.
  */
 
@@ -25,7 +28,7 @@ import { emitJson, fail, home, request, resolveEndpoint, table, type AdminDeps, 
 import plugin from "./index";
 
 // A `…Slug`-named union: `tests/errors-doc.test.ts` harvests its members.
-export type YakReportsSlug = "yak-reports-forbidden" | "yak-reports-unavailable" | "yak-reports-unconfigured";
+export type YakReportsSlug = "yak-reports-forbidden" | "yak-reports-unavailable" | "yak-reports-unconfigured" | "vendor-report-not-found";
 
 const REPORTS_PATH = "/v1/yaks/vendor-reports";
 
@@ -42,6 +45,36 @@ const VendorReports = z.object({
   ),
 });
 
+/** A checkpoint on a vendor report, as `GET /v1/yaks/vendor-reports/:id` and the checkpoint POST answer it. */
+export const Checkpoint = z.object({
+  id: z.string(),
+  stage: z.string(),
+  note: z.string(),
+  release: z.string().optional(),
+  command: z.string().optional(),
+  reason: z.string().optional(),
+  created_at: z.string(),
+});
+
+const VendorReport = z.object({
+  id: z.string(),
+  summary: z.string(),
+  issue_identifier: z.string().nullable(),
+  issue_url: z.string().nullable(),
+  state: z.object({ name: z.string(), type: z.string() }),
+  submitted_at: z.string(),
+  checkpoints: z.array(Checkpoint),
+});
+
+/** The shape of an id `eris yak issue --vendor` prints. */
+export const REPORT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+export const reportNotFound = (what: string): Failure => ({
+  slug: "vendor-report-not-found",
+  what,
+  fix: "list this org's vendor reports: eris yak reports",
+});
+
 /** The server's problem `code` when it is a short snake_case word: anything else is not echoed. */
 const safeCode = (code: string | undefined): string | undefined => (code !== undefined && /^[a-z][a-z_]{0,39}$/.test(code) ? code : undefined);
 
@@ -54,6 +87,7 @@ function refusal(status: number, code: string | undefined, target: string): Fail
   if (status === 403) {
     return { slug: "yak-reports-forbidden", what: `${answered}: this credential cannot read vendor reports`, fix: "run: eris login\n(a token without the yak product cannot read them)" };
   }
+  if (status === 404 && c === "vendor_report_not_found") return reportNotFound(`${answered}: this org filed no vendor report with that id`);
   if (status === 503 && c === "vendor_unconfigured") {
     return { slug: "yak-reports-unconfigured", what: `${answered}: the vendor report mirror is not set up on this endpoint`, fix: "nothing to change here: the endpoint's operator sets it up; retry later" };
   }
@@ -61,7 +95,7 @@ function refusal(status: number, code: string | undefined, target: string): Fail
 }
 
 /** One line: whitespace runs collapse to a space and other control characters are dropped. */
-const oneLine = (text: string): string => text.replace(/[\p{Cc}\u{2028}\u{2029}]+/gu, " ").replace(/ {2,}/g, " ").trim();
+export const oneLine = (text: string): string => text.replace(/[\p{Cc}\u{2028}\u{2029}]+/gu, " ").replace(/ {2,}/g, " ").trim();
 
 export async function runReports(args: string[], ctx: VerbContext, deps: AdminDeps = {}): Promise<number> {
   if (readArgs(plugin.rows, "yak reports", args, ctx) === null) return 0;
@@ -77,5 +111,31 @@ export async function runReports(args: string[], ctx: VerbContext, deps: AdminDe
   }
   const rows = reports.map((r) => [oneLine(r.issue_identifier), oneLine(r.state.name), oneLine(r.submitted_at), oneLine(r.summary)]);
   ctx.stdout.write(table([["issue", "state", "submitted", "summary"], ...rows]));
+  return 0;
+}
+
+/** `eris yak status <id>`: one vendor report, its state and its checkpoints, the last one's next step after them. */
+export async function runReport(id: string, ctx: VerbContext, deps: AdminDeps = {}): Promise<number> {
+  if (!REPORT_ID.test(id)) return fail(ctx, reportNotFound(`'${oneLine(id).slice(0, 80)}' is not a vendor report id; nothing was sent`));
+  const ep = await resolveEndpoint(ctx.env, home(ctx, deps), deps.cwd ?? process.cwd());
+  if (!ep.ok) return fail(ctx, ep.failure);
+  const got = await request(ep.value, "GET", `${REPORTS_PATH}/${encodeURIComponent(id)}`, VendorReport, deps, undefined, refusal);
+  if (!got.ok) return fail(ctx, got.failure);
+  if (ctx.format === "json") return emitJson(ctx, got.value);
+  const r = got.value;
+  const head = table([
+    ["summary:", oneLine(r.summary)],
+    ["issue:", r.issue_identifier === null ? "not filed yet" : oneLine(r.issue_identifier)],
+    ["state:", oneLine(r.state.name)],
+  ]);
+  const lines = r.checkpoints.length === 0 ? "" : table(r.checkpoints.map((c) => [oneLine(c.created_at), oneLine(c.stage), oneLine(c.note)]));
+  const last = r.checkpoints.at(-1);
+  const next =
+    last?.stage === "fixed"
+      ? `fixed in ${oneLine(last.release ?? "an unnamed release")} — run: ${oneLine(last.command ?? "eris update")}\n`
+      : last?.stage === "wont-fix"
+        ? `won't fix: ${oneLine(last.reason ?? "no reason given")}\n`
+        : "";
+  ctx.stdout.write(head + lines + next);
   return 0;
 }

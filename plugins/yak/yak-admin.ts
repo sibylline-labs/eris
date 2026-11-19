@@ -217,7 +217,10 @@ export async function readOrgMe(url: string, token: string, deps: AdminDeps): Pr
 }
 
 export async function runStatus(args: string[], ctx: VerbContext, deps: AdminDeps = {}): Promise<number> {
-  if (readArgs(plugin.rows, "yak status", args, ctx) === null) return 0;
+  const p = readArgs(plugin.rows, "yak status", args, ctx);
+  if (p === null) return 0;
+  // With an id it is one vendor report's status, not the org's.
+  if (p.pos[0] !== undefined) return (await import("./yak-reports")).runReport(p.pos[0], ctx, deps);
   const ep = await resolveEndpoint(ctx.env, home(ctx, deps), deps.cwd ?? process.cwd());
   if (!ep.ok) return fail(ctx, ep.failure);
   const got = await request(ep.value, "GET", "/v1/yaks/status", YakStatus, deps);

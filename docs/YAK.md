@@ -655,6 +655,46 @@ Failures are the failure block on stderr, nothing on stdout, exit `1`:
 [`yak-reports-unavailable`](ERRORS.md#yak-reports-unavailable) and
 [`yak-admin-unavailable`](ERRORS.md#yak-admin-unavailable). The request is bounded at 15 seconds.
 
+### `eris yak status <id>` and `eris yak checkpoint`: one vendor report's progress
+
+The vendor records where a report stands as checkpoints; the org that filed it reads them by the id
+`--vendor` printed:
+
+```sh
+eris yak status <id>                     # summary, issue, state, then one line per checkpoint
+eris --output json yak status <id>
+```
+
+It reads `GET /v1/yaks/vendor-reports/<id>` with the directory's org bearer. Text mode prints the summary,
+the Linear issue (`not filed yet` until there is one) and its state, then `<created_at>  <stage>  <note>`
+per checkpoint. When the last checkpoint is `fixed` it ends `fixed in <release> — run: <command>`, the
+command that picks up the fix; when it is `wont-fix`, `won't fix: <reason>`. `--output json` is the
+server's `{id, summary, issue_identifier, issue_url, state: {name, type}, submitted_at, checkpoints: [{id,
+stage, note, release?, command?, reason?, created_at}]}`, bare, unknown keys dropped. With no id,
+`eris yak status` is the org's destination status, as above.
+
+The vendor's own org posts the checkpoints:
+
+```sh
+eris yak checkpoint <id> --stage triaged --note "reproduced"
+eris yak checkpoint <id> --stage fixed --note "shipped" --release 0.42.0 --command "eris update"
+eris yak checkpoint <id> --stage wont-fix --note "closing" --reason "works as designed"
+```
+
+It sends `POST /v1/yaks/vendor-reports/<id>/checkpoints` with `{stage, note, release?, command?, reason?}`,
+only the keys given. `--stage` is one of `triaged`, `fix-started`, `pr-open`, `merged`, `released`,
+`fixed`, `wont-fix`; `--note` is 1 to 500 characters, `--release` up to 80, `--command` up to 200 and
+`--reason` up to 500. `fixed` needs `--release` and `--command`, and `wont-fix` needs `--reason`. A
+checkpoint outside those bounds is refused before any request. Posting the same checkpoint again is a
+replay: it prints `already recorded checkpoint <id> (<stage>)` and exits `0`.
+
+Failures are the failure block on stderr, nothing on stdout, exit `1`:
+[`vendor-report-not-found`](ERRORS.md#vendor-report-not-found),
+[`vendor-operator-required`](ERRORS.md#vendor-operator-required),
+[`yak-checkpoint-invalid`](ERRORS.md#yak-checkpoint-invalid),
+[`yak-checkpoint-unavailable`](ERRORS.md#yak-checkpoint-unavailable), the `yak-reports-*` slugs for a read
+and [`yak-admin-unavailable`](ERRORS.md#yak-admin-unavailable).
+
 ### `eris yak clusters` and `eris yak show`: the hot clusters
 
 `eris yak clusters` ranks this org's yak clusters by sightings in a window, most first, so a triage pass

@@ -105,6 +105,7 @@ describe("router table", () => {
       "skills install": "ts",
       "skills lint": "ts",
       yak: "ts",
+      "yak checkpoint": "ts",
       "yak clusters": "ts",
       "yak config": "ts",
       "yak discover": "ts",
@@ -231,7 +232,7 @@ describe("the --output json surfaces, from the registry", () => {
       docs: true,
       skills: ["install", "lint"],
       whoami: true,
-      yak: ["fatal", "issue", "suggest", "status", "reports", "clusters", "show", "retry", "ready", "discover", "config"],
+      yak: ["fatal", "issue", "suggest", "status", "reports", "clusters", "show", "retry", "checkpoint", "ready", "discover", "config"],
     });
   });
 
