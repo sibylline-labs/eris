@@ -84,9 +84,9 @@ describe("eris slack link", () => {
     expect(r.stdout).toBe("this link would bind Eve Mallory @eve (U0001 in T0001) to you\nnothing is linked yet; if that is your Slack account, run again with --confirm\n");
   });
 
-  it("binds with --confirm, takes a bare code, and prints the server's body under --output json", async () => {
-    /** When --confirm does not reach the confirm route, or a bare code is refused, the CLI cannot finish a link: observed in the path sent and the JSON body. */
-    const r = await run(["link", CODE, "--confirm"], "json");
+  it("binds with --confirm and prints the server's body under --output json", async () => {
+    /** When --confirm does not reach the confirm route, the CLI cannot finish a link: observed in the path sent and the JSON body. */
+    const r = await run(["link", LINK, "--confirm"], "json");
     expect(r.code).toBe(0);
     expect(seen.map((s) => [s.path, JSON.parse(s.body)])).toEqual([["/v1/asks/slack/link", { code: CODE }]]);
     expect(JSON.parse(r.stdout)).toEqual({ linked: true, slackUserId: "U0001", slackTeamId: "T0001" });
@@ -94,7 +94,7 @@ describe("eris slack link", () => {
 
   it("refuses a missing or malformed link before any request, without echoing the input", async () => {
     /** When a bad input is sent anyway, the server sees an arbitrary string and a typo'd secret lands in a log: observed in zero requests and the absent input text. */
-    for (const [args, slug] of [[["link"], "slack-code-missing"], [["link", "https://dash.example.test/slack/link"], "slack-code-invalid"], [["link", "bad code!"], "slack-code-invalid"]] as const) {
+    for (const [args, slug] of [[["link"], "slack-code-missing"], [["link", "https://dash.example.test/slack/link"], "slack-code-invalid"], [["link", "https://dash.example.test/slack/link?code=bad%20code!"], "slack-code-invalid"], [["link", "bad code!"], "slack-link-not-url"]] as const) {
       const r = await run([...args]);
       expect([r.code, r.stdout, r.stderr.includes(slug), r.stderr.includes("bad code!")]).toEqual([1, "", true, false]);
     }
@@ -122,24 +122,23 @@ describe("eris slack link", () => {
 describe("eris slack link, edge inputs", () => {
   const DASHED = "-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCd";
 
-  it("takes a bare code that starts with '-' as given, or as --code, and never prints it", async () => {
-    /** When a dash-led code reaches the flag parser, the CLI fails and echoes a live single-use secret to stderr: observed as the request sent for every spelling and the code absent from both streams. */
-    for (const args of [["link", DASHED], ["link", DASHED, "--confirm"], ["link", "--confirm", DASHED], ["link", "--code", DASHED], [`link`, `--code=${DASHED}`]]) {
-      seen.length = 0;
+  it("refuses anything but a full URL without printing it, including dash-led and double-dash codes", async () => {
+    /** When a bare or dash-led code reaches the parser or is sent, the CLI fails or echoes a live single-use secret to stderr: observed as zero requests and the code absent from both streams for every spelling. */
+    const DOUBLE = "--AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbC";
+    for (const args of [["link", DASHED], ["link", DASHED, "--confirm"], ["link", "--confirm", DASHED], ["link", DOUBLE], ["link", "--code", DASHED], ["link", `--code=${DOUBLE}`], ["link", CODE], ["link", LINK, DASHED], ["link", "ftp://x/?code=" + CODE]]) {
       const r = await run(args);
-      expect([r.code, r.stdout.includes(DASHED), r.stderr.includes(DASHED)]).toEqual([0, false, false]);
-      expect(JSON.parse(seen[0]!.body)).toEqual({ code: DASHED });
-      expect(seen[0]!.path).toBe(args.includes("--confirm") ? "/v1/asks/slack/link" : "/v1/asks/slack/link/preview");
+      expect([r.code, r.stdout, r.stderr.includes("slack-link-not-url"), r.stderr.includes(DASHED), r.stderr.includes(DOUBLE), r.stderr.includes(CODE)]).toEqual([1, "", true, false, false, false]);
     }
+    expect(seen).toEqual([]);
   });
 
-  it("refuses the link given twice, and a refusal on a dash-led code does not print it", async () => {
-    /** When two codes are given the verb silently picks one, or a refused dash-led code is echoed: observed as zero requests for the pair and no code in stderr on a 404. */
-    const twice = await run(["link", CODE, "--code", DASHED]);
-    expect([twice.code, twice.stderr.includes("slack-code-invalid"), twice.stderr.includes(DASHED), seen.length]).toEqual([1, true, false, 0]);
-    answer = () => problem(404, "invalid_code");
-    const refused = await run(["link", DASHED, "--confirm"]);
-    expect([refused.code, refused.stderr.includes("slack-code-unknown"), refused.stderr.includes(DASHED)]).toEqual([1, true, false]);
+  it("takes the full URL after the POSIX '--' terminator, and a dash-led code inside a URL", async () => {
+    /** When '--' or a dash-led code inside a URL breaks, a valid link cannot be used: observed as the code sent. */
+    for (const args of [["link", "--", `https://dash.example.test/slack/link?code=${DASHED}`], ["link", `https://dash.example.test/slack/link?code=${DASHED}`]]) {
+      seen.length = 0;
+      expect((await run(args)).code).toBe(0);
+      expect(JSON.parse(seen[0]!.body)).toEqual({ code: DASHED });
+    }
   });
 
   it("names the wait for a 429 from Retry-After, and a minute when it names none", async () => {

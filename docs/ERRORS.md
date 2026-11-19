@@ -1862,14 +1862,20 @@ linted: a mistyped path is refused rather than reported clean. Name the director
 
 ### slack-code-missing
 
-`eris slack link` was given no link or code. Nothing was sent. In Slack, press an ask button: Slack
+`eris slack link` was given no link. Nothing was sent. In Slack, press an ask button: Slack
 replies, only to you, with a one-time `Link Slack account` link. Run `eris slack link <link-url>`. Exit 1.
 
 ### slack-code-invalid
 
-`eris slack link` was given a link with no `code=` value, a string that is not a URL, or a code that is
-not 1 to 64 letters, digits, `-` or `_`. Nothing was sent, and the input is not echoed. Give the link Slack
-sent you, or its `code=` value. Exit 1.
+`eris slack link` was given a URL with no `code=` value, or one that is not 1 to 64 letters, digits, `-`
+or `_`. Nothing was sent, and the input is not echoed. Give the full link Slack sent you. Exit 1.
+
+### slack-link-not-url
+
+`eris slack link` was given something that is not the link's full `http(s)` URL, or a word the argument
+parser refuses (a bare code, a flag-shaped word, an extra word). Nothing was sent, and the argument is not
+shown, because it may be a live single-use link code. Give the full `Link Slack account` URL Slack sent
+you, once. Exit 1.
 
 ### slack-code-unknown
 

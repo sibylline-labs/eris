@@ -1,5 +1,5 @@
 /**
- * slack.ts — `eris slack link <link-url|code> [--confirm]` and `eris slack unlink`: bind or remove the
+ * slack.ts — `eris slack link <link-url> [--confirm]` and `eris slack unlink`: bind or remove the
  * Slack account the signed-in member answers asks from, over the Bearer routes
  * `POST /v1/asks/slack/link/preview`, `/slack/link` and `/slack/unlink`. Loaded only when `eris slack`
  * dispatches (the manifest is ./index.ts).
@@ -23,13 +23,11 @@ import { type Failure, type OrgDeps, fail, plain, request } from "./org";
 import plugin from "./index";
 
 // A `…Slug`-named union: `tests/errors-doc.test.ts` harvests its members.
-export type SlackSlug = "slack-code-missing" | "slack-code-invalid" | "slack-code-unknown" | "slack-already-linked" | "slack-unavailable" | "slack-member-required" | "slack-scope-denied" | "slack-unknown-verb" | "slack-rate-limited";
+export type SlackSlug = "slack-code-missing" | "slack-code-invalid" | "slack-link-not-url" | "slack-code-unknown" | "slack-already-linked" | "slack-unavailable" | "slack-member-required" | "slack-scope-denied" | "slack-unknown-verb" | "slack-rate-limited";
 
 /** The longest code the server accepts. */
 const CODE_MAX = 64;
 const CODE_RE = /^[A-Za-z0-9_-]+$/;
-/** A token that starts with '-' and is code-shaped and long enough to be a secret rather than a mistyped flag. */
-const CODE_DASH_LED = /^-[A-Za-z0-9_][A-Za-z0-9_-]{15,}$/;
 
 // passthrough: --output json prints the server's body as sent; only the fields shown are read.
 const Preview = z.object({ slackUserId: z.string(), slackTeamId: z.string(), realName: z.string(), displayName: z.string() }).passthrough();
@@ -39,24 +37,23 @@ const Unlinked = z.object({ unlinked: z.number() }).passthrough();
 export const SLACK_USAGE = `Usage: eris slack <command>
 
 Commands:
-  link <link-url|code> [--confirm]  Show the Slack account a link would bind to you; --confirm binds it
+  link <link-url> [--confirm]  Show the Slack account a link would bind to you; --confirm binds it
   unlink                            Remove your Slack link
 
 The org and member are the ones this directory acts as ('eris whoami').
 `;
 
-export const LINK_USAGE = `Usage: eris slack link <link-url|code> [--confirm]
+export const LINK_USAGE = `Usage: eris slack link <link-url> [--confirm]
 
 Link your Slack account so an ask you answer in Slack is answered as you. In Slack, press an ask
 button: Slack replies, only to you, with a one-time 'Link Slack account' link (it works once, for
-10 minutes). Give that link's URL, or just its 'code=' value, to this command.
+10 minutes). Give that link's full URL to this command; a bare code is not accepted.
 
   eris slack link <link-url>             shows whose Slack account the link is for, and binds nothing
   eris slack link <link-url> --confirm   binds that Slack account to you
 
 Check the name before you confirm: a link made for someone else's Slack account would bind that
 account to you. A service token cannot link (slack-member-required); sign in with 'eris login'.
-A bare code that starts with '-' also works as given, or as '--code <code>'.
 'eris --output json slack link' prints the server's body.
 `;
 
@@ -67,22 +64,19 @@ unlink first, then press an ask button in Slack for a new link. 'eris --output j
 prints the server's body.
 `;
 
-/** The code a link URL or a bare code names, or the reason it names none. Never echoes the input. */
+/** The code a link's full URL carries, or the reason it names none. Never echoes the input: a link is a live single-use secret. */
 export function codeOf(input: string): { ok: true; code: string } | { ok: false; slug: SlackSlug; what: string } {
-  const text = input.trim();
-  let code = text;
-  if (/^https?:\/\//i.test(text)) {
-    let url: URL;
-    try {
-      url = new URL(text);
-    } catch {
-      return { ok: false, slug: "slack-code-invalid", what: "the link is not a URL" };
-    }
-    code = url.searchParams.get("code") ?? "";
-    if (code === "") return { ok: false, slug: "slack-code-invalid", what: "the link carries no 'code=' value" };
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    return { ok: false, slug: "slack-link-not-url", what: "the argument is not a URL" };
   }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return { ok: false, slug: "slack-link-not-url", what: "the argument is not an http(s) URL" };
+  const code = url.searchParams.get("code") ?? "";
+  if (code === "") return { ok: false, slug: "slack-code-invalid", what: "the link carries no 'code=' value" };
   if (code.length > CODE_MAX || !CODE_RE.test(code)) {
-    return { ok: false, slug: "slack-code-invalid", what: `the code is not 1 to ${CODE_MAX} letters, digits, '-' or '_'` };
+    return { ok: false, slug: "slack-code-invalid", what: `the link's code is not 1 to ${CODE_MAX} letters, digits, '-' or '_'` };
   }
   return { ok: true, code };
 }
@@ -119,10 +113,10 @@ const sayWho = (p: z.infer<typeof Preview>): string => {
 
 async function runLink(arg: string | undefined, confirm: boolean, ctx: VerbContext, deps: OrgDeps): Promise<number> {
   if (arg === undefined || arg === "") {
-    return fail(ctx, { slug: "slack-code-missing", what: "eris slack link was given no link or code", fix: "eris slack link <link-url|code> [--confirm]   (press an ask button in Slack for the link)" });
+    return fail(ctx, { slug: "slack-code-missing", what: "eris slack link was given no link or code", fix: "eris slack link <link-url> [--confirm]   (press an ask button in Slack for the link)" });
   }
   const parsed = codeOf(arg);
-  if (!parsed.ok) return fail(ctx, { slug: parsed.slug, what: `${parsed.what}; nothing was sent`, fix: "give the 'Link Slack account' link Slack sent you, or its code=… value" });
+  if (!parsed.ok) return fail(ctx, { slug: parsed.slug, what: `${parsed.what}; nothing was sent`, fix: "give the full 'Link Slack account' URL Slack sent you" });
   if (!confirm) {
     const got = await request("POST", "/v1/asks/slack/link/preview", Preview, ctx, deps, { body: { code: parsed.code }, refuse });
     if (!got.ok) return fail(ctx, got.failure);
@@ -165,22 +159,16 @@ export async function runSlack(args: string[], ctx: VerbContext, deps: OrgDeps =
     if (u === null) return 0;
     return runUnlink(ctx, deps);
   }
-  // A bare code can start with '-' (1 in 75), which the parser would take for a flag and echo. A dash-led
-  // token shaped like a code is passed as `--code=<token>` so it never reaches the parser's error text.
-  const rest: string[] = [];
-  for (let i = 0; i < g.rest.length; i++) {
-    const a = g.rest[i]!;
-    const next = g.rest[i + 1];
-    if (a === "--code" && next !== undefined && CODE_DASH_LED.test(next)) {
-      rest.push(`--code=${next}`);
-      i++;
-    } else rest.push(CODE_DASH_LED.test(a) ? `--code=${a}` : a);
-  }
-  const l = readArgs(plugin.rows, "slack link", rest, ctx, { help: LINK_USAGE });
+  // The operand is the link's full URL, which never starts with '-'. Anything the parser refuses (a dash-led
+  // word, an extra word) is refused here without its text: it may be a live code.
+  const l = readArgs(plugin.rows, "slack link", g.rest, ctx, {
+    help: LINK_USAGE,
+    refuse: (e) => {
+      if (e.kind !== "unknown-flag" && e.kind !== "unexpected-arg" && e.kind !== "missing-value") return;
+      ctx.stderr.write(renderFailureBlock({ slug: "slack-link-not-url", what: "eris slack link was given an argument it does not accept; it is not shown, as it may be a live link code", fix: "give the full 'Link Slack account' URL Slack sent you, once: eris slack link <link-url> [--confirm]" }, ctx.erisDir));
+      throw new CliExit(1);
+    },
+  });
   if (l === null) return 0;
-  const named = l.flags["--code"];
-  if (named !== undefined && l.pos[0] !== undefined) {
-    return fail(ctx, { slug: "slack-code-invalid", what: "eris slack link was given the link twice; nothing was sent", fix: "give it once: eris slack link <link-url|code>" });
-  }
-  return runLink(named ?? l.pos[0], l.flags["--confirm"] === true, ctx, deps);
+  return runLink(l.pos[0], l.flags["--confirm"] === true, ctx, deps);
 }

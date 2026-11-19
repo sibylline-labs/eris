@@ -234,7 +234,8 @@ never opened. `--output json` prints the org's own body from the last read.
 A Slack user's first press on an ask button gets, only to them, a one-time `Link Slack account` link
 (`<dash>/slack/link?code=…`, valid once for 10 minutes). `eris slack link <link-url>` shows whose Slack
 account that link is for and binds nothing; `eris slack link <link-url> --confirm` binds it to the member
-you are signed in as, and the dashboard's Slack page then shows you linked. A link made for someone else's
+you are signed in as and prints the account it linked; that Slack user's next press on an ask button then
+answers as you. The argument is always the link's full URL, never a bare code. A link made for someone else's
 account would bind that account to you, so read the name before you confirm. `eris slack unlink` removes
 the link. Both need a person's `eris login`; a service token is refused (`slack-member-required`). The verb
 consumes the link and mints none: only a Slack-signed press writes a code.
