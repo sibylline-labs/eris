@@ -85,6 +85,7 @@ Commands:
   classify  Score one candidate's rubric answers locally and print the verdict
   consult   Print a living doc, or a brief of several, from the Socrates endpoint
   discover  List the commits in this repo since the processed-source cursor
+  enrol     Enrol a Linear project in Socrates, or unenrol it (an org admin's)
   evidence  Print one stored evidence fragment, by the id submit printed
   policy    Print the org's scoring policy, and refresh the cached copy
   resolve   Resolve a closed review Epic on the server and print what it did
@@ -244,12 +245,13 @@ export async function runSocrates(args: string[], ctx: VerbContext, deps: Socrat
     ctx.stdout.write(SOCRATES_USAGE);
     return 0;
   }
-  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates command '${g.sub}'`, "use: classify, consult, discover, evidence, policy, resolve, settings, status, submit\nrun 'eris socrates --help' for the command list");
+  if (g.kind === "unknown") fail(ctx, "socrates-unknown-verb", `unknown socrates command '${g.sub}'`, "use: classify, consult, discover, enrol, evidence, policy, resolve, settings, status, submit\nrun 'eris socrates --help' for the command list");
   if (g.sub === "classify") return (await import("./classify")).runClassify(g.rest, ctx, deps);
   if (g.sub === "consult") return (await import("./consult")).runConsult(g.rest, ctx, deps);
   if (g.sub === "resolve") return (await import("./resolve")).runResolve(g.rest, ctx, deps);
   if (g.sub === "discover") return (await import("./discover")).runDiscover(g.rest, ctx, deps);
   if (g.sub === "settings") return (await import("./settings")).runSettings(g.rest, ctx, deps);
+  if (g.sub === "enrol") return (await import("./settings-panels")).runEnrol(g.rest, ctx, deps);
   if (g.sub === "status") return (await import("./status")).runStatus(g.rest, ctx, deps);
   if (g.sub === "policy") return (await import("./policy-verb")).runPolicy(g.rest, ctx, deps);
   if (g.sub === "evidence") return (await import("./evidence")).runEvidence(g.rest, ctx, deps);

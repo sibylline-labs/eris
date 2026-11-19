@@ -105,7 +105,9 @@ interface SocratesCallBase<T> {
   /** What the endpoint refused, for the failure line: "the candidate". */
   subject: string;
   /** The `fix:` line for a refusal that is neither 401 nor 402, by HTTP status. */
-  refusalFix?: (status: number) => string | undefined;
+  refusalFix?: (status: number, problem: SocratesProblem) => string | undefined;
+  /** A write that a `linear_ref_ambiguous` answer leaves undone is a failure, not the shared warning: the candidates ride the `fix:` line. */
+  ambiguousFails?: boolean;
   /** The `fix:` line for a body that does not decode, by HTTP status. */
   badResponseFix?: (status: number) => string | undefined;
 }
@@ -140,8 +142,8 @@ function warnAmbiguous(ctx: VerbContext, problem: SocratesProblem, subject: stri
 }
 
 /** The failure block for a refusal: the subscribe link, then a login, then the setting's link, then the route's own fix. */
-export function refuse(ctx: VerbContext, problem: SocratesProblem, call: Pick<SocratesCallBase<unknown>, "subject" | "refusalFix">): never {
-  if (problem.status === 409 && problem.code === "linear_ref_ambiguous") warnAmbiguous(ctx, problem, call.subject);
+export function refuse(ctx: VerbContext, problem: SocratesProblem, call: Pick<SocratesCallBase<unknown>, "subject" | "refusalFix" | "ambiguousFails">): never {
+  if (problem.status === 409 && problem.code === "linear_ref_ambiguous" && call.ambiguousFails !== true) warnAmbiguous(ctx, problem, call.subject);
   const what = `the endpoint refused ${call.subject}: ${printable(problem.detail)} (${printable(problem.code)}, HTTP ${problem.status})`;
   const subscribe = problem._links?.subscribe?.href;
   if (subscribe !== undefined) fail(ctx, "socrates-not-entitled", what, `subscribe: ${printable(subscribe)}`);
@@ -151,7 +153,7 @@ export function refuse(ctx: VerbContext, problem: SocratesProblem, call: Pick<So
       ? "run 'eris login' to sign this machine in again"
       : settings !== undefined
         ? `open ${printable(settings)} to change the setting`
-        : (call.refusalFix?.(problem.status) ?? `check ${call.subject}, then run the command again`);
+        : (call.refusalFix?.(problem.status, problem) ?? `check ${call.subject}, then run the command again`);
   fail(ctx, "socrates-refused", what, fix);
 }
 

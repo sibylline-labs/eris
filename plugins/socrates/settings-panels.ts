@@ -22,8 +22,8 @@ import { scanStrings } from "eris/outbound-scan";
 import { readArgs, type VerbContext } from "../../src/cli/plugin";
 import { fail, postSocrates, printable, type SocratesDeps, type SocratesEndpoint, socratesEndpoint } from "./client";
 import plugin from "./index";
-import { SOCRATES_CONTRACT_VERSION } from "./socrates-contract.v1";
-import { SOCRATES_ROUTES, SocratesPolicy, SocratesSettingsCanonRequest, SocratesSettingsPolicyRequest, SocratesSettingsResponse, type SocratesSettingsResult, SocratesSettingsWriteResponse } from "./socrates-contract.v1.verbs";
+import { SOCRATES_CONTRACT_VERSION, type SocratesProblem } from "./socrates-contract.v1";
+import { SOCRATES_ROUTES, SocratesPolicy, SocratesSettingsCanonRequest, SocratesSettingsEnrolmentRequest, SocratesSettingsEnrolmentResponse, SocratesSettingsPolicyRequest, SocratesSettingsResponse, type SocratesSettingsResult, SocratesSettingsWriteResponse } from "./socrates-contract.v1.verbs";
 
 type Policy = ReturnType<typeof SocratesPolicy.parse>;
 
@@ -54,11 +54,32 @@ Sign in first with 'eris login'.
 `;
 
 export const ENROLMENT_USAGE = `Usage: eris socrates settings enrolment
+       eris socrates settings enrolment <project> [--remove]
 
-List the projects enrolled in Socrates, how each was enrolled (label or stub) and its Linear link.
-Enrolment is read-only here: it follows the 'Socrates > Enrolled' label on the project in Linear.
+With no <project>, list the projects enrolled in Socrates, how each was enrolled (label or stub) and
+its Linear link. With a <project>, enrol it (an org admin's), or with --remove unenrol it; this is
+the same write as 'eris socrates enrol'.
 
---output json prints {projects: [{id, name, source, url}], contract_version}.
+  <project>  the Linear project's name (any case) or id; a name two projects share is refused
+  --remove   unenrol the project instead
+
+--output json prints {projects: [{id, name, source, url}], contract_version}; with a <project>, the
+receipt {project, enrolled, source, contract_version}, where project is the Linear id it resolved to.
+
+Sign in first with 'eris login'.
+`;
+
+export const ENROL_USAGE = `Usage: eris socrates enrol <project> [--remove]
+
+Enrol a Linear project in Socrates (an org admin's), so its review Epics and living docs start. Then
+'eris socrates consult --project <name>' answers for it. With --remove, unenrol it.
+
+  <project>  the Linear project's name (any case) or id; a name two projects share is refused
+  --remove   unenrol the project instead
+
+Prints 'enrolled <project>: <id> (<source>)' or 'unenrolled <project>: <id>', where <id> is the
+Linear id the project resolved to. --output json prints the receipt {project, enrolled, source,
+contract_version}.
 
 Sign in first with 'eris login'.
 `;
@@ -122,14 +143,59 @@ const onOff = (b: boolean): string => (b ? "on" : "off");
 const pct = (r: number | null): string => (r === null ? "-" : `${Math.round(r * 1000) / 10}%`);
 const json = (ctx: VerbContext, value: unknown): number => (ctx.stdout.write(`${JSON.stringify(value)}\n`), 0);
 
-/** `settings enrolment`. */
+const enrolFix = (status: number, problem: SocratesProblem): string | undefined => {
+  if (status === 403) return "ask an org admin to run this command";
+  if (status === 404) return problem.code === "linear_ref_not_found" ? "check the project's name in Linear, or pass its id" : "pass the id of a project the Linear app can read";
+  if (status === 409 && problem.code === "linear_ref_ambiguous") {
+    const candidates = problem.candidates ?? [];
+    return candidates.length === 0 ? "pass the project's id" : `run it again with one project's id: ${candidates.map((c) => `${printable(c.id)} (${printable(c.name)})`).join(", ")}`;
+  }
+  if (status === 409 && problem.code === "linear_disconnected") return "an org admin reconnects Linear from the dashboard, then run the command again";
+  return undefined;
+};
+
+/** The enrol or unenrol write both verbs share. */
+async function writeEnrolment(project: string, enrolled: boolean, usage: string, ctx: VerbContext, deps: SocratesDeps): Promise<number> {
+  const parsed = SocratesSettingsEnrolmentRequest.safeParse({ schema_version: SOCRATES_CONTRACT_VERSION, project, enrolled });
+  if (!parsed.success) fail(ctx, "socrates-flag-required", `not a project name or id: ${printable(parsed.error.issues.map((i) => i.message).join(", "))}`, usage);
+  const leaked = scanStrings(parsed.data);
+  if (leaked.length > 0) fail(ctx, "socrates-secret-detected", `a secret was found in the arguments (${leaked.map((h) => h.rule).join(", ")}); nothing was sent`, "pass the project's name or id; this check cannot be overridden");
+  const receipt = await postSocrates(ctx, deps, await socratesEndpoint(ctx, deps), {
+    path: SOCRATES_ROUTES.settings_enrolment.path,
+    method: "PUT",
+    body: parsed.data,
+    decoder: SocratesSettingsEnrolmentResponse,
+    subject: "the enrolment change",
+    refusalFix: enrolFix,
+    ambiguousFails: true,
+    badResponseFix: badWriteFix(SOCRATES_ROUTES.settings_enrolment.path),
+  });
+  if (ctx.format === "json") return json(ctx, receipt);
+  ctx.stdout.write(receipt.enrolled ? `enrolled ${printable(project)}: ${printable(receipt.project)} (${receipt.source ?? "-"})\n` : `unenrolled ${printable(project)}: ${printable(receipt.project)}\n`);
+  return 0;
+}
+
+/** `settings enrolment`: the list, or with a <project> the write. */
 export async function runEnrolment(args: string[], ctx: VerbContext, deps: SocratesDeps): Promise<number> {
-  if (readArgs(plugin.rows, "socrates settings enrolment", args, ctx, { help: ENROLMENT_USAGE }) === null) return 0;
+  const a = readArgs(plugin.rows, "socrates settings enrolment", args, ctx, { help: ENROLMENT_USAGE });
+  if (a === null) return 0;
+  const [project] = a.pos;
+  if (project !== undefined) return writeEnrolment(project, a.flags["--remove"] !== true, "eris socrates settings enrolment <project> [--remove]", ctx, deps);
+  if (a.flags["--remove"] === true) fail(ctx, "socrates-flag-required", "--remove needs a <project>", "eris socrates settings enrolment <project> --remove");
   const r = await readSettings(ctx, deps, await socratesEndpoint(ctx, deps));
   if (ctx.format === "json") return json(ctx, { projects: r.enrolment.projects, contract_version: r.contract_version });
   const rows = r.enrolment.projects;
   ctx.stdout.write(rows.length === 0 ? "no projects are enrolled\n" : `${rows.map((p) => `${printable(p.name ?? p.id)} (${p.source}) ${p.url === null ? "-" : printable(p.url)}`).join("\n")}\n`);
   return 0;
+}
+
+/** `enrol <project>`. */
+export async function runEnrol(args: string[], ctx: VerbContext, deps: SocratesDeps): Promise<number> {
+  const a = readArgs(plugin.rows, "socrates enrol", args, ctx, { help: ENROL_USAGE });
+  if (a === null) return 0;
+  const [project] = a.pos;
+  if (project === undefined) fail(ctx, "socrates-flag-required", "missing <project>", "eris socrates enrol <project> [--remove]");
+  return writeEnrolment(project, a.flags["--remove"] !== true, "eris socrates enrol <project> [--remove]", ctx, deps);
 }
 
 /** The Linear scopes row, in the dash Health panel's three states: unread, none missing, or what is missing and the fix. */

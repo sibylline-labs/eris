@@ -86,7 +86,20 @@ export default definePlugin({
         { name: "--preview", takesValue: false },
       ],
     },
-    "socrates settings enrolment": { summary: "List the enrolled projects and their Linear links", json: true, usage: "" },
+    "socrates settings enrolment": {
+      summary: "List the enrolled projects and their Linear links, or enrol or unenrol one (an org admin's)",
+      json: true,
+      pos: ["project?"],
+      usage: "[<project> [--remove]]",
+      flags: [{ name: "--remove", takesValue: false }],
+    },
+    "socrates enrol": {
+      summary: "Enrol a Linear project in Socrates (an org admin's), or unenrol it with --remove",
+      json: true,
+      pos: ["project?"],
+      usage: "<project> [--remove]",
+      flags: [{ name: "--remove", takesValue: false }],
+    },
     "socrates settings health": { summary: "Print the install (with its Linear scopes), webhook, reconcile and stuck-write health", json: true, usage: "" },
     "socrates settings usage": { summary: "Print the no-credit usage figures: entries, accept and reject rates, overrides", json: true, usage: "" },
     "socrates settings canon": {
@@ -160,7 +173,10 @@ export default definePlugin({
                                             canon_doc_id, contract_version}; --preview: {preview, version,
                                             policy_hash, policy, draft, changes: [{field, from, to}],
                                             contract_version}
-  eris socrates settings enrolment         {projects: [{id, name, source, url}], contract_version}
+  eris socrates settings enrolment         {projects: [{id, name, source, url}], contract_version}; with a
+                                            <project>: the receipt {project, enrolled, source,
+                                            contract_version}
+  eris socrates enrol                      the same receipt: {project, enrolled, source, contract_version}
   eris socrates settings health            {health: {install, webhook, reconcile, stuck}, contract_version}
   eris socrates settings usage             {usage: {window_days, entries, accept_rate, reject_rate,
                                             classifications}, contract_version}
