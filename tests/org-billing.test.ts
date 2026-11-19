@@ -117,17 +117,60 @@ describe("eris org billing", () => {
     expect(r.stderr).toContain("org-billing-unavailable");
   });
 
-  it.each(["https://evil.example/checkout", "http://checkout.stripe.com/x", "https://stripe.com.evil.example/x", "javascript:alert(1)", "not a url"])(
-    "a url that is not a https stripe.com page (%s) is never printed",
-    async (url) => {
-      /** When the verb prints whatever the endpoint answers, a hostile or buggy endpoint sends a person to a phishing page. */
-      answer = () => Response.json({ url });
-      const r = await run(["billing", "checkout"]);
-      expect(r.code).toBe(1);
-      expect(r.stdout).toBe("");
+  // Hostile or buggy endpoint answers: a wrong scheme, host (a suffix lookalike, a lookalike prefix), port, userinfo,
+  // or a control character (newline, ANSI CSI, a terminal hyperlink escape). Each must be refused with nothing on stdout.
+  const REFUSED = [
+    "https://evil.example/checkout",
+    "http://checkout.stripe.com/x",
+    "https://stripe.com.evil.example/x",
+    "https://evilstripe.com/x",
+    "https://checkout.stripe.com.evil.example/x",
+    "https://checkout.stripe.com:8443/x",
+    ["https://evil.example", "@checkout.stripe.com/c/pay/cs_1"].join(""),
+    ["https://user:pw", "@checkout.stripe.com/c/pay/cs_1"].join(""),
+    "https://checkout.stripe.com/c/pay/cs_1\nhttps://evil.example/phish",
+    "https://checkout.stripe.com/\x1b[2K\rhttps://evil.example/phish",
+    "https://checkout.stripe.com/\x1b]8;;https://evil.example\x07https://checkout.stripe.com/pay\x1b]8;;\x07",
+    "https://checkout.stripe.com/c/pay/cs_1 ",
+    "javascript:alert(1)",
+    "not a url",
+  ] as const;
+
+  it.each(REFUSED)("a url that is not a plain https stripe.com page (%j) is never printed, in text or json", async (url) => {
+    /** When the verb prints whatever the endpoint answers, or checks the host loosely (a suffix, a port, userinfo, a control character), a hostile or buggy endpoint sends a person to a phishing page or rewrites their terminal. */
+    answer = () => Response.json({ url });
+    for (const format of ["text", "json"] as const) {
+      const r = await run(["billing", "checkout"], format);
+      expect({ format, code: r.code, stdout: r.stdout }).toEqual({ format, code: 1, stdout: "" });
       expect(r.stderr).toContain("org-unavailable");
-    },
-  );
+    }
+  });
+
+  it("prints only the parsed href: the canonical form of an accepted url, in text and json", async () => {
+    /** When the raw server text is printed instead of the parsed href, a spelling the parser normalised (host case, a default port) reaches the terminal as the server wrote it. */
+    answer = () => Response.json({ url: "HTTPS://Checkout.Stripe.COM:443/c/pay/cs_1?a=b#frag" });
+    const text = await run(["billing", "checkout"]);
+    expect(text.stdout).toBe("https://checkout.stripe.com/c/pay/cs_1?a=b#frag\n");
+    const json = await run(["billing", "checkout"], "json");
+    expect(JSON.parse(json.stdout)).toEqual({ url: "https://checkout.stripe.com/c/pay/cs_1?a=b#frag" });
+  });
+
+  it.each([
+    [409, "nothing_to_bill", "org-billing-nothing-to-bill", "eris org billing portal"],
+    [503, "billing_invalid_config", "org-billing-unavailable", "tell the platform's operator"],
+    [503, "connect_unconfigured", "org-connect-unconfigured", "Stripe's return links"],
+    [404, "org_not_found", "org-unavailable", "eris whoami"],
+    [404, "not_found", "org-billing-unavailable", "tell the platform's operator"],
+  ] as const)("a %i %s refusal reads as %s and says what to do", async (status, code, slug, hint) => {
+    /** When these fall through to a generic outage ('retry'), or a missing org reads as billing being off, the person retries what cannot work or tells the operator the wrong thing. */
+    answer = () => problem(status, code);
+    const r = await run(["billing", "checkout"]);
+    expect(r.code).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain(slug);
+    expect(r.stderr).toContain(hint);
+    expect(r.stderr).not.toContain("install link");
+  });
 
   it("a bare 'billing' and an unknown sub print usage or refuse, sending nothing", async () => {
     /** When a typo reaches the network, the wrong route is called with the org's bearer. */

@@ -260,6 +260,17 @@ admin may ([`org-admin-required`](ERRORS.md#org-admin-required)); a platform wit
 page on `stripe.com`, else nothing is printed. Each run opens a new session. `--output json` prints the
 server's body, `{url}`.
 
+### `eris org webhooks logfire`: the Logfire alert webhook URL
+
+`eris org webhooks logfire` prints the URL that posts this org's Logfire alerts onto its bus
+(`GET /v1/org/webhooks/logfire`): the server's path joined to the org's url. Paste it as the webhook of
+a Logfire alert channel. It is a credential, so keep it out of chat and logs. `eris org webhooks
+logfire revoke` replaces it (`POST /v1/org/webhooks/logfire/revoke`) and prints the new one; the old
+URL stops working at once, so update every channel that used it. The dashboard's Webhooks section shows
+the same URL. Both are an org admin's ([`org-admin-required`](ERRORS.md#org-admin-required)); a revoke
+for an org whose bus product is not active is refused ([`org-bus-lapsed`](ERRORS.md#org-bus-lapsed)).
+`--output json` prints `{url, path, generation}`.
+
 ### `eris org delete`: schedule or cancel the org's deletion
 
 `eris org delete --confirm <workspace>` schedules the org's deletion

@@ -124,7 +124,7 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
         ],
       },
       logout: { impl: "ts", summary: "Remove this directory's org's token from ~/.eris/yaks.json" },
-      org: { impl: "ts", summary: "This org's members, Linear and GitHub connections, and deletion (members, connect-linear, github, connect-github, disconnect-github, billing, delete)" },
+      org: { impl: "ts", summary: "This org's members, Linear and GitHub connections, webhooks, billing, and deletion (members, connect-linear, github, connect-github, disconnect-github, webhooks, billing, delete)" },
       "org members": {
         summary: "List this org's members, deactivate one, or grant or revoke admin (an org admin's)",
         json: true,
@@ -169,6 +169,14 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
         summary: "Print a Stripe Billing Portal URL for this org (an org admin's)",
         json: true,
         example: "eris org billing portal",
+      },
+      "org webhooks": {
+        summary: "Print this org's Logfire alert webhook URL, or revoke it for a new one (an org admin's)",
+        json: true,
+        pos: ["source", "action?"],
+        usage: "logfire [revoke]",
+        complete: [["logfire"], ["revoke"]],
+        example: "eris org webhooks logfire",
       },
       "org delete": {
         summary: "Schedule this org's deletion (--confirm <workspace>) or cancel it (--cancel); an org admin's",
@@ -272,6 +280,7 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
   eris org connect-github --account <org>  the same body, once bound
   eris org disconnect-github               the same body, installation null
   eris org billing checkout|portal         {url}
+  eris org webhooks logfire [revoke]       {url, path, generation} (url is the webhook address)
   eris org delete --confirm <name>         {dueAt, cause}
   eris org delete --cancel                 {cancelled}
   eris whoami                              {org, source, path?, default, token_source, url,

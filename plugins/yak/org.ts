@@ -15,6 +15,9 @@
  * over `POST /v1/github/installation`, sending the caller's own `gh auth token` once as the proof that
  * they own the GitHub org (the server lists the installation with it and keeps nothing).
  * `eris org github` reads the binding (`GET /v1/github`); `eris org disconnect-github` retires it.
+ * `eris org webhooks logfire` prints the org's Logfire alert webhook URL (`GET
+ * /v1/org/webhooks/logfire`), and `eris org webhooks logfire revoke` replaces it with a new one
+ * (`POST /v1/org/webhooks/logfire/revoke`); the old URL stops working at once.
  *
  * The routes answer success as plain JSON and every refusal as problem+json
  * with a top-level `code` (`admin_required`, `member_not_found`,
@@ -28,7 +31,8 @@
  *     `admin_required` is rendered as the `org-admin-required` refusal, and a
  *     stale role cannot make the CLI refuse or allow wrongly.
  *   - Every failure is the slugged block on stderr, nothing on stdout, exit 1.
- *     Under `--output json` a success prints the server's body, bare.
+ *     Under `--output json` a success prints the server's body, bare; `webhooks logfire` adds
+ *     `url`, the path joined to the org's url, since the path alone is not an address.
  *   - One request, bounded by `ORG_TIMEOUT_MS` over the whole exchange. `connect-linear` is a
  *     sequence of such requests whose wait ends at the link's expiry, never later than `MAX_WAIT_MS`.
  *   - The link the server minted is opened only when it is an http(s) url, and is printed on
@@ -43,7 +47,7 @@ import { defaultOpenBrowser } from "./login";
 import { problemCode } from "./yak-admin";
 
 // A `…Slug`-named union: `tests/errors-doc.test.ts` harvests its members.
-export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied" | "org-delete-flags" | "org-confirmation-mismatch" | "org-workspace-name-unknown" | "org-tokens-revoked" | "org-connect-unconfigured" | "org-connect-timeout" | "org-admin-action-invalid" | "org-last-admin" | "org-github-unconfigured" | "org-github-account-invalid" | "org-gh-unavailable" | "org-github-not-owner" | "org-github-timeout" | "org-github-unproven" | "org-github-bound-elsewhere" | "org-github-org-bound" | "org-billing-unavailable";
+export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied" | "org-delete-flags" | "org-confirmation-mismatch" | "org-workspace-name-unknown" | "org-tokens-revoked" | "org-connect-unconfigured" | "org-connect-timeout" | "org-admin-action-invalid" | "org-last-admin" | "org-github-unconfigured" | "org-github-account-invalid" | "org-gh-unavailable" | "org-github-not-owner" | "org-github-timeout" | "org-github-unproven" | "org-github-bound-elsewhere" | "org-github-org-bound" | "org-bus-lapsed" | "org-billing-unavailable" | "org-billing-nothing-to-bill";
 
 const ORG_TIMEOUT_MS = 15_000;
 
@@ -95,6 +99,7 @@ Commands:
   disconnect-github              Unbind this org's GitHub App installation (an org admin's)
   billing checkout               Print a Stripe Checkout URL for this org's subscription (an org admin's)
   billing portal                 Print a Stripe Billing Portal URL for this org (an org admin's)
+  webhooks logfire [revoke]      Print this org's Logfire alert webhook URL, or replace it (an org admin's)
 
 The org is the one this directory acts as ('eris whoami').
 `;
@@ -168,6 +173,19 @@ short-lived session. 'eris --output json org billing portal' prints the server's
 with billing off answers org-billing-unavailable.
 `;
 
+export const WEBHOOKS_USAGE = `Usage: eris org webhooks logfire [revoke]
+
+Print the webhook URL that posts this org's Logfire alerts onto its bus: paste it as the
+webhook of a Logfire alert channel. The URL is a credential: anyone holding it can post
+alerts to this org, so keep it out of chat and logs.
+
+  eris org webhooks logfire revoke   replace the URL with a new one and print it. The old URL
+  stops working at once, so update every Logfire channel that uses it.
+
+Both are an org admin's (org-admin-required otherwise); the dashboard's Webhooks section shows
+the same URL. 'eris --output json org webhooks logfire' prints {url, path, generation}.
+`;
+
 export const GITHUB_USAGE = `Usage: eris org github
 
 Show the GitHub App installation bound to the org this directory acts as, and the App's
@@ -224,9 +242,10 @@ interface Failure {
   fix?: string;
 }
 
-type Outcome<T> = { ok: true; value: T } | { ok: false; failure: Failure };
+/** A success carries the org's url (`base`, no trailing slash) the request went to. */
+type Outcome<T> = { ok: true; value: T; base: string } | { ok: false; failure: Failure };
 
-type Action = "grant admin" | "revoke admin" | "deactivate a member" | "delete the org" | "cancel the org's deletion" | "connect Linear" | "connect GitHub" | "disconnect GitHub" | "open Stripe billing";
+type Action = "grant admin" | "revoke admin" | "deactivate a member" | "delete the org" | "cancel the org's deletion" | "connect Linear" | "connect GitHub" | "disconnect GitHub" | "read the Logfire webhook URL" | "revoke the Logfire webhook URL" | "open Stripe billing";
 
 function refusal(status: number, code: string | undefined, target: string, action: Action = "deactivate a member"): Failure {
   const answered = `the org endpoint answered ${status}${code ? ` ${code}` : ""} for ${target}`;
@@ -253,17 +272,33 @@ function refusal(status: number, code: string | undefined, target: string, actio
             ? "ask an org admin to run it, or to use the dashboard's Billing page"
             : action === "connect GitHub" || action === "disconnect GitHub"
             ? `ask an org admin to run: eris org ${action === "connect GitHub" ? "connect-github" : "disconnect-github"}`
+            : action === "read the Logfire webhook URL" || action === "revoke the Logfire webhook URL"
+            ? `ask an org admin to run: eris org webhooks logfire${action === "revoke the Logfire webhook URL" ? " revoke" : ""}   (or to use the dashboard's Webhooks section)`
             : "ask an org admin to run it, or to use the dashboard's Danger zone",
     };
   }
   if (status === 503 && code === "connect_unconfigured") {
-    return { slug: "org-connect-unconfigured", what: `${answered}: this platform has no dashboard address to send the install link to; nothing was opened`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
+    return { slug: "org-connect-unconfigured", what: `${answered}: this platform has no dashboard address to ${action === "open Stripe billing" ? "send Stripe's return links to" : "send the install link to"}; nothing was opened`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
+  }
+  if (action === "open Stripe billing" && status === 404 && code === "org_not_found") {
+    return { slug: "org-unavailable", what: `${answered}: the server does not know this org`, fix: "check which org this directory acts as: eris whoami" };
+  }
+  if (action === "open Stripe billing" && status === 409 && code === "nothing_to_bill") {
+    return { slug: "org-billing-nothing-to-bill", what: `${answered}: no product of this org needs a new subscription (each is free, or already billed); nothing was opened`, fix: "manage an existing subscription instead: eris org billing portal" };
+  }
+  if (action === "open Stripe billing" && status === 503 && code === "billing_invalid_config") {
+    return { slug: "org-billing-unavailable", what: `${answered}: billing is on but this platform's Stripe configuration is invalid; nothing was opened`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
   }
   if (action === "open Stripe billing" && status === 404) {
     return { slug: "org-billing-unavailable", what: `${answered}: billing is not turned on for this platform, so there is no Stripe session to open`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
   }
   if (action === "open Stripe billing" && status === 503 && code === "billing_unconfigured") {
     return { slug: "org-billing-unavailable", what: `${answered}: billing is on but this platform's Stripe is not configured; nothing was opened`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
+  }
+  if (status === 402 && code === "entitlement_lapsed") {
+    // The GitHub verbs reach a row verified for bus, so they meet this refusal too: say what was refused per action.
+    const refused = action === "revoke the Logfire webhook URL" ? "no new webhook URL is issued" : `this org cannot ${action}`;
+    return { slug: "org-bus-lapsed", what: `${answered}: this org's bus product is not active, so ${refused}; nothing changed`, fix: "reactivate the bus product for this org (the dashboard's Billing page), then run it again" };
   }
   if (status === 503 && code === "github_app_unconfigured") {
     return { slug: "org-github-unconfigured", what: `${answered}: this platform has no GitHub App configured; nothing was bound`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
@@ -345,7 +380,7 @@ async function request<S extends z.ZodTypeAny>(
     if (!shaped.success) {
       return { ok: false, failure: { slug: "org-unavailable", what: `the org endpoint answered ${response.status} with a body that does not match the contract (${target})`, fix: "update eris: eris update" } };
     }
-    return { ok: true, value: shaped.data };
+    return { ok: true, value: shaped.data, base };
   } finally {
     clearTimeout(timer);
   }
@@ -530,27 +565,34 @@ async function defaultRunGh(args: readonly string[], env: VerbContext["env"], ti
 
 const BillingRedirect = z.object({ url: z.string() }).passthrough();
 
-/** A Stripe-hosted page: https on stripe.com or one of its subdomains, nothing else a person is sent to. */
-function isStripePage(raw: string): boolean {
+/** The canonical href of a Stripe-hosted page, or null: `https` on `stripe.com` or one of its subdomains,
+ *  no userinfo, no port, and no control or whitespace character anywhere in the text the server sent (the
+ *  WHATWG parser strips tabs and newlines and ignores the rest, so the raw text is judged first). Only the
+ *  parsed href is ever printed, so a terminal escape or a second line never reaches a person. */
+function stripePage(raw: string): string | null {
+  if (/[\u0000-\u0020\u007f-\u009f]/.test(raw)) return null;
+  let url: URL;
   try {
-    const url = new URL(raw);
-    return url.protocol === "https:" && url.port === "" && (url.hostname === "stripe.com" || url.hostname.endsWith(".stripe.com"));
+    url = new URL(raw);
   } catch {
-    return false;
+    return null;
   }
+  if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.port !== "") return null;
+  return url.hostname === "stripe.com" || url.hostname.endsWith(".stripe.com") ? url.href : null;
 }
 
 async function runBilling(kind: "checkout" | "portal", ctx: VerbContext, deps: OrgDeps): Promise<number> {
   const got = await request("POST", `/v1/org/billing/${kind}`, BillingRedirect, ctx, deps, { action: "open Stripe billing" });
   if (!got.ok) return fail(ctx, got.failure);
-  if (!isStripePage(got.value.url)) {
+  const href = stripePage(got.value.url);
+  if (href === null) {
     return fail(ctx, { slug: "org-unavailable", what: "the org endpoint answered with a link that is not a https://*.stripe.com page; nothing was printed", fix: "update eris: eris update   (or tell the platform's operator)" });
   }
   if (ctx.format === "json") {
-    ctx.stdout.write(`${JSON.stringify(got.value)}\n`);
+    ctx.stdout.write(`${JSON.stringify({ ...got.value, url: href })}\n`);
     return 0;
   }
-  ctx.stdout.write(`${got.value.url}\n`);
+  ctx.stdout.write(`${plain(href)}\n`);
   ctx.stderr.write(`Open this link in a browser to ${kind === "checkout" ? "start your subscription" : "manage billing"} on Stripe. eris never takes card details.\n`);
   return 0;
 }
@@ -569,6 +611,32 @@ async function runGithub(ctx: VerbContext, deps: OrgDeps): Promise<number> {
   }
   ctx.stdout.write(describeGithub(got.value));
   if (got.value.installation === null && got.value.app !== null) ctx.stdout.write(`connect one: eris org connect-github --account <github-org>\n`);
+  return 0;
+}
+
+// passthrough: --output json prints the server's body; the platform's `LogfireUrlViewSchema` (`{path, generation}`).
+/** `/v1/webhooks/logfire/<org ULID>/<token>`: the token is 32 MAC bytes as unpadded base64url. */
+const LOGFIRE_WEBHOOK_PATH = /^\/v1\/webhooks\/logfire\/[0-9A-HJKMNP-TV-Z]{26}\/[A-Za-z0-9_-]{43}$/;
+const LogfireUrl = z.object({ path: z.string(), generation: z.number().int().nonnegative() }).passthrough();
+
+async function runWebhooks(source: string | undefined, action: string | undefined, ctx: VerbContext, deps: OrgDeps): Promise<number> {
+  if (source !== "logfire") return unknown(ctx, `webhooks${source === undefined ? "" : ` ${source}`}`, "webhooks logfire, webhooks logfire revoke");
+  if (action !== undefined && action !== "revoke") return unknown(ctx, `webhooks logfire ${action}`, "webhooks logfire, webhooks logfire revoke");
+  const revoke = action === "revoke";
+  const got = revoke
+    ? await request("POST", "/v1/org/webhooks/logfire/revoke", LogfireUrl, ctx, deps, { action: "revoke the Logfire webhook URL" })
+    : await request("GET", "/v1/org/webhooks/logfire", LogfireUrl, ctx, deps, { action: "read the Logfire webhook URL" });
+  if (!got.ok) return fail(ctx, got.failure);
+  // The path is the server's: only the webhook route's exact shape (an org ULID, then a 43-character
+  // base64url token, nothing after) is joined to the org's url, so no traversal, query or control
+  // character can reach the printed address.
+  if (!LOGFIRE_WEBHOOK_PATH.test(got.value.path)) {
+    return fail(ctx, { slug: "org-unavailable", what: "the org endpoint answered a webhook path outside /v1/webhooks/logfire/; nothing was printed", fix: "update eris: eris update   (or tell the platform's operator)" });
+  }
+  const url = `${got.base}${got.value.path}`;
+  // `url` last: a server field of the same name never replaces the address joined to the org's own url.
+  ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify({ ...got.value, url })}\n` : `${plain(url)}\n`);
+  if (revoke) ctx.stderr.write("INFO the previous URL no longer works; update every Logfire alert channel that used it\n");
   return 0;
 }
 
@@ -698,7 +766,7 @@ export async function runOrg(args: string[], ctx: VerbContext, deps: OrgDeps = {
     ctx.stdout.write(ORG_USAGE);
     return 0;
   }
-  if (g.kind === "unknown") return unknown(ctx, g.sub, "members, delete, connect-linear, github, connect-github, disconnect-github, billing");
+  if (g.kind === "unknown") return unknown(ctx, g.sub, "members, delete, connect-linear, github, connect-github, disconnect-github, webhooks, billing");
   if (g.sub === "connect-linear") {
     const c = readArgs(plugin.rows, "org connect-linear", g.rest, ctx, { help: CONNECT_USAGE });
     if (c === null) return 0;
@@ -734,6 +802,12 @@ export async function runOrg(args: string[], ctx: VerbContext, deps: OrgDeps = {
     const r = readArgs(plugin.rows, "org disconnect-github", g.rest, ctx, { help: GITHUB_DISCONNECT_USAGE });
     if (r === null) return 0;
     return runDisconnectGithub(ctx, deps);
+  }
+  if (g.sub === "webhooks") {
+    const r = readArgs(plugin.rows, "org webhooks", g.rest, ctx, { help: WEBHOOKS_USAGE });
+    if (r === null) return 0;
+    const [source, action] = r.pos;
+    return runWebhooks(source, action, ctx, deps);
   }
   if (g.sub === "delete") {
     const d = readArgs(plugin.rows, "org delete", g.rest, ctx, { help: DELETE_USAGE });

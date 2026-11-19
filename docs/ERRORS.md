@@ -697,8 +697,9 @@ workspace in the dashboard, then run it again. Exit 1.
 
 ### org-connect-unconfigured
 
-`eris org connect-linear` was refused with `503 connect_unconfigured`: the platform has no dashboard
-address to build the install link on, so no link was minted and nothing was opened. This is the
+`eris org connect-linear`, `eris org billing checkout` or `eris org billing portal` was refused with `503
+connect_unconfigured`: the platform has no dashboard address to build the install link or Stripe's return
+links on, so nothing was minted or opened. This is the
 platform's setup, not this machine's: tell the platform's operator. Exit 1.
 
 ### org-connect-timeout
@@ -715,6 +716,12 @@ shows the connection's state. Exit 1.
 platform: the org endpoint answered `404` (billing is not turned on, so the route does not exist) or
 `503 billing_unconfigured` (billing is on but Stripe is not configured). Nothing was opened and no URL
 was printed. This is the platform's setup, not this machine's: tell the platform's operator. Exit 1.
+
+### org-billing-nothing-to-bill
+
+`eris org billing checkout` was refused with `409 nothing_to_bill`: none of the org's products needs a
+new subscription (each is free, or already billed on a live subscription), so no Checkout Session was
+created and no URL was printed. To manage an existing subscription run `eris org billing portal`. Exit 1.
 
 ### org-github-account-invalid
 
@@ -765,6 +772,13 @@ This org already has a different installation bound than the platform App's inst
 `--account` (seen before any bind, or refused by the server with `409 org_already_bound`). Nothing was
 bound. Run `eris org disconnect-github`, then connect the other. Exit 1.
 
+### org-bus-lapsed
+
+An `eris org` command that needs the org's bus product was refused with `402 entitlement_lapsed`: the
+bus product is not active. That is `eris org webhooks logfire revoke` (no new Logfire webhook URL is
+issued) and `eris org github`, `connect-github` and `disconnect-github`. Nothing changed. Reactivate
+the bus product for the org (the dashboard's Billing page), then run it again. Exit 1.
+
 ### org-tokens-revoked
 
 An `eris org` command was refused with `401 revoked`: the token is revoked. While
@@ -776,7 +790,8 @@ if no deletion is scheduled, run `eris login`. Exit 1.
 ### org-unknown-verb
 
 `eris org` or `eris org members` was given a word that is not one of its
-commands. The commands are `members`, `members deactivate <member-id>` and `delete`. Exit 1.
+commands. `eris org --help` lists them (`members`, `delete`, `connect-linear`, `github`,
+`connect-github`, `disconnect-github`, `webhooks logfire [revoke]`). Exit 1.
 
 ### org-unavailable
 
