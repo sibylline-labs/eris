@@ -1233,7 +1233,8 @@ the org holds no candidate with that id. For `settings team`, a
 team is not one of the project's teams (the detail lists them). For
 `settings policy` and `settings canon` a 403 means the same, and a 409 on a
 policy change means it was saved by someone else since it was read: run the
-command again. For `enrol` (and `settings enrolment <project>`) a 403 means
+command again. For `settings projects`, a 403 means only an org admin may list them, and a 409 that
+the org's Linear connection must be restored first. For `enrol` (and `settings enrolment <project>`) a 403 means
 only an org admin may enrol, a 404 that no project readable to Socrates has
 that name or id, and a 409 `linear_ref_ambiguous` that more than one project has that name (the
 `fix:` line lists each candidate's id and name: pass one id), and a 409

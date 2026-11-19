@@ -93,6 +93,7 @@ export default definePlugin({
       usage: "[<project> [--remove]]",
       flags: [{ name: "--remove", takesValue: false }],
     },
+    "socrates settings projects": { summary: "List the Linear projects that can be enrolled, and which already are (an org admin's)", json: true, usage: "" },
     "socrates enrol": {
       summary: "Enrol a Linear project in Socrates (an org admin's), or unenrol it with --remove",
       json: true,
@@ -175,6 +176,8 @@ export default definePlugin({
                                             contract_version}
   eris socrates settings enrolment         {projects: [{id, name, source, url}], contract_version}; with a
                                             <project>: the receipt {project, enrolled, source,
+                                            contract_version}
+  eris socrates settings projects          {projects: [{id, name, url, enrolled, source, readable}],
                                             contract_version}
   eris socrates enrol                      the same receipt: {project, enrolled, source, contract_version}
   eris socrates settings health            {health: {install, webhook, reconcile, stuck}, contract_version}

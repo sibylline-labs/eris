@@ -489,6 +489,25 @@
           {"type": "urn:hera:error:linear_ref_ambiguous", "title": "Conflict", "status": 409, "detail": "d", "code": "linear_ref_ambiguous", "kind": "project", "candidates": ["da12bb11-7add-4cd3-a4a7-8057a1475c72"]}
         ]
       }
+    },
+    "settings_projects": {
+      "response": {
+        "accept": [
+          {"projects": [{"id": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "name": "Platform", "url": "https://tracker.example.com/acme/project/platform-1a2b3c", "enrolled": true, "source": "stub", "readable": true}, {"id": "2310e01c-1762-4859-b05c-26d53e1edbb1", "name": "Docs", "url": null, "enrolled": false, "source": null, "readable": true}], "contract_version": "1.0.0"},
+          {"projects": [], "contract_version": "1.0.0"},
+          {"type": "urn:hera:error:forbidden", "title": "Forbidden", "status": 403, "detail": "Only an admin can list workspace projects for enrolment", "code": "admin_required"},
+          {"type": "urn:hera:error:linear_disconnected", "title": "Conflict", "status": 409, "detail": "The org's Linear connection is missing or revoked", "code": "linear_disconnected"}
+        ],
+        "reject": [
+          {},
+          {"projects": [{"id": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "name": "Platform", "url": null, "enrolled": true, "source": "dash", "readable": true}], "contract_version": "1.0.0"},
+          {"projects": [{"id": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "name": "Platform", "url": null, "enrolled": true, "source": null}], "contract_version": "1.0.0"},
+          {"projects": [{"id": "", "name": "Platform", "url": null, "enrolled": true, "source": null, "readable": true}], "contract_version": "1.0.0"},
+          {"projects": [{"id": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "name": "", "url": null, "enrolled": true, "source": "stub", "readable": true}], "contract_version": "1.0.0"},
+          {"projects": [{"id": "da12bb11-7add-4cd3-a4a7-8057a1475c72", "name": "Platform", "url": "javascript:alert(1)", "enrolled": true, "source": "stub", "readable": true}], "contract_version": "1.0.0"},
+          {"projects": []}
+        ]
+      }
     }
   }
 }
