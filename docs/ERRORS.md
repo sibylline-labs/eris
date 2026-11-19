@@ -758,6 +758,12 @@ This org already has a different installation bound than the platform App's inst
 `--account` (seen before any bind, or refused by the server with `409 org_already_bound`). Nothing was
 bound. Run `eris org disconnect-github`, then connect the other. Exit 1.
 
+### org-bus-lapsed
+
+`eris org webhooks logfire revoke` was refused with `402 entitlement_lapsed`: this org's bus product is
+not active, so the platform issues no new Logfire webhook URL. Nothing changed. Reactivate the bus
+product for the org (the dashboard's Billing page), then run it again. Exit 1.
+
 ### org-tokens-revoked
 
 An `eris org` command was refused with `401 revoked`: the token is revoked. While
@@ -769,7 +775,8 @@ if no deletion is scheduled, run `eris login`. Exit 1.
 ### org-unknown-verb
 
 `eris org` or `eris org members` was given a word that is not one of its
-commands. The commands are `members`, `members deactivate <member-id>` and `delete`. Exit 1.
+commands. `eris org --help` lists them (`members`, `delete`, `connect-linear`, `github`,
+`connect-github`, `disconnect-github`, `webhooks logfire [revoke]`). Exit 1.
 
 ### org-unavailable
 
