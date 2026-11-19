@@ -16,9 +16,10 @@ const TOKEN = ["sib", "01HZX3K5Q8W2N4R6T8V0Y2B4D6", "AbCdEfGhIjKlMnOpQrStUvWxYz0
 const GITHUB_TOKEN = ["ghp", "_", "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"].join("");
 
 const golden = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "socrates-contract-v1.json"), "utf8")) as {
-  messages: { settings: { response: { accept: Record<string, any>[] } } };
+  messages: { settings: { response: { accept: Record<string, any>[] } }; settings_enrolment: { response: { accept: Record<string, any>[] } } };
 };
 const SERVED = golden.messages.settings.response.accept[1]!;
+const ENROLLED_ID = "da12bb11-7add-4cd3-a4a7-8057a1475c72";
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 
@@ -26,6 +27,7 @@ let server: ReturnType<typeof Bun.serve>;
 let state: Record<string, any>;
 let refuse: { method: string; path: string; status: number; code: string } | undefined;
 let garble = false;
+let answer: { status: number; body: unknown } | undefined;
 const requests: { method: string; path: string; search: string; auth: string | null; body: any }[] = [];
 
 const problem = (status: number, code: string, detail: string) =>
@@ -57,6 +59,12 @@ beforeAll(() => {
         state.canon = body.doc;
         return Response.json(receipt());
       }
+      if (req.method === "PUT" && url.pathname === "/v1/socrates/settings/enrolment" && answer !== undefined) {
+        return Response.json(answer.body, { status: answer.status, headers: { "content-type": "application/problem+json" } });
+      }
+      if (req.method === "PUT" && url.pathname === "/v1/socrates/settings/enrolment") {
+        return Response.json({ project: ENROLLED_ID, enrolled: body.enrolled, source: body.enrolled ? "stub" : null, contract_version: "1.0.0" });
+      }
       if (req.method === "GET" && url.pathname === "/v1/socrates/consult") {
         if (state.canon === null) return problem(409, "conflict", "no Canon doc is chosen");
         return Response.json({ doc: "canon", title: "Canon", url: `https://tracker.example.com/acme/document/${state.canon}`, markdown: `# Canon ${state.canon}\n`, fetched_at: "2026-11-05T10:00:00.000Z", contract_version: "1.0.0" });
@@ -70,6 +78,7 @@ beforeEach(() => {
   requests.length = 0;
   refuse = undefined;
   garble = false;
+  answer = undefined;
   state = { served: structuredClone(SERVED), version: 3, hash: HASH_A, policy: structuredClone(SERVED.policy.policy), canon: null };
 });
 
@@ -271,6 +280,78 @@ describe("settings canon", () => {
   it("refuses a secret in the document id before anything leaves the machine", async () => {
     /** When the id is not scanned, a pasted token travels in the PUT body; observed as the slug and an empty request log. */
     const r = await drive(["settings", "canon", "--doc", GITHUB_TOKEN]);
+    expect(r.slug).toBe("socrates-secret-detected");
+    expect(requests).toHaveLength(0);
+  });
+});
+
+describe("enrol", () => {
+  // admits: boundary-io: the verb sending a project name the server cannot match, or reporting success on a refused write; the request and the exit code only exist over real HTTP.
+  it("enrol <project> sends the name and enrolled: true to the route and prints the id it resolved to", async () => {
+    const r = await drive(["enrol", "Platform"]);
+    expect(r.rc).toBe(0);
+    expect(r.stdout).toBe(`enrolled Platform: ${ENROLLED_ID} (stub)\n`);
+    expect(puts()).toHaveLength(1);
+    expect(puts()[0]).toMatchObject({ path: "/v1/socrates/settings/enrolment", auth: `Bearer ${TOKEN}`, body: { schema_version: "1.0.0", project: "Platform", enrolled: true } });
+  });
+
+  it("--remove sends enrolled: false, `settings enrolment <project>` is the same write, and --output json prints the receipt", async () => {
+    const off = await drive(["enrol", "Platform", "--remove"]);
+    expect(off.stdout).toBe(`unenrolled Platform: ${ENROLLED_ID}\n`);
+    const alias = await drive(["settings", "enrolment", "Platform"], { format: "json" });
+    expect(JSON.parse(alias.stdout)).toEqual({ project: ENROLLED_ID, enrolled: true, source: "stub", contract_version: "1.0.0" });
+    expect(puts().map((r) => r.body.enrolled)).toEqual([false, true]);
+  });
+
+  it("a refused write exits non-zero with the endpoint's detail and a fix line, and a missing <project> sends nothing", async () => {
+    refuse = { method: "PUT", path: "/v1/socrates/settings/enrolment", status: 403, code: "admin_required" };
+    const denied = await drive(["enrol", "Platform"]);
+    expect(denied.rc).not.toBe(0);
+    expect(denied.slug).toBe("socrates-refused");
+    expect(denied.stderr).toContain("admin_required");
+    expect(denied.stderr).toContain("ask an org admin to run this command");
+
+    refuse = undefined;
+    requests.length = 0;
+    const none = await drive(["enrol"]);
+    expect(none.rc).not.toBe(0);
+    expect(none.slug).toBe("socrates-flag-required");
+    expect(requests).toHaveLength(0);
+  });
+
+  // admits: boundary-io: the Worker's real ambiguous-name answer (the golden file's, which the contract package decodes with its own
+  // schema) reaching this decoder; a body shape the CLI could not decode ended in socrates-bad-response with nothing to choose from.
+  it("a name two projects share exits non-zero, names both candidates' ids and names on the fix line, and sends nothing more", async () => {
+    const ambiguous = golden.messages.settings_enrolment.response.accept.find((r: Record<string, any>) => r.code === "linear_ref_ambiguous")!;
+    answer = { status: 409, body: ambiguous };
+    for (const format of ["text", "json"] as const) {
+      const r = await drive(["enrol", "Platform"], { format });
+      expect(r.rc).not.toBe(0);
+      expect(r.slug).toBe("socrates-refused");
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toContain("linear_ref_ambiguous");
+      for (const c of ambiguous.candidates) expect(r.stderr).toContain(`${c.id} (${c.name})`);
+    }
+    expect(puts()).toHaveLength(2);
+  });
+
+  it("a not-found name and a disconnected Linear each get their own fix, never the ambiguity's", async () => {
+    const accepted = golden.messages.settings_enrolment.response.accept;
+    answer = { status: 404, body: accepted.find((r: Record<string, any>) => r.code === "linear_ref_not_found")! };
+    const missing = await drive(["enrol", "Nope"]);
+    expect(missing.slug).toBe("socrates-refused");
+    expect(missing.stderr).toContain("check the project's name in Linear, or pass its id");
+
+    answer = { status: 409, body: accepted.find((r: Record<string, any>) => r.code === "linear_disconnected")! };
+    const disconnected = await drive(["enrol", "Platform"]);
+    expect(disconnected.slug).toBe("socrates-refused");
+    expect(disconnected.stderr).toContain("reconnects Linear");
+    expect(disconnected.stderr).not.toContain("candidates");
+    expect(disconnected.stderr).not.toContain("project's id");
+  });
+
+  it("a secret-shaped argument is refused before anything is sent", async () => {
+    const r = await drive(["enrol", GITHUB_TOKEN]);
     expect(r.slug).toBe("socrates-secret-detected");
     expect(requests).toHaveLength(0);
   });
