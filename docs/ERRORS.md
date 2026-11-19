@@ -1881,3 +1881,55 @@ missing. Fix the cause the error names and run the command again: a rerun leaves
 linted: a mistyped path is refused rather than reported clean. Name the directory that holds
 `skills/` or `.claude/skills/`, or run the command from it with no argument. See
 [SKILLS.md](SKILLS.md#eris-skills-lint-dir).
+
+### slack-code-missing
+
+`eris slack link` was given no link. Nothing was sent. In Slack, press an ask button: Slack
+replies, only to you, with a one-time `Link Slack account` link. Run `eris slack link <link-url>`. Exit 1.
+
+### slack-code-invalid
+
+`eris slack link` was given a URL with no `code=` value, or one that is not 1 to 64 letters, digits, `-`
+or `_`. Nothing was sent, and the input is not echoed. Give the full link Slack sent you. Exit 1.
+
+### slack-link-not-url
+
+`eris slack link` was given something that is not the link's full `http(s)` URL, or a word the argument
+parser refuses (a bare code, a flag-shaped word, an extra word). Nothing was sent, and the argument is not
+shown, because it may be a live single-use link code. Give the full `Link Slack account` URL Slack sent
+you, once. Exit 1.
+
+### slack-code-unknown
+
+The link was refused with `404 invalid_code`: it is unknown, already used, older than 10 minutes, or was
+made for another org. Nothing was linked. Press an ask button in Slack again for a new link and run the
+command within 10 minutes. Exit 1.
+
+### slack-already-linked
+
+The link was refused with `409 slack_already_linked`: that Slack account, or you, already has a link. The
+code is spent. Run `eris slack unlink`, then press an ask button in Slack for a new link. Exit 1.
+
+### slack-unavailable
+
+The preview or link was refused with `502 slack_unavailable`: Slack could not name the account the link is
+for, so no link is offered. Retry in a moment. Exit 1.
+
+### slack-member-required
+
+`eris slack link` or `unlink` was refused with `403 member_required`: a service token has no member to
+link. Run `eris login` as a person. Exit 1.
+
+### slack-scope-denied
+
+The Slack link was refused with `403 scope_denied`: the token does not carry the `linear-proxy` scope the
+asks routes need. Run `eris login`; `eris whoami` lists what the token carries. Exit 1.
+
+### slack-unknown-verb
+
+`eris slack` was given a command it does not have. The commands are `link` and `unlink`. Exit 1.
+
+### slack-rate-limited
+
+The Slack link was refused with `429`: the org's asks budget is spent. Nothing changed. Wait the
+`Retry-After` seconds the message names (a minute when it names none) and run the command again. Exit 1.
