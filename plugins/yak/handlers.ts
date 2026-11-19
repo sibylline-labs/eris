@@ -56,13 +56,16 @@ Commands:
   suggest   An improvement to the harness: a missing capability or a better way of working
   fatal     The harness itself is broken
 
-  status    Whether this org has a destination for its yaks
+  status    Whether this org has a destination for its yaks; with an id, where one
+            vendor report stands and its checkpoints
   ready     Whether this machine can file yaks, with when to file (always exits 0;
             a SessionStart hook runs it)
   reports   This org's own vendor reports with their Linear state
   clusters  This org's most-reported recent yak clusters (--days 7|30, --limit, --min-sightings)
   show      One cluster or observation in full, by id
   retry     Requeue one failed observation (an org admin's)
+  checkpoint
+            Record where a vendor report stands (the vendor's own org)
   discover  The Linear teams, projects, states and labels it can file into
   config    Read or set that destination (get, set)
 
@@ -75,10 +78,11 @@ ERIS_YAKS_TOKEN. Until an admin sets a destination ('eris yak config set
 Run 'eris yak <command> --help' for the full flag reference.
 `;
 
-/** The admin verbs (./yak-admin.ts): `status`, `ready`, `discover`, `config get|set`.
+/** The admin verbs (./yak-admin.ts and its siblings): `status`, `ready`, `reports`, `clusters`, `show`,
+ *  `retry`, `checkpoint`, `discover`, `config get|set`.
  *  Null for a filing verb. A bare or unknown `config` word answers here. */
 async function adminHandler(verb: string, rest: string[], ctx: VerbContext): Promise<((deps: YakVerbDeps) => Promise<number>) | null> {
-  if (verb !== "status" && verb !== "ready" && verb !== "reports" && verb !== "clusters" && verb !== "show" && verb !== "retry" && verb !== "discover" && verb !== "config") return null;
+  if (verb !== "status" && verb !== "ready" && verb !== "reports" && verb !== "clusters" && verb !== "show" && verb !== "retry" && verb !== "checkpoint" && verb !== "discover" && verb !== "config") return null;
   let admin: typeof import("./yak-admin");
   try {
     admin = await import("./yak-admin");
@@ -93,6 +97,7 @@ async function adminHandler(verb: string, rest: string[], ctx: VerbContext): Pro
   if (verb === "clusters") return async (deps) => (await import("./yak-clusters")).runClusters(rest, ctx, adminDeps(deps));
   if (verb === "show") return async (deps) => (await import("./yak-clusters")).runShow(rest, ctx, adminDeps(deps));
   if (verb === "retry") return async (deps) => (await import("./yak-retry")).runRetry(rest, ctx, adminDeps(deps));
+  if (verb === "checkpoint") return async (deps) => (await import("./yak-checkpoint")).runCheckpoint(rest, ctx, adminDeps(deps));
   if (verb === "discover") return async (deps) => admin.runDiscover(rest, ctx, adminDeps(deps));
   const c = groupArgs(plugin.rows, "yak config", rest);
   if ((c.kind === "bare" || c.kind === "help") && ctx.format === "json") {
@@ -159,7 +164,7 @@ export async function runYakVerb(args: string[], ctx: VerbContext, deps: YakVerb
   if (g.kind === "unknown") {
     ctx.stderr.write(
       renderFailureBlock(
-        { slug: "yak-unknown-verb", what: `unknown yak command '${g.sub}'`, fix: "use one of: issue, suggest, fatal, status, ready, reports, clusters, show, discover, config\nrun 'eris yak --help' for the full command list" },
+        { slug: "yak-unknown-verb", what: `unknown yak command '${g.sub}'`, fix: "use one of: issue, suggest, fatal, status, ready, reports, clusters, show, retry, checkpoint, discover, config\nrun 'eris yak --help' for the full command list" },
         ctx.erisDir,
       ),
     );
