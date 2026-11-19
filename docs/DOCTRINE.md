@@ -209,7 +209,7 @@ eris doctrine check --file "$(eris doctrine path)"   # the same file, named
   `widened`, `reasons` and `auth_mode`.
 
 ```sh
-eris doctrine push                                   # <orgId>\t<bundle_sha>\t<version|unchanged>
+eris doctrine push                                   # org <orgId>\tbundle_sha <sha>\tversion <n|unchanged>
 ERIS_GATES_APPROVAL=<handle> eris doctrine push      # a widening save, approved with your passkey
 ```
 
@@ -220,7 +220,7 @@ other half of the bundle the Gates editor in the org's portal edits:
 
 ```sh
 eris doctrine settings                                # one '<key>\t<value>' per key
-eris doctrine settings set skills_repo acme/skills    # <orgId>\t<bundle_sha>\t<version>
+eris doctrine settings set skills_repo acme/skills    # org <orgId>\tbundle_sha <sha>\tversion <n>
 eris doctrine settings set spend_cap_calls unset      # drop an optional key
 ```
 

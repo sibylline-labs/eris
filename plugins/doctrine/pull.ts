@@ -121,7 +121,7 @@ export function seedAfterLogin(deps: PullDeps = {}): (ctx: VerbContext) => Promi
   return async (ctx) => {
     const pulled = await pullOrg(ctx, deps);
     if (pulled.ok) ctx.stderr.write(`INFO pulled org ${pulled.value.org} policy ${pulled.value.bundle_sha}\n`);
-    else ctx.stderr.write(renderWarnLines(`eris login: this org's policy was not pulled (${pulled.failure.slug}); run 'eris doctrine pull'`, pulled.failure.slug));
+    else ctx.stderr.write(renderWarnLines(`eris login: signed in, but this org's policy was not pulled (${pulled.failure.slug}); run 'eris doctrine pull'`, pulled.failure.slug));
   };
 }
 

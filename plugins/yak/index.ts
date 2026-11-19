@@ -116,7 +116,7 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
       },
       login: {
         impl: "ts",
-        summary: "Sign this machine in with a device code; writes the token 'eris yak' uses",
+        summary: "Sign this machine in to your org (device code); org, socrates, doctrine, gate, loop and yak all use this sign-in",
         usage: "[--url <url>] [--no-browser]",
         flags: [
           { name: "--url", takesValue: true },

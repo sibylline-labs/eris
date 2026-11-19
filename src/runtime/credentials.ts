@@ -271,7 +271,7 @@ export function resolveYaksBearer(
 ): { value: YaksBearer } | { reason: string; slug: "yak-token-unresolved" | "yak-url-unresolved"; fix: string } {
   const source = yaksTokenSource(fileConfig, env);
   if (source === null) {
-    return { reason: "no yaks token: run 'eris login', or set ERIS_YAKS_TOKEN", slug: "yak-token-unresolved", fix: "run 'eris login'" };
+    return { reason: "not signed in: run 'eris login', or set ERIS_YAKS_TOKEN", slug: "yak-token-unresolved", fix: "run 'eris login'" };
   }
   const url = resolveUrl(fileConfig, env, flag);
   if (source === "config") {
