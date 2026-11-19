@@ -709,6 +709,55 @@ was abandoned, was not finished in the browser, or was finished for another work
 connect-linear` again for a new link (each link works once; a new one replaces the old); `eris whoami`
 shows the connection's state. Exit 1.
 
+### org-github-account-invalid
+
+`eris org connect-github` was given no `--account`, or one that is not a GitHub organization name
+(1-39 letters, digits or single hyphens). Nothing was sent to `gh` or the server. Run
+`eris org connect-github --account <github-org>`. Exit 1.
+
+### org-gh-unavailable
+
+`eris org connect-github` needs the GitHub CLI: `gh` could not be started, or `gh auth token` printed
+no token. Nothing was bound. Install it (https://cli.github.com) and run `gh auth login`. Exit 1.
+
+### org-github-not-owner
+
+`gh api orgs/<account>/installations` failed: only an owner of a GitHub organization can list its App
+installations, and a personal account has no such list. Nothing was opened or bound. Check
+`gh auth status` (signed in as an owner of the org) and that `--account` names an organization. Exit 1.
+
+### org-github-timeout
+
+`eris org connect-github` opened (or printed) the App's install page and asked `gh` every few seconds,
+but the App did not appear on the GitHub organization within 10 minutes. Nothing was bound. Install it
+on that organization, then run the command again: an installed App is bound without the browser. Exit 1.
+
+### org-github-unproven
+
+`eris org connect-github` was refused with `403 installation_unproven`: the server listed the GitHub
+organization's installations with your `gh` token and did not find that installation of the platform's
+App. The token's user is not an owner of the organization, `--account` names another organization, or
+the token is invalid. Nothing was bound. Sign `gh` in as an owner (`gh auth status`) and run it again.
+Exit 1.
+
+### org-github-unconfigured
+
+`eris org connect-github` found no GitHub App configured on the platform (`GET /v1/github` answered
+`app: null`, or a bind answered `503 github_app_unconfigured`). Nothing was opened or bound. This is the
+platform's setup, not this machine's: tell the platform's operator. Exit 1.
+
+### org-github-bound-elsewhere
+
+The bind was refused with `409 installation_already_bound`: that installation is bound to another org,
+or was and stays held by it after an unbind. Nothing was bound. Moving an installation between orgs is
+the platform operator's act. Exit 1.
+
+### org-github-org-bound
+
+This org already has a different installation bound than the platform App's installation on
+`--account` (seen before any bind, or refused by the server with `409 org_already_bound`). Nothing was
+bound. Run `eris org disconnect-github`, then connect the other. Exit 1.
+
 ### org-tokens-revoked
 
 An `eris org` command was refused with `401 revoked`: the token is revoked. While

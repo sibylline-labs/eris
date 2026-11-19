@@ -124,7 +124,7 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
         ],
       },
       logout: { impl: "ts", summary: "Remove this directory's org's token from ~/.eris/yaks.json" },
-      org: { impl: "ts", summary: "This org's members, Linear connection and deletion (members, connect-linear, delete)" },
+      org: { impl: "ts", summary: "This org's members, Linear and GitHub connections, and deletion (members, connect-linear, github, connect-github, disconnect-github, delete)" },
       "org members": {
         summary: "List this org's members, deactivate one, or grant or revoke admin (an org admin's)",
         json: true,
@@ -138,6 +138,26 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
         usage: "[--no-browser]",
         flags: [{ name: "--no-browser", takesValue: false }],
         example: "eris org connect-linear --no-browser",
+      },
+      "org github": {
+        summary: "Show the GitHub App installation bound to this org, and the App's install link (an org admin's)",
+        json: true,
+        example: "eris org github",
+      },
+      "org connect-github": {
+        summary: "Install the platform's GitHub App on a GitHub org you own and bind it, proven with your gh token (an org admin's)",
+        json: true,
+        usage: "--account <github-org> [--no-browser]",
+        flags: [
+          { name: "--account", takesValue: true },
+          { name: "--no-browser", takesValue: false },
+        ],
+        example: "eris org connect-github --account acme",
+      },
+      "org disconnect-github": {
+        summary: "Unbind this org's GitHub App installation (an org admin's)",
+        json: true,
+        example: "eris org disconnect-github",
       },
       "org delete": {
         summary: "Schedule this org's deletion (--confirm <workspace>) or cancel it (--cancel); an org admin's",
@@ -237,6 +257,9 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
   eris org members admin grant|revoke <id> {memberId, role, roleSource}
   eris org connect-linear                  the org's body from GET /v1/org/me once Linear reads connected
                                             ({orgId, memberId, role, linear: {status}, ...})
+  eris org github                          {installation: {installation_id, bound_at} | null, app: {id, slug, install_url} | null}
+  eris org connect-github --account <org>  the same body, once bound
+  eris org disconnect-github               the same body, installation null
   eris org delete --confirm <name>         {dueAt, cause}
   eris org delete --cancel                 {cancelled}
   eris whoami                              {org, source, path?, default, token_source, url,

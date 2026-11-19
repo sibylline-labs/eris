@@ -8,6 +8,11 @@
  * `eris org connect-linear` has an admin's bearer mint an org-bound install link
  * (`POST /v1/org/linear/connect`), hands it to the browser, and polls `GET /v1/org/me` until
  * `linear.status` reads `connected`.
+ * `eris org connect-github --account <github-org>` opens the platform GitHub App's install page,
+ * waits until `gh api orgs/<github-org>/installations` lists the App, then binds that installation
+ * over `POST /v1/github/installation`, sending the caller's own `gh auth token` once as the proof that
+ * they own the GitHub org (the server lists the installation with it and keeps nothing).
+ * `eris org github` reads the binding (`GET /v1/github`); `eris org disconnect-github` retires it.
  *
  * The routes answer success as plain JSON and every refusal as problem+json
  * with a top-level `code` (`admin_required`, `member_not_found`,
@@ -16,7 +21,7 @@
  * Invariants:
  *   - The bearer and url come from `resolveOrgBearer` with the caller's `cwd`, the
  *     resolver every org-bound command uses, so a repo that selects org B acts
- *     on org B. The bearer is never written to either stream.
+ *     on org B. The bearer and the GitHub token are never written to either stream.
  *   - Authorisation is the server's. The role is not pre-checked here: a 403
  *     `admin_required` is rendered as the `org-admin-required` refusal, and a
  *     stale role cannot make the CLI refuse or allow wrongly.
@@ -36,7 +41,7 @@ import { defaultOpenBrowser } from "./login";
 import { problemCode } from "./yak-admin";
 
 // A `…Slug`-named union: `tests/errors-doc.test.ts` harvests its members.
-export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied" | "org-delete-flags" | "org-confirmation-mismatch" | "org-workspace-name-unknown" | "org-tokens-revoked" | "org-connect-unconfigured" | "org-connect-timeout" | "org-admin-action-invalid" | "org-last-admin";
+export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied" | "org-delete-flags" | "org-confirmation-mismatch" | "org-workspace-name-unknown" | "org-tokens-revoked" | "org-connect-unconfigured" | "org-connect-timeout" | "org-admin-action-invalid" | "org-last-admin" | "org-github-unconfigured" | "org-github-account-invalid" | "org-gh-unavailable" | "org-github-not-owner" | "org-github-timeout" | "org-github-unproven" | "org-github-bound-elsewhere" | "org-github-org-bound";
 
 const ORG_TIMEOUT_MS = 15_000;
 
@@ -82,6 +87,10 @@ Commands:
   delete --confirm <workspace>   Schedule this org's deletion (an org admin's)
   delete --cancel                Cancel a scheduled deletion
   connect-linear [--no-browser]  Connect this org's Linear workspace through the browser (an org admin's)
+  github                         Show the GitHub App installation this org's bus receives events from
+  connect-github --account <org> [--no-browser]
+                                 Install the GitHub App on a GitHub org you own and bind it (an org admin's)
+  disconnect-github              Unbind this org's GitHub App installation (an org admin's)
 
 The org is the one this directory acts as ('eris whoami').
 `;
@@ -115,6 +124,32 @@ after 10 minutes; run the command again for a new one. 'eris --output json org c
 prints the org's own body once connected.
 `;
 
+export const GITHUB_CONNECT_USAGE = `Usage: eris org connect-github --account <github-org> [--no-browser]
+
+Bind a GitHub App installation to the org this directory acts as, so GitHub pull request,
+review, comment and CI events reach its bus ('eris bus subscribe gh:*'). Opens the platform
+App's install page in the browser (or only prints it under --no-browser); install it on
+<github-org>. It then waits until 'gh api orgs/<github-org>/installations' lists the App,
+and binds that installation. The bind sends your own 'gh auth token' once, as proof that you
+own <github-org>: the server lists the installation with it through GitHub's owner-only API
+and keeps nothing. Needs the GitHub CLI ('gh'), signed in as an owner of <github-org>, and an
+org admin's eris login. GitHub organizations only; a personal account cannot be proven.
+'eris --output json org connect-github' prints the server's body once bound.
+`;
+
+export const GITHUB_USAGE = `Usage: eris org github
+
+Show the GitHub App installation bound to the org this directory acts as, and the App's
+install link. An org admin's. 'eris --output json org github' prints the server's body.
+`;
+
+export const GITHUB_DISCONNECT_USAGE = `Usage: eris org disconnect-github
+
+Unbind the org's GitHub App installation: its events stop reaching the bus. The installation
+stays held by this org, so another org cannot take it; uninstall the App on GitHub to remove
+it there. An org admin's. 'eris --output json org disconnect-github' prints the server's body.
+`;
+
 export const DELETE_USAGE = `Usage: eris org delete --confirm <workspace> | --cancel
 
   --confirm <workspace>   schedule this org's deletion. The name must be the org's workspace
@@ -139,6 +174,17 @@ export interface OrgDeps {
   now?: () => number;
   /** Time between asks of `connect-linear`'s wait. */
   pollMs?: number;
+  /** Runs the GitHub CLI; `gh` on the caller's PATH (`ctx.env`) when absent. */
+  runGh?: (args: readonly string[]) => Promise<GhResult>;
+  /** How long one `gh` run may take before it is killed. */
+  ghTimeoutMs?: number;
+}
+
+/** What one `gh` run answered; `code` -1 when it could not be started. */
+export interface GhResult {
+  code: number;
+  stdout: string;
+  stderr: string;
 }
 
 interface Failure {
@@ -149,7 +195,7 @@ interface Failure {
 
 type Outcome<T> = { ok: true; value: T } | { ok: false; failure: Failure };
 
-type Action = "grant admin" | "revoke admin" | "deactivate a member" | "delete the org" | "cancel the org's deletion" | "connect Linear";
+type Action = "grant admin" | "revoke admin" | "deactivate a member" | "delete the org" | "cancel the org's deletion" | "connect Linear" | "connect GitHub" | "disconnect GitHub";
 
 function refusal(status: number, code: string | undefined, target: string, action: Action = "deactivate a member"): Failure {
   const answered = `the org endpoint answered ${status}${code ? ` ${code}` : ""} for ${target}`;
@@ -172,13 +218,34 @@ function refusal(status: number, code: string | undefined, target: string, actio
           ? "ask an org admin to run it, or to deactivate the member in the dashboard's Members page"
           : action === "connect Linear"
             ? "ask an org admin to run: eris org connect-linear"
+            : action === "connect GitHub" || action === "disconnect GitHub"
+            ? `ask an org admin to run: eris org ${action === "connect GitHub" ? "connect-github" : "disconnect-github"}`
             : "ask an org admin to run it, or to use the dashboard's Danger zone",
     };
   }
   if (status === 503 && code === "connect_unconfigured") {
     return { slug: "org-connect-unconfigured", what: `${answered}: this platform has no dashboard address to send the install link to; nothing was opened`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
   }
+  if (status === 503 && code === "github_app_unconfigured") {
+    return { slug: "org-github-unconfigured", what: `${answered}: this platform has no GitHub App configured; nothing was bound`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
+  }
+  if (status === 403 && code === "installation_unproven") {
+    return {
+      slug: "org-github-unproven",
+      what: `${answered}: your GitHub token did not list that installation of the platform's App on the GitHub org named; nothing was bound`,
+      fix: "run it signed in to gh as an owner of that GitHub org ('gh auth status'), with --account naming the org the App is installed on",
+    };
+  }
+  if (status === 409 && code === "installation_already_bound") {
+    return { slug: "org-github-bound-elsewhere", what: `${answered}: that installation is bound to another org; nothing was bound`, fix: "moving an installation between orgs is the platform operator's act: tell them" };
+  }
+  if (status === 409 && code === "org_already_bound") {
+    return { slug: "org-github-org-bound", what: `${answered}: this org already has another GitHub App installation bound`, fix: "unbind it first: eris org disconnect-github" };
+  }
   if (status === 403 && code === "scope_denied") {
+    if (action === "connect GitHub" || action === "disconnect GitHub") {
+      return { slug: "org-scope-denied", what: `${answered}: this token does not carry the bus scope (the org may not have the bus product)`, fix: "run: eris login   (a CLI login carries every product the org has; 'eris whoami' lists them)" };
+    }
     return { slug: "org-scope-denied", what: `${answered}: this token does not carry the accounts scope`, fix: "run: eris login   (a CLI login carries it; a service token without the accounts scope does not)" };
   }
   if (status === 404 && code === "member_not_found") return { slug: "org-member-not-found", what: `${answered}: this org has no such member`, fix: "list the ids: eris org members" };
@@ -219,6 +286,8 @@ async function request<S extends z.ZodTypeAny>(
         method,
         headers: { authorization: `Bearer ${bearer.value.token}`, ...(opts.body !== undefined ? { "content-type": "application/json" } : {}) },
         ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+        // A redirect would re-send the body (a GitHub token, on a bind) to whatever host it names.
+        redirect: "error",
         signal: controller.signal,
       });
       const text = await response.text();
@@ -394,6 +463,160 @@ async function runConnectLinear(noBrowser: boolean, ctx: VerbContext, deps: OrgD
   }
 }
 
+const GithubInstallation = z.object({ installation_id: z.number(), bound_at: z.string() }).passthrough();
+const GithubApp = z.object({ id: z.number(), slug: z.string(), install_url: z.string() }).passthrough();
+// passthrough: --output json prints the server's body, fields this build does not know included.
+const GithubView = z.object({ installation: GithubInstallation.nullable(), app: GithubApp.nullable() }).passthrough();
+
+/** A GitHub organization login; anything else never reaches `gh` or the server. */
+const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+/** How long `connect-github` waits for the App to show up on the GitHub org, and how often it asks `gh`. */
+const GITHUB_WAIT_MS = 10 * 60_000;
+const GITHUB_POLL_MS = 3_000;
+
+/** One `gh` run's limit: a listing or a token read, never an interactive one. */
+const GH_TIMEOUT_MS = 30_000;
+/** Every `gh` call names github.com, so a `GH_HOST` or an enterprise login never answers for it. */
+const GH_HOST = ["--hostname", "github.com"] as const;
+
+async function defaultRunGh(args: readonly string[], env: VerbContext["env"], timeoutMs: number): Promise<GhResult> {
+  try {
+    const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe", stdin: "ignore", env: { ...env }, timeout: timeoutMs, killSignal: "SIGKILL" });
+    const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    return { code, stdout, stderr };
+  } catch (err) {
+    return { code: -1, stdout: "", stderr: (err as Error).message };
+  }
+}
+
+const describeGithub = (view: z.infer<typeof GithubView>): string =>
+  view.installation === null
+    ? "no GitHub App installation is bound\n"
+    : `bound: installation ${view.installation.installation_id} since ${plain(view.installation.bound_at)}\n`;
+
+async function runGithub(ctx: VerbContext, deps: OrgDeps): Promise<number> {
+  const got = await request("GET", "/v1/github", GithubView, ctx, deps, { action: "connect GitHub" });
+  if (!got.ok) return fail(ctx, got.failure);
+  if (ctx.format === "json") {
+    ctx.stdout.write(`${JSON.stringify(got.value)}\n`);
+    return 0;
+  }
+  ctx.stdout.write(describeGithub(got.value));
+  if (got.value.installation === null && got.value.app !== null) ctx.stdout.write(`connect one: eris org connect-github --account <github-org>\n`);
+  return 0;
+}
+
+async function runDisconnectGithub(ctx: VerbContext, deps: OrgDeps): Promise<number> {
+  const got = await request("POST", "/v1/github/installation/unbind", GithubView, ctx, deps, { action: "disconnect GitHub" });
+  if (!got.ok) return fail(ctx, got.failure);
+  ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify(got.value)}\n` : "unbound\n");
+  return 0;
+}
+
+/** This App's installation on `account` as `gh` lists it: the id, null when not (yet) installed, or the failure. */
+async function listedInstallation(account: string, appId: number, runGh: NonNullable<OrgDeps["runGh"]>): Promise<{ ok: true; id: number | null } | { ok: false; failure: Failure }> {
+  const r = await runGh(["api", ...GH_HOST, "--paginate", `orgs/${account}/installations`, "--jq", `.installations[] | select(.app_id == ${appId}) | .id`]);
+  if (r.code === -1) {
+    return { ok: false, failure: { slug: "org-gh-unavailable", what: "the GitHub CLI (gh) could not be started; nothing was bound", fix: "install it (https://cli.github.com) and run: gh auth login" } };
+  }
+  if (r.code !== 0) {
+    return {
+      ok: false,
+      failure: {
+        slug: "org-github-not-owner",
+        what: `gh could not list the GitHub App installations of '${account}' (gh exited ${r.code}); only an owner of a GitHub organization can, and nothing was bound`,
+        fix: "check: gh auth status   (signed in as an owner of the org), and that --account names a GitHub organization, not a user",
+      },
+    };
+  }
+  const id = r.stdout.split("\n").map((line) => line.trim()).find((line) => /^[1-9][0-9]{0,15}$/.test(line));
+  return { ok: true, id: id === undefined ? null : Number(id) };
+}
+
+async function runConnectGithub(account: string | undefined, noBrowser: boolean, ctx: VerbContext, deps: OrgDeps): Promise<number> {
+  if (account === undefined || !GITHUB_LOGIN.test(account)) {
+    return fail(ctx, {
+      slug: "org-github-account-invalid",
+      what: account === undefined ? "eris org connect-github was given no --account" : `'${plain(account)}' is not a GitHub organization name; nothing was sent`,
+      fix: "eris org connect-github --account <github-org>",
+    });
+  }
+  const now = deps.now ?? Date.now;
+  const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
+  const openBrowser = deps.openBrowser ?? defaultOpenBrowser;
+  const ghTimeoutMs = deps.ghTimeoutMs ?? GH_TIMEOUT_MS;
+  const runGh = deps.runGh ?? ((args: readonly string[]) => defaultRunGh(args, ctx.env, ghTimeoutMs));
+  const pollMs = deps.pollMs ?? GITHUB_POLL_MS;
+
+  const first = await request("GET", "/v1/github", GithubView, ctx, deps, { action: "connect GitHub" });
+  if (!first.ok) return fail(ctx, first.failure);
+  const app = first.value.app;
+  if (app === null) {
+    return fail(ctx, { slug: "org-github-unconfigured", what: "this platform has no GitHub App configured (GET /v1/github answered app: null); nothing was opened", fix: "this is the platform's setup, not this machine's: tell the platform's operator" });
+  }
+
+  let listed = await listedInstallation(account, app.id, runGh);
+  if (!listed.ok) return fail(ctx, listed.failure);
+  const held = first.value.installation;
+  if (held !== null) {
+    // Bound already: done only when the binding is this account's installation; anything else is a refusal, never a quiet exit 0.
+    if (listed.id === held.installation_id) {
+      ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify(first.value)}\n` : `already ${describeGithub(first.value)}`);
+      return 0;
+    }
+    return fail(ctx, {
+      slug: "org-github-org-bound",
+      what: `this org already has installation ${held.installation_id} bound, which is not the App's installation on '${account}'; nothing was bound`,
+      fix: "unbind it first: eris org disconnect-github",
+    });
+  }
+  if (listed.id === null) {
+    let link: URL;
+    try {
+      link = new URL(app.install_url);
+    } catch {
+      link = new URL("about:blank");
+    }
+    if (link.protocol !== "https:" || link.hostname !== "github.com" || link.port !== "" || !link.pathname.startsWith("/apps/")) {
+      return fail(ctx, { slug: "org-unavailable", what: "the org endpoint answered an install link that is not a https://github.com/apps/ page; nothing was opened", fix: "update eris: eris update   (or tell the platform's operator)" });
+    }
+    ctx.stderr.write(`Install the GitHub App '${plain(app.slug)}' on the GitHub organization '${account}':\n\n  ${link.href}\n\nWaiting for it to appear on ${account} (up to ${GITHUB_WAIT_MS / 60_000} min)...\n`);
+    if (!noBrowser) await openBrowser(link.href).catch(() => undefined);
+    const deadline = now() + GITHUB_WAIT_MS;
+    let transient = 0;
+    let found: number | null = null;
+    while (found === null) {
+      await sleep(pollMs);
+      if (now() >= deadline) {
+        return fail(ctx, { slug: "org-github-timeout", what: `the App did not appear on '${account}' within ${GITHUB_WAIT_MS / 60_000} min; nothing was bound`, fix: `install it on ${account}, then run: eris org connect-github --account ${account}` });
+      }
+      const polled = await listedInstallation(account, app.id, runGh);
+      if (!polled.ok) {
+        // The first listing already proved access; a failure now is waited out a few times, as connect-linear does.
+        if (++transient <= MAX_TRANSIENT) continue;
+        return fail(ctx, polled.failure);
+      }
+      transient = 0;
+      found = polled.id;
+    }
+    listed = { ok: true, id: found };
+  }
+
+  // The proof: the caller's own token, sent once to the server, which lists the installation with it.
+  const token = await runGh(["auth", "token", ...GH_HOST]);
+  const githubToken = token.stdout.trim();
+  if (token.code !== 0 || githubToken === "") {
+    return fail(ctx, { slug: "org-gh-unavailable", what: "'gh auth token' printed no token; nothing was bound", fix: "run: gh auth login" });
+  }
+  const bound = await request("POST", "/v1/github/installation", GithubView, ctx, deps, {
+    body: { installation_id: listed.id, account, github_token: githubToken },
+    action: "connect GitHub",
+  });
+  if (!bound.ok) return fail(ctx, bound.failure);
+  ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify(bound.value)}\n` : describeGithub(bound.value));
+  return 0;
+}
+
 function unknown(ctx: VerbContext, sub: string, use: string): never {
   ctx.stderr.write(renderFailureBlock({ slug: "org-unknown-verb", what: `unknown org command '${sub}'`, fix: `use: ${use}\nrun 'eris org --help' for the full command list` }, ctx.erisDir));
   throw new CliExit(1);
@@ -409,11 +632,26 @@ export async function runOrg(args: string[], ctx: VerbContext, deps: OrgDeps = {
     ctx.stdout.write(ORG_USAGE);
     return 0;
   }
-  if (g.kind === "unknown") return unknown(ctx, g.sub, "members, delete, connect-linear");
+  if (g.kind === "unknown") return unknown(ctx, g.sub, "members, delete, connect-linear, github, connect-github, disconnect-github");
   if (g.sub === "connect-linear") {
     const c = readArgs(plugin.rows, "org connect-linear", g.rest, ctx, { help: CONNECT_USAGE });
     if (c === null) return 0;
     return runConnectLinear(c.flags["--no-browser"] === true, ctx, deps);
+  }
+  if (g.sub === "github") {
+    const r = readArgs(plugin.rows, "org github", g.rest, ctx, { help: GITHUB_USAGE });
+    if (r === null) return 0;
+    return runGithub(ctx, deps);
+  }
+  if (g.sub === "connect-github") {
+    const r = readArgs(plugin.rows, "org connect-github", g.rest, ctx, { help: GITHUB_CONNECT_USAGE });
+    if (r === null) return 0;
+    return runConnectGithub(r.flags["--account"], r.flags["--no-browser"] === true, ctx, deps);
+  }
+  if (g.sub === "disconnect-github") {
+    const r = readArgs(plugin.rows, "org disconnect-github", g.rest, ctx, { help: GITHUB_DISCONNECT_USAGE });
+    if (r === null) return 0;
+    return runDisconnectGithub(ctx, deps);
   }
   if (g.sub === "delete") {
     const d = readArgs(plugin.rows, "org delete", g.rest, ctx, { help: DELETE_USAGE });
