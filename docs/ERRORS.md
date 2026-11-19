@@ -760,9 +760,10 @@ bound. Run `eris org disconnect-github`, then connect the other. Exit 1.
 
 ### org-bus-lapsed
 
-`eris org webhooks logfire revoke` was refused with `402 entitlement_lapsed`: this org's bus product is
-not active, so the platform issues no new Logfire webhook URL. Nothing changed. Reactivate the bus
-product for the org (the dashboard's Billing page), then run it again. Exit 1.
+An `eris org` command that needs the org's bus product was refused with `402 entitlement_lapsed`: the
+bus product is not active. That is `eris org webhooks logfire revoke` (no new Logfire webhook URL is
+issued) and `eris org github`, `connect-github` and `disconnect-github`. Nothing changed. Reactivate
+the bus product for the org (the dashboard's Billing page), then run it again. Exit 1.
 
 ### org-tokens-revoked
 

@@ -248,7 +248,9 @@ function refusal(status: number, code: string | undefined, target: string, actio
     return { slug: "org-connect-unconfigured", what: `${answered}: this platform has no dashboard address to send the install link to; nothing was opened`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
   }
   if (status === 402 && code === "entitlement_lapsed") {
-    return { slug: "org-bus-lapsed", what: `${answered}: this org's bus product is not active, so no new webhook URL is issued; nothing changed`, fix: "reactivate the bus product for this org (the dashboard's Billing page), then run it again" };
+    // The GitHub verbs reach a row verified for bus, so they meet this refusal too: say what was refused per action.
+    const refused = action === "revoke the Logfire webhook URL" ? "no new webhook URL is issued" : `this org cannot ${action}`;
+    return { slug: "org-bus-lapsed", what: `${answered}: this org's bus product is not active, so ${refused}; nothing changed`, fix: "reactivate the bus product for this org (the dashboard's Billing page), then run it again" };
   }
   if (status === 503 && code === "github_app_unconfigured") {
     return { slug: "org-github-unconfigured", what: `${answered}: this platform has no GitHub App configured; nothing was bound`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
@@ -531,6 +533,8 @@ async function runGithub(ctx: VerbContext, deps: OrgDeps): Promise<number> {
 }
 
 // passthrough: --output json prints the server's body; the platform's `LogfireUrlViewSchema` (`{path, generation}`).
+/** `/v1/webhooks/logfire/<org ULID>/<token>`: the token is 32 MAC bytes as unpadded base64url. */
+const LOGFIRE_WEBHOOK_PATH = /^\/v1\/webhooks\/logfire\/[0-9A-HJKMNP-TV-Z]{26}\/[A-Za-z0-9_-]{43}$/;
 const LogfireUrl = z.object({ path: z.string(), generation: z.number().int().nonnegative() }).passthrough();
 
 async function runWebhooks(source: string | undefined, action: string | undefined, ctx: VerbContext, deps: OrgDeps): Promise<number> {
@@ -541,12 +545,15 @@ async function runWebhooks(source: string | undefined, action: string | undefine
     ? await request("POST", "/v1/org/webhooks/logfire/revoke", LogfireUrl, ctx, deps, { action: "revoke the Logfire webhook URL" })
     : await request("GET", "/v1/org/webhooks/logfire", LogfireUrl, ctx, deps, { action: "read the Logfire webhook URL" });
   if (!got.ok) return fail(ctx, got.failure);
-  // The path is the server's: only a path under the webhook route is joined to the org's url.
-  if (!got.value.path.startsWith("/v1/webhooks/logfire/")) {
+  // The path is the server's: only the webhook route's exact shape (an org ULID, then a 43-character
+  // base64url token, nothing after) is joined to the org's url, so no traversal, query or control
+  // character can reach the printed address.
+  if (!LOGFIRE_WEBHOOK_PATH.test(got.value.path)) {
     return fail(ctx, { slug: "org-unavailable", what: "the org endpoint answered a webhook path outside /v1/webhooks/logfire/; nothing was printed", fix: "update eris: eris update   (or tell the platform's operator)" });
   }
   const url = `${got.base}${got.value.path}`;
-  ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify({ url, ...got.value })}\n` : `${plain(url)}\n`);
+  // `url` last: a server field of the same name never replaces the address joined to the org's own url.
+  ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify({ ...got.value, url })}\n` : `${plain(url)}\n`);
   if (revoke) ctx.stderr.write("INFO the previous URL no longer works; update every Logfire alert channel that used it\n");
   return 0;
 }

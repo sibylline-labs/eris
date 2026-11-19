@@ -121,7 +121,17 @@ describe("eris org webhooks logfire", () => {
 
   // admits: boundary-io: a body whose path is not the webhook route (an absolute url, another route) would print an address the platform never issued: observed as org-unavailable and an empty stdout.
   it("refuses a path outside the webhook route rather than print it as an address", async () => {
-    for (const path of ["https://elsewhere.example/hook", "/v1/org/members"]) {
+    for (const path of [
+      "https://elsewhere.example/hook",
+      "/v1/org/members",
+      "/v1/webhooks/logfire/",
+      `/v1/webhooks/logfire/${ORG}/`,
+      "/v1/webhooks/logfire/../../v1/org/members",
+      `/v1/webhooks/logfire/${ORG}/${"T".repeat(40)}?a=1`,
+      `/v1/webhooks/logfire/${ORG}/${"T".repeat(42)}\n`,
+      `/v1/webhooks/logfire/${ORG}/${"T".repeat(43)}/x`,
+      `/v1/webhooks/logfire/${ORG.toLowerCase()}/${"T".repeat(43)}`,
+    ]) {
       answer = () => Response.json({ path, generation: 0 });
       const r = await run(["webhooks", "logfire"]);
       expect(r.code).toBe(1);
@@ -138,5 +148,26 @@ describe("eris org webhooks logfire", () => {
       expect(r.stderr).toContain("slug: org-unknown-verb");
     }
     expect(seen).toEqual([]);
+  });
+
+  // admits: boundary-io: the body passes through (`passthrough`), so a server `url` field spread after the joined address
+  // would replace it and print a host the org never configured; the joined address must win.
+  it("a url field in the server's body never replaces the address joined to the org's url", async () => {
+    answer = () => Response.json({ path: pathAt(0), generation: 0, url: "https://evil.example/hijacked" });
+    const r = await run(["webhooks", "logfire"], "json");
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).url).toBe(`${base}${pathAt(0)}`);
+  });
+
+  // admits: algorithmic: the bus refusal is shared with the GitHub verbs (their row is verified for bus), so its text must
+  // name the action refused, not a webhook URL the caller never asked for.
+  it("a 402 on a GitHub verb names that verb, not a webhook URL", async () => {
+    answer = () => problem(402, "entitlement_lapsed");
+    const github = await run(["github"]);
+    expect(github.stderr).toContain("slug: org-bus-lapsed");
+    expect(github.stderr).toContain("cannot connect GitHub");
+    expect(github.stderr).not.toContain("webhook URL");
+    const revoke = await run(["webhooks", "logfire", "revoke"]);
+    expect(revoke.stderr).toContain("no new webhook URL is issued");
   });
 });
