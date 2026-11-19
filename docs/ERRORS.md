@@ -635,7 +635,10 @@ expired, or a session cookie instead of a CLI token). Run `eris login`, or check
 
 `eris org members` or `deactivate` was refused with `403 scope_denied`: the token
 does not carry the accounts scope (a service token minted without it). Run `eris
-login`: a CLI login carries it. Exit 1.
+login`: a CLI login carries it. `eris org github`, `connect-github` and `disconnect-github` meet the
+same refusal for the bus scope; a login carries every product the org has, so there the org lacks the
+bus product and a second login cannot help: get it with `eris org billing checkout`, or, where billing
+is off on the platform, ask its operator. Exit 1.
 
 ### org-admin-required
 
@@ -776,8 +779,9 @@ bound. Run `eris org disconnect-github`, then connect the other. Exit 1.
 
 An `eris org` command that needs the org's bus product was refused with `402 entitlement_lapsed`: the
 bus product is not active. That is `eris org webhooks logfire revoke` (no new Logfire webhook URL is
-issued) and `eris org github`, `connect-github` and `disconnect-github`. Nothing changed. Reactivate
-the bus product for the org (the dashboard's Billing page), then run it again. Exit 1.
+issued) and `eris org github`, `connect-github` and `disconnect-github`. Nothing changed. Get the bus
+product for the org with `eris org billing checkout`; where billing is off on the platform, ask its
+operator to grant it. Then run it again. Exit 1.
 
 ### org-tokens-revoked
 

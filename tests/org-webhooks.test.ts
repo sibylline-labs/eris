@@ -27,7 +27,7 @@ let home: string;
 let server: ReturnType<typeof Bun.serve>;
 let base: string;
 let generation: number;
-let answer: ((method: string) => Response) | null;
+let answer: ((method: string, path: string) => Response) | null;
 const seen: { method: string; path: string; auth: string | null }[] = [];
 
 beforeAll(() => {
@@ -39,7 +39,7 @@ beforeAll(() => {
     fetch(req) {
       const path = new URL(req.url).pathname;
       seen.push({ method: req.method, path, auth: req.headers.get("authorization") });
-      if (answer !== null) return answer(req.method);
+      if (answer !== null) return answer(req.method, path);
       if (req.method === "GET" && path === "/v1/org/webhooks/logfire") return Response.json({ path: pathAt(generation), generation });
       if (req.method === "POST" && path === "/v1/org/webhooks/logfire/revoke") {
         generation++;
@@ -90,7 +90,7 @@ describe("eris org webhooks logfire", () => {
     expect(text.stdout).toBe(`${base}${pathAt(0)}\n`);
     const json = await run(["webhooks", "logfire"], "json");
     expect(JSON.parse(json.stdout)).toEqual({ url: `${base}${pathAt(0)}`, path: pathAt(0), generation: 0 });
-    expect(seen.map((s) => `${s.method} ${s.path}`)).toEqual(["GET /v1/org/webhooks/logfire", "GET /v1/org/webhooks/logfire"]);
+    expect(seen.map((s) => `${s.method} ${s.path}`)).toEqual(["GET /v1/org/webhooks/logfire", "GET /v1/org/me", "GET /v1/org/webhooks/logfire", "GET /v1/org/me"]);
     for (const s of seen) expect(s.auth).toBe(`Bearer ${TOKEN}`);
     expect(text.stdout + text.stderr + json.stdout + json.stderr).not.toContain(TOKEN);
   });
@@ -169,5 +169,44 @@ describe("eris org webhooks logfire", () => {
     expect(github.stderr).not.toContain("webhook URL");
     const revoke = await run(["webhooks", "logfire", "revoke"]);
     expect(revoke.stderr).toContain("no new webhook URL is issued");
+  });
+
+  const ME = (bus: string) => Response.json({ orgId: ORG, memberId: "mem_1", role: "admin", entitlements: { accounts: "active", bus } });
+  const urlWith = (bus: string) => (method: string, path: string) =>
+    path === "/v1/org/me" ? ME(bus) : Response.json({ path: pathAt(0), generation: 0 });
+
+  // admits: integration: a URL printed for an org without bus looks live and delivers nothing (402); the user sees the cause only if the verb says it: observed as the stderr WARN naming the product and the next step, with stdout still the bare URL.
+  it("warns on stderr, never stdout, when the org's bus product is not active", async () => {
+    answer = urlWith("none");
+    const r = await run(["webhooks", "logfire"]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toBe(`${base}${pathAt(0)}\n`);
+    expect(r.stderr).toContain("bus product is none");
+    expect(r.stderr).toContain("eris org billing checkout");
+    expect(r.stderr).toContain("answer 402");
+  });
+
+  // admits: integration: a warning on a healthy org trains users to ignore it: observed as no stderr when bus is active.
+  it("says nothing extra when bus is active", async () => {
+    answer = urlWith("active");
+    const r = await run(["webhooks", "logfire"]);
+    expect(r.stderr).toBe("");
+  });
+
+  // admits: algorithmic: the scope_denied and 402 fixes on a missing bus product must name the product and the billing verb, never `eris login` (a second login cannot add a product) or the dashboard: observed in each fix line.
+  it.each([
+    [["github"], 403, "scope_denied"],
+    [["disconnect-github"], 403, "scope_denied"],
+    [["github"], 402, "entitlement_lapsed"],
+    [["webhooks", "logfire", "revoke"], 402, "entitlement_lapsed"],
+  ])("%j refused %i %s names bus and billing checkout, never eris login or the dashboard", async (args, status, code) => {
+    answer = () => problem(status, code);
+    const r = await run(args);
+    expect(r.code).toBe(1);
+    const fix = r.stderr.split("\n").find((l) => l.startsWith("fix:")) ?? "";
+    expect(r.stderr).toContain("bus");
+    expect(fix).toContain("eris org billing checkout");
+    expect(r.stderr).not.toContain("eris login");
+    expect(r.stderr).not.toContain("dashboard");
   });
 });
