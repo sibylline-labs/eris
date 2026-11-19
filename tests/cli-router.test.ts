@@ -55,6 +55,9 @@ describe("router table", () => {
       "tokens ls": "ts",
       "tokens create": "ts",
       "tokens revoke": "ts",
+      slack: "ts",
+      "slack link": "ts",
+      "slack unlink": "ts",
       socrates: "ts",
       "socrates classify": "ts",
       "socrates consult": "ts",
@@ -216,6 +219,7 @@ describe("the --output json surfaces, from the registry", () => {
     /** When a json row is dropped or added by mistake, a machine caller is refused (or handed human text) on a surface that changed silently. */
     expect(JSON_SURFACES).toEqual({
       "--version": true,
+      slack: ["link", "unlink"],
       socrates: ["submit", "classify", "resolve", "settings", "enrol", "discover", "consult", "status", "evidence", "policy"],
       tokens: ["ls", "create", "revoke"],
       doctrine: ["check", "effect", "pull", "push", "settings", "history"],

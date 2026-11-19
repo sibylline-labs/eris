@@ -205,7 +205,7 @@ export interface GhResult {
   stderr: string;
 }
 
-interface Failure {
+export interface Failure {
   slug: OrgSlug | string;
   what: string;
   fix?: string;
@@ -289,13 +289,13 @@ function refusal(status: number, code: string | undefined, target: string, actio
 }
 
 /** One bounded request with the org's bearer; the body parsed against `schema`. */
-async function request<S extends z.ZodTypeAny>(
+export async function request<S extends z.ZodTypeAny>(
   method: "GET" | "POST" | "DELETE",
   path: string,
   schema: S,
   ctx: VerbContext,
   deps: OrgDeps,
-  opts: { body?: unknown; action?: Action } = {},
+  opts: { body?: unknown; action?: Action; refuse?: (status: number, code: string | undefined, target: string, retryAfter: string | null) => Failure | null } = {},
 ): Promise<Outcome<z.infer<S>>> {
   const bearer = await resolveOrgBearer({ home: deps.home ?? ctx.env.HOME ?? homedir(), env: ctx.env, cwd: deps.cwd ?? process.cwd() });
   if ("reason" in bearer) return { ok: false, failure: { slug: bearer.slug, what: bearer.reason, fix: bearer.fix } };
@@ -327,7 +327,10 @@ async function request<S extends z.ZodTypeAny>(
       const what = name === "AbortError" || name === "TimeoutError" ? `the org endpoint did not answer within ${timeoutMs}ms (${target})` : `cannot reach the org endpoint (${target}): ${(err as Error).message}`;
       return { ok: false, failure: { slug: "org-unavailable", what, fix: "check the network, and ERIS_YAKS_URL or the url in ~/.eris/yaks.json" } };
     }
-    if (!response.ok) return { ok: false, failure: refusal(response.status, problemCode(parsed), target, opts.action) };
+    if (!response.ok) {
+      const code = problemCode(parsed);
+      return { ok: false, failure: opts.refuse?.(response.status, code, target, response.headers.get("retry-after")) ?? refusal(response.status, code, target, opts.action) };
+    }
     const shaped = schema.safeParse(parsed);
     if (!shaped.success) {
       return { ok: false, failure: { slug: "org-unavailable", what: `the org endpoint answered ${response.status} with a body that does not match the contract (${target})`, fix: "update eris: eris update" } };
@@ -338,13 +341,13 @@ async function request<S extends z.ZodTypeAny>(
   }
 }
 
-function fail(ctx: VerbContext, failure: Failure): number {
+export function fail(ctx: VerbContext, failure: Failure): number {
   ctx.stderr.write(renderFailureBlock({ slug: failure.slug, what: failure.what, ...(failure.fix ? { fix: failure.fix } : {}) }, ctx.erisDir));
   return 1;
 }
 
 /** A server string for a terminal: control characters (escapes, newlines) become `?`. */
-const plain = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "?");
+export const plain = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "?");
 
 /** Columns, two spaces apart, the last unpadded. */
 function table(rows: readonly (readonly string[])[]): string {

@@ -229,6 +229,17 @@ open, and a platform with no dashboard address is
 [`org-connect-unconfigured`](ERRORS.md#org-connect-unconfigured). A link that is not an `http(s)` url is
 never opened. `--output json` prints the org's own body from the last read.
 
+### `eris slack link` and `eris slack unlink`: answer asks in Slack as yourself
+
+A Slack user's first press on an ask button gets, only to them, a one-time `Link Slack account` link
+(`<dash>/slack/link?code=…`, valid once for 10 minutes). `eris slack link <link-url>` shows whose Slack
+account that link is for and binds nothing; `eris slack link <link-url> --confirm` binds it to the member
+you are signed in as and prints the account it linked; that Slack user's next press on an ask button then
+answers as you. The argument is always the link's full URL, never a bare code. A link made for someone else's
+account would bind that account to you, so read the name before you confirm. `eris slack unlink` removes
+the link. Both need a person's `eris login`; a service token is refused (`slack-member-required`). The verb
+consumes the link and mints none: only a Slack-signed press writes a code.
+
 ### `eris org connect-github`: bind a GitHub App installation
 
 `eris org connect-github --account <github-org>` connects the org's bus to a GitHub organization's pull
