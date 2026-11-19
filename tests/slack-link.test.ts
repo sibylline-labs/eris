@@ -109,12 +109,52 @@ describe("eris slack link", () => {
       [403, "member_required", "slack-member-required"],
       [502, "slack_unavailable", "slack-unavailable"],
       [401, "invalid_token", "org-unauthorized"],
+      [403, "scope_denied", "slack-scope-denied"],
     ];
     for (const [status, code, slug] of cases) {
       answer = () => problem(status, code);
       const r = await run(["link", LINK, "--confirm"]);
       expect([r.code, r.stdout, r.stderr.includes(slug), r.stderr.includes(CODE), r.stderr.includes(TOKEN)]).toEqual([1, "", true, false, false]);
     }
+  });
+});
+
+describe("eris slack link, edge inputs", () => {
+  const DASHED = "-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCd";
+
+  it("takes a bare code that starts with '-' as given, or as --code, and never prints it", async () => {
+    /** When a dash-led code reaches the flag parser, the CLI fails and echoes a live single-use secret to stderr: observed as the request sent for every spelling and the code absent from both streams. */
+    for (const args of [["link", DASHED], ["link", DASHED, "--confirm"], ["link", "--confirm", DASHED], ["link", "--code", DASHED], [`link`, `--code=${DASHED}`]]) {
+      seen.length = 0;
+      const r = await run(args);
+      expect([r.code, r.stdout.includes(DASHED), r.stderr.includes(DASHED)]).toEqual([0, false, false]);
+      expect(JSON.parse(seen[0]!.body)).toEqual({ code: DASHED });
+      expect(seen[0]!.path).toBe(args.includes("--confirm") ? "/v1/asks/slack/link" : "/v1/asks/slack/link/preview");
+    }
+  });
+
+  it("refuses the link given twice, and a refusal on a dash-led code does not print it", async () => {
+    /** When two codes are given the verb silently picks one, or a refused dash-led code is echoed: observed as zero requests for the pair and no code in stderr on a 404. */
+    const twice = await run(["link", CODE, "--code", DASHED]);
+    expect([twice.code, twice.stderr.includes("slack-code-invalid"), twice.stderr.includes(DASHED), seen.length]).toEqual([1, true, false, 0]);
+    answer = () => problem(404, "invalid_code");
+    const refused = await run(["link", DASHED, "--confirm"]);
+    expect([refused.code, refused.stderr.includes("slack-code-unknown"), refused.stderr.includes(DASHED)]).toEqual([1, true, false]);
+  });
+
+  it("names the wait for a 429 from Retry-After, and a minute when it names none", async () => {
+    /** When a 429 collapses to org-unavailable, the member is not told to wait: observed as the slug and the seconds in stderr. */
+    answer = () => new Response(JSON.stringify({ code: "rate_limited", status: 429 }), { status: 429, headers: { "content-type": "application/problem+json", "retry-after": "60" } });
+    const r = await run(["link", LINK, "--confirm"]);
+    expect([r.code, r.stdout, r.stderr.includes("slack-rate-limited"), r.stderr.includes("wait 60 seconds")]).toEqual([1, "", true, true]);
+    answer = () => problem(429, "rate_limited");
+    expect((await run(["unlink"])).stderr.includes("wait a minute")).toBe(true);
+  });
+
+  it("strips control characters from an unknown command's name", async () => {
+    /** When the name is written raw, an escape sequence in argv is replayed to the terminal: observed as no ESC byte in stderr. */
+    const r = await run(["bad\u001b[31mred"]);
+    expect([r.code, r.stderr.includes("\u001b"), r.stderr.includes("slack-unknown-verb")]).toEqual([1, false, true]);
   });
 });
 

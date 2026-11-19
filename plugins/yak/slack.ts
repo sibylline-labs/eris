@@ -23,11 +23,13 @@ import { type Failure, type OrgDeps, fail, plain, request } from "./org";
 import plugin from "./index";
 
 // A `…Slug`-named union: `tests/errors-doc.test.ts` harvests its members.
-export type SlackSlug = "slack-code-missing" | "slack-code-invalid" | "slack-code-unknown" | "slack-already-linked" | "slack-unavailable" | "slack-member-required" | "slack-scope-denied" | "slack-unknown-verb";
+export type SlackSlug = "slack-code-missing" | "slack-code-invalid" | "slack-code-unknown" | "slack-already-linked" | "slack-unavailable" | "slack-member-required" | "slack-scope-denied" | "slack-unknown-verb" | "slack-rate-limited";
 
 /** The longest code the server accepts. */
 const CODE_MAX = 64;
 const CODE_RE = /^[A-Za-z0-9_-]+$/;
+/** A token that starts with '-' and is code-shaped and long enough to be a secret rather than a mistyped flag. */
+const CODE_DASH_LED = /^-[A-Za-z0-9_][A-Za-z0-9_-]{15,}$/;
 
 // passthrough: --output json prints the server's body as sent; only the fields shown are read.
 const Preview = z.object({ slackUserId: z.string(), slackTeamId: z.string(), realName: z.string(), displayName: z.string() }).passthrough();
@@ -54,6 +56,7 @@ button: Slack replies, only to you, with a one-time 'Link Slack account' link (i
 
 Check the name before you confirm: a link made for someone else's Slack account would bind that
 account to you. A service token cannot link (slack-member-required); sign in with 'eris login'.
+A bare code that starts with '-' also works as given, or as '--code <code>'.
 'eris --output json slack link' prints the server's body.
 `;
 
@@ -84,9 +87,13 @@ export function codeOf(input: string): { ok: true; code: string } | { ok: false;
   return { ok: true, code };
 }
 
-/** The slack-specific refusals; anything else falls to the org refusals (401, rate limit, unavailable). */
-function refuse(status: number, code: string | undefined, target: string): Failure | null {
+/** The slack-specific refusals; anything else falls to the org refusals (401, unavailable). */
+function refuse(status: number, code: string | undefined, target: string, retryAfter: string | null): Failure | null {
   const answered = `the asks endpoint answered ${status}${code ? ` ${code}` : ""} for ${target}`;
+  if (status === 429) {
+    const wait = retryAfter !== null && /^\d{1,5}$/.test(retryAfter) ? Number(retryAfter) : null;
+    return { slug: "slack-rate-limited", what: `${answered}: this org's asks budget is spent; nothing changed`, fix: wait === null ? "wait a minute, then run it again" : `wait ${wait} seconds, then run it again` };
+  }
   if (status === 403 && code === "member_required") {
     return { slug: "slack-member-required", what: `${answered}: a service token has no member to link`, fix: "run: eris login   (a person's login links; a service token does not)" };
   }
@@ -150,7 +157,7 @@ export async function runSlack(args: string[], ctx: VerbContext, deps: OrgDeps =
     return 0;
   }
   if (g.kind === "unknown") {
-    ctx.stderr.write(renderFailureBlock({ slug: "slack-unknown-verb", what: `unknown slack command '${g.sub}'`, fix: "use: link, unlink\nrun 'eris slack --help' for the full command list" }, ctx.erisDir));
+    ctx.stderr.write(renderFailureBlock({ slug: "slack-unknown-verb", what: `unknown slack command '${plain(g.sub)}'`, fix: "use: link, unlink\nrun 'eris slack --help' for the full command list" }, ctx.erisDir));
     throw new CliExit(1);
   }
   if (g.sub === "unlink") {
@@ -158,7 +165,22 @@ export async function runSlack(args: string[], ctx: VerbContext, deps: OrgDeps =
     if (u === null) return 0;
     return runUnlink(ctx, deps);
   }
-  const l = readArgs(plugin.rows, "slack link", g.rest, ctx, { help: LINK_USAGE });
+  // A bare code can start with '-' (1 in 75), which the parser would take for a flag and echo. A dash-led
+  // token shaped like a code is passed as `--code=<token>` so it never reaches the parser's error text.
+  const rest: string[] = [];
+  for (let i = 0; i < g.rest.length; i++) {
+    const a = g.rest[i]!;
+    const next = g.rest[i + 1];
+    if (a === "--code" && next !== undefined && CODE_DASH_LED.test(next)) {
+      rest.push(`--code=${next}`);
+      i++;
+    } else rest.push(CODE_DASH_LED.test(a) ? `--code=${a}` : a);
+  }
+  const l = readArgs(plugin.rows, "slack link", rest, ctx, { help: LINK_USAGE });
   if (l === null) return 0;
-  return runLink(l.pos[0], l.flags["--confirm"] === true, ctx, deps);
+  const named = l.flags["--code"];
+  if (named !== undefined && l.pos[0] !== undefined) {
+    return fail(ctx, { slug: "slack-code-invalid", what: "eris slack link was given the link twice; nothing was sent", fix: "give it once: eris slack link <link-url|code>" });
+  }
+  return runLink(named ?? l.pos[0], l.flags["--confirm"] === true, ctx, deps);
 }

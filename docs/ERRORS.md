@@ -1900,3 +1900,8 @@ asks routes need. Run `eris login`; `eris whoami` lists what the token carries. 
 ### slack-unknown-verb
 
 `eris slack` was given a command it does not have. The commands are `link` and `unlink`. Exit 1.
+
+### slack-rate-limited
+
+The Slack link was refused with `429`: the org's asks budget is spent. Nothing changed. Wait the
+`Retry-After` seconds the message names (a minute when it names none) and run the command again. Exit 1.

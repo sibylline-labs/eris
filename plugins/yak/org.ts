@@ -269,7 +269,7 @@ export async function request<S extends z.ZodTypeAny>(
   schema: S,
   ctx: VerbContext,
   deps: OrgDeps,
-  opts: { body?: unknown; action?: Action; refuse?: (status: number, code: string | undefined, target: string) => Failure | null } = {},
+  opts: { body?: unknown; action?: Action; refuse?: (status: number, code: string | undefined, target: string, retryAfter: string | null) => Failure | null } = {},
 ): Promise<Outcome<z.infer<S>>> {
   const bearer = await resolveOrgBearer({ home: deps.home ?? ctx.env.HOME ?? homedir(), env: ctx.env, cwd: deps.cwd ?? process.cwd() });
   if ("reason" in bearer) return { ok: false, failure: { slug: bearer.slug, what: bearer.reason, fix: bearer.fix } };
@@ -303,7 +303,7 @@ export async function request<S extends z.ZodTypeAny>(
     }
     if (!response.ok) {
       const code = problemCode(parsed);
-      return { ok: false, failure: opts.refuse?.(response.status, code, target) ?? refusal(response.status, code, target, opts.action) };
+      return { ok: false, failure: opts.refuse?.(response.status, code, target, response.headers.get("retry-after")) ?? refusal(response.status, code, target, opts.action) };
     }
     const shaped = schema.safeParse(parsed);
     if (!shaped.success) {

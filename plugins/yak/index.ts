@@ -174,9 +174,12 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
         summary: "Link your Slack account from the link Slack sent you: shows whose account it is, then --confirm binds it",
         json: true,
         pos: ["link?"],
-        usage: "<link-url|code> [--confirm]",
-        flags: [{ name: "--confirm", takesValue: false }],
-        example: "eris slack link 'https://dash.sibylline.group/slack/link?code=…' --confirm",
+        usage: "<link-url|code> [--confirm] [--code <code>]",
+        flags: [
+          { name: "--confirm", takesValue: false },
+          { name: "--code", takesValue: true },
+        ],
+        example: "eris slack link 'https://dash.sibylline.group/slack/link?code=…'",
       },
       "slack unlink": {
         summary: "Remove your Slack link",
