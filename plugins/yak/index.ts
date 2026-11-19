@@ -169,6 +169,20 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
         ],
         example: "eris org delete --confirm Acme",
       },
+      slack: { impl: "ts", summary: "Link or unlink the Slack account you answer asks from (link, unlink)" },
+      "slack link": {
+        summary: "Link your Slack account from the link Slack sent you: shows whose account it is, then --confirm binds it",
+        json: true,
+        pos: ["link?"],
+        usage: "<link-url|code> [--confirm]",
+        flags: [{ name: "--confirm", takesValue: false }],
+        example: "eris slack link 'https://dash.sibylline.group/slack/link?code=…' --confirm",
+      },
+      "slack unlink": {
+        summary: "Remove your Slack link",
+        json: true,
+        example: "eris slack unlink",
+      },
       events: { impl: "ts", summary: "This org's archived events, and the operator's parked lines (list, parked)" },
       "events list": {
         summary: "This org's archived events for a product and UTC day",
@@ -218,6 +232,7 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
       whoami: async () => (await import("./whoami")).runWhoami,
       tokens: async () => (await import("./tokens")).runTokens,
       org: async () => (await import("./org")).runOrg,
+      slack: async () => (await import("./slack")).runSlack,
       events: async () => (await import("./events")).runEvents,
     },
     jsonFix: `  eris yak issue|suggest|fatal             {verb, delivered, id?, idempotency_key?, replay?,
@@ -260,6 +275,9 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
   eris org github                          {installation: {installation_id, bound_at} | null, app: {id, slug, install_url} | null}
   eris org connect-github --account <org>  the same body, once bound
   eris org disconnect-github               the same body, installation null
+  eris slack link <link-url>               {slackUserId, slackTeamId, realName, displayName} (binds nothing)
+  eris slack link <link-url> --confirm     {linked, slackUserId, slackTeamId}
+  eris slack unlink                        {unlinked}
   eris org delete --confirm <name>         {dueAt, cause}
   eris org delete --cancel                 {cancelled}
   eris whoami                              {org, source, path?, default, token_source, url,

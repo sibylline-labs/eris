@@ -1859,3 +1859,44 @@ missing. Fix the cause the error names and run the command again: a rerun leaves
 linted: a mistyped path is refused rather than reported clean. Name the directory that holds
 `skills/` or `.claude/skills/`, or run the command from it with no argument. See
 [SKILLS.md](SKILLS.md#eris-skills-lint-dir).
+
+### slack-code-missing
+
+`eris slack link` was given no link or code. Nothing was sent. In Slack, press an ask button: Slack
+replies, only to you, with a one-time `Link Slack account` link. Run `eris slack link <link-url>`. Exit 1.
+
+### slack-code-invalid
+
+`eris slack link` was given a link with no `code=` value, a string that is not a URL, or a code that is
+not 1 to 64 letters, digits, `-` or `_`. Nothing was sent, and the input is not echoed. Give the link Slack
+sent you, or its `code=` value. Exit 1.
+
+### slack-code-unknown
+
+The link was refused with `404 invalid_code`: it is unknown, already used, older than 10 minutes, or was
+made for another org. Nothing was linked. Press an ask button in Slack again for a new link and run the
+command within 10 minutes. Exit 1.
+
+### slack-already-linked
+
+The link was refused with `409 slack_already_linked`: that Slack account, or you, already has a link. The
+code is spent. Run `eris slack unlink`, then press an ask button in Slack for a new link. Exit 1.
+
+### slack-unavailable
+
+The preview or link was refused with `502 slack_unavailable`: Slack could not name the account the link is
+for, so no link is offered. Retry in a moment. Exit 1.
+
+### slack-member-required
+
+`eris slack link` or `unlink` was refused with `403 member_required`: a service token has no member to
+link. Run `eris login` as a person. Exit 1.
+
+### slack-scope-denied
+
+The Slack link was refused with `403 scope_denied`: the token does not carry the `linear-proxy` scope the
+asks routes need. Run `eris login`; `eris whoami` lists what the token carries. Exit 1.
+
+### slack-unknown-verb
+
+`eris slack` was given a command it does not have. The commands are `link` and `unlink`. Exit 1.
