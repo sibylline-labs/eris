@@ -17,6 +17,8 @@ eris doctrine gates  [--file <path>] [--profiles <file>] [--explain]
 eris doctrine effect [--profiles <file>] [--output json] < {"contract": ..., "before": ..., "after": ...}
 eris doctrine pull   [--output json]
 eris doctrine push   [--output json]
+eris doctrine settings [show | set <key> <value>] [--output json]
+eris doctrine history [--output json]
 eris doctrine set    <posture> --reason <why> --file <path> [--profiles <file>] [--actor <who>] [--issues <KEY,KEY>]
 eris doctrine path
 ```
@@ -210,6 +212,34 @@ eris doctrine check --file "$(eris doctrine path)"   # the same file, named
 eris doctrine push                                   # <orgId>\t<bundle_sha>\t<version|unchanged>
 ERIS_GATES_APPROVAL=<handle> eris doctrine push      # a widening save, approved with your passkey
 ```
+
+## `settings` and `history`
+
+`settings` reads and writes the org's Gates settings (`GET` and `PUT /v1/gates/settings`), the
+other half of the bundle the Gates editor in the org's portal edits:
+
+```sh
+eris doctrine settings                                # one '<key>\t<value>' per key
+eris doctrine settings set skills_repo acme/skills    # <orgId>\t<bundle_sha>\t<version>
+eris doctrine settings set spend_cap_calls unset      # drop an optional key
+```
+
+Keys: `skills_repo` (`owner/repo`, or `unset`), `staleness` (`soft` | `hard`),
+`ci.check_profile_in_ci` (`on` | `off`), `ci.untracked_prs` (`block` | `warn` | `allow`),
+`ci.bot_allowlist` (comma-separated GitHub logins, or `none`) and `spend_cap_calls` (a positive
+integer, or `unset`).
+
+- A `set` edits the settings of the newest stored version and sends them with that version as
+  `expected_version`; a save that landed in between is `doctrine-push-stale`, never overwritten.
+  Setting a key to the value it holds saves nothing.
+- The save is judged as `push` is: an org admin's `eris login` (`doctrine-push-refused` otherwise),
+  and on a Mandate org a loosening setting needs `ERIS_GATES_APPROVAL=<handle>`
+  (`doctrine-push-needs-approval`).
+- A save moves the org's `bundle_sha`, so the pulled tree is stale: run `eris doctrine pull` before
+  the next `push`.
+
+`history` lists every stored version of the org's policy, oldest first, with who saved it
+(`auth_mode`: `portal_admin`, `mandate_passkey` or `seed`) and whether it loosened the policy.
 
 ## `set`
 

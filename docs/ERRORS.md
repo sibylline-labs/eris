@@ -1443,7 +1443,8 @@ The gateway does not take a policy save on this bearer (HTTP 403 or 405 from `PU
 the login is not an org admin's. Service tokens and members cannot save the org's policy. Nothing
 was saved and the tree under `~/.eris/doctrine/<orgId>/` is as you left it. Sign in as an org admin
 with `eris login` and push again; or change the policy in the org's Gates settings, then run
-`eris doctrine pull`. Exit 3.
+`eris doctrine pull`. `eris doctrine settings set` raises the same slug on `PUT /v1/gates/settings`
+for the same reason. Exit 3.
 
 ### doctrine-push-needs-approval
 
@@ -1457,7 +1458,9 @@ prints it.
 The same slug covers an approval that cannot be used: `ERIS_GATES_APPROVAL` is set but is not an
 approval handle (`mnd_...`; refused before any request, without echoing the value), or the Mandate
 refused the one sent (expired, already used, revoked, or not covering this save). Approve again and
-rerun. Nothing was saved and the tree is as you left it. Exit 3.
+rerun. Nothing was saved and the tree is as you left it. `eris doctrine settings set` raises this
+slug for a settings save that loosens them (`ERIS_GATES_APPROVAL=<handle> eris doctrine settings set
+<key> <value>`). Exit 3.
 
 ### doctrine-push-stale
 

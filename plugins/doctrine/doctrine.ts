@@ -57,6 +57,9 @@ Commands:
                           Switch the active posture and comment impacted open issues
   pull                    Fetch the org's hosted policy into ~/.eris/doctrine/<orgId>/
   push                    Save your edits in ~/.eris/doctrine/<orgId>/ as the org's policy
+  settings [set <key> <value>]
+                          Show the org's Gates settings, or set one
+  history                 List every saved version of the org's policy
   path                    Print the pulled doctrine.md, after verifying it
 `;
 
@@ -294,7 +297,7 @@ export function doctrineHandler(defaults: DoctrineDefaultsSource = {}, stdin: ()
     if (g.kind === "unknown") {
       ctx.stderr.write(
         renderFailureBlock(
-          { slug: "doctrine-unknown-verb", what: `unknown doctrine command '${g.sub}'`, fix: "use one of: check, schema, gates, effect, set, pull, push, path\nrun 'eris doctrine --help' for the command list" },
+          { slug: "doctrine-unknown-verb", what: `unknown doctrine command '${g.sub}'`, fix: "use one of: check, schema, gates, effect, set, pull, push, settings, history, path\nrun 'eris doctrine --help' for the command list" },
           ctx.erisDir,
         ),
       );
@@ -304,6 +307,8 @@ export function doctrineHandler(defaults: DoctrineDefaultsSource = {}, stdin: ()
     if (g.sub === "pull") return (await import("./pull")).runPull(g.rest, ctx, pull);
     if (g.sub === "path") return (await import("./pull")).runPath(g.rest, ctx, pull);
     if (g.sub === "push") return (await import("./push")).runPush(g.rest, ctx, pull);
+    if (g.sub === "settings") return (await import("./settings")).runSettings(g.rest, ctx, pull);
+    if (g.sub === "history") return (await import("./settings")).runHistory(g.rest, ctx, pull);
     let resolved: DoctrineDefaults | undefined;
     // The build's defaults, else the pulled org tree for each file the build leaves unnamed; read once,
     // and only when a verb's own flag is absent, so an edited tree never fails a verb given --file.

@@ -70,7 +70,7 @@ const badApproval: ContractFailure = {
 };
 
 /** `ERIS_GATES_APPROVAL` as a handle; undefined when unset or blank; the refusal when it is not handle-shaped. */
-function approvalFrom(env: Readonly<Record<string, string | undefined>>): Outcome<MandateHandle | undefined> {
+export function approvalFrom(env: Readonly<Record<string, string | undefined>>): Outcome<MandateHandle | undefined> {
   const raw = env.ERIS_GATES_APPROVAL?.trim() ?? "";
   if (raw === "") return succeed(undefined);
   const handle = parseMandateHandle(raw);

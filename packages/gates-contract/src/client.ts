@@ -17,7 +17,7 @@
  */
 
 import * as Schema from "effect/Schema";
-import { bundleChanges, computeGatesBundleSha, GATES_POLICY_CONTRACT_VERSION, GatesBundleSha, type GatesOrgBundle, GatesPolicyReply, type GatesSettings, GatesSettingsReply } from "./bundle";
+import { bundleChanges, computeGatesBundleSha, GATES_POLICY_CONTRACT_VERSION, GatesBundleSha, type GatesOrgBundle, GatesPolicyReply, GatesSettings, GatesSettingsReply } from "./bundle";
 import { decodeResult } from "./decode";
 import {
   LINEAR_PATH,
@@ -353,44 +353,65 @@ export const GATES_APPROVE_URL = "https://dash.sibylline.group/gates/approve";
 const MANDATE_REFUSALS = new Set(["agent_root", "widened", "mandate_out_of_path", "expired", "not_covered", "exhausted", "revoked", "unknown_mandate"]);
 const isMandateRefusal = (a: Answer): boolean => a.status >= 400 && a.status <= 499 && (MANDATE_REFUSALS.has(a.code) || a.code.startsWith("mandate_"));
 
-/** The refusal of a policy save, one slug per class; never names the bearer, the handle or the body. `sent`: an approval rode in the body. */
-function pushRefusal(a: Answer, sent: boolean): ContractFailure | null {
+/** What a refused save names: the part saved, the command that saves it, and how to recover from a stale or invalid body. */
+interface SaveTarget {
+  readonly noun: string;
+  readonly cmd: string;
+  readonly stale: string;
+  readonly invalid: string;
+}
+
+const POLICY_TARGET: SaveTarget = {
+  noun: "policy",
+  cmd: "eris doctrine push",
+  stale: "Copy your edited files out of ~/.eris/doctrine/<orgId>/, run 'eris doctrine pull', re-apply them, then 'eris doctrine push'.",
+  invalid: "Fix the edited files ('eris doctrine check --file <doctrine.md>' names doctrine problems), then 'eris doctrine push' again.",
+};
+
+const SETTINGS_TARGET: SaveTarget = {
+  noun: "settings",
+  cmd: "eris doctrine settings set",
+  stale: "Run 'eris doctrine settings show' to read the live settings, then re-run 'eris doctrine settings set'.",
+  invalid: "Check the key and value ('eris doctrine settings --help' lists them), then re-run 'eris doctrine settings set'.",
+};
+
+/** The refusal of a save, one slug per class; never names the bearer, the handle or the body. `sent`: an approval rode in the body. */
+function pushRefusal(a: Answer, sent: boolean, t: SaveTarget = POLICY_TARGET): ContractFailure | null {
   const { status, code } = a;
+  const again = `rerun with ERIS_GATES_APPROVAL=<handle> ${t.cmd} (the approval lasts 5 minutes and covers one save)`;
   if (status === 403 && code === "policy_widening_requires_passkey") {
     return failure(
       "doctrine-push-needs-approval",
-      `this save loosens the org's policy, and the org's Mandate requires a passkey approval for that (HTTP 403, ${code})`,
-      sent
-        ? `The approval did not cover this save; approve again at ${GATES_APPROVE_URL}, then rerun with ERIS_GATES_APPROVAL=<handle> eris doctrine push (the approval lasts 5 minutes and covers one save).`
-        : `Open ${GATES_APPROVE_URL}, approve with your passkey, then rerun with ERIS_GATES_APPROVAL=<handle> eris doctrine push (the approval lasts 5 minutes and covers one save).`,
+      `this save loosens the org's ${t.noun}, and the org's Mandate requires a passkey approval for that (HTTP 403, ${code})`,
+      sent ? `The approval did not cover this save; approve again at ${GATES_APPROVE_URL}, then ${again}.` : `Open ${GATES_APPROVE_URL}, approve with your passkey, then ${again}.`,
     );
   }
   if (sent && isMandateRefusal(a)) {
     return failure(
       "doctrine-push-needs-approval",
       `the org's Mandate refused the approval sent with this save (HTTP ${status}, ${code}): it has expired, been used or revoked, or does not cover this save`,
-      `That approval cannot be used; approve again at ${GATES_APPROVE_URL}, then rerun with ERIS_GATES_APPROVAL=<handle> eris doctrine push (the approval lasts 5 minutes and covers one save).`,
+      `That approval cannot be used; approve again at ${GATES_APPROVE_URL}, then ${again}.`,
     );
   }
   if (status === 403 || status === 405) {
     return failure(
       "doctrine-push-refused",
-      `the gateway does not take policy saves on this bearer (HTTP ${status}, ${code})`,
-      "Sign in as an org admin with 'eris login', then rerun; service tokens and members cannot save the org's policy. Or change the policy in the org's Gates settings, then run 'eris doctrine pull'.",
+      `the gateway does not take ${t.noun} saves on this bearer (HTTP ${status}, ${code})`,
+      `Sign in as an org admin with 'eris login', then rerun; service tokens and members cannot save the org's ${t.noun}. Or change it in the org's Gates settings${t.noun === "policy" ? ", then run 'eris doctrine pull'" : ""}.`,
     );
   }
   if (status === 409) {
     return failure(
       "doctrine-push-stale",
-      `the org's policy changed while it was saved (HTTP 409, ${code})`,
-      `Copy your edited files out of ~/.eris/doctrine/<orgId>/, run 'eris doctrine pull', re-apply them, then 'eris doctrine push'.${sent ? ` Your approval may have been used; approve again at ${GATES_APPROVE_URL}.` : ""}`,
+      `the org's ${t.noun} changed while it was saved (HTTP 409, ${code})`,
+      `${t.stale}${sent ? ` Your approval may have been used; approve again at ${GATES_APPROVE_URL}.` : ""}`,
     );
   }
   if (status === 400 || status === 413 || status === 422) {
     return failure(
       "doctrine-push-invalid",
-      `the gateway refused the policy (HTTP ${status}, ${code}): it is not a valid bundle, is over 256 KiB, or holds a credential`,
-      "Fix the edited files ('eris doctrine check --file <doctrine.md>' names doctrine problems), then 'eris doctrine push' again.",
+      `the gateway refused the ${t.noun} (HTTP ${status}, ${code}): it is not valid, is over its size cap, or holds a credential`,
+      t.invalid,
     );
   }
   return null;
@@ -426,6 +447,73 @@ export async function putOrgPolicy(ep: GatesEndpoint, bundle: GatesOrgBundle, sa
     auth_mode: d.value.auth_mode ?? null,
     changed: bundleChanges(save.base, bundle),
   });
+}
+
+// --- the settings save and the policy history -----------------------------------------------------
+
+export const POLICY_HISTORY_PATH = "/v1/gates/policy/history";
+const HISTORY_REPLY_MAX_BYTES = 8 * 1024 * 1024;
+
+const HistoryVersion = Schema.Struct({
+  version: Schema.Number.check(Schema.makeFilter((n) => Number.isSafeInteger(n) && n > 0, { expected: "a positive integer" })),
+  bundle_sha: GatesBundleSha,
+  saved_at: Schema.String,
+  widened: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+  reasons: Schema.optionalKey(Schema.Array(Schema.String)),
+  auth_mode: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  settings: GatesSettings,
+});
+const HistoryReply = Schema.Struct({ contract: Schema.Literal(GATES_POLICY_CONTRACT_VERSION), versions: Schema.Array(HistoryVersion) });
+
+/** One stored policy version: who saved it (`auth_mode`), whether it loosened the policy, and the settings it held. */
+export interface PolicyVersion {
+  readonly version: number;
+  readonly bundle_sha: GatesBundleSha;
+  readonly saved_at: string;
+  readonly widened: boolean | null;
+  readonly reasons: readonly string[];
+  readonly auth_mode: string | null;
+  readonly settings: GatesSettings;
+}
+
+/** Every stored policy version, oldest first (`GET /v1/gates/policy/history`). */
+export async function fetchPolicyHistory(ep: GatesEndpoint): Promise<Outcome<readonly PolicyVersion[]>> {
+  const r = await getJson(ep, POLICY_HISTORY_PATH, "the policy history read", HistoryReply, HISTORY_REPLY_MAX_BYTES);
+  if (!r.ok) return r;
+  return succeed(r.value.versions.map((v) => ({ version: v.version, bundle_sha: v.bundle_sha, saved_at: v.saved_at, widened: v.widened ?? null, reasons: v.reasons ?? [], auth_mode: v.auth_mode ?? null, settings: v.settings })));
+}
+
+/** What a settings save sends beside the settings: the version it was edited on, and an approval when the operator has one. */
+export interface SettingsSave {
+  /** The stored version the edit was made on; the gateway refuses the save (409) when a newer one exists. */
+  readonly expectedVersion: number;
+  readonly mandateHandle?: MandateHandle | undefined;
+}
+
+/** The version a settings save made, and how the gateway judged it. */
+export interface SavedSettings {
+  readonly version: number;
+  readonly bundle_sha: GatesBundleSha;
+  readonly saved_at: string;
+  readonly widened: boolean | null;
+  readonly reasons: readonly string[];
+  readonly auth_mode: string | null;
+}
+
+/**
+ * Save `settings` as the org's settings (`PUT /v1/gates/settings`, `{ settings, expected_version, mandate_handle? }`).
+ * Sent once and never retried.
+ */
+export async function putOrgSettings(ep: GatesEndpoint, settings: GatesSettings, save: SettingsSave): Promise<Outcome<SavedSettings>> {
+  const what = "the org settings save";
+  const sent = save.mandateHandle !== undefined;
+  const body = JSON.stringify({ settings, expected_version: save.expectedVersion, ...(sent ? { mandate_handle: save.mandateHandle } : {}) });
+  const a = await exchange(ep, { method: "PUT", path: SETTINGS_PATH, what, maxBytes: POLICY_SAVE_REPLY_MAX_BYTES, headers: { "content-type": "application/json" }, body });
+  if (!a.ok) return a;
+  if (!ok2xx(a.value)) return fail(pushRefusal(a.value, sent, SETTINGS_TARGET) ?? (a.value.status === 401 || a.value.status >= 500 ? storeRefusal(a.value, what) : mismatch(`the gateway refused ${what} (HTTP ${a.value.status}, ${a.value.code})`)));
+  const d = decoded(a.value, what, PolicySaveReply);
+  if (!d.ok) return d;
+  return succeed({ version: d.value.version, bundle_sha: d.value.bundle_sha, saved_at: d.value.saved_at, widened: d.value.widened ?? null, reasons: d.value.reasons ?? [], auth_mode: d.value.auth_mode ?? null });
 }
 
 /** The doctrine-comment routes' contract version (the receipts' `gates-contract/v1`). */

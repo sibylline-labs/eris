@@ -34,7 +34,7 @@ The failure map, by what the gateway answered:
 | `PUT /v1/gates/policy`: HTTP 403 `policy_widening_requires_passkey`, or (when the body carried `mandate_handle`) a Mandate refusal of it (`expired`, `exhausted`, `not_covered`, `revoked`, `unknown_mandate`, `mandate_*`, ...) | `doctrine-push-needs-approval` |
 | `PUT /v1/gates/policy`: any other HTTP 403, or 405 | `doctrine-push-refused` |
 | `PUT /v1/gates/policy`: HTTP 409 (names the approval as possibly used when one was sent) | `doctrine-push-stale` |
-| `PUT /v1/gates/policy`: HTTP 400, 413 or 422 | `doctrine-push-invalid` |
+| `PUT /v1/gates/policy` or `/settings`: HTTP 400, 413 or 422 | `doctrine-push-invalid` |
 | a receipt, asset, artifact or `/v1/linear` route: HTTP 429 (the failure carries `retryAfterMs` from `Retry-After`) | `linear-rate-limited` |
 | the asks route: 402/403, no answer or 5xx, 429, anything else | `asks-store-forbidden`, `asks-store-unreachable`, `asks-rate-limited`, `asks-contract-mismatch` |
 
@@ -42,12 +42,14 @@ The failure map, by what the gateway answered:
 
 | Route | Verb | Status |
 |---|---|---|
-| `GET /v1/gates/policy`, `GET /v1/gates/settings` | `doctrine pull`, `gate ci` | served |
+| `GET /v1/gates/policy`, `GET /v1/gates/settings` | `doctrine pull`, `doctrine settings`, `gate ci` | served |
+| `GET /v1/gates/policy/history` | `doctrine history`, `doctrine settings set` (the newest version's settings are the base) | served |
 | `GET /v1/gates/receipts?issue=` | `gate check`, `gate ci`, `surface digest` | served |
 | `POST /v1/gates/receipts` | `gate record`, `gate skip`, `surface lock\|unlock` | served |
 | `POST /v1/gates/assets`, `GET /v1/gates/assets/digest`, `GET /v1/gates/artifacts/<sha256>` | `gate record`, `gate check` | served |
 | `GET /v1/asks?issue=&state=open&blocking=true` | `gate check` (the `@asks` row of a terminal gate) | served |
 | `PUT /v1/gates/policy` | `doctrine push` | served |
+| `PUT /v1/gates/settings` (`{ settings, expected_version, mandate_handle? }`) | `doctrine settings set` | served |
 | `GET\|POST /v1/gates/doctrine-comments` | `doctrine set` | served |
 | `GET /v1/linear/issues/<key>`, `POST /v1/linear/issues/<key>/{claim,release,comments,transition}` (`linear-contract/v1`) | `loop launch`, `hand-back`, `stop`, `resume`, `reap` | served |
 | `GET /v1/yaks/observations/<id>`, `GET /v1/yaks/clusters/<id>` (`/v0` for a UUID yak id), never following a redirect | `loop resolve`, `loop launch` | served |
