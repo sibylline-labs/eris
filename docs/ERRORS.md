@@ -697,8 +697,9 @@ workspace in the dashboard, then run it again. Exit 1.
 
 ### org-connect-unconfigured
 
-`eris org connect-linear` was refused with `503 connect_unconfigured`: the platform has no dashboard
-address to build the install link on, so no link was minted and nothing was opened. This is the
+`eris org connect-linear`, `eris org billing checkout` or `eris org billing portal` was refused with `503
+connect_unconfigured`: the platform has no dashboard address to build the install link or Stripe's return
+links on, so nothing was minted or opened. This is the
 platform's setup, not this machine's: tell the platform's operator. Exit 1.
 
 ### org-connect-timeout
@@ -708,6 +709,19 @@ reported Linear as connected before the link expired (10 minutes after it was mi
 was abandoned, was not finished in the browser, or was finished for another workspace. Run `eris org
 connect-linear` again for a new link (each link works once; a new one replaces the old); `eris whoami`
 shows the connection's state. Exit 1.
+
+### org-billing-unavailable
+
+`eris org billing checkout` or `portal` was refused because billing is not available on this
+platform: the org endpoint answered `404` (billing is not turned on, so the route does not exist) or
+`503 billing_unconfigured` (billing is on but Stripe is not configured). Nothing was opened and no URL
+was printed. This is the platform's setup, not this machine's: tell the platform's operator. Exit 1.
+
+### org-billing-nothing-to-bill
+
+`eris org billing checkout` was refused with `409 nothing_to_bill`: none of the org's products needs a
+new subscription (each is free, or already billed on a live subscription), so no Checkout Session was
+created and no URL was printed. To manage an existing subscription run `eris org billing portal`. Exit 1.
 
 ### org-github-account-invalid
 

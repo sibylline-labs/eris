@@ -5,6 +5,8 @@
  * Loaded only when `eris org` dispatches (the manifest is ./index.ts).
  * `eris org delete --confirm <workspace>` and `--cancel` schedule and cancel the org's
  * deletion over `POST` and `DELETE /v1/org/deletion`.
+ * `eris org billing checkout|portal` prints a Stripe Checkout or Billing Portal URL for the org
+ * (`POST /v1/org/billing/checkout|portal`); the CLI never takes payment details.
  * `eris org connect-linear` has an admin's bearer mint an org-bound install link
  * (`POST /v1/org/linear/connect`), hands it to the browser, and polls `GET /v1/org/me` until
  * `linear.status` reads `connected`.
@@ -45,7 +47,7 @@ import { defaultOpenBrowser } from "./login";
 import { problemCode } from "./yak-admin";
 
 // A `…Slug`-named union: `tests/errors-doc.test.ts` harvests its members.
-export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied" | "org-delete-flags" | "org-confirmation-mismatch" | "org-workspace-name-unknown" | "org-tokens-revoked" | "org-connect-unconfigured" | "org-connect-timeout" | "org-admin-action-invalid" | "org-last-admin" | "org-github-unconfigured" | "org-github-account-invalid" | "org-gh-unavailable" | "org-github-not-owner" | "org-github-timeout" | "org-github-unproven" | "org-github-bound-elsewhere" | "org-github-org-bound" | "org-bus-lapsed";
+export type OrgSlug = "org-unauthorized" | "org-admin-required" | "org-member-not-found" | "org-cannot-deactivate-self" | "org-unavailable" | "org-unknown-verb" | "org-member-id-missing" | "org-scope-denied" | "org-delete-flags" | "org-confirmation-mismatch" | "org-workspace-name-unknown" | "org-tokens-revoked" | "org-connect-unconfigured" | "org-connect-timeout" | "org-admin-action-invalid" | "org-last-admin" | "org-github-unconfigured" | "org-github-account-invalid" | "org-gh-unavailable" | "org-github-not-owner" | "org-github-timeout" | "org-github-unproven" | "org-github-bound-elsewhere" | "org-github-org-bound" | "org-bus-lapsed" | "org-billing-unavailable" | "org-billing-nothing-to-bill";
 
 const ORG_TIMEOUT_MS = 15_000;
 
@@ -95,6 +97,8 @@ Commands:
   connect-github --account <org> [--no-browser]
                                  Install the GitHub App on a GitHub org you own and bind it (an org admin's)
   disconnect-github              Unbind this org's GitHub App installation (an org admin's)
+  billing checkout               Print a Stripe Checkout URL for this org's subscription (an org admin's)
+  billing portal                 Print a Stripe Billing Portal URL for this org (an org admin's)
   webhooks logfire [revoke]      Print this org's Logfire alert webhook URL, or replace it (an org admin's)
 
 The org is the one this directory acts as ('eris whoami').
@@ -140,6 +144,33 @@ own <github-org>: the server lists the installation with it through GitHub's own
 and keeps nothing. Needs the GitHub CLI ('gh'), signed in as an owner of <github-org>, and an
 org admin's eris login. GitHub organizations only; a personal account cannot be proven.
 'eris --output json org connect-github' prints the server's body once bound.
+`;
+
+export const BILLING_USAGE = `Usage: eris org billing checkout | portal
+
+  checkout   print a Stripe Checkout URL for this org's subscription
+  portal     print a Stripe Billing Portal URL for this org
+
+An org admin's. Open the printed URL in a browser and pay or manage billing on Stripe's page: eris never
+takes card details and opens nothing itself. Each run opens a new session; the URL is short-lived and meant
+for one person. 'eris --output json org billing checkout' prints the server's body ({url}). A platform with
+billing off answers org-billing-unavailable.
+`;
+
+export const BILLING_CHECKOUT_USAGE = `Usage: eris org billing checkout
+
+Print a Stripe Checkout URL for this org's subscription. An org admin's. Open the URL in a browser and pay on
+Stripe's page: eris never takes card details and opens nothing itself. Each run opens a new, short-lived
+session. 'eris --output json org billing checkout' prints the server's body ({url}). A platform with billing
+off answers org-billing-unavailable.
+`;
+
+export const BILLING_PORTAL_USAGE = `Usage: eris org billing portal
+
+Print a Stripe Billing Portal URL for this org's customer, to manage its subscription and payment method on
+Stripe's page. An org admin's. eris never takes card details and opens nothing itself. Each run opens a new,
+short-lived session. 'eris --output json org billing portal' prints the server's body ({url}). A platform
+with billing off answers org-billing-unavailable.
 `;
 
 export const WEBHOOKS_USAGE = `Usage: eris org webhooks logfire [revoke]
@@ -214,7 +245,7 @@ export interface Failure {
 /** A success carries the org's url (`base`, no trailing slash) the request went to. */
 type Outcome<T> = { ok: true; value: T; base: string } | { ok: false; failure: Failure };
 
-type Action = "grant admin" | "revoke admin" | "deactivate a member" | "delete the org" | "cancel the org's deletion" | "connect Linear" | "connect GitHub" | "disconnect GitHub" | "read the Logfire webhook URL" | "revoke the Logfire webhook URL";
+type Action = "grant admin" | "revoke admin" | "deactivate a member" | "delete the org" | "cancel the org's deletion" | "connect Linear" | "connect GitHub" | "disconnect GitHub" | "read the Logfire webhook URL" | "revoke the Logfire webhook URL" | "open Stripe billing";
 
 function refusal(status: number, code: string | undefined, target: string, action: Action = "deactivate a member"): Failure {
   const answered = `the org endpoint answered ${status}${code ? ` ${code}` : ""} for ${target}`;
@@ -237,6 +268,8 @@ function refusal(status: number, code: string | undefined, target: string, actio
           ? "ask an org admin to run it, or to deactivate the member in the dashboard's Members page"
           : action === "connect Linear"
             ? "ask an org admin to run: eris org connect-linear"
+            : action === "open Stripe billing"
+            ? "ask an org admin to run it, or to use the dashboard's Billing page"
             : action === "connect GitHub" || action === "disconnect GitHub"
             ? `ask an org admin to run: eris org ${action === "connect GitHub" ? "connect-github" : "disconnect-github"}`
             : action === "read the Logfire webhook URL" || action === "revoke the Logfire webhook URL"
@@ -245,7 +278,22 @@ function refusal(status: number, code: string | undefined, target: string, actio
     };
   }
   if (status === 503 && code === "connect_unconfigured") {
-    return { slug: "org-connect-unconfigured", what: `${answered}: this platform has no dashboard address to send the install link to; nothing was opened`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
+    return { slug: "org-connect-unconfigured", what: `${answered}: this platform has no dashboard address to ${action === "open Stripe billing" ? "send Stripe's return links to" : "send the install link to"}; nothing was opened`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
+  }
+  if (action === "open Stripe billing" && status === 404 && code === "org_not_found") {
+    return { slug: "org-unavailable", what: `${answered}: the server does not know this org`, fix: "check which org this directory acts as: eris whoami" };
+  }
+  if (action === "open Stripe billing" && status === 409 && code === "nothing_to_bill") {
+    return { slug: "org-billing-nothing-to-bill", what: `${answered}: no product of this org needs a new subscription (each is free, or already billed); nothing was opened`, fix: "manage an existing subscription instead: eris org billing portal" };
+  }
+  if (action === "open Stripe billing" && status === 503 && code === "billing_invalid_config") {
+    return { slug: "org-billing-unavailable", what: `${answered}: billing is on but this platform's Stripe configuration is invalid; nothing was opened`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
+  }
+  if (action === "open Stripe billing" && status === 404) {
+    return { slug: "org-billing-unavailable", what: `${answered}: billing is not turned on for this platform, so there is no Stripe session to open`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
+  }
+  if (action === "open Stripe billing" && status === 503 && code === "billing_unconfigured") {
+    return { slug: "org-billing-unavailable", what: `${answered}: billing is on but this platform's Stripe is not configured; nothing was opened`, fix: "this is the platform's setup, not this machine's: tell the platform's operator" };
   }
   if (status === 402 && code === "entitlement_lapsed") {
     // The GitHub verbs reach a row verified for bus, so they meet this refusal too: say what was refused per action.
@@ -518,6 +566,40 @@ async function defaultRunGh(args: readonly string[], env: VerbContext["env"], ti
   }
 }
 
+const BillingRedirect = z.object({ url: z.string() }).passthrough();
+
+/** The canonical href of a Stripe-hosted page, or null: `https` on `stripe.com` or one of its subdomains,
+ *  no userinfo, no port, and no control or whitespace character anywhere in the text the server sent (the
+ *  WHATWG parser strips tabs and newlines and ignores the rest, so the raw text is judged first). Only the
+ *  parsed href is ever printed, so a terminal escape or a second line never reaches a person. */
+function stripePage(raw: string): string | null {
+  if (/[\u0000-\u0020\u007f-\u009f]/.test(raw)) return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.port !== "") return null;
+  return url.hostname === "stripe.com" || url.hostname.endsWith(".stripe.com") ? url.href : null;
+}
+
+async function runBilling(kind: "checkout" | "portal", ctx: VerbContext, deps: OrgDeps): Promise<number> {
+  const got = await request("POST", `/v1/org/billing/${kind}`, BillingRedirect, ctx, deps, { action: "open Stripe billing" });
+  if (!got.ok) return fail(ctx, got.failure);
+  const href = stripePage(got.value.url);
+  if (href === null) {
+    return fail(ctx, { slug: "org-unavailable", what: "the org endpoint answered with a link that is not a https://*.stripe.com page; nothing was printed", fix: "update eris: eris update   (or tell the platform's operator)" });
+  }
+  if (ctx.format === "json") {
+    ctx.stdout.write(`${JSON.stringify({ ...got.value, url: href })}\n`);
+    return 0;
+  }
+  ctx.stdout.write(`${plain(href)}\n`);
+  ctx.stderr.write(`Open this link in a browser to ${kind === "checkout" ? "start your subscription" : "manage billing"} on Stripe. eris never takes card details.\n`);
+  return 0;
+}
+
 const describeGithub = (view: z.infer<typeof GithubView>): string =>
   view.installation === null
     ? "no GitHub App installation is bound\n"
@@ -687,7 +769,7 @@ export async function runOrg(args: string[], ctx: VerbContext, deps: OrgDeps = {
     ctx.stdout.write(ORG_USAGE);
     return 0;
   }
-  if (g.kind === "unknown") return unknown(ctx, g.sub, "members, delete, connect-linear, github, connect-github, disconnect-github, webhooks");
+  if (g.kind === "unknown") return unknown(ctx, g.sub, "members, delete, connect-linear, github, connect-github, disconnect-github, webhooks, billing");
   if (g.sub === "connect-linear") {
     const c = readArgs(plugin.rows, "org connect-linear", g.rest, ctx, { help: CONNECT_USAGE });
     if (c === null) return 0;
@@ -702,6 +784,22 @@ export async function runOrg(args: string[], ctx: VerbContext, deps: OrgDeps = {
     const r = readArgs(plugin.rows, "org connect-github", g.rest, ctx, { help: GITHUB_CONNECT_USAGE });
     if (r === null) return 0;
     return runConnectGithub(r.flags["--account"], r.flags["--no-browser"] === true, ctx, deps);
+  }
+  if (g.sub === "billing") {
+    const b = groupArgs(plugin.rows, "org billing", g.rest);
+    if (b.kind === "bare" || b.kind === "help") {
+      if (ctx.format === "json") {
+        ctx.stderr.write(renderFailureBlock({ slug: "output-json-unsupported", what: "eris org billing has no JSON rendering", fix: "use: eris --output json org billing checkout" }, ctx.erisDir));
+        throw new CliExit(1);
+      }
+      ctx.stdout.write(BILLING_USAGE);
+      return 0;
+    }
+    if (b.kind === "unknown") return unknown(ctx, `billing ${b.sub}`, "billing checkout, billing portal");
+    const kind = b.sub === "checkout" ? "checkout" : "portal";
+    const r = kind === "checkout" ? readArgs(plugin.rows, "org billing checkout", b.rest, ctx, { help: BILLING_CHECKOUT_USAGE }) : readArgs(plugin.rows, "org billing portal", b.rest, ctx, { help: BILLING_PORTAL_USAGE });
+    if (r === null) return 0;
+    return runBilling(kind, ctx, deps);
   }
   if (g.sub === "disconnect-github") {
     const r = readArgs(plugin.rows, "org disconnect-github", g.rest, ctx, { help: GITHUB_DISCONNECT_USAGE });
