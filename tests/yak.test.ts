@@ -410,6 +410,7 @@ describe("runYak — --output json emits a bare record on misuse too (exit 1 unc
 });
 
 describe("runYak — environment/config/transport (exit 0, WARN, never the failure block)", () => {
+  // admits: a signed-out filing exiting 0 so an agent reads it as delivered; the exit code and block of runYak with an empty HOME
   it("no token resolvable: the failure block, exit 3, stdout empty in text mode", async () => {
     const home = await freshHome();
     try {
@@ -545,6 +546,7 @@ describe("runYak — environment/config/transport (exit 0, WARN, never the failu
   // `warnResult`/`warnOutputRecord`, a separate code path from the
   // network-outcome warn above. Both must independently honour the
   // output-contract fix.
+  // admits: a json consumer reading a signed-out filing as delivered; the bare record, exit code and empty stderr of runYak
   it("no token resolvable, json mode: one bare record, exit 3, stderr empty", async () => {
     const home = await freshHome();
     try {
