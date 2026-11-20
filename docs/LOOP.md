@@ -85,7 +85,8 @@ successor's entry survives its predecessor's late hand-back.
    move the issue, and its parent, to In Progress while each is unstarted. A closed issue is never
    reopened; a failed move only warns.
 
-Any failure after step 5 releases the claim (`aborted`, the reason as its body) before the verb stops.
+Any failure during or after step 5 releases the reserved claim (`aborted`, best-effort by its claim id)
+before the verb stops, except `linear-issue-claimed` (another holder owns the issue).
 The receipt is `delegated <ISSUE>[ (yak <8>)] → loop <slug> · <session>[ · model <m>]` (Claude always names its model).
 
 ## hand-back
@@ -111,9 +112,11 @@ touches neither. The receipt is `stopped <ISSUE> → loop <slug> · <id>`.
 `needs:`, `claim:` (this machine's ledger: the claim id's first 8 characters, the issue, the bound
 session, since when), `also:` (the other sessions the ref names), one `in-flight:` line per running tool
 call (from the job's `fan`, else the transcript's unanswered tool calls), a `stalled:` line for a call
-running past the 25-minute budget, and the newest message (its last 4,000 characters). When a ref names
-several sessions it shows the one working, else the newest; two working is `loop-session-ambiguous`.
-Text only.
+running past the 25-minute budget or a Claude job whose `state.json` says `working` while
+`claude agents --json` reports `idle` for 10 minutes (a resumed session waiting on a background shell
+completion is never woken, which is why a Claude resume prompt forbids `run_in_background`), and the
+newest message (its last 4,000 characters). When a ref names several sessions it shows the one working,
+else the newest; two working is `loop-session-ambiguous`. Text only.
 
 ## reap
 
@@ -142,7 +145,9 @@ with `· stalled=<n>` when a working session has a call past its budget.
 working session is refused. The session holds its issue's claim again: this machine's claim is re-bound
 to the resumed session when it is bound to this very session; otherwise a fresh claim is reserved
 first (refused while another loop holds the issue, unless `--unclaimed`), and released if the resume
-fails. The continuation prompt carries the claim's `Claim:` and `Hand-back:` lines. `--all` resumes
+fails. A resumed Claude session's continuation prompt appends a foreground-only instruction forbidding
+Bash `run_in_background=true` (supplied runtimes' prompts are unchanged), plus the claim's `Claim:`
+and `Hand-back:` lines when a claim is held. `--all` resumes
 every failed loop session whose issue is open, reading every issue before resuming any. The receipt is
 `resumed <ISSUE> → loop <slug> · <id>`.
 

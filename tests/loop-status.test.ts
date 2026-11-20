@@ -69,4 +69,33 @@ describe("eris loop status", () => {
     const none = await loop(w, ["status", "ABC-9"]);
     expect([none.rc, slugOf(none.stderr)]).toEqual([2, "loop-session-not-found"]);
   });
+
+  // admits: boundary-io: idle-stall detection combines wall-clock elapsed time, state.json timestamps and claude agents --json subprocess output; positive stall and all negative branches (busy, unreadable listing, under threshold, done) are pinned together.
+  it("flags a working job idle in claude agents past 10m as stalled, and emits no stall otherwise", async () => {
+    /** When a resumed Claude session idles forever while state.json still says working, only `claude agents --json` exposes the stall; when busy, unreadable, below 10m or finished, a false stall misleads operators into stopping live work: observed on the stalled: lines of status stdout. */
+    const MIN = 60_000;
+    const at = (ms: number) => new Date(NOW - ms).toISOString();
+    const stalledLines = async (env: Record<string, string | undefined> = {}) => {
+      const r = await loop(w, ["status", "ABC-7"], { env });
+      expect(r.rc).toBe(0);
+      return r.stdout.split("\n").filter((l) => l.startsWith("stalled:"));
+    };
+
+    w.setJob("job00001", { state: "working", status: "idle", updatedAt: at(11 * MIN), fan: [{ kind: "Bash", label: "ci", startedAt: (NOW - 11 * MIN) / 1000 }] });
+    const stalled = await stalledLines();
+    expect(stalled).toHaveLength(1);
+    expect(stalled[0]).toContain("idle for 11m while state.json says working");
+
+    w.setJob("job00001", { status: "busy" });
+    expect(await stalledLines()).toEqual([]);
+
+    w.setJob("job00001", { status: "idle" });
+    expect(await stalledLines({ FAKE_CLAUDE_AGENTS_FAIL: "1" })).toEqual([]);
+
+    w.setJob("job00001", { updatedAt: at(2 * MIN) });
+    expect(await stalledLines()).toEqual([]);
+
+    w.setJob("job00001", { state: "done", updatedAt: at(30 * MIN) });
+    expect(await stalledLines()).toEqual([]);
+  });
 });

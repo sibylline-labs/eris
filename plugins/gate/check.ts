@@ -54,6 +54,7 @@ import {
   type DoctrineRead,
   FLOOR_GATES,
   GATE_RECEIPT_SCHEMA_V3,
+  type GateArtifact,
   type GateArtifactCopy,
   type GateEvidence,
   type GateReceipt,
@@ -264,6 +265,36 @@ function decodeCopy(copy: GateArtifactCopy): Buffer | null {
   }
 }
 
+/** A copy's bytes when they decode to its recorded length and the artifact's sha256, else null. */
+export function verifiedCopy(copy: GateArtifactCopy, sha256: string): Buffer | null {
+  const bytes = decodeCopy(copy);
+  return bytes !== null && bytes.byteLength === copy.bytes && sha256Hex(bytes) === sha256 ? bytes : null;
+}
+
+/**
+ * The bytes a receipt's artifact was recorded over: its carried copy, the store's copy, or the live
+ * artifact while it still hashes to the receipt's sha256. Null when none verifies; a later byte
+ * change to the live file is never read as what was recorded.
+ */
+export async function recordedBytes(
+  ep: GatesEndpoint,
+  g: Git,
+  cwd: string,
+  issue: string,
+  artifact: GateArtifact,
+  readRetry?: RetryOpts,
+): Promise<Uint8Array | null> {
+  if (artifact.copy !== undefined) {
+    const carried = verifiedCopy(artifact.copy, artifact.sha256);
+    if (carried !== null) return carried;
+  }
+  const stored = unwrap(readRetry !== undefined ? await retryRateLimited(() => artifactCopy(ep, artifact.sha256), readRetry) : await artifactCopy(ep, artifact.sha256));
+  const copied = stored._tag === "NotStored" ? null : verifiedCopy(stored.copy, artifact.sha256);
+  if (copied !== null) return copied;
+  const found = await resolveArtifact(g, cwd, artifact, issue);
+  return found?.kind === "bytes" && sha256Hex(found.bytes) === artifact.sha256 ? found.bytes : null;
+}
+
 export async function statusOf(c: Checking, latest: Latest | undefined, doctrine: DoctrineRead | null): Promise<Judged> {
   if (latest === undefined) return { status: "missing" };
   const r = latest.receipt;
@@ -339,7 +370,7 @@ export async function statusOf(c: Checking, latest: Latest | undefined, doctrine
   if (r.verdict === "SKIPPED" && r.schema === GATE_RECEIPT_SCHEMA_V3 && r.mandate !== undefined) return { status: "skipped" };
   if (r.verdict === "SKIPPED") {
     // A v1 doctrine skip predates the grant field; it carried the grant as evidence prose.
-    if (r.authorized !== undefined || (latest.version === "v1" && r.doctrine !== undefined)) return { status: "skipped" };
+    if (isHumanGrant(r.authorized) || (latest.version === "v1" && r.doctrine !== undefined)) return { status: "skipped" };
     return { status: "unauthorized-skip", why: "a SKIPPED receipt with no --authorized grant; record it with 'eris gate skip'" };
   }
   const acceptance = accepted.length > 0 ? `${accepted.join("; ")}; accepted by human grant "${r.authorized}"` : undefined;
@@ -356,8 +387,8 @@ export async function statusOf(c: Checking, latest: Latest | undefined, doctrine
     if (stored._tag === "NotStored") return found === null ? { status: "drift" } : live;
     copy = stored.copy;
   }
-  const bytes = decodeCopy(copy);
-  if (bytes !== null && bytes.byteLength === copy.bytes && sha256Hex(bytes) === r.artifact.sha256) {
+  const bytes = verifiedCopy(copy, r.artifact.sha256);
+  if (bytes !== null) {
     return { status: "pass", why: `read from the stored copy (${live.why})${acceptance !== undefined ? `; ${acceptance}` : ""}`, bytes };
   }
   return { status: live.status, why: `${live.why}; the stored copy did not verify` };

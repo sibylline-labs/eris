@@ -22,7 +22,7 @@ const ORG = "01HZX3K5Q8W2N4R6T8V0Y2B4D6";
 const LOGIN = ["sib", ORG, "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
 const ASSET_HOST = ["uploads", "linear", "app"].join(".");
 const ISSUE = "ABC-7";
-const [HUMAN_BEFORE, HUMAN_AFTER] = [RUNGS[0], RUNGS[1]];
+const [HUMAN_BEFORE, HUMAN_AFTER, AUTO] = [RUNGS[0], RUNGS[1], RUNGS[2]];
 
 interface StoredRow {
   comment_id: string;
@@ -387,13 +387,13 @@ describe("floor, door, remediate and asks rows", () => {
   const passing = (gate: string, over: Record<string, unknown> = {}) =>
     receipt({ gate, artifact: { _tag: "file", path: "/nowhere/plan.md", sha256: sha256Hex("plan"), copy: { encoding: "gzip+base64", content: gzipSync(Buffer.from("plan")).toString("base64"), bytes: 4 } }, ...over });
 
-  // admits: integration: final-gates must print the class's requirement rows, @floor, @door (every class at the default rung with no ladder) and @asks in that order; a row out of order or missing breaks the cross-build parity, observed at stdout.
+  // admits: integration: final-gates must print the class's requirement rows, @floor, @door (U0/U1 default to auto with no ladder) and @asks in that order; a row out of order or missing breaks cross-build parity, observed at stdout.
   it("prints the floor, door and asks rows for a terminal gate", async () => {
     put(passing("final-gates", { user_impact: "U1" }));
     put(passing("revert-path"));
     const r = await gate(["check", "--issue", ISSUE, "--gates", "final-gates"]);
-    expect({ code: r.code, out: r.out }).toEqual({ code: 0, out: `final-gates\tpass\tPASS\nrevert-path\tpass\tPASS\n@floor\tpass\tU1\n@door\t${HUMAN_AFTER}\tU1\n@asks\tclear\t0\n` });
-    expect(r.err).toContain(`door: U1 at ${HUMAN_AFTER} (human sign-off after (PR review)); ladder states ${HUMAN_AFTER}`);
+    expect({ code: r.code, out: r.out }).toEqual({ code: 0, out: `final-gates\tpass\tPASS\nrevert-path\tpass\tPASS\n@floor\tpass\tU1\n@door\t${AUTO}\tU1\n@asks\tclear\t0\n` });
+    expect(r.err).toContain(`door: U1 at ${AUTO} (auto); ladder states ${AUTO}`);
   });
 
   // admits: integration: an issue with no class fails closed as unclassified, and a ladder at the first rung fails without a human sign-off; observed at the rows and the failure what.

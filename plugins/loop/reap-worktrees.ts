@@ -102,12 +102,16 @@ async function git(run: Run, argv: readonly string[], cwd?: string): Promise<{ c
   return r.kind === "exited" ? r : { code: 1, stdout: "", stderr: r.why };
 }
 
-/** The real cwd of every process `lsof -d cwd -Fn` lists; empty when lsof is absent or says nothing. */
+/**
+ * The cwd of every process `lsof -d cwd -Fn` lists; empty when lsof is absent or says nothing.
+ * `lsof` reports resolved vnode paths, so none is re-resolved: `realpathSync` on a macOS
+ * TCC-protected container cwd blocks indefinitely.
+ */
 export async function busyProcessCwds(run: Run): Promise<ReadonlyArray<string>> {
   const lsof = which("lsof", run.env);
   if (lsof === null) return [];
   const r = await git(run, [lsof, "-d", "cwd", "-Fn"]);
-  return r.stdout.split(/\r?\n/).flatMap((l) => (l.startsWith("n/") ? [realpathOr(l.slice(1))] : []));
+  return r.stdout.split(/\r?\n/).flatMap((l) => (l.startsWith("n/") ? [l.slice(1)] : []));
 }
 
 /** `owner/repo` from a GitHub remote URL, or null. */

@@ -76,7 +76,7 @@ async function resumeOne(run: Run, ep: () => Promise<GatesEndpoint>, s: LoopSess
   const held = await holdClaim(run, ep, s, unclaimed);
   let session: string;
   try {
-    const next = continuationPrompt(prompt, held);
+    const next = continuationPrompt(prompt, held, runtimeOf(s));
     session = s.kind === "claude" ? await resumeClaude(run, s.job, next, run.cwd) : await s.rt.resume(runtimeEnv(run), s.session, next);
   } catch (e) {
     if (held?.fresh === true) {

@@ -9,6 +9,7 @@
 
 import { afterAll, afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { readClaim } from "../plugins/loop/claims";
+import { NO_BACKGROUND_LINE } from "../plugins/loop/prompt";
 import { loop, loopWorld, type LoopWorld, slugOf, stopServer } from "./helpers/loop-fixture";
 
 setDefaultTimeout(60_000);
@@ -80,7 +81,7 @@ describe("eris loop resume", () => {
     expect(readClaim(w.home, "ABC-7")).toMatchObject({ claim_id: claimId, session_id: "job00002" });
     const resumed = w.calls().at(-1)!;
     expect(resumed.slice(0, 3)).toEqual(["--bg", "--resume", "sess-job00001"]);
-    expect(resumed[3]).toStartWith(`Carry on.\nClaim: ${claimId} `);
+    expect(resumed[3]).toStartWith(`Carry on.\n${NO_BACKGROUND_LINE}\nClaim: ${claimId} `);
   });
 
   it("reserves a fresh claim when this machine holds none, and refuses while another loop holds the issue", async () => {

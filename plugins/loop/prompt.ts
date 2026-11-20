@@ -10,6 +10,7 @@
  * count toward the prompt's cap.
  */
 
+import { RUNTIME } from "./claims";
 import { usage } from "./failure";
 import { BODY_MAX_BYTES } from "./names";
 
@@ -57,6 +58,16 @@ export function composePrompt(input: ComposePromptInput, extra: ReadonlyArray<st
   return prompt;
 }
 
-/** A resume's prompt: the continuation, plus the claim and hand-back lines when the session holds a claim. */
-export const continuationPrompt = (prompt: string, held: { readonly issue: string; readonly claimId: string } | null): string =>
-  held === null ? prompt : `${prompt}\n${claimLine(held.issue, held.claimId)}\n${handBackLine(handBackArgs(held.issue, held.claimId), held.issue)}`;
+/**
+ * Appended to a resumed Claude session's prompt: `claude --bg --resume` never wakes the model on a
+ * `run_in_background` Bash completion, so the session idles forever waiting on it.
+ */
+export const NO_BACKGROUND_LINE =
+  "Resumed session: never set Bash `run_in_background=true` (its completion does not wake a resumed session, so you would idle forever)." +
+  " Run every command in the foreground and wait for it, with a `timeout` that fits.";
+
+/** A resume's prompt: the continuation, the no-background rule for Claude, and the claim and hand-back lines when the session holds a claim. */
+export const continuationPrompt = (prompt: string, held: { readonly issue: string; readonly claimId: string } | null, runtime: string): string => {
+  const base = runtime === RUNTIME ? `${prompt}\n${NO_BACKGROUND_LINE}` : prompt;
+  return held === null ? base : `${base}\n${claimLine(held.issue, held.claimId)}\n${handBackLine(handBackArgs(held.issue, held.claimId), held.issue)}`;
+};

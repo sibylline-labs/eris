@@ -192,11 +192,11 @@ remediate PASS) exit 3; ok and pending exit 0.
                  entry may be '{ require: [...], forbid: [...] }': a forbidden
                  gate prints '<gate>\\tabsent\\t-', or '<gate>\\tforbidden\\t<verdict>'
                  (exit 3) when any receipt for it is on the issue
-  --ladder       The door-class ladder (default: the build's, else none: every
-                 class at R1). The class is the U-class crossing each --burden
-                 surface, its rung the ladder's, raised by the active posture's
-                 lifts when the latest bleed-reducing receipt passes, then
-                 capped by its ceilings (and U3 never above R1). R0 exits 3
+  --ladder       The door-class ladder (default: the build's, else none: U0/U1
+                 at R2, U2/U3 at R1). The class is the U-class crossing each
+                 --burden surface, its rung the ladder's, raised by the active
+                 posture's lifts when the latest bleed-reducing receipt passes,
+                 then capped by its ceilings (and U3 never above R1). R0 exits 3
                  unless a door-signoff receipt passes with a human --authorized
                  grant; R1 (human after) and R2 (auto) pass
   --doctrine     The doctrine file (default: the org's pulled doctrine.md; none

@@ -19,7 +19,8 @@
  *  - a drop removes a record only while it names that claim id, in whichever directory holds it, so a
  *    forced successor survives;
  *  - `bindClaim` records the session in the ledger before it binds, so reap can release a claim whose bind failed;
- *  - a reservation whose ledger write fails is released (`aborted`) before the verb stops.
+ *  - a claim failure other than `linear-issue-claimed` and a reservation whose ledger write fails each
+ *    best-effort release the reservation (`aborted`) by its claim id before the verb stops.
  */
 
 import { randomBytes, randomUUID } from "node:crypto";
@@ -27,7 +28,7 @@ import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, renameSync, rm
 import { join } from "node:path";
 import * as Schema from "effect/Schema";
 import { claimIssue, decodeResult, type GatesEndpoint, releaseIssue } from "eris/gates-contract";
-import { block, stop, unwrap } from "./failure";
+import { block, stop } from "./failure";
 import { CLAIM_ID_RE } from "./names";
 
 /** How long a bind waits before its one re-send when the reply adopted no tracker agent session. */
@@ -140,12 +141,21 @@ export interface Reserved {
 
 /**
  * Reserve `issue` for a new loop before it spawns, and record it in the ledger. Another holder is
- * `linear-issue-claimed` (exit 3): nothing is written. A ledger that cannot be written releases the
- * reservation (`aborted`), then stops, so no claim is left that this machine cannot name.
+ * `linear-issue-claimed` (exit 3): nothing is written. Any other claim failure (a mid-reserve 503
+ * after the gateway wrote the reserved row) and a ledger that cannot be written each best-effort
+ * release the reservation by its claim id (`aborted`, which deletes only a row naming that id) and
+ * stop with the original failure, so no claim is left that this machine cannot name.
  */
 export async function reserveClaim(ep: GatesEndpoint, input: { ledger: Ledger; issue: string; slug: string; runtime: string; now: number }): Promise<Reserved> {
   const claimId = randomUUID();
-  const reply = unwrap(await claimIssue(ep, input.issue, { claimId, loop: claimLoopName(input.slug), runtime: input.runtime }));
+  const claimed = await claimIssue(ep, input.issue, { claimId, loop: claimLoopName(input.slug), runtime: input.runtime });
+  if (!claimed.ok) {
+    if (claimed.failure.slug !== "linear-issue-claimed") {
+      await releaseIssue(ep, input.issue, { claimId, outcome: "aborted", body: "eris loop: the claim reply was lost, so the launch stopped." }).catch(() => undefined);
+    }
+    return stop(claimed.failure);
+  }
+  const reply = claimed.value;
   const record: ClaimRecord = {
     issue: input.issue,
     claim_id: claimId,
@@ -157,7 +167,7 @@ export async function reserveClaim(ep: GatesEndpoint, input: { ledger: Ledger; i
   try {
     writeClaimIn(input.ledger.dirs[0], record);
   } catch (e) {
-    await releaseIssue(ep, input.issue, { claimId, outcome: "aborted", body: "eris loop: the claim ledger could not be written, so the launch stopped." });
+    await releaseIssue(ep, input.issue, { claimId, outcome: "aborted", body: "eris loop: the claim ledger could not be written, so the launch stopped." }).catch(() => undefined);
     throw e;
   }
   return { claimId, ...(reply.bundleSha !== undefined ? { bundleSha: reply.bundleSha } : {}) };

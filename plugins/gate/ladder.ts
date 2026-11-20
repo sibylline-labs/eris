@@ -10,12 +10,11 @@
  *     U0: R2
  *     U2:auth: R0
  *
- * A class's rung is the most specific entry (`U<n>:<crossing>`, `U<n>`, `all`), else R1: a human
- * reviews the pull request after the run. With no ladder file every class reads R1. On a
- * bleed-reducing fix (the issue's latest `bleed-reducing` receipt passes) the active posture's
- * `lifts` raise it first; then its `ceilings` cap it and `U_CLASS_CEILING` caps it again, so a
- * ceiling only ever lowers a rung, a lift never outranks a ceiling, and no U3 class passes R1. With
- * several crossings the lowest rung decides.
+ * A class's rung is the most specific entry (`U<n>:<crossing>`, `U<n>`, `all`), else the class's
+ * default (`DEFAULT_RUNGS`: U0/U1 R2, U2/U3 R1). On a bleed-reducing fix (the issue's latest
+ * `bleed-reducing` receipt passes) the active posture's `lifts` raise it first; then its `ceilings`
+ * cap it and `U_CLASS_CEILING` caps it again, so a ceiling only ever lowers a rung, a lift never
+ * outranks a ceiling, and no U3 class passes R1. With several crossings the lowest rung decides.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -27,8 +26,14 @@ import { precondition } from "./failure";
 export const DoorLadder = Schema.Struct({ ladder: Schema.optionalKey(Schema.String), classes: LadderClasses });
 export type DoorLadder = typeof DoorLadder.Type;
 
-/** The rung of a class the ladder does not name: human-after. */
+/** The rung of a door the ladder does not name and no U-class decides (`all`): human-after. */
 export const DEFAULT_RUNG: Rung = "R1";
+
+/**
+ * The rung of a U-class the ladder does not name: U0/U1 two-way work is auto (R2), so it reads as
+ * needing no human; U2/U3 stay human-after. `U_CLASS_CEILING` still caps each.
+ */
+export const DEFAULT_RUNGS: Readonly<Record<UClass, Rung>> = { U0: "R2", U1: "R2", U2: "R1", U3: "R1" };
 
 /** The gate a human pre-signs an R0 class with. */
 export const DOOR_SIGNOFF = "door-signoff";
@@ -72,7 +77,7 @@ export function doorRung(input: {
 }): DoorRung {
   const classes = input.ladder?.classes ?? {};
   const each = (input.crossings.length === 0 ? [undefined] : [...input.crossings].sort()).map((crossing): DoorRung => {
-    const stated = rungAt(classes, input.u, crossing) ?? DEFAULT_RUNG;
+    const stated = rungAt(classes, input.u, crossing) ?? DEFAULT_RUNGS[input.u];
     const lift = input.bleedReducing ? rungAt(input.policy?.lifts ?? {}, input.u, crossing) : undefined;
     const lifted = lift === undefined ? stated : higher(stated, lift);
     const ceiling = rungAt(input.policy?.ceilings ?? {}, input.u, crossing);
@@ -97,11 +102,11 @@ function invalid(file: string, why: string): never {
     "gate-ladder-invalid",
     `${file}: ${why}`,
     "Make the file a YAML map with 'classes:', door class (all, U0-U3, U<n>:<crossing>) to R0, R1 or R2,\n" +
-      "no U3 class above R1; or move it aside to read every class at R1.",
+      "no U3 class above R1; or move it aside to read every class at its default rung.",
   );
 }
 
-/** The ladder at `file`, or null when there is none (every class at R1). */
+/** The ladder at `file`, or null when there is none (every class at its default rung, `DEFAULT_RUNGS`). */
 export function readLadder(file: string): DoorLadder | null {
   if (!existsSync(file)) return null;
   let text: string;
