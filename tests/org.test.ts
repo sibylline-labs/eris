@@ -1,5 +1,5 @@
 /**
- * `eris org members`, `eris org members deactivate <id>` and `eris org delete --confirm|--cancel`.
+ * `eris org members`, `eris org members deactivate <id>` and `eris org delete --export|--confirm`.
  *
  * The seam is the group handler (`runOrg`) with a loopback `Bun.serve` standing in for the
  * gateway's `/v1/org/*` routes, and a sandbox HOME holding one signed-in org. Every request
@@ -246,56 +246,79 @@ describe("eris org members deactivate", () => {
 });
 
 describe("eris org delete", () => {
-  it("posts the typed name with the bearer and prints the due date", async () => {
-    /** When the name lands outside a JSON `confirm` field, or the verb or path is wrong, the gateway schedules nothing or the wrong thing: observed in the recorded request body and stdout. */
+  // admits: boundary-io: real loopback HTTP POST /v1/org/deletion payload and immediate-deletion stdout/stderr contract.
+  it("posts the typed name with the bearer and reports immediate irreversible deletion", async () => {
+    /** When the name lands outside a JSON `confirm` field, or the verb or path is wrong, the gateway deletes nothing or the wrong thing: observed in the recorded request body and stdout. */
     reply = () => Response.json({ dueAt: DUE, cause: "self_serve" }, { status: 202 });
     const r = await run(["delete", "--confirm", WORKSPACE]);
     expect(r.code).toBe(0);
     expect(seen).toEqual([{ method: "POST", path: "/v1/org/deletion", auth: `Bearer ${TOKEN}` }]);
     expect(bodies.map((b) => JSON.parse(b))).toEqual([{ confirm: WORKSPACE }]);
-    expect(r.stdout).toBe(`deletion scheduled for ${DUE}\n`);
+    expect(r.stdout).toBe(`deletion started (${DUE})\n`);
     expect(r.stderr).toContain("revoked");
+    expect(r.stderr).toContain("cannot be cancelled");
   });
 
-  it("cancels with DELETE and says whether anything was scheduled", async () => {
-    /** When cancel sends POST or reads `cancelled` wrongly, a scheduled deletion stays or a no-op is reported as a cancel: observed in the request and both stdout lines. */
-    reply = () => Response.json({ cancelled: true });
-    const yes = await run(["delete", "--cancel"]);
-    expect(seen).toEqual([{ method: "DELETE", path: "/v1/org/deletion", auth: `Bearer ${TOKEN}` }]);
-    expect(yes.stdout).toBe("deletion cancelled\n");
-    reply = () => Response.json({ cancelled: false });
-    expect((await run(["delete", "--cancel"])).stdout).toBe("no deletion was scheduled\n");
+  // admits: boundary-io: real loopback HTTP export fetches /v1/org/{me,members,tokens} as JSON without touching POST /v1/org/deletion.
+  it("exports org profile, members, and token metadata with --export without deleting", async () => {
+    reply = (req) => {
+      const path = new URL(req.url).pathname;
+      if (path === "/v1/org/me") return Response.json({ orgId: "01J0ORG", workspaceName: WORKSPACE, role: "admin" });
+      if (path === "/v1/org/members") return Response.json({ members: [{ memberId: MIA, name: "Mia", email: "mia@example.com", role: "admin", status: "active", seats: [] }] });
+      if (path === "/v1/org/tokens") return Response.json({ tokens: [{ id: "tok-1", name: "ci", kind: "service" }] });
+      return problem(404, "not_found");
+    };
+    const text = await run(["delete", "--export"]);
+    expect(text.code).toBe(0);
+    expect(seen.map((s) => `${s.method} ${s.path}`)).toEqual(["GET /v1/org/me", "GET /v1/org/members", "GET /v1/org/tokens"]);
+    const exported = JSON.parse(text.stdout);
+    expect(exported.org).toEqual({ orgId: "01J0ORG", workspaceName: WORKSPACE, role: "admin" });
+    expect(exported.members).toHaveLength(1);
+    expect(exported.tokens).toEqual([{ id: "tok-1", name: "ci", kind: "service" }]);
+    expect(typeof exported.exportedAt).toBe("string");
+    expect(text.stderr).toContain("eris events list");
+
+    const jsonOut = await run(["delete", "--export"], "json");
+    expect(jsonOut.code).toBe(0);
+    expect(jsonOut.stderr).toBe("");
+    expect(JSON.parse(jsonOut.stdout).tokens).toEqual([{ id: "tok-1", name: "ci", kind: "service" }]);
   });
 
+  // admits: boundary-io: --output json must emit the server response body bare without prose.
   it("prints the server body bare under --output json", async () => {
-    /** When json mode drops a field the server adds or prints prose, a script cannot read the due date: observed in the parsed stdout. */
+    /** When json mode drops a field the server adds or prints prose, a script cannot read the timestamp: observed in the parsed stdout. */
     reply = () => Response.json({ dueAt: DUE, cause: "self_serve", extra: 1 }, { status: 202 });
     expect(JSON.parse((await run(["delete", "--confirm", WORKSPACE], "json")).stdout)).toEqual({ dueAt: DUE, cause: "self_serve", extra: 1 });
-    reply = () => Response.json({ cancelled: true });
-    expect(JSON.parse((await run(["delete", "--cancel"], "json")).stdout)).toEqual({ cancelled: true });
   });
 
-  it("refuses neither, both and an empty name before sending anything", async () => {
-    /** When a bare `eris org delete` or an empty --confirm reaches the gateway, an unintended request is made against a destructive route: observed in zero recorded requests and the slug. */
-    for (const args of [["delete"], ["delete", "--confirm", "x", "--cancel"], ["delete", "--confirm", "  "]]) {
+  // admits: boundary-io: flag parser and org-delete-flags refusal must guide users to --export and reject retired --cancel before sending any HTTP request.
+  it("refuses neither, both, an empty name, and retired --cancel before sending anything", async () => {
+    /** When a bare `eris org delete`, an empty --confirm, or --cancel reaches the gateway, an unintended request is made against a destructive route: observed in zero recorded requests and the slugs. */
+    for (const args of [["delete"], ["delete", "--confirm", "x", "--export"], ["delete", "--confirm", "  "]]) {
       const r = await run(args);
       expect(r.code).toBe(1);
       expect(r.stdout).toBe("");
       expect(r.stderr).toContain("slug: org-delete-flags");
+      expect(r.stderr).toContain("--export");
     }
+    const cancel = await run(["delete", "--cancel"]);
+    expect(cancel.code).toBe(1);
+    expect(cancel.stdout).toBe("");
+    expect(cancel.stderr).toContain("Unknown flag '--cancel'");
     const valueless = await run(["delete", "--confirm", ""]);
     expect(valueless.code).toBe(1);
     expect(valueless.stdout).toBe("");
     expect(seen).toEqual([]);
   });
 
+  // admits: boundary-io: server refusal code mapping and workspace-name redaction over HTTP.
   it("names a wrong name, an unset workspace name and a non-admin each by slug, never echoing the name", async () => {
     /** When the mismatch collapses into 'unavailable' or the typed name is echoed into a log, the operator cannot tell a typo from an unset name, and the name leaks to a terminal: observed in three slugs and both streams. */
     const typed = "Typo Workspace Name";
     reply = () => problem(400, "confirmation_mismatch");
     const mismatch = await run(["delete", "--confirm", typed]);
     expect(mismatch.stderr).toContain("slug: org-confirmation-mismatch");
-    expect(mismatch.stderr).toContain("nothing was scheduled");
+    expect(mismatch.stderr).toContain("nothing was deleted");
     reply = () => problem(409, "workspace_name_unknown");
     const unset = await run(["delete", "--confirm", typed]);
     expect(unset.stderr).toContain("slug: org-workspace-name-unknown");
@@ -309,27 +332,23 @@ describe("eris org delete", () => {
     }
   });
 
-  it("prints the due date as one plain line even from a hostile body", async () => {
+  // admits: boundary-io: terminal escape sanitization of server-returned dueAt field.
+  it("prints the timestamp as one plain line even from a hostile body", async () => {
     /** When the server's dueAt is printed raw, a compromised endpoint injects terminal escapes or a fake second line: observed in the stdout line count and bytes. */
     reply = () => Response.json({ dueAt: "\u001b[2Jx\nfake line", cause: "self_serve" }, { status: 202 });
     const r = await run(["delete", "--confirm", WORKSPACE]);
-    expect(r.stdout).toBe("deletion scheduled for ?[2Jx?fake line\n");
+    expect(r.stdout).toBe("deletion started (?[2Jx?fake line)\n");
   });
 
-  it("names the verb a non-admin tried: cancel is not delete", async () => {
-    /** When a refused cancel says the member tried to delete the org, the refusal misdescribes what was run: observed in the what-line. */
-    reply = () => problem(403, "admin_required");
-    expect((await run(["delete", "--cancel"])).stderr).toContain("can cancel the org's deletion");
-  });
-
-  it("explains the revoked-token 401 a schedule leaves behind, and still sends a plain 401 to eris login", async () => {
-    /** When the post-schedule 401 `revoked` is reported as 'run eris login', the operator signs in again to a token that stays revoked and never learns the cancel is the dashboard's: observed in the slug and fix of the two 401s. */
+  // admits: boundary-io: 401 revoked explains immediate irreversible deletion instead of pointing to a removed cancel path.
+  it("explains the revoked-token 401 deletion leaves behind, and still sends a plain 401 to eris login", async () => {
     reply = () => problem(401, "revoked");
-    const revoked = await run(["delete", "--cancel"]);
+    const revoked = await run(["delete", "--export"]);
     expect(revoked.stderr).toContain("slug: org-tokens-revoked");
-    expect(revoked.stderr).toContain("Danger zone");
+    expect(revoked.stderr).toContain("cannot be cancelled");
+    expect(revoked.stderr).not.toContain("Danger zone");
     reply = () => problem(401, "invalid_token");
-    expect((await run(["delete", "--cancel"])).stderr).toContain("slug: org-unauthorized");
+    expect((await run(["delete", "--export"])).stderr).toContain("slug: org-unauthorized");
   });
 });
 

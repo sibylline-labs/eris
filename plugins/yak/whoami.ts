@@ -23,9 +23,8 @@ export const WHOAMI_USAGE = `Usage: eris whoami
 Print the org this directory acts as and why (ERIS_ORG, a repo's eris.yaml
 repo.org, or this machine's default org), where its token comes from and the
 url it goes to, every org this machine is signed in to, and what the org
-itself reports for you: your role, its tier, its Linear connection, any
-scheduled deletion and its entitlements. --output json prints that report as
-the server sent it. Never prints a token. Exits 1, with the fix, when the
+itself reports for you: your role, its tier, its Linear connection and its
+entitlements. --output json prints that report as the server sent it. Never prints a token. Exits 1, with the fix, when the
 selected org cannot be used here or its endpoint does not answer.
 `;
 
@@ -42,7 +41,7 @@ function why(selection: OrgSelection): string {
   return "this machine's default org";
 }
 
-/** The lines the org's own answer adds: the caller's role, the org's tier, Linear connection, scheduled deletion and entitlements. A field the server does not send is left out. */
+/** The lines the org's own answer adds: the caller's role, the org's tier, Linear connection and entitlements. A field the server does not send is left out. */
 function serverLines(me: Record<string, unknown>): string[] {
   const lines = [`role: ${String(me.role)}`];
   if (typeof me.tier === "string") lines.push(`tier: ${me.tier}`);
@@ -51,7 +50,6 @@ function serverLines(me: Record<string, unknown>): string[] {
     const { status, cause } = linear as { status?: unknown; cause?: unknown };
     lines.push(`linear: ${String(status)}${typeof cause === "string" ? ` (${cause})` : ""}`);
   }
-  if ("deletionScheduledAt" in me) lines.push(`deletion: ${typeof me.deletionScheduledAt === "string" ? `scheduled for ${me.deletionScheduledAt}` : "none scheduled"}`);
   const entitlements = me.entitlements;
   if (typeof entitlements === "object" && entitlements !== null) {
     const pairs = Object.entries(entitlements).map(([product, state]) => `${product} ${String(state)}`);
