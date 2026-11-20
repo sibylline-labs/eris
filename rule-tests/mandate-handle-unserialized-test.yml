@@ -1,0 +1,15 @@
+id: mandate-handle-unserialized
+valid:
+  - |
+    JSON.stringify({ mandateHandle: "none" });
+  - |
+    JSON.stringify({ use: r.mandate.use_id });
+  - |
+    const body = { mandateHandle };
+invalid:
+  - |
+    JSON.stringify({ h: mandateHandle });
+  - |
+    JSON.stringify({ mandate });
+  - |
+    JSON.stringify(input.mandate_handle);

@@ -32,7 +32,11 @@ export type GateSlug =
   | "gate-unlock-human"
   | "gate-unlock-unresolved"
   | "surface-lock-unauthorized"
-  | "asks-listing-truncated";
+  | "asks-listing-truncated"
+  | "mandate-handle-malformed"
+  | "mandate-not-stamped"
+  | "mandate-session-required"
+  | "mandate-act-unsupported";
 
 export class GateFailure extends Error {
   constructor(readonly failure: ContractFailure) {

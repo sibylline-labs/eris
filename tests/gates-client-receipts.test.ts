@@ -8,21 +8,28 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import * as Redacted from "effect/Redacted";
 import {
   appendReceipt,
   artifactCopy,
   assetDigest,
+  canonicalMandateScope,
   decodePayload,
   type GatesEndpoint,
   gatesEndpoint,
   listAsks,
   listReceipts,
+  MANDATE_STORE_CODES,
+  type MandateStoreCode,
+  mandateRefusalSlug,
+  parseMandateHandle,
   reviewReportDigest,
   sha256Hex,
   uploadAsset,
 } from "eris/gates-contract";
 
 const TOKEN = ["sib", "01HZX3K5Q8W2N4R6T8V0Y2B4D6", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
+const MANDATE_RAW = ["mnd", "01HZX3K5Q8W2N4R6T8V0Y2B4D6", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
 const ASSET_HOST = ["uploads", "linear", "app"].join(".");
 
 interface Seen {
@@ -149,6 +156,60 @@ describe("appendReceipt", () => {
     routes["POST /v1/gates/receipts"] = () => problem(409, "doctrine_out_of_date");
     const r = await appendReceipt(endpoint(), { commentId: "k", issue: "ABC-1", receipt: receiptV2(), prose: "p" });
     expect(r.ok ? null : r.failure.slug).toBe("doctrine-out-of-date");
+  });
+
+  // admits: boundary-io: mandate_handle unwraps only into the JSON request body and each of the 14 (status, code) gateway refusals must map to its exact mandate-* slug without echoing the handle, observed over real loopback HTTP.
+  it("sends mandate_handle when provided and maps all 14 MANDATE_STORE_CODES without echoing the handle", async () => {
+    const parsed = parseMandateHandle(MANDATE_RAW);
+    expect(parsed).not.toBeNull();
+    const redacted = Redacted.make(parsed!);
+    const recordSha = sha256Hex("stamped-v3");
+    routes["POST /v1/gates/receipts"] = () =>
+      Response.json({ comment_id: "c-m", issue: "ABC-1", gate: "e2e", created_at: "2026-11-17T10:00:02.000Z", record_sha256: recordSha, contract_version: "gates-contract/v1" }, { status: 201 });
+    const ok = await appendReceipt(endpoint(), { commentId: "key-m", issue: "ABC-1", receipt: receiptV2({ verdict: "SKIPPED" }), prose: "p", mandateHandle: redacted });
+    expect(ok).toEqual({ ok: true, value: { id: "c-m", createdAt: "2026-11-17T10:00:02.000Z", recordSha256: recordSha } });
+    expect(JSON.parse(new TextDecoder().decode(seen[0]!.body))).toMatchObject({ comment_id: "key-m", mandate_handle: MANDATE_RAW });
+
+    const codes = Object.keys(MANDATE_STORE_CODES) as MandateStoreCode[];
+    expect(codes.length).toBe(14);
+    for (const code of codes) {
+      const entry = MANDATE_STORE_CODES[code];
+      routes["POST /v1/gates/receipts"] = () => problem(entry.status, code);
+      const r = await appendReceipt(endpoint(), { commentId: `k-${code}`, issue: "ABC-1", receipt: receiptV2({ verdict: "SKIPPED" }), prose: "p", mandateHandle: redacted });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.failure.slug).toBe(mandateRefusalSlug(code));
+        expect(r.failure.what).not.toContain(MANDATE_RAW);
+        expect(r.failure.fix).not.toContain(MANDATE_RAW);
+      }
+    }
+  });
+
+  // admits: boundary-io: mandate refusal dispatch must not shadow standard receipt route failures (404 issue_not_found, 409 doctrine_out_of_date, 429, 401 unauthorized) or mismatched HTTP status codes, observed over loopback HTTP.
+  it.each([
+    [401, "unauthorized", "eris-login-required"],
+    [404, "issue_not_found", "linear-issue-not-found"],
+    [409, "doctrine_out_of_date", "doctrine-out-of-date"],
+    [429, "rate_limited", "linear-rate-limited"],
+    [400, "revoked", "gate-contract-mismatch"],
+  ])("falls through to storeRefusal on HTTP %d %s -> %s even with mandateHandle", async (status, code, slug) => {
+    const redacted = Redacted.make(parseMandateHandle(MANDATE_RAW)!);
+    routes["POST /v1/gates/receipts"] = () => problem(status, code);
+    const r = await appendReceipt(endpoint(), { commentId: "k", issue: "ABC-1", receipt: receiptV2({ verdict: "SKIPPED" }), prose: "p", mandateHandle: redacted });
+    expect(r.ok ? null : r.failure.slug).toBe(slug);
+  });
+});
+
+describe("canonicalMandateScope", () => {
+  // admits: algorithmic: multi-rule scope parser must sort query parameters canonically and reject embedded mnd_ handles, duplicate keys, >16 params, or oversized scopes.
+  it("normalizes valid scopes and rejects malformed or handle-carrying inputs", () => {
+    expect(canonicalMandateScope("sr:us:mandate:gate:skip?work_ref=linear:ABC-1&gate=e2e")).toBe("sr:us:mandate:gate:skip?gate=e2e&work_ref=linear:ABC-1");
+    expect(canonicalMandateScope("sr:us:mandate:gate:skip")).toBe("sr:us:mandate:gate:skip");
+    expect(canonicalMandateScope(`sr:us:mandate:gate:skip?gate=${MANDATE_RAW}`)).toBeNull();
+    expect(canonicalMandateScope("sr:us:mandate:gate:skip?gate=a&gate=b")).toBeNull();
+    expect(canonicalMandateScope("sr:us:mandate:gate:skip?" + Array.from({ length: 17 }, (_, i) => `k${i}=v`).join("&"))).toBeNull();
+    expect(canonicalMandateScope(`sr:us:mandate:gate:skip?gate=${"a".repeat(500)}`)).toBeNull();
+    expect(canonicalMandateScope("sr:us:mandate:gate:skip?gate=bad value")).toBeNull();
   });
 });
 

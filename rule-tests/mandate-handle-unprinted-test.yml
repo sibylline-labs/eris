@@ -1,0 +1,53 @@
+id: mandate-handle-unprinted
+valid:
+  - |
+    appendReceipt(ep, { commentId: "c", issue: "ABC-1", receipt, prose, mandateHandle });
+  - |
+    skipGate({ gate: "e2e", issue: "ABC-1", mandate });
+  - |
+    if (r.mandate !== undefined) return { status: "skipped" };
+  - |
+    const msg = `stamped ${r.mandate.use_id} root ${r.mandate.root_id}`;
+  - |
+    ctx.stderr.write(`scope ${mandate.scope}`);
+  - |
+    console.error({ mandateHandle: "redacted" });
+  - |
+    const ok = isMandateStoreCode(code);
+invalid:
+  - |
+    const msg = `bad ${mandateHandle}`;
+  - |
+    const msg = `bad ${input.mandate}`;
+  - |
+    ctx.stderr.write(mandateHandle);
+  - |
+    ctx.stdout.write(mandate);
+  - |
+    process.stderr.write(mandate_handle);
+  - |
+    console.log(mandate);
+  - |
+    console.error(append.mandateHandle);
+  - |
+    console.warn({ mandate });
+  - |
+    Bun.inspect(mandateHandle);
+  - |
+    String(mandateHandle);
+  - |
+    precondition("mandate-handle-malformed", mandate, "fix");
+  - |
+    fail("bad", opts.mandate_handle);
+  - |
+    new Error("bad", { cause: mandateHandle });
+  - |
+    new GateFailure("mandate-handle-malformed", mandate, "fix");
+  - |
+    const msg = "bad: " + mandateHandle;
+  - |
+    msg += input.mandate;
+  - |
+    const msg = ["err", mandate].join(": ");
+  - |
+    err.message = mandate;

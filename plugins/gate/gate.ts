@@ -37,6 +37,7 @@ import { GateFailure, stop, usage } from "./failure";
 import { type Git, liveGit, memoReads } from "./git";
 import plugin, { type GateDefaults, type PulledTree } from "./index";
 import { readLadder } from "./ladder";
+import { resolveMandateSkip } from "./mandate";
 import { type EvidenceInput, recordGate, skipGate, type WriteRun } from "./record";
 import { storeEndpoint } from "./store";
 import { discoverPathsSurfaces } from "./surfaces";
@@ -64,8 +65,8 @@ written by 'record' and 'skip' and read back by 'check'.
 Commands:
   record <gate> --issue <KEY> [--verdict PASS|AMENDED|BLOCKING] [--artifact <path>]
                           Hash the artifact and append the receipt comment
-  skip   <gate> --issue <KEY> --reason <why> --authorized <grant> --artifact <path>
-                          Append a SKIPPED receipt naming the grant behind it
+  skip   <gate> --issue <KEY> --reason <why> (--authorized <grant> | --mandate <handle>) --artifact <path>
+                          Append a SKIPPED receipt naming the grant or mandate behind it
   check  --issue <KEY> --gates <a,b,...> | --profile <name> [--expect <id,...>]
                           Exit 3 unless every gate's latest receipt passes
   ci     [--event <file>] [--registry <path>]
@@ -130,10 +131,12 @@ stdout: the new comment's id.
 
 const SKIP_USAGE = `Usage: ${line("gate skip")}
 
-Append one gate-receipt@v2 SKIPPED comment to <KEY> that records why the gate
-is not run, the grant behind the decision, and who recorded it. Without
---authorized nothing is sent (exit 2). 'check' counts the skip as satisfied,
-except toward the user-impact floor: a skipped requirement never meets it.
+Append one SKIPPED comment to <KEY> that records why the gate is not run, the
+grant behind the decision, and who recorded it. Pass --authorized, or present a
+signed mandate handle (--mandate or ERIS_MANDATE, which the gateway spends one
+use of and stamps as gate-receipt@v3). Without either, nothing is sent (exit 2).
+'check' counts the skip as satisfied, except toward the user-impact floor: a
+skipped requirement never meets it.
 
   <gate>         The gate not run (sdk-check, e2e, ...)
   --issue        The issue key (ABC-123)
@@ -143,7 +146,11 @@ except toward the user-impact floor: a skipped requirement never meets it.
                  and holds only when that posture sets gates.<gate>: off; or
                  exactly repo:no-eris-yaml for define-future in a git repo with
                  no root eris.yaml (exit 3 otherwise). A grant starting
-                 'doctrine' or 'repo' in any other spelling is refused (exit 3)
+                 'doctrine' or 'repo' in any other spelling is refused (exit 3).
+                 Beside --mandate, recorded as context; the stamp authorizes.
+  --mandate      A mandate handle (mnd_<org>_<secret>; else ERIS_MANDATE when
+                 --authorized is absent). Presented from a session:<id> actor;
+                 the gateway spends one use and stamps gate-receipt@v3.
   --artifact     The file the skip is about (a plan, say); its sha256 is recorded
   --doctrine     A doctrine file (the 'eris doctrine check' format; default:
                  the org's pulled doctrine.md)
@@ -172,8 +179,10 @@ Naming final-gates or user-impact also checks the user-impact floor and prints
 class (U1 revert-path; U2 + zero-downtime, e2e; U3 + rollback-rehearsal) needs
 a passing receipt for the gate of that name, and prints as its own gate row
 before '@floor'. SKIPPED never meets the floor. Then '@door\\t<rung>\\t<class>'.
-An issue with a remediate receipt prints '@remediate\\tunsupported\\t-' and exits
-3: this build does not judge a remediation loop.
+An issue with a remediate receipt prints '@remediate\\t<ok|pending|violated|hand-off>\\tround <n>/<max>':
+violated (broken actor separation, reused launch head, or a remediation diff
+widening a surface) and hand-off (max_rounds reached without a human-granted
+remediate PASS) exit 3; ok and pending exit 0.
 
   --gates        The gates to check, comma-separated
   --profile      Check the gates a work profile requires instead (built in:
@@ -371,6 +380,8 @@ async function runSkip(args: string[], ctx: VerbContext, defaults: GateDefaults,
   required(ctx, "gate skip", [...(gate === "" ? ["<gate>"] : []), ...(["--issue", "--reason", "--artifact"] as const).filter((k) => fl[k] === undefined)]);
   const v = await verbFor(ctx, defaults, deps);
   const who = await resolveActor({ flag: fl["--actor"], g: v.g, cwd: v.cwd });
+  const impact = impactOf(fl["--impact"]);
+  const mandate = resolveMandateSkip({ flags: fl, env: ctx.env, gate, issue: fl["--issue"]!, actor: who.actor });
   const res = await skipGate(await writeRun(v), {
     gate,
     issue: fl["--issue"]!,
@@ -378,12 +389,14 @@ async function runSkip(args: string[], ctx: VerbContext, defaults: GateDefaults,
     authorized: fl["--authorized"],
     artifact: fl["--artifact"]!,
     doctrine: fl["--doctrine"] ?? v.pulled?.doctrineFile,
-    impact: impactOf(fl["--impact"]),
+    impact,
     actor: who.actor,
     actorInfo: who.actorInfo,
+    ...(mandate !== undefined ? { mandate } : {}),
   });
   ctx.stdout.write(`${res.commentId}\n`);
-  ctx.stderr.write(`INFO ✓ recorded ${res.receipt.gate} SKIPPED on ${res.receipt.issue} (authorized: ${res.receipt.authorized})\n`);
+  const note = mandate !== undefined ? `mandate stamped, record ${res.recordSha256?.slice(0, 12)}` : `authorized: ${res.receipt.authorized}`;
+  ctx.stderr.write(`INFO ✓ recorded ${res.receipt.gate} SKIPPED on ${res.receipt.issue} (${note})\n`);
   return 0;
 }
 

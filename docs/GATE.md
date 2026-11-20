@@ -7,7 +7,7 @@ through the hosted gates store and reads them back to decide whether a change ma
 
 ```
 eris gate record <gate> --issue <KEY> [--verdict PASS|AMENDED|BLOCKING] [--artifact <path>] [evidence flags]
-eris gate skip   <gate> --issue <KEY> --reason <why> --authorized <grant> --artifact <path>
+eris gate skip   <gate> --issue <KEY> --reason <why> (--authorized <grant> | --mandate <handle>) --artifact <path>
 eris gate check  --issue <KEY> (--gates <a,b,...> | --profile <name>) [--expect <id,...>] [--effort <level>] [--head-sha <sha>] [--diff-sha256 <sha256>]
 eris gate ci     [--event <file>] [--registry <path>]
 
@@ -63,10 +63,17 @@ grant behind the decision. A grant is one of:
 | a human one, `'<name> asked: <request>'` | always; it is recorded as given |
 | `doctrine:<posture>` with `--doctrine <file>` | that posture is the active one and sets `gates.<gate>: off` |
 | `repo:no-eris-yaml` | the gate is `define-future` and the git repo has no root `eris.yaml` |
+| a signed mandate, `--mandate <handle>` (or `ERIS_MANDATE` when `--authorized` is absent) | the actor is `session:<id>`, the handle is valid, and the gateway spends one use covering `gate:skip` for `<gate>` and `linear:<KEY>` and stamps `gate-receipt@v3` |
 
 A grant that reads as a doctrine or repo grant in any other spelling is refused
 (`gate-skip-unauthorized`). `check` re-judges a doctrine or repo grant every time it reads the
 receipt, so the skip counts only while the posture (or the repo) still bears it out.
+
+When `--mandate` (or `ERIS_MANDATE`) is used, eris validates handle shape, session actor, and scope
+locally before sending, holds the handle redacted until serialization, sends `mandate_handle` on
+`POST /v1/gates/receipts`, and fails closed (`mandate-not-stamped`, exit 3) unless the gateway
+returns a stamped v3 record hash. A `--authorized` flag beside `--mandate` is stored as context
+only, while `--authorized` without `--mandate` ignores `ERIS_MANDATE`. The handle is never echoed.
 
 ## check
 
@@ -117,8 +124,13 @@ After the gate rows, in this order:
   none: U0/U1 at the auto rung and U2/U3 at the human-after rung), lifted by the posture's `lifts`
   on a bleed-reducing fix and capped by its `ceilings`. At the human-before rung the check fails
   unless a `door-signoff` receipt passes with a human grant.
-- `@remediate\tunsupported\t-` when the issue has a `remediate` receipt: this build does not judge a
-  remediation loop, so the check fails rather than pass it unread.
+- `@remediate\t<ok|pending|violated|hand-off>\tround <n>/<max>` when the issue has a `remediate`
+  receipt: partitions review reports into rounds chronologically, checks actor separation (a
+  remediator is never the original author; a re-reviewer never authored any round `0..k` and never
+  reviewed an earlier round) and fresh heads, checks the remediation diff against `.claude/surfaces.yml`
+  and `skills/*review*/` (failing closed if git cannot diff the span), and fails (`violated` or
+  `hand-off`, exit 3) until the violation is fixed or a human-granted `remediate` PASS clears the
+  hand-off.
 - Naming `final-gates` (or with `--asks`): `@asks\t<clear|open>\t<n>`, the open blocking asks bound to
   the issue (and, with `--pr <N>`, to that pull request). Any open one fails the check; an asks API
   that cannot be read fails it too, never reading as "no asks". `--asks` also prints the result as one

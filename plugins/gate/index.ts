@@ -101,10 +101,10 @@ const ROWS = {
       "<gate> --issue <KEY> [--verdict PASS|AMENDED|BLOCKING] [--artifact <path>] [--rubric <name@version>]... [--doctrine <path>] [--impact U0|U1|U2|U3] [--authorized <grant>] [--evidence <text>]... [--log|--test-run|--e2e|--review-report|--screenshot|--video <file>]... [--actor <who>]",
   },
   "gate skip": {
-    summary: "Append a SKIPPED gate receipt that names its reason and the human or doctrine grant behind it",
-    flags: [v("--issue"), v("--reason"), v("--authorized"), f("--artifact"), f("--doctrine"), v("--impact"), v("--actor")],
+    summary: "Append a SKIPPED gate receipt that names its reason and the grant (human, doctrine, repo, or signed mandate) behind it",
+    flags: [v("--issue"), v("--reason"), v("--authorized"), v("--mandate"), f("--artifact"), f("--doctrine"), v("--impact"), v("--actor")],
     pos: ["gate?"],
-    usage: "<gate> --issue <KEY> --reason <why> --authorized <grant> --artifact <path> [--doctrine <path>] [--impact U0|U1|U2|U3] [--actor <who>]",
+    usage: "<gate> --issue <KEY> --reason <why> (--authorized <grant> | --mandate <handle>) --artifact <path> [--doctrine <path>] [--impact U0|U1|U2|U3] [--actor <who>]",
   },
   "gate ci": {
     summary: "The required PR check: route a pull_request event by issue key and run the gate legs under the org's hosted policy, GET-only",

@@ -1,0 +1,194 @@
+# A mandate handle (`mnd_<org>_<secret>`) is a bearer capability: whoever holds the raw string can
+# spend the mandate. eris reads the raw string in one place (`plugins/gate/mandate.ts`), validates
+# its shape, wraps it in `effect/Redacted`, and unwraps it in one place
+# (`packages/gates-contract/src/client.ts`) when serializing the `POST /v1/gates/receipts` body.
+#
+# Two rules keep the raw string confined:
+#  1. `mandate-handle-confined`: forbids unwrapping `Redacted.value`, aliasing `effect/Redacted`,
+#     re-exporting it, dynamic-importing it, or barrel-importing `effect` outside `client.ts`.
+#  2. `mandate-handle-single-reader`: forbids reading `ERIS_MANDATE`, `MANDATE_ENV`, or `"--mandate"`
+#     outside `plugins/gate/mandate.ts`.
+#
+# Its sibling `rules/mandate-handle-unprinted.yml` keeps handle-named values out of every print,
+# log, error, template, concatenation, and JSON serialization.
+id: mandate-handle-confined
+language: typescript
+severity: error
+message: A mandate handle is unwrapped or effect/Redacted is aliased outside packages/gates-contract/src/client.ts.
+note: Keep the handle wrapped in effect/Redacted until appendReceipt serializes mandate_handle.
+files:
+  - packages/**/*.ts
+  - plugins/**/*.ts
+  - src/**/*.ts
+  - ts/**/*.ts
+ignores:
+  - packages/gates-contract/src/client.ts
+rule:
+  any:
+    # Redacted.value(...) / Redacted.value<T>(...) / Redacted.value?.(...) / const fn = Redacted.value / E.Redacted.value
+    - kind: member_expression
+      all:
+        - has:
+            field: object
+            regex: (^|\.)Redacted$
+        - has:
+            field: property
+            regex: ^value$
+    # Redacted["value"] / Redacted['value'] / Redacted[`value`]
+    - kind: subscript_expression
+      all:
+        - has:
+            field: object
+            regex: (^|\.)Redacted$
+        - has:
+            field: index
+            regex: '^["''`]value["''`]$'
+    # import { value [as x] } from "effect/Redacted"
+    - kind: import_specifier
+      has:
+        field: name
+        regex: ^value$
+      inside:
+        kind: import_statement
+        stopBy: end
+        has:
+          field: source
+          regex: Redacted
+    # import * as R from "effect/Redacted" under any name other than Redacted
+    - kind: namespace_import
+      not:
+        has:
+          kind: identifier
+          regex: ^Redacted$
+      inside:
+        kind: import_statement
+        stopBy: end
+        has:
+          field: source
+          regex: Redacted
+    # import { Redacted as R } from "effect"
+    - kind: import_specifier
+      all:
+        - has:
+            field: name
+            regex: ^Redacted$
+        - has:
+            field: alias
+            kind: identifier
+      inside:
+        kind: import_statement
+        stopBy: end
+        has:
+          field: source
+          regex: '^["'']effect["'']$'
+    # import * as E from "effect"
+    - kind: namespace_import
+      inside:
+        kind: import_statement
+        stopBy: end
+        has:
+          field: source
+          regex: '^["'']effect["'']$'
+    # Re-exports from effect/Redacted
+    - kind: export_statement
+      has:
+        field: source
+        regex: Redacted
+    # Dynamic import("effect/Redacted") or import("effect")
+    - kind: call_expression
+      all:
+        - has:
+            field: function
+            kind: import
+        - has:
+            field: arguments
+            has:
+              regex: '^["''`]effect(/Redacted)?["''`]$'
+              stopBy: end
+    # const { value } = Redacted / const { value: unwrap } = Redacted / const { ["value"]: unwrap } = Redacted
+    - kind: variable_declarator
+      all:
+        - has:
+            field: name
+            kind: object_pattern
+            has:
+              regex: '^["''`]?value["''`]?$'
+              stopBy: end
+        - has:
+            field: value
+            regex: (^|\.)Redacted$
+---
+id: mandate-handle-single-reader
+language: typescript
+severity: error
+message: ERIS_MANDATE or --mandate is read outside plugins/gate/mandate.ts. Resolve the handle through resolveMandateSkip.
+note: Only plugins/gate/mandate.ts reads ERIS_MANDATE and flags["--mandate"].
+files:
+  - packages/**/*.ts
+  - plugins/**/*.ts
+  - src/**/*.ts
+  - ts/**/*.ts
+ignores:
+  - plugins/gate/mandate.ts
+rule:
+  all:
+    - any:
+        # env.ERIS_MANDATE / ctx.env?.ERIS_MANDATE
+        - kind: property_identifier
+          regex: ^ERIS_MANDATE$
+          inside:
+            kind: member_expression
+        # const { ERIS_MANDATE } = env
+        - kind: shorthand_property_identifier_pattern
+          regex: ^ERIS_MANDATE$
+        # const { ERIS_MANDATE: raw } = env
+        - kind: property_identifier
+          regex: ^ERIS_MANDATE$
+          inside:
+            kind: pair_pattern
+        # const { "ERIS_MANDATE": raw } = env / const { "--mandate": raw } = flags
+        - kind: string
+          regex: '^["''](ERIS_MANDATE|--mandate)["'']$'
+          inside:
+            kind: pair_pattern
+        # const { [MANDATE_ENV]: raw } = env / const { ["--mandate"]: raw } = flags
+        - kind: computed_property_name
+          has:
+            regex: '^(["''`](ERIS_MANDATE|--mandate)["''`]|MANDATE_ENV)$'
+          inside:
+            kind: pair_pattern
+        # env["ERIS_MANDATE"] / env[`ERIS_MANDATE`] / env[MANDATE_ENV] / flags["--mandate"] / flags[`--mandate`]
+        - kind: subscript_expression
+          has:
+            field: index
+            regex: '^(["''`](ERIS_MANDATE|--mandate)["''`]|MANDATE_ENV)$'
+        # "ERIS_MANDATE" in env / "--mandate" in flags / MANDATE_ENV in env
+        - kind: binary_expression
+          all:
+            - has:
+                field: operator
+                regex: ^in$
+            - has:
+                field: left
+                regex: '^(["''`](ERIS_MANDATE|--mandate)["''`]|MANDATE_ENV)$'
+        # readEnv / Object.hasOwn / hasOwnProperty / getOwnPropertyDescriptor / Reflect.get
+        - kind: call_expression
+          all:
+            - has:
+                field: function
+                regex: (^|\.)(readEnv|hasOwn|hasOwnProperty|getOwnPropertyDescriptor|get)$
+            - has:
+                field: arguments
+                has:
+                  regex: '^(["''`](ERIS_MANDATE|--mandate)["''`]|MANDATE_ENV)$'
+                  stopBy: end
+    - not:
+        inside:
+          kind: assignment_expression
+          field: left
+          stopBy: end
+    - not:
+        inside:
+          kind: unary_expression
+          regex: ^delete\s
+          stopBy: end

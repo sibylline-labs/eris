@@ -1,0 +1,158 @@
+# A mandate handle (`mnd_<org>_<secret>`) never reaches a print, a log line, an error, a string
+# concatenation, or a JSON payload outside the single gateway serializer.
+#
+# Two rules hold this invariant:
+#  1. `mandate-handle-unprinted` (active everywhere, including client.ts): flags a handle-named
+#     value (`mandateHandle`, `mandate_handle`, `mandate`) in templates, string concatenations,
+#     error-message assignments, `.join(...)`, and arguments of logging/printing/error-building
+#     calls. Public stamp subfields (`r.mandate.use_id`, etc.) and object-literal property keys
+#     (`{ mandateHandle: safe }`) are allowed.
+#  2. `mandate-handle-unserialized` (active everywhere except `packages/gates-contract/src/client.ts`):
+#     flags passing a handle-named value to `JSON.stringify`.
+id: mandate-handle-unprinted
+language: typescript
+severity: error
+message: A mandate handle reaches a print, log, error, or string expression. Pass it only as a Redacted value; never interpolate or print it.
+note: Use fixed refusal text that never echoes the handle.
+files:
+  - packages/**/*.ts
+  - plugins/**/*.ts
+  - src/**/*.ts
+  - ts/**/*.ts
+rule:
+  all:
+    - any:
+        - kind: identifier
+        - kind: property_identifier
+        - kind: shorthand_property_identifier
+    - regex: ^(mandateHandle|mandate_handle|mandate)$
+    # Allow object-literal key names (`{ mandateHandle: safe }`) while still catching `{ mandate }` shorthand and `{ h: mandateHandle }` values.
+    - not:
+        all:
+          - kind: property_identifier
+          - inside:
+              kind: pair
+              field: key
+    # Allow reading public GateMandateStamp subfields (`r.mandate.use_id`, `mandate.root_id`, ...).
+    - not:
+        any:
+          - all:
+              - kind: identifier
+              - inside:
+                  kind: member_expression
+                  field: object
+                  has:
+                    field: property
+                    regex: ^(id|use_id|root_id|scope|chain_digest|attestation)$
+          - all:
+              - kind: property_identifier
+              - inside:
+                  kind: member_expression
+                  field: property
+                  inside:
+                    kind: member_expression
+                    field: object
+                    has:
+                      field: property
+                      regex: ^(id|use_id|root_id|scope|chain_digest|attestation)$
+    - any:
+        - inside:
+            kind: template_substitution
+            stopBy: end
+        - inside:
+            kind: binary_expression
+            stopBy: end
+            has:
+              field: operator
+              regex: ^\+$
+        - inside:
+            kind: augmented_assignment_expression
+            stopBy: end
+            has:
+              field: operator
+              regex: ^\+=$
+        - inside:
+            kind: assignment_expression
+            field: right
+            stopBy: end
+            has:
+              field: left
+              regex: \.message$
+        - inside:
+            kind: member_expression
+            field: object
+            stopBy: end
+            has:
+              field: property
+              regex: ^join$
+            inside:
+              kind: call_expression
+              field: function
+        - inside:
+            kind: arguments
+            stopBy: end
+            inside:
+              any:
+                - kind: call_expression
+                  has:
+                    field: function
+                    regex: ^(console\.(log|error|warn|info|debug|dir|trace)|ok|warn|fail|failure|precondition|usage|stop|block|String|Bun\.inspect|inspect|refuseAuthority|.*\.(stdout|stderr|write|log|info|warn|error|debug|inspect|concat))$
+                - kind: new_expression
+                  has:
+                    field: constructor
+                    regex: (Error|Failure)$
+---
+id: mandate-handle-unserialized
+language: typescript
+severity: error
+message: A mandate handle is passed to JSON.stringify outside packages/gates-contract/src/client.ts.
+note: Only packages/gates-contract/src/client.ts serializes mandate_handle into the gateway request body.
+files:
+  - packages/**/*.ts
+  - plugins/**/*.ts
+  - src/**/*.ts
+  - ts/**/*.ts
+ignores:
+  - packages/gates-contract/src/client.ts
+rule:
+  all:
+    - any:
+        - kind: identifier
+        - kind: property_identifier
+        - kind: shorthand_property_identifier
+    - regex: ^(mandateHandle|mandate_handle|mandate)$
+    - not:
+        all:
+          - kind: property_identifier
+          - inside:
+              kind: pair
+              field: key
+    - not:
+        any:
+          - all:
+              - kind: identifier
+              - inside:
+                  kind: member_expression
+                  field: object
+                  has:
+                    field: property
+                    regex: ^(id|use_id|root_id|scope|chain_digest|attestation)$
+          - all:
+              - kind: property_identifier
+              - inside:
+                  kind: member_expression
+                  field: property
+                  inside:
+                    kind: member_expression
+                    field: object
+                    has:
+                      field: property
+                      regex: ^(id|use_id|root_id|scope|chain_digest|attestation)$
+    - inside:
+        kind: arguments
+        stopBy: end
+        inside:
+          kind: call_expression
+          has:
+            field: function
+            regex: ^JSON\.stringify$

@@ -29,6 +29,8 @@ surfaces:
       - plugins/doctrine/push.ts
       - plugins/doctrine/set.ts
       - plugins/gate/store.ts
+      - plugins/gate/mandate.ts
+      - plugins/gate/record.ts
       - plugins/gate/ci-verb.ts
       - plugins/loop/deps.ts
       - plugins/loop/claims.ts
@@ -52,6 +54,7 @@ surfaces:
       - tests/doctrine-set.test.ts
       - tests/doctrine-push-set-e2e.test.ts
       - tests/gates-client-receipts.test.ts
+      - tests/gate-mandate.test.ts
       - tests/gate-verbs.test.ts
       - tests/gate-ci.test.ts
       - tests/loop-client.test.ts
@@ -75,7 +78,8 @@ surfaces:
       forwards the caller's directory the bearer is resolved from, login.ts
       receives the bearer and writes it to yaks.json, as do the gates
       client (packages/gates-contract/src/client.ts, which also refuses a
-      non-https, non-loopback URL), doctrine/pull.ts, doctrine/push.ts and doctrine/set.ts (the same bearer, over PUT and POST) and gate/store.ts, gate/ci-verb.ts (which carries
+      non-https, non-loopback URL and is the single boundary that unwraps a
+      Redacted mandate handle into `POST /v1/gates/receipts`), doctrine/pull.ts, doctrine/push.ts and doctrine/set.ts (the same bearer, over PUT and POST) and gate/store.ts, gate/mandate.ts (the single reader of `ERIS_MANDATE` and `--mandate`, wrapping validated handles in `effect/Redacted`), gate/record.ts (which passes the redacted handle to the client and fails closed when a gateway does not stamp v3), gate/ci-verb.ts (which carries
       the bearer GET-only: `eris gate ci` builds its one endpoint on a fetch
       that refuses any other method before the network), loop/deps.ts, loop/claims.ts, loop/target.ts, loop/launch.ts, loop/hand-back.ts, loop/stop.ts, loop/resume.ts and loop/reap.ts carry it to the /v1/linear and yak routes (deps.ts also keeps it out of every loop child's env), tokens.ts mints and prints a service token's secret once, discover.ts strips a remote url's
       credentials before keeping it; the test files

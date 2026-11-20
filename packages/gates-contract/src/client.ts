@@ -16,6 +16,7 @@
  *   - No failure carries the bearer.
  */
 
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { bundleChanges, computeGatesBundleSha, GATES_POLICY_CONTRACT_VERSION, GatesBundleSha, type GatesOrgBundle, GatesPolicyReply, GatesSettings, GatesSettingsReply } from "./bundle";
 import { decodeResult } from "./decode";
@@ -111,7 +112,21 @@ export type GatesClientSlug =
   | "asks-store-forbidden"
   | "asks-store-unreachable"
   | "asks-contract-mismatch"
-  | "asks-rate-limited";
+  | "asks-rate-limited"
+  | "mandate-agent-root"
+  | "mandate-widened"
+  | "mandate-out-of-path"
+  | "mandate-expired"
+  | "mandate-not-covered"
+  | "mandate-exhausted"
+  | "mandate-unknown-mandate"
+  | "mandate-revoked"
+  | "mandate-org-mismatch"
+  | "mandate-session-required"
+  | "mandate-act-unsupported"
+  | "mandate-handle-in-receipt"
+  | "mandate-client-supplied"
+  | "mandate-unavailable";
 
 const failure = (slug: GatesClientSlug, what: string, fix: string): ContractFailure => ({ slug, what, fix, docs: `docs/ERRORS.md#${slug}`, exit: 3 });
 
@@ -664,12 +679,55 @@ export async function listReceipts(ep: GatesEndpoint, issue: string): Promise<Ou
   });
 }
 
-/** What `appendReceipt` sends: the caller's comment id (the gateway dedupes a retried write on it), the receipt and its prose. */
+/**
+ * The codes the gates store answers a receipt carrying `mandate_handle` with, at their HTTP statuses.
+ * Each `what` is fixed text: no refusal echoes the handle.
+ */
+export const MANDATE_STORE_CODES = {
+  agent_root: { status: 403, slug: "mandate-agent-root", what: "a root mandate needs a member's passkey; an agent cannot mint one" },
+  widened: { status: 403, slug: "mandate-widened", what: "the child mandate is not inside its parent" },
+  mandate_out_of_path: { status: 403, slug: "mandate-out-of-path", what: "the mandate is bound to another session" },
+  expired: { status: 403, slug: "mandate-expired", what: "the mandate has expired" },
+  not_covered: { status: 403, slug: "mandate-not-covered", what: "no scope on the mandate covers this gate skip" },
+  exhausted: { status: 403, slug: "mandate-exhausted", what: "the mandate has no uses left" },
+  unknown_mandate: { status: 404, slug: "mandate-unknown-mandate", what: "no mandate matches the handle" },
+  revoked: { status: 401, slug: "mandate-revoked", what: "the mandate was revoked" },
+  org_mismatch: { status: 401, slug: "mandate-org-mismatch", what: "the handle belongs to another org than this login" },
+  mandate_session_required: { status: 422, slug: "mandate-session-required", what: "a mandate is presented from a session: --actor must be session:<id>" },
+  mandate_act_unsupported: { status: 422, slug: "mandate-act-unsupported", what: "the mandate service covers a gate skip of this gate and issue only" },
+  handle_in_receipt: { status: 422, slug: "mandate-handle-in-receipt", what: "the receipt or its prose carries a mandate handle" },
+  mandate_client_supplied: { status: 422, slug: "mandate-client-supplied", what: "the receipt carries its own mandate stamp; only the store writes one" },
+  mandate_unavailable: { status: 503, slug: "mandate-unavailable", what: "the mandate service is unavailable, so nothing was stamped or stored" },
+} as const satisfies Record<string, { readonly status: number; readonly slug: GatesClientSlug; readonly what: string }>;
+export type MandateStoreCode = keyof typeof MANDATE_STORE_CODES;
+
+export const isMandateStoreCode = (code: string): code is MandateStoreCode => Object.hasOwn(MANDATE_STORE_CODES, code);
+
+/** The `mandate-*` failure slug for one store refusal code. */
+export function mandateRefusalSlug(code: MandateStoreCode): (typeof MANDATE_STORE_CODES)[MandateStoreCode]["slug"] {
+  return MANDATE_STORE_CODES[code].slug;
+}
+
+/** A refused mandate use on a receipt write (exit 3): nothing was stored. */
+export function mandateRefused(code: MandateStoreCode): ContractFailure {
+  const entry = MANDATE_STORE_CODES[code];
+  return failure(
+    entry.slug,
+    `the gate receipt store refused the mandate (${code}): ${entry.what}; no receipt was stored`,
+    code === "mandate_unavailable"
+      ? "Re-run once the mandate service answers; the same comment id spends no second use."
+      : "Ask the mandate's holder for a handle that covers this act from this session, or record the skip with --authorized.",
+  );
+}
+
+/** What `appendReceipt` sends: the caller's comment id (the gateway dedupes a retried write on it), the receipt, its prose, and an optional redacted mandate handle. */
 export interface ReceiptAppend {
   readonly commentId: string;
   readonly issue: string;
   readonly receipt: unknown;
   readonly prose: string;
+  /** A validated `mnd_` handle for the store to spend one use of and stamp the record `gate-receipt@v3` with; unwrapped only here into the JSON request body. */
+  readonly mandateHandle?: Redacted.Redacted<MandateHandle> | undefined;
 }
 
 export interface AppendedReceipt {
@@ -682,7 +740,13 @@ export interface AppendedReceipt {
 /** Store one receipt and publish its comment (`POST /v1/gates/receipts`). One attempt: a retry is the caller's, with the same comment id. */
 export async function appendReceipt(ep: GatesEndpoint, append: ReceiptAppend): Promise<Outcome<AppendedReceipt>> {
   const what = "the receipt write";
-  const body = JSON.stringify({ comment_id: append.commentId, issue: append.issue, receipt: append.receipt, prose: append.prose });
+  const body = JSON.stringify({
+    comment_id: append.commentId,
+    issue: append.issue,
+    receipt: append.receipt,
+    prose: append.prose,
+    ...(append.mandateHandle !== undefined ? { mandate_handle: Redacted.value(append.mandateHandle) } : {}),
+  });
   const a = await exchange(ep, {
     method: "POST",
     path: RECEIPTS_PATH,
@@ -692,7 +756,12 @@ export async function appendReceipt(ep: GatesEndpoint, append: ReceiptAppend): P
     body,
   });
   if (!a.ok) return a;
-  if (!ok2xx(a.value)) return fail(storeRefusal(a.value, what, { receipt: true, issue: true }));
+  if (!ok2xx(a.value)) {
+    if (append.mandateHandle !== undefined && isMandateStoreCode(a.value.code) && MANDATE_STORE_CODES[a.value.code].status === a.value.status) {
+      return fail(mandateRefused(a.value.code));
+    }
+    return fail(storeRefusal(a.value, what, { receipt: true, issue: true }));
+  }
   noteStale(ep, a.value.headers);
   const d = decoded(a.value, what, RecordReply);
   if (!d.ok) return d;

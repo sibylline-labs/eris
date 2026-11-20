@@ -1,0 +1,57 @@
+id: mandate-handle-confined
+valid:
+  - |
+    import * as Redacted from "effect/Redacted";
+    const wrapped = Redacted.make(parsed);
+  - |
+    import * as Redacted from "effect/Redacted";
+    const ok = Redacted.isRedacted(x);
+  - |
+    import type * as Redacted from "effect/Redacted";
+    type H = Redacted.Redacted<string>;
+  - |
+    const v = other.value;
+  - |
+    import * as Schema from "effect/Schema";
+    const s = Schema.String;
+invalid:
+  - |
+    const raw = Redacted.value(mandate);
+  - |
+    const raw = Redacted.value<string>(mandate);
+  - |
+    const raw = Redacted.value?.(mandate);
+  - |
+    const fn = Redacted.value;
+  - |
+    const raw = E.Redacted.value(mandate);
+  - |
+    const raw = Redacted["value"](mandate);
+  - |
+    const raw = Redacted['value'](mandate);
+  - |
+    const raw = Redacted[`value`](mandate);
+  - |
+    import { value } from "effect/Redacted";
+  - |
+    import { value as unwrap } from "effect/Redacted";
+  - |
+    import * as R from "effect/Redacted";
+  - |
+    import { Redacted as R } from "effect";
+  - |
+    import * as E from "effect";
+  - |
+    export { value as unwrap } from "effect/Redacted";
+  - |
+    export * from "effect/Redacted";
+  - |
+    const mod = await import("effect/Redacted");
+  - |
+    const mod = await import("effect");
+  - |
+    const { value } = Redacted;
+  - |
+    const { value: unwrap } = Redacted;
+  - |
+    const { ["value"]: unwrap } = Redacted;

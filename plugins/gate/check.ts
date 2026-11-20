@@ -19,8 +19,8 @@
  * copy answer (the receipt's own, else the store's under its sha256), and only when its bytes re-hash.
  *
  * Then, in order: forbidden gates (`absent`/`forbidden`), the `burden` line, the user-impact floor
- * (each requirement as a row, then `@floor`, then `@door` with its rung), `@remediate unsupported`
- * when the issue has a remediation receipt (this build does not judge the loop), and `@asks` for a
+ * (each requirement as a row, then `@floor`, then `@door` with its rung), `@remediate` when the
+ * issue has a remediation receipt (`ok`, `pending`, `violated`, or `hand-off`), and `@asks` for a
  * terminal gate. Any failing row fails the check with one `gate-check-failed` block.
  *
  * With `applyModes` (`--profile`) each gate's mode comes from the active posture: an `off` gate with
@@ -92,6 +92,7 @@ import { type Git, repoRoot } from "./git";
 import type { GateReviews } from "./index";
 import { BLEED_REDUCING, type DoorLadder, DOOR_SIGNOFF, doorRung, RUNG_MEANS } from "./ladder";
 import { knownActors, skipGate, validateTarget } from "./record";
+import { gitSurfaceBar, remediateRow, stateOf, type SurfaceBar } from "./remediate";
 import type { Crossed } from "./surfaces";
 
 export type GateStatus =
@@ -113,9 +114,6 @@ const FAILING: ReadonlySet<GateStatus> = new Set(["missing", "bad-digest", "bloc
 
 /** The gates that end a run: checking one also refuses an open blocking ask. */
 export const TERMINAL_GATES: ReadonlyArray<string> = ["final-gates"];
-
-/** The gate a remediation loop records its rounds under; this build does not judge it. */
-const REMEDIATE_GATE = "remediate";
 
 /** About 31 s across 8 reads: the store's observed read lag is seconds to about a minute. */
 export const EXPECT_RETRY_DELAYS_MS: ReadonlyArray<number> = [250, 500, 1000, 2000, 4000, 8000, 15000];
@@ -163,6 +161,8 @@ export interface CheckInput {
   readonly issueReceipts?: ReadonlyArray<GateReceipt> | undefined;
   readonly now: Date;
   readonly asks?: { readonly pr?: number | undefined; readonly json?: boolean | undefined } | undefined;
+  /** The remediation surface bar (default: `gitSurfaceBar(g, cwd)`). */
+  readonly surfaceBar?: SurfaceBar | undefined;
 }
 
 /** The receipt deciding a gate, with the marker version it was parsed from. */
@@ -469,7 +469,9 @@ const CHECK_FIX =
   "  ('eris gate record revert-path --issue <KEY> --verdict PASS --artifact <note>'; SKIPPED never meets the floor),\n" +
   "  or lower the class with a receipt carrying --authorized <grant>.\n" +
   "unclassified: apply user-impact@1 and record a gate (understand-scope) with --impact U0|U1|U2|U3.\n" +
-  "@remediate unsupported: this build does not judge a remediation loop; check the issue with an eris build that does.\n" +
+  "@remediate violated: a re-review broke actor separation, reused the launch head, or the remediation diff widened a\n" +
+  "  surface; a different reviewer re-reviews the new head, or a human signs the widening. hand-off: max_rounds reached;\n" +
+  "  a human signs off ('eris gate record remediate --verdict PASS --authorized \"<name> asked: <request>\"').\n" +
   "asks: an open blocking ask holds the terminal gate: answer it or withdraw it;\n" +
   "  only a human withdraws a one-way ask. Answers are read live, so re-run check once it is answered.\n" +
   "door R0: a human signs off before the run closes: 'eris gate record door-signoff --issue <KEY> --verdict PASS\n" +
@@ -495,7 +497,6 @@ export async function checkGates(input: CheckInput): Promise<void> {
   const classed: { receipt: GateReceipt; at: string }[] = [];
   const issueReceipts: GateReceipt[] = [];
   const gitRepos = new Set<string>();
-  let remediation = false;
   let invalid = listing.invalid;
   for (const row of listing.receipts) {
     const parsed = decodePayload(row.version, row.payload);
@@ -506,7 +507,6 @@ export async function checkGates(input: CheckInput): Promise<void> {
     const r = parsed.receipt;
     if (r.issue !== input.issue) continue;
     issueReceipts.push(r);
-    if (r.gate === REMEDIATE_GATE) remediation = true;
     if (r.artifact._tag === "git") gitRepos.add(r.artifact.repo);
     if (r.user_impact !== undefined) classed.push({ receipt: r, at: row.createdAt });
     if (!wanted.has(r.gate)) continue;
@@ -673,10 +673,11 @@ export async function checkGates(input: CheckInput): Promise<void> {
     }
   }
 
-  if (remediation) {
-    input.out("@remediate\tunsupported\t-");
-    input.warn(`WARN @remediate: unsupported: ${input.issue} has a ${REMEDIATE_GATE} receipt, and this build does not judge a remediation loop`);
-    failing.push("@remediate (unsupported: this build does not judge a remediation loop)");
+  const remediation = await remediateRow(stateOf(input.issue, listing.receipts), input.surfaceBar ?? gitSurfaceBar(input.g, input.cwd));
+  if (remediation !== undefined) {
+    input.out(`@remediate\t${remediation.status}\t${remediation.round}`);
+    for (const why of remediation.why) input.warn(`WARN @remediate: ${remediation.status}: ${why}`);
+    if (remediation.status === "violated" || remediation.status === "hand-off") failing.push(`@remediate (${remediation.status}: ${remediation.why.join("; ")})`);
   }
 
   if (asksRead !== undefined) {

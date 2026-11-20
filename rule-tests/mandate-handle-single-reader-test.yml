@@ -1,0 +1,55 @@
+id: mandate-handle-single-reader
+valid:
+  - |
+    const row = v("--mandate");
+  - |
+    const help = "pass --mandate or set ERIS_MANDATE";
+  - |
+    const child = { ...env, ERIS_MANDATE: "" };
+  - |
+    env.ERIS_MANDATE = "";
+  - |
+    env["ERIS_MANDATE"] = "";
+  - |
+    delete childEnv.ERIS_MANDATE;
+  - |
+    const raw = readEnv(env, "ERIS_OTHER");
+invalid:
+  - |
+    const raw = ctx.env.ERIS_MANDATE;
+  - |
+    const raw = ctx.env?.ERIS_MANDATE;
+  - |
+    const raw = env["ERIS_MANDATE"];
+  - |
+    const raw = env[`ERIS_MANDATE`];
+  - |
+    const raw = env[MANDATE_ENV];
+  - |
+    const raw = flags["--mandate"];
+  - |
+    const raw = flags[`--mandate`];
+  - |
+    const { ERIS_MANDATE } = ctx.env;
+  - |
+    const { ERIS_MANDATE: m } = ctx.env;
+  - |
+    const { "ERIS_MANDATE": m } = ctx.env;
+  - |
+    const { "--mandate": m } = flags;
+  - |
+    const { [MANDATE_ENV]: m } = ctx.env;
+  - |
+    const { ["--mandate"]: m = "" } = flags;
+  - |
+    const raw = readEnv(ctx.env, "ERIS_MANDATE");
+  - |
+    const raw = readEnv(ctx.env, MANDATE_ENV);
+  - |
+    if ("ERIS_MANDATE" in ctx.env) warn();
+  - |
+    if ("--mandate" in flags) warn();
+  - |
+    if (Object.hasOwn(flags, "--mandate")) warn();
+  - |
+    const raw = Reflect.get(env, "ERIS_MANDATE");
