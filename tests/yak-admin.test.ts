@@ -182,12 +182,12 @@ describe("eris yak status", () => {
     expect(r).toEqual({ rc: 0, stdout: `${JSON.stringify(body)}\n`, stderr: "" });
   });
 
-  it("no token: the yak-token-unresolved block, exit 1, nothing sent", async () => {
+  it("no token: the eris-login-required block, exit 3, nothing sent", async () => {
     /** When a missing token reads as success, an agent believes it checked the org: observed at the exit code and the request log. */
     let stderr = "";
     const rc = await runYakVerb(["status"], { erisDir: REPO, env: { PATH: process.env.PATH, HOME: home }, format: "text", stdout: { write: () => true }, stderr: { write: (s: string) => ((stderr += s), true) } });
-    expect(rc).toBe(1);
-    expect(stderr).toContain("slug: yak-token-unresolved");
+    expect(rc).toBe(3);
+    expect(stderr).toContain("slug: eris-login-required");
     expect(requests).toHaveLength(0);
   });
 

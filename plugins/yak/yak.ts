@@ -38,7 +38,7 @@ import {
   resolveDeviceId,
   resolveExecutionId,
 } from "./yak-identity";
-import { erisHome, groupArgs, readArgs, renderFailureBlock, renderWarnLines } from "../../src/cli/plugin";
+import { erisHome, exitForSlug, groupArgs, readArgs, renderFailureBlock, renderWarnLines } from "../../src/cli/plugin";
 import plugin from "./index";
 import { gatherProvenance } from "./yak-context";
 import {
@@ -403,6 +403,10 @@ export async function runYak(opts: RunYakOptions): Promise<RunYakResult> {
   // --- identity: config file, token, url, device id ------------------------
   const bearerOutcome = await resolveOrgBearer({ home, env, cwd: opts.cwd ?? process.cwd() });
   if ("reason" in bearerOutcome) {
+    // Signed out is a failure in every verb (one slug, one exit), so an agent never reads a filing that went nowhere as a success.
+    if (bearerOutcome.slug === "eris-login-required") {
+      return { ...misuseResult(bearerOutcome.slug, bearerOutcome.reason, erisHomeDir, noRedactWarning, jsonOutput, verb, undefined, flags.noRedact, bearerOutcome.fix), exitCode: exitForSlug(bearerOutcome.slug) };
+    }
     return warnResult(verb, bearerOutcome.slug, bearerOutcome.reason, jsonOutput, noRedactWarning, flags.noRedact);
   }
   const bearer = bearerOutcome.value;

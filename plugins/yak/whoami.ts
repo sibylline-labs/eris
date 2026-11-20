@@ -15,7 +15,7 @@
  *     with the same slug and fix, and exits 1.
  */
 
-import { readArgs, readYaksFileConfig, renderFailureBlock, resolveOrgBearer, tokenOrg, yaksConfigPath, type OrgSelection, type VerbContext } from "../../src/cli/plugin";
+import { exitForSlug, readArgs, readYaksFileConfig, renderFailureBlock, resolveOrgBearer, tokenOrg, yaksConfigPath, type OrgSelection, type VerbContext } from "../../src/cli/plugin";
 import plugin from "./index";
 
 export const WHOAMI_USAGE = `Usage: eris whoami
@@ -74,7 +74,7 @@ export async function runWhoami(args: string[], ctx: VerbContext, deps: WhoamiDe
   const bearer = await resolveOrgBearer({ home, env: ctx.env, cwd });
   if ("reason" in bearer) {
     ctx.stderr.write(renderFailureBlock({ slug: bearer.slug, what: bearer.reason, fix: bearer.fix }, ctx.erisDir));
-    return 1;
+    return exitForSlug(bearer.slug);
   }
   const b = bearer.value;
   const { readOrgMe } = await import("./yak-admin");

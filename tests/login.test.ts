@@ -161,7 +161,7 @@ describe("eris login — the device-code grant", () => {
     polls = [oauth("authorization_pending"), oauth("slow_down", { interval: 10 }), minted()];
     const r = await drive(runLogin, ["--url", url()]);
 
-    expect({ rc: r.rc, stdout: r.stdout }).toEqual({ rc: 0, stdout: `logged in: token "laptop (eris)" written to ${yaksJson()}\n` });
+    expect({ rc: r.rc, stdout: r.stdout }).toEqual({ rc: 0, stdout: `logged in to org 01HZX3K5Q8W2N4R6T8V0Y2B4D6: token "laptop (eris)" written to ${yaksJson()}\n` });
     expect(r.stderr).toContain(USER_CODE);
     expect(r.stderr).toContain(`https://dash.example.test/device?code=${USER_CODE}`);
     expectNoSecret(r);
@@ -199,7 +199,7 @@ describe("eris login — the device-code grant", () => {
     /** When the post-login pull runs before the write, or its failure becomes the login's exit, a gateway without the policy route signs nobody in: observed at yaks.json, the exit code and the WARN's slug. */
     polls = [minted()];
     const r = await drive(runLogin, ["--url", url()], { deps: { afterLogin: seedAfterLogin({ home, cwd: sandbox }) } });
-    expect({ rc: r.rc, stdout: r.stdout }).toEqual({ rc: 0, stdout: `logged in: token "laptop (eris)" written to ${yaksJson()}\n` });
+    expect({ rc: r.rc, stdout: r.stdout }).toEqual({ rc: 0, stdout: `logged in to org 01HZX3K5Q8W2N4R6T8V0Y2B4D6: token "laptop (eris)" written to ${yaksJson()}\n` });
     expect(JSON.parse(readFileSync(yaksJson(), "utf8"))).toEqual({ url: url(), token: TOKEN });
     // The pull ran on the token just written (the stub has no policy route, so it 404s).
     expect(requests.filter((q) => q.path === "/v1/gates/policy").map((q) => q.auth)).toEqual([`Bearer ${TOKEN}`]);
@@ -292,5 +292,17 @@ describe("eris logout", () => {
 
     const again = await drive(runLogout, []);
     expect({ rc: again.rc, stdout: again.stdout }).toEqual({ rc: 0, stdout: "not logged in: no token in " + yaksJson() + "\n" });
+  });
+});
+
+describe("eris logout text", () => {
+  // admits: logout telling a user to look for a dashboard page when `eris tokens revoke` does it; the printed usage and stderr bytes
+  it("names eris tokens revoke in its usage and after removing the token", async () => {
+    mkdirSync(join(home, ".eris"), { recursive: true });
+    writeFileSync(yaksJson(), JSON.stringify({ url: url(), token: TOKEN }), { mode: 0o600 });
+    const r = await drive(runLogout, []);
+    expect(r.stderr).toContain("eris tokens revoke");
+    const help = await drive(runLogout, ["--help"]);
+    expect(help.stdout).toContain("eris tokens revoke");
   });
 });

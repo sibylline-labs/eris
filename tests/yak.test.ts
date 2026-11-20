@@ -410,7 +410,8 @@ describe("runYak — --output json emits a bare record on misuse too (exit 1 unc
 });
 
 describe("runYak — environment/config/transport (exit 0, WARN, never the failure block)", () => {
-  it("no token resolvable: WARN + exit 0, stdout empty in text mode", async () => {
+  // admits: a signed-out filing exiting 0 so an agent reads it as delivered; the exit code and block of runYak with an empty HOME
+  it("no token resolvable: the failure block, exit 3, stdout empty in text mode", async () => {
     const home = await freshHome();
     try {
       const result = await runYak(
@@ -420,10 +421,10 @@ describe("runYak — environment/config/transport (exit 0, WARN, never the failu
           home,
         }),
       );
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(3);
       expect(result.stdout).toBe("");
-      expect(result.stderr).toContain("WARN ");
-      expect(result.stderr).toContain("slug: yak-token-unresolved");
+      expect(result.stderr).toContain("ERROR ");
+      expect(result.stderr).toContain("slug: eris-login-required");
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -545,7 +546,8 @@ describe("runYak — environment/config/transport (exit 0, WARN, never the failu
   // `warnResult`/`warnOutputRecord`, a separate code path from the
   // network-outcome warn above. Both must independently honour the
   // output-contract fix.
-  it("no token resolvable, json mode: one bare record, exit 0, stderr empty", async () => {
+  // admits: a json consumer reading a signed-out filing as delivered; the bare record, exit code and empty stderr of runYak
+  it("no token resolvable, json mode: one bare record, exit 3, stderr empty", async () => {
     const home = await freshHome();
     try {
       const result = await runYak(
@@ -555,10 +557,10 @@ describe("runYak — environment/config/transport (exit 0, WARN, never the failu
           home,
         }),
       );
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(3);
       const record = JSON.parse(result.stdout);
       expect(record.delivered).toBe(false);
-      expect(record.error.slug).toBe("yak-token-unresolved");
+      expect(record.error.slug).toBe("eris-login-required");
       expect(record.redactions).toEqual({ count: 0, classes: [], skipped: false });
       expect(result.stderr).toBe("");
     } finally {

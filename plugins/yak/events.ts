@@ -26,6 +26,10 @@ export type EventsSlug = "events-invalid" | "events-not-found" | "events-unavail
 
 const LIMIT_MAX = 500;
 
+/** The products the archive answers for: the gateway's closed product set. A name outside it is answered 400 `invalid_query`. */
+export const EVENT_PRODUCTS = ["accounts", "yak", "graph", "socrates", "linear-proxy", "gates", "bus", "mandate"] as const;
+const PRODUCT_LIST = EVENT_PRODUCTS.join(", ");
+
 const EventRecord = z
   .object({ event_id: z.string(), product: z.string(), stream: z.string(), seq: z.number(), type: z.string(), occurred_at: z.string() })
   .passthrough();
@@ -42,7 +46,24 @@ Commands:
                     The lines the archive parked as invalid; the operator org's read:
                     any other org is answered not found
 
+Products: ${PRODUCT_LIST}.
+
 A page ends with its next cursor on stderr; pass it back as --cursor.
+`;
+
+export const EVENTS_LIST_USAGE = `Usage: eris events list --product <product> [--day <YYYY-MM-DD>] [--cursor <c>] [--limit <1..${LIMIT_MAX}>]
+
+This org's archived events for a product and UTC day (default: today).
+
+  --product <product>   one of: ${PRODUCT_LIST}
+  --day <YYYY-MM-DD>    a UTC calendar date
+  --cursor <c>          the next cursor a page printed, unchanged
+  --limit <1..${LIMIT_MAX}>      page size
+
+A page ends with its next cursor on stderr; pass it back as --cursor.
+
+Example:
+  eris events list --product yak --day 2026-11-18
 `;
 
 const oneLine = (text: string): string => text.replace(/[\p{Cc}\u{2028}\u{2029}]+/gu, " ").replace(/ {2,}/g, " ").trim();
@@ -53,6 +74,7 @@ function refusal(status: number, code: string | undefined, target: string): Fail
   if (status === 401) return { slug: "yak-unauthorized", what: `${answered}: it rejected the bearer token`, fix: "run: eris login\n(or check ERIS_YAKS_TOKEN when it is set)" };
   if (status === 403) return { slug: "events-unavailable", what: `${answered}: this credential cannot read events`, fix: "run: eris login   (a CLI login carries the linear-proxy product; a service token without it does not)" };
   if (status === 404) return { slug: "events-not-found", what: `${answered}: nothing is served there for this org`, fix: "the parked read is the operator org's; for list, check the product with: eris whoami" };
+  if (status === 400) return { slug: "events-invalid", what: `${answered}: the endpoint refused the query`, fix: `check --product (one of: ${PRODUCT_LIST}), --day (a UTC date), --limit (1..${LIMIT_MAX}) and --cursor (one a page printed, unchanged)` };
   return { slug: "events-unavailable", what: answered, fix: "retry; 'eris whoami' shows which org and url this directory uses" };
 }
 
@@ -89,11 +111,11 @@ function sharedQuery(flags: Record<string, string | boolean | undefined>, ctx: V
 }
 
 async function runList(args: string[], ctx: VerbContext, deps: AdminDeps): Promise<number> {
-  const p = readArgs(plugin.rows, "events list", args, ctx);
+  const p = readArgs(plugin.rows, "events list", args, ctx, { help: EVENTS_LIST_USAGE });
   if (p === null) return 0;
   const product = p.flags["--product"];
   if (typeof product !== "string" || !/^[a-z][a-z-]{0,31}$/.test(product)) {
-    return fail(ctx, invalid(typeof product === "string" ? `--product ${oneLine(product)} is not a product name` : "eris events list was given no --product", "use: --product <product>, for example --product yak"));
+    return fail(ctx, invalid(typeof product === "string" ? `--product ${oneLine(product)} is not a product name` : "eris events list was given no --product", `use: --product <product>, one of: ${PRODUCT_LIST}`));
   }
   const query = sharedQuery(p.flags, ctx, new Date());
   if (query === null) return 1;

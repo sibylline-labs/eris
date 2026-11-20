@@ -63,7 +63,7 @@ const START_HERE: readonly { readonly verb: string; readonly run?: string; reado
   { verb: "login", what: "sign this machine in to your org (one login serves org, socrates, doctrine and gate)" },
   { verb: "org connect-linear", what: "connect the org's Linear workspace" },
   { verb: "org connect-github", what: "install the GitHub App on your GitHub org and bind it" },
-  { verb: "doctrine settings", what: "Gates: read the org's settings, then set the ones you need (login already pulled the policy)" },
+  { verb: "doctrine settings", what: "Gates: read the org's settings, then set the ones you need (login pulls the policy when it can; if it warned, run 'eris doctrine pull' first)" },
   { verb: "socrates settings", what: "Socrates: enrol projects, choose the Canon doc and the review team" },
   { verb: "org webhooks", run: "org webhooks logfire", what: "print the alert webhook URL to paste into Logfire" },
 ];

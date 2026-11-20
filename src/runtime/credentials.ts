@@ -268,10 +268,10 @@ export function resolveYaksBearer(
   fileConfig: YaksFileConfig,
   env: Record<string, string | undefined> = process.env,
   flag?: string,
-): { value: YaksBearer } | { reason: string; slug: "yak-token-unresolved" | "yak-url-unresolved"; fix: string } {
+): { value: YaksBearer } | { reason: string; slug: "eris-login-required" | "yak-url-unresolved"; fix: string } {
   const source = yaksTokenSource(fileConfig, env);
   if (source === null) {
-    return { reason: "not signed in: run 'eris login', or set ERIS_YAKS_TOKEN", slug: "yak-token-unresolved", fix: "run 'eris login'" };
+    return { reason: "not signed in: run 'eris login', or set ERIS_YAKS_TOKEN", slug: "eris-login-required", fix: "run 'eris login'" };
   }
   const url = resolveUrl(fileConfig, env, flag);
   if (source === "config") {
@@ -314,6 +314,11 @@ export function bearerUrlRefusal(url: string): string | null {
   return parsed.protocol === "http:"
     ? `the eris login URL is plain http on ${parsed.hostname}, which is not a loopback host, so the token is not sent in cleartext`
     : `the eris login URL's scheme is ${parsed.protocol}; the token goes only to https, or http on localhost, 127.0.0.1 or [::1]`;
+}
+
+/** The exit a failure slug carries: a signed-out machine is 3 in every verb, anything else a plain failure, 1. */
+export function exitForSlug(slug: string): 1 | 3 {
+  return slug === "eris-login-required" ? 3 : 1;
 }
 
 /** The slugs `resolveOrgBearer` names that keep their own `docs/ERRORS.md` heading in a verb that otherwise reads any other miss as a login to run. */
@@ -526,7 +531,7 @@ export async function resolveOrgBearer(opts: {
   flag?: string;
 }): Promise<
   | { value: OrgBearer }
-  | { reason: string; slug: OrgSlug | "yak-config-permissive" | "yak-config-malformed" | "yak-token-unresolved" | "yak-url-unresolved" | "login-url-refused"; fix: string }
+  | { reason: string; slug: OrgSlug | "yak-config-permissive" | "yak-config-malformed" | "eris-login-required" | "yak-url-unresolved" | "login-url-refused"; fix: string }
 > {
   const file = await readYaksFileConfig(opts.home);
   if ("reason" in file) return { reason: file.reason, slug: file.slug, fix: `fix or remove ${yaksConfigPath(opts.home)}, then run 'eris login' again` };

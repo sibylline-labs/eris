@@ -23,7 +23,7 @@
  * default unless `ERIS_ORG` or an `eris.yaml` `repo.org` selects another) and
  * keeps the default's url. No route
  * lets a bearer revoke itself, so the token stays valid server-side until it is
- * revoked from the dashboard's API tokens settings; the command says so.
+ * revoked (`eris tokens revoke <id>` while signed in, or the dashboard's API tokens settings); the command says so.
  *
  * Invariants:
  *   - Neither the device code nor the bearer is ever written to stdout or
@@ -46,7 +46,7 @@
  */
 
 import { hostname as osHostname } from "node:os";
-import { renderFailureBlock, renderWarnLines, readArgs, type VerbContext } from "../../src/cli/plugin";
+import { isOrgId, readArgs, renderFailureBlock, renderWarnLines, tokenOrg, type VerbContext } from "../../src/cli/plugin";
 import plugin from "./index";
 import {
   addOrgLogin,
@@ -70,7 +70,8 @@ export type LoginSlug =
   | "login-denied"
   | "login-expired"
   | "login-env-token-overrides"
-  | "login-org-differs";
+  | "login-org-differs"
+  | "login-org-mismatch";
 
 const DEVICE_AUTHORIZATION_PATH = "/v1/device/code";
 const DEVICE_TOKEN_PATH = "/v1/device/token";
@@ -84,7 +85,7 @@ const REQUEST_TIMEOUT_MS = 15_000;
 /** The gateway caps a device label at 128 characters. */
 const MAX_LABEL = 128;
 
-export const LOGIN_USAGE = `Usage: eris login [--url <url>] [--no-browser]
+export const LOGIN_USAGE = `Usage: eris login [--url <url>] [--org <id>] [--no-browser]
 
 Sign this machine in with a device code: approve the code shown here in your
 browser, and the token is written to ~/.eris/yaks.json (mode 0600), where
@@ -96,17 +97,22 @@ login to the same org, is this machine's default org; a login to another org
 is added beside it. A repo acts as another org when its eris.yaml names it
 (repo: {org: <org id>}) or ERIS_ORG is set; 'eris whoami' shows which.
 
+  --org <id>     the org you expect to land on (the id 'eris whoami' prints):
+                 a login that ends in another org is refused and writes nothing
   --url <url>    the endpoint (default: $ERIS_YAKS_URL, then the url
                  already in ~/.eris/yaks.json, then ${DEFAULT_YAKS_URL})
   --no-browser   print the link without trying to open a browser
 `;
 
+const STAYS_VALID = "the token stays valid until it is revoked: 'eris tokens revoke <id>' does it (ids: 'eris tokens ls'; needs a sign-in), or Settings > API Tokens\n";
+
 export const LOGOUT_USAGE = `Usage: eris logout
 
 Remove the token of the org this directory acts as from ~/.eris/yaks.json
 (the default org, unless ERIS_ORG or the repo's eris.yaml selects another),
-keeping the default org's url. The token stays valid until it is revoked under
-Settings > API Tokens.
+keeping the default org's url. The token stays valid until it is revoked:
+run 'eris tokens revoke <id>' (ids: 'eris tokens ls', which needs a sign-in, so
+do it before logging out) or revoke it under Settings > API Tokens.
 `;
 
 export interface LoginDeps {
@@ -225,6 +231,10 @@ export async function runLogin(args: string[], ctx: VerbContext, deps: LoginDeps
   const file = await readYaksFileConfig(home);
   if ("reason" in file) return fail(ctx, file.slug, file.reason, `fix or remove ${yaksConfigPath(home)}, then run 'eris login' again`);
 
+  const expectedOrg = a.flags["--org"];
+  if (expectedOrg !== undefined && !isOrgId(expectedOrg)) {
+    return fail(ctx, "org-selector-invalid", "--org is not an org id", "pass the id 'eris whoami' prints: 26 uppercase Crockford base32 characters");
+  }
   const url = resolveUrl(file.value, ctx.env, a.flags["--url"]).value;
   const base = url.replace(/\/+$/, "");
 
@@ -280,6 +290,15 @@ export async function runLogin(args: string[], ctx: VerbContext, deps: LoginDeps
       if (typeof token !== "string" || token === "" || String(body?.token_type).toLowerCase() !== "bearer") {
         return fail(ctx, "login-refused", "the endpoint approved the code but sent no bearer token", "run 'eris login' again");
       }
+      const landed = tokenOrg(token);
+      if (expectedOrg !== undefined && landed !== expectedOrg) {
+        return fail(
+          ctx,
+          "login-org-mismatch",
+          `this login is for ${landed === null ? "an org this CLI cannot read from the token" : `org ${landed}`}, not the expected org ${expectedOrg}; nothing was written`,
+          "sign in to the expected workspace in the browser, then run 'eris login --org <id>' again",
+        );
+      }
       // Read again: another login may have written the file while this one waited for approval.
       const latest = await readYaksFileConfig(home);
       if ("reason" in latest) return fail(ctx, latest.slug, latest.reason, `fix or remove ${yaksConfigPath(home)}, then run 'eris login' again`);
@@ -302,7 +321,7 @@ export async function runLogin(args: string[], ctx: VerbContext, deps: LoginDeps
         ctx.stderr.write(renderWarnLines("ERIS_YAKS_TOKEN is set and overrides the token just written; unset it to use this login", "login-env-token-overrides"));
       }
       const name = typeof body?.name === "string" ? printable(body.name) : "eris";
-      ctx.stdout.write(added.asDefault ? `logged in: token "${name}" written to ${written.value}\n` : `logged in to org ${added.org}: token "${name}" written to ${written.value}\n`);
+      ctx.stdout.write(added.org === null ? `logged in: token "${name}" written to ${written.value}\n` : `logged in to org ${added.org}: token "${name}" written to ${written.value}\n`);
       await deps.afterLogin?.(ctx);
       return 0;
     }
@@ -344,7 +363,7 @@ export async function runLogout(args: string[], ctx: VerbContext, deps: Pick<Log
     const written = await writeYaksFileConfig(removal.config, home);
     if ("reason" in written) return fail(ctx, written.slug, written.reason, `make ${path} writable, then run 'eris logout' again`);
     ctx.stdout.write(`logged out of org ${org}: removed its token from ${path}\n`);
-    ctx.stderr.write("the token stays valid until it is revoked under Settings > API Tokens\n");
+    ctx.stderr.write(STAYS_VALID);
   } else {
     if (removal.config.url === undefined && removal.config.orgs === undefined) {
       try {
@@ -357,7 +376,7 @@ export async function runLogout(args: string[], ctx: VerbContext, deps: Pick<Log
       if ("reason" in written) return fail(ctx, written.slug, written.reason, `make ${path} writable, then run 'eris logout' again`);
     }
     ctx.stdout.write(`logged out: removed the token from ${path}\n`);
-    ctx.stderr.write("the token stays valid until it is revoked under Settings > API Tokens\n");
+    ctx.stderr.write(STAYS_VALID);
   }
   if (yaksTokenSource({}, ctx.env) === "env") {
     ctx.stderr.write(renderWarnLines("ERIS_YAKS_TOKEN is still set, so 'eris yak' keeps authenticating with it", "login-env-token-overrides"));

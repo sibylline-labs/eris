@@ -51,7 +51,7 @@ export type YakIdentitySlug =
   | "yak-config-permissive"
   | "yak-config-malformed"
   | "yak-config-unwritable"
-  | "yak-token-unresolved"
+  | "eris-login-required"
   | "yak-device-id-unwritable";
 
 /** One resolver's failure: a human-facing reason and its slug, paired on one

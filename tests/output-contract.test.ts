@@ -63,7 +63,7 @@ describe("§1 the stream split", () => {
   test("a machine surface's stdout is JSON only — no diagnostics mixed in", async () => {
     /** When a diagnostic lands on a --output json stdout, a consumer cannot parse the payload. */
     const r = await sb.run(["--output", "json", ...YAK]);
-    expectStatus(r, 0);
+    expectStatus(r, 3);
     expectStderrEmpty(r);
     const doc = expectStdoutJson(r) as { verb: string; delivered: boolean };
     // The record is the verb's own outcome, not an empty object.
@@ -101,7 +101,7 @@ describe("§2 the global --output flag", () => {
     /** When the pre-pass only reads the flag before the group, `yak issue --output=json …` renders text to a parser. */
     const [group, verb, ...rest] = YAK;
     const r = await sb.run([group!, verb!, "--output=json", ...rest]);
-    expectStatus(r, 0);
+    expectStatus(r, 3);
     expectStdoutJson(r);
   });
 

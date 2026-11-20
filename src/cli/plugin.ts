@@ -37,6 +37,7 @@ export {
   isOrgId,
   readYaksFileConfig,
   readYaksFileConfigSync,
+  exitForSlug,
   removeOrgLogin,
   RESOLVER_OWN_HEADING_SLUGS,
   resolveOrgBearer,

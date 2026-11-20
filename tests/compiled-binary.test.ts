@@ -50,10 +50,10 @@ describe.skipIf(binaryOnly("a compiled binary's own startup and refusals"))("a c
     /** When a verb spawns bun or resolves a package at runtime, a host that installs only the binary fails: `eris yak` loads zod, and with it unresolvable it reports yak-deps-not-installed instead of its outcome. */
     sb.hideReal("bun");
     const r = await sb.run(["--output", "json", ...YAK]);
-    expect({ status: r.status, stderr: r.stderr }).toEqual({ status: 0, stderr: "" });
+    expect({ status: r.status, stderr: r.stderr }).toEqual({ status: 3, stderr: "" });
     const record = JSON.parse(r.stdout) as { verb: string; delivered: boolean; error?: { slug: string } };
     expect({ verb: record.verb, delivered: record.delivered }).toEqual({ verb: "issue", delivered: false });
-    expect(record.error?.slug).not.toBe("yak-deps-not-installed");
+    expect(record.error?.slug).toBe("eris-login-required");
   });
 
   it("turns off BUN_CONFIG_VERBOSE_FETCH, so a fetch's bearer never reaches stderr", async () => {

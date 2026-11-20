@@ -464,8 +464,7 @@ redaction has room to grow.
 checkout). `eris yak` refuses rather than running an unbounded `bun install`
 inline mid-task, or letting `bun` crash with a raw, unslugged `Cannot find
 package '…'` (`plugins/yak/handlers.ts`). Fix: `cd` to the eris checkout and run
-`bun install` yourself. It warns and exits 0, like
-[`yak-token-unresolved`](#yak-token-unresolved): the command that reports a
+`bun install` yourself. It warns and exits 0: the command that reports a
 broken harness must not become one more thing that stops the agent. Under
 `--output json` it is the bare record on stdout (`delivered: false`, `error.slug`)
 with stderr empty.
@@ -481,10 +480,8 @@ named for it. Nothing is sent. Only the token `eris login` writes to
 `~/.eris/yaks.json` falls back to the default URL.
 
 Fix: set `ERIS_YAKS_URL` to the endpoint that token belongs to, or unset
-`ERIS_YAKS_TOKEN` and run `eris login`. Like
-[`yak-token-unresolved`](#yak-token-unresolved), `eris yak issue|suggest|fatal`
-warns and exits 0, and `eris yak status`, `discover`, `config get|set` and
-`eris socrates` print the failure block and exit 1.
+`ERIS_YAKS_TOKEN` and run `eris login`. `eris yak issue|suggest|fatal` warns and exits 0, and `eris yak status`, `discover`,
+`config get|set` and `eris socrates` print the failure block and exit 1.
 
 ### yak-unreachable
 
@@ -557,16 +554,6 @@ Fix: recreate it as `{"url": "...", "token": "..."}`.
 line names the path and the errno). The previous file is untouched: the new
 one is written to a temp file beside it and renamed into place. Fix: make
 `~/.eris` writable by you, then run the command again.
-
-### yak-token-unresolved
-
-No bearer token resolved for the Yaks endpoint — neither `ERIS_YAKS_TOKEN` nor a
-`"token"` field in a readable `~/.eris/yaks.json`. Environment/config, warn +
-exit 0. Fix: run `eris login` and approve the code it shows in your browser; it
-writes the token to `~/.eris/yaks.json`. Approving is a human step, not
-something an agent can do mid-task. From `eris yak status`, `discover` or
-`config get|set` it is the failure block and exit 1, since those verbs have
-nothing to do without a token.
 
 ### yak-device-id-unwritable
 
@@ -952,6 +939,12 @@ from the one this directory acts as (`ERIS_ORG`, or `repo.org` in the repo's
 `eris.yaml`). The token was still stored, under its own org. The device code
 was approved while the browser was signed in to the other org. Fix: sign the
 browser in to the org this directory selects, then run `eris login` again.
+
+### login-org-mismatch
+
+`eris login --org <id>` was approved in a browser signed in to a different org (or the token names no org
+this CLI can read). Nothing was written: the machine's token file is as it was. Fix: sign the browser in
+to the org you expected, then run `eris login --org <id>` again. Exit 1.
 
 ### org-not-signed-in
 
@@ -1407,7 +1400,8 @@ checkpoint_invalid`. Fix: as the `fix:` line shows. Exit 1.
 
 `eris events list` or `parked` was given a `--product`, `--day`, `--limit` or `--cursor` the endpoint would
 refuse (a day that is not a real UTC date, a limit outside 1..500, a cursor over 64 characters, no product
-for `list`). Nothing was sent. Exit 1.
+for `list`), or the endpoint answered `400` for the query (a `--product` outside the gateway's set:
+accounts, yak, graph, socrates, linear-proxy, gates, bus, mandate). Exit 1.
 
 ### events-not-found
 
@@ -1455,7 +1449,7 @@ push` saves it as the org's policy. Exit 3.
 
 A verb that calls the hosted gates API has no usable `eris login` bearer: none is saved for this
 directory's org and `ERIS_YAKS_TOKEN` is unset, the credentials file cannot be read, or the gateway
-rejected the token (HTTP 401; the block names the server's error code). Run `eris login` once on the
+rejected the token (HTTP 401; the block names the server's error code). The same slug and exit 3 come from every verb that needs a login and has none: `eris yak issue|suggest|fatal`, `yak status`, `whoami`, `tokens`, `org`, `slack`, `events` and `eris socrates`, so an agent never reads a signed-out filing as delivered. Run `eris login` once on the
 machine, or set `ERIS_YAKS_TOKEN` to a `sib_` service token with its `ERIS_YAKS_URL`. Exit 3.
 
 ### login-url-refused
