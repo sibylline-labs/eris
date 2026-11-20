@@ -329,7 +329,7 @@ export interface SavedPolicy {
   readonly widened: boolean | null;
   /** Why the gateway judged the save a widening, one phrase each. */
   readonly reasons: readonly string[];
-  /** What authorised the save (`portal_admin`, `mandate_passkey`, `seed`); null when the gateway did not say. */
+  /** What authorised the save (`cli`, `portal_admin`, `mandate_passkey`, `seed`); null when the gateway did not say. */
   readonly auth_mode: string | null;
   /** `bundleChanges(base, bundle)`: the parts of the base the save changed. */
   readonly changed: readonly string[];

@@ -63,7 +63,7 @@ beforeAll(() => {
         puts.push({ auth: req.headers.get("authorization"), body });
         if (putAnswer !== null) return putAnswer;
         const sha = await computeGatesBundleSha(BUNDLE, body.settings);
-        versions.push({ version: latest().version + 1, settings: body.settings, bundle_sha: sha, auth_mode: body.mandate_handle === undefined ? "portal_admin" : "mandate_passkey" });
+        versions.push({ version: latest().version + 1, settings: body.settings, bundle_sha: sha, auth_mode: body.mandate_handle === undefined ? "cli" : "mandate_passkey" });
         return Response.json({ contract, version: latest().version, bundle_sha: sha, saved_at: "2026-11-18T12:30:00.000Z", widened: body.mandate_handle !== undefined, reasons: body.mandate_handle !== undefined ? ["ci.untracked_prs loosened"] : [], auth_mode: latest().auth_mode });
       }
       return problem(404, "not_found");
@@ -221,10 +221,17 @@ describe("eris doctrine history", () => {
   it("lists every version oldest first with who saved it, and as JSON with the settings each held", async () => {
     await doctrine(["settings", "set", "staleness", "hard"]);
     const lines = (await doctrine(["history"])).stdout.trim().split("\n");
-    expect(lines.map((l) => l.split("\t").slice(0, 3))).toEqual([["1", "2026-11-11T12:00:00.000Z", "seed"], ["2", "2026-11-12T12:00:00.000Z", "portal_admin"]]);
+    expect(lines.map((l) => l.split("\t").slice(0, 3))).toEqual([["1", "2026-11-11T12:00:00.000Z", "seed"], ["2", "2026-11-12T12:00:00.000Z", "cli"]]);
     const j = JSON.parse((await doctrine(["history"], "json")).stdout);
     expect(j.org).toBe(ORG);
     expect(j.versions[1].settings.staleness).toBe("hard");
     expect(j.versions[0].bundle).toBeUndefined();
+  });
+
+  // admits: boundary-io: a source this CLI does not name failing the history decode, or being rewritten to another label; the real decoder runs over a mock HTTP boundary.
+  it("prints an auth_mode it does not know as the server sent it", async () => {
+    versions[1] = { ...versions[0]!, version: 2, auth_mode: "service" };
+    const lines = (await doctrine(["history"])).stdout.trim().split("\n");
+    expect(lines.map((l) => l.split("\t")[2])).toEqual(["seed", "service"]);
   });
 });

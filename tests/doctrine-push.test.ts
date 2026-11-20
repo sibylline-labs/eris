@@ -71,7 +71,7 @@ beforeAll(() => {
           saved_at: "2026-11-17T12:30:00.000Z",
           widened: passkey,
           reasons: passkey ? ["loop one-shot edited", "posture business-as-usual loosened"] : [],
-          auth_mode: passkey ? "mandate_passkey" : "portal_admin",
+          auth_mode: passkey ? "mandate_passkey" : "cli",
         });
       }
       return problem(404, "not_found");
@@ -180,7 +180,7 @@ describe("eris doctrine push", () => {
       pushed: true,
       widened: false,
       reasons: [],
-      auth_mode: "portal_admin",
+      auth_mode: "cli",
       changed: ["posture business-as-usual changed"],
     });
     expect(r.stderr).toBe("");

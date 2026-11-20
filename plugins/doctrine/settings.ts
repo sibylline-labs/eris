@@ -63,7 +63,7 @@ export const HISTORY_USAGE = `Usage: eris doctrine history [--output json]
 
 List every stored version of the org's policy (GET /v1/gates/policy/history),
 oldest first: '<version>\\t<saved_at>\\t<auth_mode>\\t<widened|->\\t<bundle_sha>'. auth_mode says
-who saved it (portal_admin, mandate_passkey or seed). JSON: { org, versions: [{ version,
+who saved it (cli, portal_admin, mandate_passkey or seed). JSON: { org, versions: [{ version,
 bundle_sha, saved_at, widened, reasons, auth_mode, settings }] }.
 `;
 

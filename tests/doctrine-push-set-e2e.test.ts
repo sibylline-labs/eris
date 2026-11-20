@@ -49,7 +49,7 @@ beforeAll(async () => {
       if (route === "PUT /v1/gates/policy") {
         live = ((await req.json()) as { bundle: GatesOrgBundle }).bundle;
         liveSha = await computeGatesBundleSha(live, SETTINGS);
-        return Response.json({ contract: "gates-contract/v1.5", version: 2, bundle_sha: liveSha, saved_at: "2026-11-17T12:30:00.000Z", widened: false, reasons: [], auth_mode: "portal_admin" });
+        return Response.json({ contract: "gates-contract/v1.5", version: 2, bundle_sha: liveSha, saved_at: "2026-11-17T12:30:00.000Z", widened: false, reasons: [], auth_mode: "cli" });
       }
       if (route === "GET /v1/gates/doctrine-comments") return Response.json({ issues: ["ABC-1"], contract_version: "gates-contract/v1" });
       if (route === "GET /v1/gates/receipts") {
