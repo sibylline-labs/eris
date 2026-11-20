@@ -61,9 +61,13 @@ import type { VerbContext, VerbHandler } from "./cli/plugin";
 import type { DoctrineDefaultsSource } from "../plugins/doctrine";
 import type { PullDeps } from "../plugins/doctrine/pull";
 import type { GateDefaults } from "../plugins/gate";
+import type { GateDeps } from "../plugins/gate/gate";
+import type { Recorded } from "../plugins/gate/record";
+import type { GateMonotoneInput, GateRecordReceiptInput } from "../plugins/gate/sdk-helpers";
 import type { LoopDefaults } from "../plugins/loop";
 import type { LoopDeps } from "../plugins/loop/deps";
 import type { Launched, LaunchInput } from "../plugins/loop/launch";
+import type { DoorLadder, GateReceipt, ListedReceipt, MonotoneSignoff } from "eris/gates-contract";
 
 export * from "./cli/plugin";
 export type { VerbPath } from "./cli/registry";
@@ -83,8 +87,26 @@ export { PLUGINS } from "../plugins";
 export type { DoctrineDefaults, DoctrineDefaultsSource } from "../plugins/doctrine";
 export { doctrinePlugin } from "../plugins/doctrine";
 export type { PullDeps } from "../plugins/doctrine/pull";
-export type { GateDefaults, GateReviews, PulledTree, ReviewFreshness, ReviewFreshnessRequest } from "../plugins/gate";
-export { gatePlugin } from "../plugins/gate";
+export type {
+  BurdenCrossed,
+  BurdenSurfacesRequest,
+  GateActorRequest,
+  GateDefaults,
+  GateReviews,
+  GateRows,
+  GateSubcommand,
+  PulledTree,
+  PulledTreeRequest,
+  ReceiptLink,
+  ResolvedGateActor,
+  ReviewFreshness,
+  ReviewFreshnessRequest,
+} from "../plugins/gate";
+export { gatePlugin, gateRows } from "../plugins/gate";
+export { GateFailure } from "../plugins/gate/failure";
+export type { GateDeps } from "../plugins/gate/gate";
+export type { EvidenceInput as GateEvidenceInput, Recorded as GateRecorded } from "../plugins/gate/record";
+export type { GateMonotoneInput, GateRecordReceiptInput } from "../plugins/gate/sdk-helpers";
 export type { GateReviewReport, ReviewMainState } from "eris/gates-contract";
 export type { LoopDefaults, LoopLegacy, LoopTree, PolicyRequest } from "../plugins/loop";
 export { loopPlugin } from "../plugins/loop";
@@ -132,4 +154,49 @@ export async function freshTree(ctx: VerbContext, claimSha: string | undefined, 
 export async function launchLoopSession(ctx: VerbContext, defaults: LoopDefaults, input: LaunchInput, deps: LoopDeps = {}): Promise<Launched> {
   const [{ runOf }, { launchLoop }] = await Promise.all([import("../plugins/loop/deps"), import("../plugins/loop/launch")]);
   return launchLoop(runOf(ctx, defaults, deps), input);
+}
+
+/** `eris gate`'s handler with distribution defaults and optional test deps; its code loads on the first call. */
+export function gateHandler(defaults: GateDefaults = {}, deps: GateDeps = {}): VerbHandler {
+  return async (args, ctx) => (await import("../plugins/gate/gate")).gateHandler(defaults, deps)(args, ctx);
+}
+
+/** `eris surface`'s handler with distribution defaults and optional test deps; its code loads on the first call. */
+export function surfaceHandler(defaults: GateDefaults = {}, deps: GateDeps = {}): VerbHandler {
+  return async (args, ctx) => (await import("../plugins/gate/surface-verb")).surfaceHandler(defaults, deps)(args, ctx);
+}
+
+/** Record one gate receipt programmatically using `defaults`'s pulled tree, actor resolver, and receipt link; loads on first call. */
+export async function recordGateReceipt(ctx: VerbContext, defaults: GateDefaults, input: GateRecordReceiptInput, deps: GateDeps = {}): Promise<Recorded> {
+  return (await import("../plugins/gate/sdk-helpers")).recordGateReceipt(ctx, defaults, input, deps);
+}
+
+/** List an issue's gate receipts programmatically with the gate plugin's store auth, policy-sha and 429 retry; loads on first call. */
+export async function listGateReceipts(
+  ctx: VerbContext,
+  defaults: GateDefaults,
+  issue: string,
+  deps: GateDeps = {},
+): Promise<{ readonly receipts: ReadonlyArray<ListedReceipt>; readonly invalid: number }> {
+  return (await import("../plugins/gate/sdk-helpers")).listGateReceipts(ctx, defaults, issue, deps);
+}
+
+/** Read the latest passing human-granted receipt for `gate` on `issue`; loads on first call. */
+export async function gateHumanSignoff(ctx: VerbContext, defaults: GateDefaults, issue: string, gate: string, deps: GateDeps = {}): Promise<MonotoneSignoff> {
+  return (await import("../plugins/gate/sdk-helpers")).gateHumanSignoff(ctx, defaults, issue, gate, deps);
+}
+
+/** Run the monotone surface bar check against `input.base`, optionally verifying `surface-widen` on `input.issue`; loads on first call. */
+export async function judgeGateMonotone(ctx: VerbContext, defaults: GateDefaults, input: GateMonotoneInput, deps: GateDeps = {}): Promise<void> {
+  return (await import("../plugins/gate/sdk-helpers")).judgeGateMonotone(ctx, defaults, input, deps);
+}
+
+/** Read and validate a door-class ladder YAML file, or null when absent; loads on first call. */
+export async function readGateLadder(file: string): Promise<DoorLadder | null> {
+  return (await import("../plugins/gate/sdk-helpers")).readGateLadder(file);
+}
+
+/** Render one receipt's comment prose (with optional prior receipts and optional `{link}` line); loads on first call. */
+export async function renderGateProse(r: GateReceipt, priors: ReadonlyArray<GateReceipt> = [], link = ""): Promise<string> {
+  return (await import("../plugins/gate/sdk-helpers")).renderGateProse(r, priors, link);
 }

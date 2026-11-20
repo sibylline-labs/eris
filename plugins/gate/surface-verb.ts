@@ -12,8 +12,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ContractFailure } from "eris/gates-contract";
 import { CliExit, groupArgs, readArgs, renderFailureBlock, type VerbContext, type VerbHandler } from "../../src/cli/plugin";
-import { resolveActor } from "./actor";
-import { CHECK_RATE_LIMIT_DELAYS_MS, CHECK_RATE_LIMIT_MAX_WAIT_MS, type GateDeps, verbFor, writeRun } from "./gate";
+import { CHECK_RATE_LIMIT_DELAYS_MS, CHECK_RATE_LIMIT_MAX_WAIT_MS, type GateDeps, linkNote, resolveActorWith, verbFor, writeRun } from "./gate";
 import { GateFailure, precondition, usage } from "./failure";
 import { issuesText, validateSurfacesYaml } from "./registry";
 import plugin, { type GateDefaults } from "./index";
@@ -104,7 +103,8 @@ async function runSet(to: "locked" | "open", args: string[], ctx: VerbContext, d
   const missing = [...(name === "" ? ["<name>"] : []), ...(to === "locked" && fl["--reason"] === undefined ? ["--reason"] : [])];
   if (missing.length > 0) refuse(ctx, `${path}: missing ${missing.join(", ")}`, path);
   const v = await verbFor(ctx, defaults, deps);
-  const who = await resolveActor({ flag: fl["--actor"], g: v.g, cwd: v.cwd });
+  const who = await resolveActorWith(defaults, { flag: fl["--actor"], g: v.g, cwd: v.cwd });
+  const link = defaults.receiptLink?.(ctx) ?? null;
   const r = await setLock(await writeRun(v), {
     name,
     to,
@@ -113,6 +113,7 @@ async function runSet(to: "locked" | "open", args: string[], ctx: VerbContext, d
     registry: fl["--registry"] ?? DEFAULT_REGISTRY,
     actor: who.actor,
     actorInfo: who.actorInfo,
+    receiptLink: link,
   });
   if (r.kind === "noop") {
     ctx.stdout.write("-\n");
@@ -120,7 +121,7 @@ async function runSet(to: "locked" | "open", args: string[], ctx: VerbContext, d
     return 0;
   }
   ctx.stdout.write(`${r.commentId}\n`);
-  ctx.stderr.write(`INFO ✓ ${to === "locked" ? "locked" : "unlocked"} ${name} (ledger ${r.ledger})\n`);
+  ctx.stderr.write(`INFO ✓ ${to === "locked" ? "locked" : "unlocked"} ${name} (ledger ${r.ledger}${linkNote(link, r)})\n`);
   return 0;
 }
 

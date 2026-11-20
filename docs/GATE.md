@@ -8,7 +8,7 @@ through the hosted gates store and reads them back to decide whether a change ma
 ```
 eris gate record <gate> --issue <KEY> [--verdict PASS|AMENDED|BLOCKING] [--artifact <path>] [evidence flags]
 eris gate skip   <gate> --issue <KEY> --reason <why> (--authorized <grant> | --mandate <handle>) --artifact <path>
-eris gate check  --issue <KEY> (--gates <a,b,...> | --profile <name>) [--expect <id,...>] [--effort <level>] [--head-sha <sha>] [--diff-sha256 <sha256>]
+eris gate check  --issue <KEY> (--gates <a,b,...> | --profile <name> | --unlock merge|deploy|effect [--base <ref>]) [--expect <id,...>] [--effort <level>] [--head-sha <sha>] [--diff-sha256 <sha256>]
 eris gate ci     [--event <file>] [--registry <path>]
 
 eris surface lock   <name> --reason <why> --authorized <grant> [--registry <path>]
@@ -150,6 +150,24 @@ not be verified), the gate reads `review-stale` unless the receipt carries a hum
 grant. Without `reviews` (the public default), any `review-report` evidence fails closed as
 `blocking`.
 
+### Unlock (`--unlock`)
+
+`eris gate check --issue <KEY> --unlock merge|deploy|effect [--base <ref>] [--head-sha <sha>] [--registry <path>] [--target <owner/repo>] [--effect-kind <kind>] [--announce]`
+evaluates whether a one-way action on the registered surfaces a change crosses may proceed without a
+human, against `.claude/surfaces.yml` at the merge-base of `--base` (default `origin/main`) and
+`HEAD`. It is exclusive with `--gates`, `--profile` and `--burden`.
+
+- `--unlock deploy` requires `--target <owner/repo>`: deploying to a system another owner holds
+  (`foreign-deploy`) never unlocks automatically.
+- `--unlock effect` requires `--effect-kind <kind>`: a kind containing a data-destroying segment
+  (`drop`, `delete`, `truncate`, `destroy`, `purge`, `wipe`; `data-destroying-effect`) never unlocks
+  automatically.
+- A hard rule yields only to a passing human `door-signoff` receipt bound to the head that carries
+  both `door: <action>` and `hard-rule: <id>` evidence lines (printing `@hard-rule\toverridden\t<id>`).
+- `--announce` records idempotent `unlocked-<action>` receipts on each crossed ledger (and on the
+  issue itself) using a deterministic comment id derived from `(ledger, action, head, baseline)` and
+  re-reading each surface's lock state immediately before writing.
+
 ### Read lag
 
 The store's reads lag its writes by seconds to about a minute. `--expect <id,...>` (the ids
@@ -208,10 +226,25 @@ counting the `unlocked-<action>` receipts on its ledger inside `--since` (defaul
 
 ## A distribution's gate
 
-A distribution composes these verbs from `eris/sdk` alone: `gatePlugin({ ladderFile, pulled, reviews })`
-in place of this build's gate plugin, with `pulledTree` as `pulled` to read the org's verified policy
-tree and `reviews` (`GateReviews`) supplying the registered review skills and `main` skill/vocabulary
-freshness reader (`ReviewFreshness`). Without `reviews`, `check` and `ci` fail closed as `blocking`
-on `review-report@1` evidence. `ladderFile` is the door-class ladder `check` reads with no `--ladder`;
-without it U0/U1 read the auto rung and U2/U3 read the human-after rung. `loopPlugin` and `freshTree` compose the loop verbs
-the same way, and `examples/distribution` composes all three.
+A distribution composes these verbs from `eris/sdk` alone:
+`gatePlugin({ ladderFile, pulled, reviews, resolveActor, burdenSurfaces, receiptLink, subcommands, gateSummary })`
+in place of this build's gate plugin:
+
+- `pulled` (typically `pulledTree`) reads the org's verified policy tree;
+- `reviews` (`GateReviews`) supplies the registered review skills and `main` skill/vocabulary
+  freshness reader (`ReviewFreshness`); without it, `check` and `ci` fail closed as `blocking` on
+  `review-report@1` evidence;
+- `ladderFile` (a static path or `(ctx) => string | undefined`) is the door-class ladder `check`
+  reads with no `--ladder` (without it U0/U1 read the auto rung and U2/U3 read the human-after rung);
+- `resolveActor` overrides actor resolution across `record`, `skip`, `surface lock|unlock`, and
+  `check --unlock --announce`;
+- `burdenSurfaces` overrides `--burden` surface resolution (for multi-leaf estates);
+- `receiptLink` renders an optional permalink inside receipt comments (`{link}` template slot) and
+  notes it on stderr;
+- `subcommands` adds distribution-only `eris gate <sub>` verbs (colliding with `record`, `skip`,
+  `check` or `ci` is refused by `gateRows`), with `recordGateReceipt`, `listGateReceipts`,
+  `gateHumanSignoff`, `judgeGateMonotone`, `readGateLadder`, `renderGateProse`, `gateHandler`,
+  `surfaceHandler`, and `GateFailure` exported from `eris/sdk` and pure evaluators exported from
+  `eris/gates-contract`.
+
+`loopPlugin` and `freshTree` compose the loop verbs the same way, and `examples/distribution` composes all three.

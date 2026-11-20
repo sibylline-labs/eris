@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { type GateActor, isHumanGrant, listReceipts, retryRateLimited } from "eris/gates-contract";
 import { precondition, unwrap, usage } from "./failure";
+import type { ReceiptLink } from "./index";
 import { lockState, SURFACE_LOCK_GATE } from "./ledger";
 import { recordGate, type WriteRun } from "./record";
 import { issuesText, validateSurfacesYaml } from "./registry";
@@ -42,9 +43,19 @@ export interface SetLockInput {
   readonly registry: string;
   readonly actor: string;
   readonly actorInfo?: GateActor | undefined;
+  readonly receiptLink?: ReceiptLink | null | undefined;
 }
 
-export type SetLock = { readonly kind: "noop"; readonly ledger: string } | { readonly kind: "recorded"; readonly ledger: string; readonly commentId: string };
+export type SetLock =
+  | { readonly kind: "noop"; readonly ledger: string }
+  | {
+      readonly kind: "recorded";
+      readonly ledger: string;
+      readonly commentId: string;
+      readonly recordSha256?: string | undefined;
+      readonly linkUrl?: string | undefined;
+      readonly linkMismatch?: true | undefined;
+    };
 
 /** Locks or lifts one surface. A surface already in the target state records nothing (`noop`). */
 export async function setLock(run: WriteRun, input: SetLockInput): Promise<SetLock> {
@@ -70,6 +81,14 @@ export async function setLock(run: WriteRun, input: SetLockInput): Promise<SetLo
     evidence: [{ kind: "text", content: `${input.to === "locked" ? "locked" : "lifted"} ${input.name}: ${reason}` }],
     actor: input.actor,
     actorInfo: input.actorInfo,
+    ...(input.receiptLink !== undefined ? { receiptLink: input.receiptLink } : {}),
   });
-  return { kind: "recorded", ledger, commentId: recorded.commentId };
+  return {
+    kind: "recorded",
+    ledger,
+    commentId: recorded.commentId,
+    ...(recorded.recordSha256 !== undefined ? { recordSha256: recorded.recordSha256 } : {}),
+    ...(recorded.linkUrl !== undefined ? { linkUrl: recorded.linkUrl } : {}),
+    ...(recorded.linkMismatch !== undefined ? { linkMismatch: recorded.linkMismatch } : {}),
+  };
 }

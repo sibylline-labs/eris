@@ -84,7 +84,7 @@ import {
   type RetryOpts,
   retryRateLimited,
 } from "eris/gates-contract";
-import { resolveArtifact, resolveTargetHead, targetRoot } from "./artifact";
+import { rebuildDiff, resolveArtifact, resolveTargetHead, targetRoot } from "./artifact";
 import { type BurdenRubric, burdenOf, type EvidenceKind, owedBy, unmet } from "./burden";
 import { precondition, stop, unwrap } from "./failure";
 import { effectiveClass } from "./floor";
@@ -170,6 +170,7 @@ export interface Latest {
   readonly receipt: GateReceipt;
   readonly version: "v1" | "v2";
   readonly at: string;
+  readonly id?: string | undefined;
 }
 
 export interface Judged {
@@ -384,7 +385,21 @@ export async function statusOf(c: Checking, latest: Latest | undefined, doctrine
   let copy = r.artifact.copy;
   if (copy === undefined) {
     const stored = unwrap(await artifactCopy(c.input.ep, r.artifact.sha256));
-    if (stored._tag === "NotStored") return found === null ? { status: "drift" } : live;
+    if (stored._tag === "NotStored") {
+      const rebuilt =
+        r.artifact._tag === "file"
+          ? await rebuildDiff(
+              c.input.g,
+              c.input.cwd,
+              r.evidence.flatMap((e) => (e.kind === "text" ? [e.content] : [])),
+              r.artifact.sha256,
+            )
+          : null;
+      if (rebuilt !== null) {
+        return { status: "pass", why: `re-derived from git (${live.why})${acceptance !== undefined ? `; ${acceptance}` : ""}`, bytes: rebuilt };
+      }
+      return found === null ? { status: "drift" } : live;
+    }
     copy = stored.copy;
   }
   const bytes = verifiedCopy(copy, r.artifact.sha256);
@@ -402,7 +417,7 @@ export function humanGrantGap(latest: Latest | undefined, status: GateStatus): s
 }
 
 /** The issue's listing, re-read on `delays` until it holds every `expect` id, or `gate-receipt-unseen`. */
-async function readListing(input: CheckInput): Promise<{ receipts: ReadonlyArray<ListedReceipt>; invalid: number }> {
+export async function readListing(input: Pick<CheckInput, "ep" | "issue" | "expect" | "expectDelaysMs" | "sleep" | "readRetry">): Promise<{ receipts: ReadonlyArray<ListedReceipt>; invalid: number }> {
   const delays = input.expectDelaysMs ?? EXPECT_RETRY_DELAYS_MS;
   const expect = input.expect ?? [];
   const read = async () => unwrap(await retryRateLimited(() => listReceipts(input.ep, input.issue), input.readRetry));
@@ -477,6 +492,18 @@ const CHECK_FIX =
   "door R0: a human signs off before the run closes: 'eris gate record door-signoff --issue <KEY> --verdict PASS\n" +
   "  --artifact <plan> --authorized \"<name> asked: <request>\"' (a doctrine: grant never signs a door).";
 
+/** The `@asks` row, one warn line per open ask, and (with `--asks`) the `{"asks":` JSON line. */
+function emitAsks(input: CheckInput, open: ReadonlyArray<AskRow>): void {
+  const pr = input.asks?.pr;
+  input.out(`@asks\t${open.length === 0 ? "clear" : "open"}\t${open.length}`);
+  // The id and question are the asker's text: quoted, so a newline cannot forge a failure-block line.
+  for (const a of open) input.warn(`ask ${JSON.stringify(a.id)} (${a.door}): ${JSON.stringify(a.question)}`);
+  if (input.asks?.json === true) {
+    const view = open.map((a) => ({ id: a.id, question: a.question, door: a.door, binds: a.binds }));
+    input.out(JSON.stringify({ asks: { issue: input.issue, ...(pr !== undefined ? { pr } : {}), state: open.length === 0 ? "clear" : "open", open: view } }));
+  }
+}
+
 /** Judge every named gate, print one row each and the derived rows, and stop with `gate-check-failed` unless all pass. */
 export async function checkGates(input: CheckInput): Promise<void> {
   validateTarget(input.gates, input.issue);
@@ -489,7 +516,18 @@ export async function checkGates(input: CheckInput): Promise<void> {
       )
     : undefined;
   const crossed = input.burden === undefined ? undefined : await input.burden.crossing();
-  const listing = await readListing(input);
+  // A receipt read that fails (rate-limited, receipts unseen) must not hide a successful asks read
+  // from a `--asks` caller: its `{"asks":` line prints first, then the failure re-raises.
+  let listing: { receipts: ReadonlyArray<ListedReceipt>; invalid: number };
+  try {
+    listing = await readListing(input);
+  } catch (err) {
+    if (asksRead !== undefined && input.asks?.json === true) {
+      const res = await asksRead;
+      if (res.ok) emitAsks(input, res.v);
+    }
+    throw err;
+  }
   const latest = new Map<string, Latest>();
   const floorChecked = input.gates.some((g) => (FLOOR_GATES as readonly string[]).includes(g));
   const forbid = input.forbid ?? [];
@@ -511,7 +549,7 @@ export async function checkGates(input: CheckInput): Promise<void> {
     if (r.user_impact !== undefined) classed.push({ receipt: r, at: row.createdAt });
     if (!wanted.has(r.gate)) continue;
     const prev = latest.get(r.gate);
-    if (prev === undefined || row.createdAt >= prev.at) latest.set(r.gate, { receipt: r, version: parsed.version, at: row.createdAt });
+    if (prev === undefined || row.createdAt >= prev.at) latest.set(r.gate, { receipt: r, version: parsed.version, at: row.createdAt, id: row.id });
   }
   const c: Checking = { input: { ...input, issueReceipts: input.issueReceipts ?? issueReceipts }, digests: new Map(), fresh: new Map(), skills: {}, gitRepos: [...gitRepos] };
   if (invalid > 0) input.warn(`WARN ${invalid} comment(s) on ${input.issue} carry a gate-receipt marker that does not decode; ignored`);
@@ -681,17 +719,10 @@ export async function checkGates(input: CheckInput): Promise<void> {
   }
 
   if (asksRead !== undefined) {
-    const pr = input.asks?.pr;
     const res = await asksRead;
     if (!res.ok) throw res.e;
     const open = res.v;
-    input.out(`@asks\t${open.length === 0 ? "clear" : "open"}\t${open.length}`);
-    // The id and question are the asker's text: quoted, so a newline cannot forge a failure-block line.
-    for (const a of open) input.warn(`ask ${JSON.stringify(a.id)} (${a.door}): ${JSON.stringify(a.question)}`);
-    if (input.asks?.json === true) {
-      const view = open.map((a) => ({ id: a.id, question: a.question, door: a.door, binds: a.binds }));
-      input.out(JSON.stringify({ asks: { issue: input.issue, ...(pr !== undefined ? { pr } : {}), state: open.length === 0 ? "clear" : "open", open: view } }));
-    }
+    emitAsks(input, open);
     if (open.length > 0) failing.push(`open blocking ask(s): ${open.map((a) => `${a.id} ${JSON.stringify(a.question)}`).join(", ")}`);
   }
 

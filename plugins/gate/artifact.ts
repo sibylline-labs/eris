@@ -23,7 +23,7 @@
 
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { type GateArtifact, headMatches, sha256Hex } from "eris/gates-contract";
 import { precondition } from "./failure";
 import { cloneRoot, commitBoundToHead, type Git, ok, remoteSlug, repoRoot, revParse, run, worktreeForBranch } from "./git";
@@ -49,6 +49,26 @@ async function isAncestor(g: Git, dir: string, ancestor: string, descendant: str
 
 const statusArgs = (path: string) => ["-c", "core.quotePath=false", "status", "--porcelain", "--untracked-files=all", "--", path];
 
+/**
+ * Whether `origin` holds `commit`. Local `refs/remotes/origin/*` refs answer first; a detached
+ * worktree built from a sibling's object store can hold a pushed commit while none of them does, so
+ * only then `git ls-remote origin` is queried (read-only, no fetch): a tip equal to `commit`, or a
+ * tip present locally that descends from it. An unreachable origin or a tip this checkout lacks
+ * proves nothing, so it reads as not pushed.
+ */
+async function pushedToOrigin(g: Git, root: string, commit: string): Promise<boolean> {
+  const local = await run(g, root, ["for-each-ref", `--contains=${commit}`, "--format=%(refname)", "refs/remotes/origin"]);
+  if (ok(local) && local.stdout.toString("utf8").trim() !== "") return true;
+  const remote = await run(g, root, ["ls-remote", "origin"]);
+  if (!ok(remote)) return false;
+  const tips = new Set(remote.stdout.toString("utf8").split("\n").map((l) => l.split("\t")[0]!.trim()).filter((sha) => sha !== ""));
+  if (tips.has(commit)) return true;
+  for (const tip of tips) {
+    if ((await revParse(g, tip, root)) !== null && (await isAncestor(g, root, commit, tip))) return true;
+  }
+  return false;
+}
+
 /** record's view of `path`: a `git` locator for a committed, pushed file in a hosted checkout, else an absolute `file`. */
 export async function locateArtifact(g: Git, cwd: string, path: string, sha256: string): Promise<GateArtifact> {
   const abs = real(isAbsolute(path) ? path : resolve(cwd, path));
@@ -68,8 +88,7 @@ export async function locateArtifact(g: Git, cwd: string, path: string, sha256: 
       `Commit and push first:\n  git add ${rel} && git commit -m "..." && git push`,
     );
   }
-  const pushed = await run(g, root, ["for-each-ref", `--contains=${commit}`, "--format=%(refname)", "refs/remotes/origin"]);
-  if (!ok(pushed) || pushed.stdout.toString("utf8").trim() === "") {
+  if (!(await pushedToOrigin(g, root, commit))) {
     return precondition(
       "gate-artifact-uncommitted",
       `--artifact ${path}: commit ${commit.slice(0, 12)} holding ${rel} is not pushed to origin (commit and push first)`,
@@ -79,6 +98,46 @@ export async function locateArtifact(g: Git, cwd: string, path: string, sha256: 
   const branch = await run(g, root, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
   const b = ok(branch) ? branch.stdout.toString("utf8").trim() : "";
   return { _tag: "git", repo: slug, ref: b !== "" ? b : commit, commit, path: rel, sha256 };
+}
+
+/** The evidence line that lets `check` re-derive an oversized `final-gates.diff` from git. */
+const REBUILD_LINE = /^diff-rebuild: repo=(\S+) base=([0-9a-f]{40}) head=([0-9a-f]{40})$/;
+const GIT_DIFF_ARGS = ["diff", "--no-ext-diff", "--no-color"] as const;
+
+/**
+ * record's rebuild evidence for a `file` artifact named `final-gates.diff` with a `final-gates.base`
+ * beside it: the `diff-rebuild:` line, or null when the base is absent, `origin` is not hosted, or
+ * `git diff <base> HEAD` in the checkout does not match `sha256`.
+ */
+export async function rebuildEvidence(g: Git, cwd: string, path: string, sha256: string): Promise<string | null> {
+  const abs = real(isAbsolute(path) ? path : resolve(cwd, path));
+  if (basename(abs) !== "final-gates.diff") return null;
+  const baseBytes = readOr(join(dirname(abs), "final-gates.base"));
+  const base = baseBytes === null ? "" : Buffer.from(baseBytes).toString("utf8").trim();
+  if (!/^[0-9a-f]{40}$/.test(base)) return null;
+  const root = await repoRoot(g, cwd);
+  const slug = root === null ? null : await originSlug(g, root);
+  const head = root === null ? null : await revParse(g, "HEAD", root);
+  if (root === null || slug === null || head === null) return null;
+  const diff = await run(g, root, [...GIT_DIFF_ARGS, base, head]);
+  return ok(diff) && sha256Hex(diff.stdout) === sha256 ? `diff-rebuild: repo=${slug} base=${base} head=${head}` : null;
+}
+
+/**
+ * `check`'s last resort for a `file` artifact with no live bytes and no stored copy: the diff a
+ * `diff-rebuild:` evidence line names, re-derived in a local checkout of its repo. Null unless the
+ * bytes hash to `sha256`.
+ */
+export async function rebuildDiff(g: Git, cwd: string, evidence: ReadonlyArray<string>, sha256: string): Promise<Uint8Array | null> {
+  for (const line of evidence) {
+    const m = REBUILD_LINE.exec(line);
+    if (m === null) continue;
+    for (const root of await candidateRoots(g, cwd, m[1]!)) {
+      const diff = await run(g, root, [...GIT_DIFF_ARGS, m[2]!, m[3]!]);
+      if (ok(diff) && sha256Hex(diff.stdout) === sha256) return diff.stdout;
+    }
+  }
+  return null;
 }
 
 export type Resolved = { readonly kind: "bytes"; readonly bytes: Uint8Array } | { readonly kind: "unresolved"; readonly why: string };
