@@ -4,7 +4,7 @@
  * `eris login` / `eris logout`, which manage the bearer `eris yak` reads, and
  * `eris whoami`, which says which org's bearer a directory uses; `eris tokens
  * ls|create|revoke`, which manage the org's API tokens; and `eris org members
- * [deactivate <id>]` and `eris org delete --confirm|--cancel`, as registry rows plus handler thunks (docs/dev/PLUGINS.md).
+ * [deactivate <id>]` and `eris org delete --export|--confirm`, as registry rows plus handler thunks (docs/dev/PLUGINS.md).
  *
  * Read on every command line, `eris completion` included: rows are inline
  * data, and the handler module loads only when `eris yak` dispatches.
@@ -200,14 +200,14 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
         example: "eris org webhooks logfire",
       },
       "org delete": {
-        summary: "Schedule this org's deletion (--confirm <workspace>) or cancel it (--cancel); an org admin's",
+        summary: "Export this org's data (--export) or delete this org immediately (--confirm <workspace>); an org admin's",
         json: true,
-        usage: "--confirm <workspace> | --cancel",
+        usage: "--export | --confirm <workspace>",
         flags: [
           { name: "--confirm", takesValue: true },
-          { name: "--cancel", takesValue: false },
+          { name: "--export", takesValue: false },
         ],
-        example: "eris org delete --confirm Acme",
+        example: "eris org delete --export > org-export.json",
       },
       slack: { impl: "ts", summary: "Link or unlink the Slack account you answer asks from (link, unlink)" },
       "slack link": {
@@ -325,8 +325,8 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
   eris slack link <link-url>               {slackUserId, slackTeamId, realName, displayName} (binds nothing)
   eris slack link <link-url> --confirm     {linked, slackUserId, slackTeamId}
   eris slack unlink                        {unlinked}
+  eris org delete --export                 {exportedAt, org, members, tokens}
   eris org delete --confirm <name>         {dueAt, cause}
-  eris org delete --cancel                 {cancelled}
   eris whoami                              {org, source, path?, default, token_source, url,
                                             signed_in, default_org, file}
 `,

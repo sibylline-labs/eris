@@ -3,8 +3,9 @@
  * members, listed and (by an admin) deactivated, over the gateway's bearer
  * routes `GET /v1/org/members` and `POST /v1/org/members/:id/deactivate`.
  * Loaded only when `eris org` dispatches (the manifest is ./index.ts).
- * `eris org delete --confirm <workspace>` and `--cancel` schedule and cancel the org's
- * deletion over `POST` and `DELETE /v1/org/deletion`.
+ * `eris org delete --export` exports this org's profile, members, and token metadata to JSON
+ * (`GET /v1/org/{me,members,tokens}`) without deleting anything; `eris org delete --confirm <workspace>`
+ * triggers immediate, irreversible org deletion over `POST /v1/org/deletion`.
  * `eris org billing checkout|portal` prints a Stripe Checkout or Billing Portal URL for the org
  * (`POST /v1/org/billing/checkout|portal`); the CLI never takes payment details.
  * `eris org connect-linear` has an admin's bearer mint an org-bound install link
@@ -66,7 +67,8 @@ const Members = z.object({ members: z.array(Member) }).passthrough();
 const AdminGrant = z.object({ memberId: z.string(), role: z.string(), roleSource: z.string().nullable().optional() }).passthrough();
 const Deactivated = z.object({ memberId: z.string(), status: z.string() }).passthrough();
 const Scheduled = z.object({ dueAt: z.string(), cause: z.string() }).passthrough();
-const Cancelled = z.object({ cancelled: z.boolean() }).passthrough();
+const OrgProfile = z.record(z.string(), z.unknown());
+const OrgTokens = z.object({ tokens: z.array(z.record(z.string(), z.unknown())) }).passthrough();
 // passthrough: --output json prints the org's body as sent; only the connection's state is read here.
 const OrgMe = z.object({ linear: z.object({ status: z.string(), cause: z.string().optional() }).passthrough() }).passthrough();
 const ConnectLink = z.object({ url: z.string(), expires_at: z.string() }).passthrough();
@@ -90,8 +92,8 @@ Commands:
   members deactivate <member-id> Deactivate a member (an org admin's)
   members admin grant <member-id>  Make a member an admin (an org admin's)
   members admin revoke <member-id> Demote an admin to member (an org admin's)
-  delete --confirm <workspace>   Schedule this org's deletion (an org admin's)
-  delete --cancel                Cancel a scheduled deletion
+  delete --export                Export org settings, members and token metadata as JSON before deleting
+  delete --confirm <workspace>   Immediately and irreversibly delete this org (an org admin's)
   connect-linear [--no-browser]  Connect this org's Linear workspace through the browser (an org admin's)
   github                         Show the GitHub App installation this org's bus receives events from
   connect-github --account <org> [--no-browser]
@@ -202,16 +204,19 @@ stays held by this org, so another org cannot take it; uninstall the App on GitH
 it there. An org admin's. 'eris --output json org disconnect-github' prints the server's body.
 `;
 
-export const DELETE_USAGE = `Usage: eris org delete --confirm <workspace> | --cancel
+export const DELETE_USAGE = `Usage: eris org delete --export | --confirm <workspace>
 
-  --confirm <workspace>   schedule this org's deletion. The name must be the org's workspace
-                          name exactly; a wrong name is refused and nothing is scheduled.
+  --export                export this org's profile, members and token metadata to JSON
+                          without deleting anything. To save audit events too, run
+                          'eris events list --product accounts'. Delivered issues and living
+                          docs remain in your Linear workspace.
+  --confirm <workspace>   delete this org immediately. The name must be the org's workspace
+                          name exactly; a wrong name is refused and nothing is deleted.
                           Only an org admin may.
-  --cancel                cancel a scheduled deletion.
 
-Scheduling revokes every token the org holds, this machine's included, so the cancel
-is made from the dashboard's Danger zone, signed in again. 'eris --output json org delete'
-prints the server's body.
+Deletion starts immediately and cannot be cancelled. Every token the org holds, this
+machine's included, is revoked at once. Export your data first with '--export'.
+'eris --output json org delete' prints bare JSON.
 `;
 
 export interface OrgDeps {
@@ -248,7 +253,7 @@ export interface Failure {
 /** A success carries the org's url (`base`, no trailing slash) the request went to. */
 type Outcome<T> = { ok: true; value: T; base: string } | { ok: false; failure: Failure };
 
-type Action = "grant admin" | "revoke admin" | "deactivate a member" | "delete the org" | "cancel the org's deletion" | "connect Linear" | "connect GitHub" | "disconnect GitHub" | "read the Logfire webhook URL" | "revoke the Logfire webhook URL" | "open Stripe billing";
+type Action = "grant admin" | "revoke admin" | "deactivate a member" | "delete the org" | "export org data" | "connect Linear" | "connect GitHub" | "disconnect GitHub" | "read the Logfire webhook URL" | "revoke the Logfire webhook URL" | "open Stripe billing";
 
 /** The way to get the bus product, for a refusal that names its absence. */
 const BUS_FIX = "get the bus product for this org: eris org billing checkout   (if billing is off on this platform, ask the platform's operator to grant it), then run it again";
@@ -258,8 +263,8 @@ function refusal(status: number, code: string | undefined, target: string, actio
   if (status === 401 && code === "revoked") {
     return {
       slug: "org-tokens-revoked",
-      what: `${answered}: this token is revoked. A scheduled deletion revokes every token the org holds`,
-      fix: "if this org's deletion is scheduled, cancel it from the dashboard's Danger zone after signing in again; otherwise run: eris login",
+      what: `${answered}: this token is revoked. Deleting an org revokes every token it holds`,
+      fix: "if this org is being deleted, deletion runs immediately and cannot be cancelled; otherwise run: eris login",
     };
   }
   if (status === 401) return { slug: "org-unauthorized", what: `${answered}: it rejected the bearer token`, fix: "run: eris login\n(or check ERIS_YAKS_TOKEN when it is set)" };
@@ -330,10 +335,10 @@ function refusal(status: number, code: string | undefined, target: string, actio
   }
   if (status === 404 && code === "member_not_found") return { slug: "org-member-not-found", what: `${answered}: this org has no such member`, fix: "list the ids: eris org members" };
   if (status === 400 && code === "confirmation_mismatch") {
-    return { slug: "org-confirmation-mismatch", what: `${answered}: the name given is not this org's workspace name; nothing was scheduled`, fix: "give the workspace name exactly as the dashboard shows it" };
+    return { slug: "org-confirmation-mismatch", what: `${answered}: the name given is not this org's workspace name; nothing was deleted`, fix: "give the workspace name exactly as the dashboard shows it" };
   }
   if (status === 409 && code === "workspace_name_unknown") {
-    return { slug: "org-workspace-name-unknown", what: `${answered}: this org has no stored workspace name to confirm against; nothing was scheduled`, fix: "connect or reconnect the org's Linear workspace in the dashboard, then run it again" };
+    return { slug: "org-workspace-name-unknown", what: `${answered}: this org has no stored workspace name to confirm against; nothing was deleted`, fix: "connect or reconnect the org's Linear workspace in the dashboard, then run it again" };
   }
   if (status === 409 && code === "last_admin") {
     return { slug: "org-last-admin", what: `${answered}: this would leave the org with no other active admin; nothing changed`, fix: "grant admin to another member first: eris org members admin grant <member-id>" };
@@ -465,32 +470,52 @@ async function runAdmin(op: string | undefined, id: string | undefined, ctx: Ver
   return 0;
 }
 
-async function runDelete(confirm: string | undefined, cancel: boolean, ctx: VerbContext, deps: OrgDeps): Promise<number> {
+async function runDelete(confirm: string | undefined, exportOnly: boolean, ctx: VerbContext, deps: OrgDeps): Promise<number> {
   const given = confirm !== undefined;
-  if (given === cancel) {
-    return fail(ctx, { slug: "org-delete-flags", what: given ? "eris org delete was given both --confirm and --cancel" : "eris org delete was given neither --confirm nor --cancel", fix: "eris org delete --confirm <workspace>   or   eris org delete --cancel" });
+  if (given === exportOnly) {
+    return fail(ctx, {
+      slug: "org-delete-flags",
+      what: given ? "eris org delete was given both --confirm and --export" : "eris org delete was given neither --confirm nor --export",
+      fix: "export your data first: eris org delete --export > org-export.json\nthen delete immediately: eris org delete --confirm <workspace>",
+    });
   }
   if (given && confirm.trim() === "") {
-    return fail(ctx, { slug: "org-delete-flags", what: "eris org delete --confirm was given an empty workspace name; nothing was sent", fix: "eris org delete --confirm <workspace>" });
+    return fail(ctx, {
+      slug: "org-delete-flags",
+      what: "eris org delete --confirm was given an empty workspace name; nothing was sent",
+      fix: "export first: eris org delete --export > org-export.json   then run: eris org delete --confirm <workspace>",
+    });
   }
-  if (given) {
-    const got = await request("POST", "/v1/org/deletion", Scheduled, ctx, deps, { body: { confirm }, action: "delete the org" });
-    if (!got.ok) return fail(ctx, got.failure);
+  if (exportOnly) {
+    const now = deps.now ?? Date.now;
+    const me = await request("GET", "/v1/org/me", OrgProfile, ctx, deps, { action: "export org data" });
+    if (!me.ok) return fail(ctx, me.failure);
+    const members = await request("GET", "/v1/org/members", Members, ctx, deps, { action: "export org data" });
+    if (!members.ok) return fail(ctx, members.failure);
+    const tokens = await request("GET", "/v1/org/tokens", OrgTokens, ctx, deps, { action: "export org data" });
+    if (!tokens.ok) return fail(ctx, tokens.failure);
+    const exported = {
+      exportedAt: new Date(now()).toISOString(),
+      org: me.value,
+      members: members.value.members,
+      tokens: tokens.value.tokens,
+    };
     if (ctx.format === "json") {
-      ctx.stdout.write(`${JSON.stringify(got.value)}\n`);
+      ctx.stdout.write(`${JSON.stringify(exported)}\n`);
       return 0;
     }
-    ctx.stdout.write(`deletion scheduled for ${plain(got.value.dueAt)}\n`);
-    ctx.stderr.write("INFO this org's tokens, this machine's included, are now revoked; cancel from the dashboard's Danger zone, signed in again\n");
+    ctx.stdout.write(`${JSON.stringify(exported, null, 2)}\n`);
+    ctx.stderr.write("INFO exported org profile, members and token metadata; for audit events run: eris events list --product accounts (delivered issues and living docs stay in Linear)\n");
     return 0;
   }
-  const got = await request("DELETE", "/v1/org/deletion", Cancelled, ctx, deps, { action: "cancel the org's deletion" });
+  const got = await request("POST", "/v1/org/deletion", Scheduled, ctx, deps, { body: { confirm }, action: "delete the org" });
   if (!got.ok) return fail(ctx, got.failure);
   if (ctx.format === "json") {
     ctx.stdout.write(`${JSON.stringify(got.value)}\n`);
     return 0;
   }
-  ctx.stdout.write(got.value.cancelled ? "deletion cancelled\n" : "no deletion was scheduled\n");
+  ctx.stdout.write(`deletion started (${plain(got.value.dueAt)})\n`);
+  ctx.stderr.write("INFO this org's tokens, this machine's included, are now revoked; deletion runs immediately and cannot be cancelled\n");
   return 0;
 }
 
@@ -846,7 +871,7 @@ export async function runOrg(args: string[], ctx: VerbContext, deps: OrgDeps = {
   if (g.sub === "delete") {
     const d = readArgs(plugin.rows, "org delete", g.rest, ctx, { help: DELETE_USAGE });
     if (d === null) return 0;
-    return runDelete(d.flags["--confirm"], d.flags["--cancel"] === true, ctx, deps);
+    return runDelete(d.flags["--confirm"], d.flags["--export"] === true, ctx, deps);
   }
   const a = readArgs(plugin.rows, "org members", g.rest, ctx, { help: MEMBERS_USAGE });
   if (a === null) return 0;

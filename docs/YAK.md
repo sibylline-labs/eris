@@ -192,8 +192,7 @@ when it is a token for that org ([`org-token-mismatch`](ERRORS.md#org-token-mism
 `eris whoami` prints the org the current directory acts as, why that org was
 chosen, where its token comes from (the file or `ERIS_YAKS_TOKEN`), the url, and
 every org the machine is signed in to. It then asks the org (`GET /v1/org/me`)
-for your role, its tier, its Linear connection, any scheduled deletion and its
-entitlements. `--output json` prints that answer exactly as the server sent
+for your role, its tier, its Linear connection and its entitlements. `--output json` prints that answer exactly as the server sent
 it. It never prints a token, and exits 1 (`yak-unauthorized` when the bearer is
 rejected, `yak-admin-unavailable` when the endpoint does not answer) rather than
 print a guess. `eris logout` signs out only the org the
@@ -292,24 +291,25 @@ for an org whose bus product is not active is refused ([`org-bus-lapsed`](ERRORS
 `--output json` prints `{url, path, generation, last_delivery}`, where `last_delivery` is `{at, status}`, null before the first
 delivery, and absent when it could not be read.
 
-### `eris org delete`: schedule or cancel the org's deletion
+### `eris org delete`: export data and delete the org immediately
 
-`eris org delete --confirm <workspace>` schedules the org's deletion
-(`POST /v1/org/deletion`, with that org's bearer) and prints the due date the server
-returns; `eris org delete --cancel` cancels it (`DELETE /v1/org/deletion`) and says
-whether anything was scheduled. Only an org admin may
-([`org-admin-required`](ERRORS.md#org-admin-required)). The server compares the name
-with the org's stored workspace name: a wrong name is
+`eris org delete --export` exports this org's profile, members and token metadata as
+JSON (`GET /v1/org/me`, `/v1/org/members`, `/v1/org/tokens`) without deleting anything;
+run `eris events list --product accounts` to save audit event slices too (delivered issues
+and living docs already stay in your Linear workspace).
+
+`eris org delete --confirm <workspace>` triggers immediate, irreversible deletion of the
+org (`POST /v1/org/deletion`, with that org's bearer) and prints when execution started.
+Only an org admin may ([`org-admin-required`](ERRORS.md#org-admin-required)). The server
+compares the name with the org's stored workspace name: a wrong name is
 [`org-confirmation-mismatch`](ERRORS.md#org-confirmation-mismatch) and nothing is
-scheduled, and an org with no stored name is
+deleted, and an org with no stored name is
 [`org-workspace-name-unknown`](ERRORS.md#org-workspace-name-unknown). The CLI never
-compares the name itself and never prints it back. `--output json` prints the server's
-body.
+compares the name itself and never prints it back. `--output json` prints bare JSON.
 
-Scheduling revokes every token the org holds, the one that scheduled it included, so
-the next call from this machine, `eris org delete --cancel` and `eris whoami` among
-them, is [`org-tokens-revoked`](ERRORS.md#org-tokens-revoked). The cancel is made from
-the dashboard's Danger zone, signed in again.
+Deleting an org starts immediately with no cancel window and revokes every token the org
+holds, the one that triggered it included, so subsequent calls from this machine return
+[`org-tokens-revoked`](ERRORS.md#org-tokens-revoked).
 
 ### `yak-setup.ts`: a hand-registered bearer
 
