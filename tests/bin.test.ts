@@ -51,7 +51,7 @@ describe.skipIf(checkoutOnly("the npm bin; a compiled binary has none"))("bin/er
       const fromCwd = await yak({});
       // PAIRED: the same variables from the real environment are honoured, so the silence above is not vacuous.
       const viaEnv = await yak({ ERIS_YAKS_URL: `http://127.0.0.1:${fromEnv.port}`, ERIS_YAKS_TOKEN: token });
-      expect({ status: fromCwd.status, dotenv: seen.dotenv, preload: existsSync(marker) }).toEqual({ status: 0, dotenv: [], preload: false });
+      expect({ status: fromCwd.status, dotenv: seen.dotenv, preload: existsSync(marker) }).toEqual({ status: 3, dotenv: [], preload: false });
       expect({ status: viaEnv.status, env: seen.env }).toEqual({ status: 0, env: [`Bearer ${token}`] });
     } finally {
       fromEnv.stop(true);

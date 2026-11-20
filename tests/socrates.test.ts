@@ -344,7 +344,7 @@ describe("eris socrates submit", () => {
   it("asks for eris login when no token resolves", async () => {
     /** When a missing token reaches the wire, the endpoint's 401 hides the local fix. */
     const r = await drive(["submit", ...STAMPED], { env: { HOME: join(REPO, ".scratch", "no-such-home"), ERIS_YAKS_URL: `http://127.0.0.1:${server.port}` } });
-    expect(r).toMatchObject({ rc: 1, slug: "yak-token-unresolved" });
+    expect(r).toMatchObject({ rc: 3, slug: "eris-login-required" });
     expect(requests).toEqual([]);
   });
 

@@ -31,7 +31,7 @@
  */
 
 import { homedir } from "node:os";
-import { readArgs, renderFailureBlock, resolveOrgBearer, type VerbContext } from "../../src/cli/plugin";
+import { exitForSlug, readArgs, renderFailureBlock, resolveOrgBearer, type VerbContext } from "../../src/cli/plugin";
 import {
   LinearId,
   YakConfigRead,
@@ -180,7 +180,7 @@ export async function request<S extends z.ZodTypeAny>(
 /** Where the verbs write: the payload, the block, the exit code. */
 export function fail(ctx: VerbContext, failure: Failure): number {
   ctx.stderr.write(renderFailureBlock({ slug: failure.slug, what: failure.what, ...(failure.fix ? { fix: failure.fix } : {}) }, ctx.erisDir));
-  return 1;
+  return exitForSlug(failure.slug);
 }
 
 export function emitJson(ctx: VerbContext, value: unknown): number {
@@ -294,7 +294,7 @@ async function readiness(env: Record<string, string | undefined>, home: string, 
       const fix = bearer.slug === "yak-config-permissive" ? "chmod 600 ~/.eris/yaks.json" : "eris login";
       return notSignedIn(`${bearer.reason}: ${fix === "eris login" ? "run 'eris login' to rewrite it" : `run '${fix}'`}`, fix);
     }
-    if (bearer.slug === "yak-token-unresolved") return notSignedIn(`not signed in: ${LOGIN_NUDGE}`, "eris login");
+    if (bearer.slug === "eris-login-required") return notSignedIn(`not signed in: ${LOGIN_NUDGE}`, "eris login");
     if (bearer.slug === "yak-url-unresolved") return notSignedIn(`ERIS_YAKS_TOKEN is set but ERIS_YAKS_URL is not: ${bearer.fix}`, bearer.fix);
     return notSignedIn(`${bearer.reason}: ${bearer.fix}`, bearer.fix);
   }

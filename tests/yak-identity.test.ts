@@ -165,9 +165,9 @@ describe("resolveYaksBearer", () => {
     });
   });
 
-  it("no token anywhere fails yak-token-unresolved, carrying no token value", () => {
+  it("no token anywhere fails eris-login-required, carrying no token value", () => {
     /** When a missing token resolves, the endpoint's 401 hides the local fix: observed at the returned failure. */
-    expect(resolveYaksBearer({}, {})).toEqual({ reason: "not signed in: run 'eris login', or set ERIS_YAKS_TOKEN", slug: "yak-token-unresolved", fix: "run 'eris login'" });
+    expect(resolveYaksBearer({}, {})).toEqual({ reason: "not signed in: run 'eris login', or set ERIS_YAKS_TOKEN", slug: "eris-login-required", fix: "run 'eris login'" });
   });
 
   it("yaksTokenSource names the source and never the token", () => {

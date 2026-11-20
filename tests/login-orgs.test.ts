@@ -10,7 +10,7 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { runLogin, runLogout, type LoginDeps } from "../plugins/yak/login";
 import { runWhoami } from "../plugins/yak/whoami";
@@ -132,7 +132,7 @@ describe("eris login with a second org", () => {
   // admits: a second org's login replacing the first, which moves every repo on the machine to the new org; file state after real HTTP
   it("keeps the default org and adds the second beside it, at 0600", async () => {
     const a = checkout("a");
-    expect((await login(ORG_A, a)).stdout).toBe(`logged in: token "laptop (eris)" written to ${yaksJson()}\n`);
+    expect((await login(ORG_A, a)).stdout).toBe(`logged in to org ${ORG_A}: token "laptop (eris)" written to ${yaksJson()}\n`);
     const second = await login(ORG_B, a);
     expect({ rc: second.rc, stdout: second.stdout }).toEqual({ rc: 0, stdout: `logged in to org ${ORG_B}: token "laptop (eris)" written to ${yaksJson()}\n` });
     expect(stored()).toEqual({ url: url(), token: bearer(ORG_A), orgs: { [ORG_B]: { url: url(), token: bearer(ORG_B) } } });
@@ -252,5 +252,33 @@ describe("eris logout with several orgs", () => {
     const def = await drive(runLogout as never, [], { cwd: a });
     expect(def.stdout).toBe(`logged out: removed the token from ${yaksJson()}\n`);
     expect(stored()).toEqual({ url: url(), orgs: { [ORG_B]: { url: url(), token: bearer(ORG_B) } } });
+  });
+});
+
+describe("eris login --org", () => {
+  // admits: a login approved in the wrong workspace storing that org's token as this machine's; the refusal and the untouched file observed over a real grant
+  it("refuses a login that lands in another org and writes nothing", async () => {
+    const a = checkout("a");
+    mint = bearer(ORG_B);
+    const r = await drive(runLogin as never, ["--url", url(), "--no-browser", "--org", ORG_A], { cwd: a });
+    expect(r.rc).toBe(1);
+    expect(r.stderr).toContain("slug: login-org-mismatch");
+    expect(r.stderr).toContain(ORG_B);
+    expect(existsSync(yaksJson())).toBe(false);
+  });
+
+  // admits: the guard refusing the right org too, which would make --org unusable; the success line over a real grant
+  it("accepts the expected org and names it", async () => {
+    const a = checkout("a");
+    mint = bearer(ORG_A);
+    const r = await drive(runLogin as never, ["--url", url(), "--no-browser", "--org", ORG_A], { cwd: a });
+    expect({ rc: r.rc, stdout: r.stdout }).toEqual({ rc: 0, stdout: `logged in to org ${ORG_A}: token "laptop (eris)" written to ${yaksJson()}\n` });
+  });
+
+  // admits: a value that is not an org id reaching the grant and burning a human approval; refused before any request
+  it("refuses a malformed --org before starting the grant", async () => {
+    const a = checkout("a");
+    const r = await drive(runLogin as never, ["--url", url(), "--no-browser", "--org", "acme"], { cwd: a });
+    expect({ rc: r.rc, slug: r.stderr.includes("slug: org-selector-invalid") }).toEqual({ rc: 1, slug: true });
   });
 });

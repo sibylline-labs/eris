@@ -137,9 +137,10 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
       login: {
         impl: "ts",
         summary: "Sign this machine in to your org (device code); org, socrates, doctrine, gate, loop and yak all use this sign-in",
-        usage: "[--url <url>] [--no-browser]",
+        usage: "[--url <url>] [--org <id>] [--no-browser]",
         flags: [
           { name: "--url", takesValue: true },
+          { name: "--org", takesValue: true },
           { name: "--no-browser", takesValue: false },
         ],
       },

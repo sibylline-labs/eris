@@ -97,6 +97,7 @@ describe("the package's exports", () => {
       "doctrineHandler",
       "doctrinePlugin",
       "erisHome",
+      "exitForSlug",
       "flagsOf",
       "freshTree",
       "gatePlugin",

@@ -40,7 +40,7 @@
  */
 
 import { homedir } from "node:os";
-import { CliExit, groupArgs, readArgs, renderFailureBlock, resolveOrgBearer, type VerbContext } from "../../src/cli/plugin";
+import { CliExit, exitForSlug, groupArgs, readArgs, renderFailureBlock, resolveOrgBearer, type VerbContext } from "../../src/cli/plugin";
 import { z } from "zod";
 import plugin from "./index";
 import { defaultOpenBrowser } from "./login";
@@ -394,7 +394,7 @@ export async function request<S extends z.ZodTypeAny>(
 
 export function fail(ctx: VerbContext, failure: Failure): number {
   ctx.stderr.write(renderFailureBlock({ slug: failure.slug, what: failure.what, ...(failure.fix ? { fix: failure.fix } : {}) }, ctx.erisDir));
-  return 1;
+  return exitForSlug(failure.slug);
 }
 
 /** A server string for a terminal: control characters (escapes, newlines) become `?`. */

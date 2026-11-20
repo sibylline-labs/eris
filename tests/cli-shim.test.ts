@@ -74,7 +74,7 @@ describe.skipIf(checkoutOnly("the eris shim; a binary has none"))("shim → rout
       const fromCwd = await yak({});
       // PAIRED: the same variables from the real environment are honoured, so the silence above is not vacuous.
       const r = await yak({ BUN_CONFIG_VERBOSE_FETCH: "curl", ERIS_YAKS_URL: `http://127.0.0.1:${fromEnv.port}`, ERIS_YAKS_TOKEN: token });
-      expect({ status: fromCwd.status, dotenv: seen.dotenv, preload: existsSync(join(tmp, "preload-ran")) }).toEqual({ status: 0, dotenv: [], preload: false });
+      expect({ status: fromCwd.status, dotenv: seen.dotenv, preload: existsSync(join(tmp, "preload-ran")) }).toEqual({ status: 3, dotenv: [], preload: false });
       expect({ status: r.status, env: seen.env }).toEqual({ status: 0, env: [`Bearer ${token}`] });
       expect(r.stderr).not.toContain(token);
       expect(r.stderr.toLowerCase()).not.toContain("authorization");

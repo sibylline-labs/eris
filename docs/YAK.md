@@ -106,9 +106,14 @@ shown, and it is useless without the approval. Without `--url` the url is
 `ERIS_YAKS_URL`, then the file's own `url`, then the default. The CLI follows RFC 8628: it
 polls `/v1/device/token` at the advertised interval and slows down when told to.
 
-`eris logout` removes the token from the file and keeps the url. No route lets
-a token revoke itself, so it stays valid until you revoke it from the
-endpoint's dashboard (Settings > API Tokens).
+The token belongs to whichever org the browser is signed in to when you approve,
+and login says so: `logged in to org <id>: …`. Pass `--org <id>` (the id `eris whoami`
+prints) to say which org you expect: a login that lands in another org is refused
+([`login-org-mismatch`](ERRORS.md#login-org-mismatch), exit 1) and writes nothing.
+
+`eris logout` removes the token from the file and keeps the url. The token stays
+valid until you revoke it: `eris tokens revoke <id>` (ids from `eris tokens ls`; do
+it while still signed in) or the endpoint's dashboard (Settings > API Tokens).
 
 ### `eris tokens`: API tokens from the CLI
 
@@ -331,18 +336,21 @@ the diagnostics move entirely onto stdout's record — see below.
 | Situation | Exit |
 |---|---|
 | Missing `--summary`/`--body`, an unreadable `--body-file`, `--body-file -` with no pipe, an over-length field, an unknown verb or flag, a bare positional word (the text belongs on `--summary`/`--body`) | **`1`** — the four-line `ERROR`/`slug:`/`fix:`/`docs:` block, same contract as every other eris failure |
-| Unresolved token/URL/device-id, an unreachable endpoint, a timeout, a non-2xx response | **`0`** — one `WARN` line + slug on stderr, empty stdout in text mode. A non-2xx status gets its own slug when the cause is on the caller's side (credentials, entitlement, size) and a retry changes nothing — see the rungs below |
+| Signed out: no token resolves (`eris-login-required`) | **`3`** — the `ERROR`/`slug:`/`fix:`/`docs:` block (under `--output json`, the bare record on stdout with `delivered: false`, stderr empty). It is a failure, not a warning, so a filing that went nowhere is never read as delivered; every login-needing verb uses the same slug and exit |
+| Unresolved URL/device-id, an unreachable endpoint, a timeout, a non-2xx response | **`0`** — one `WARN` line + slug on stderr, empty stdout in text mode. A non-2xx status gets its own slug when the cause is on the caller's side (credentials, entitlement, size) and a retry changes nothing — see the rungs below |
 | An incomplete `node_modules` on this machine (`yak-deps-not-installed`) | **`0`** — the same four-line `ERROR`/`slug:`/`fix:`/`docs:` block as the exit-`1` row above, but exit `0`: a broken install on the operator's machine isn't something the calling agent could have done differently |
 | No `bun` on PATH | **`1`** — the shim's own `eris-bun-missing` block, printed before any verb is routed; it is not yak-specific |
 | Accepted (fresh or replay) | **`0`** |
 
 The line that decides which bucket a failure falls into: *could the agent have
 done anything differently?* A missing `--summary` is the agent's fault and is
-fixable on the spot. An unset token, an unreachable endpoint, or a machine with no
+fixable on the spot. An unreachable endpoint, or a machine with no
 network right now is not — failing the task over the operator's local
 environment would be worse than the problem this feature exists to report. So
-**environment, config, and transport problems never fail the task** — they warn
-on stderr and let the calling command continue.
+**transport and endpoint problems never fail the task** — they warn
+on stderr and let the calling command continue. Being signed out is the exception: it
+is fixed by one command a person runs, and a filing exiting 0 with nothing sent hides
+that nothing was filed, so it fails with exit `3`.
 
 ### Rungs for a non-2xx response
 
@@ -746,7 +754,9 @@ other row is left as it is and answers `requeued: false` with its status (exit 0
 bearer's. `events parked` reads the lines the archive parked as invalid, which is the operator org's read:
 every other org is answered `404`, reported as [`events-not-found`](ERRORS.md#events-not-found). A page's
 `next_cursor` is printed on stderr; pass it back as `--cursor`. A bad `--product`, `--day`, `--limit` or
-`--cursor` is [`events-invalid`](ERRORS.md#events-invalid), refused before a request is sent;
+`--cursor` is [`events-invalid`](ERRORS.md#events-invalid), refused before a request is sent
+(or by the endpoint's `400`, whose fix names the products: accounts, yak, graph, socrates,
+linear-proxy, gates, bus, mandate);
 a 403 or other status is [`events-unavailable`](ERRORS.md#events-unavailable).
 
 ## What a receipt does not promise
