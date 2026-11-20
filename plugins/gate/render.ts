@@ -14,7 +14,18 @@
 
 /// <reference path="./templates/mdx.d.ts" />
 
-import { citePosture, type GateArtifact, type GateDoctrine, type GateEvidence, type GateReceipt, type GateVerdict, isGateMediaEvidence, isGateReviewReportEvidence } from "eris/gates-contract";
+import {
+  citePosture,
+  countsOpen,
+  type GateArtifact,
+  type GateDoctrine,
+  type GateEvidence,
+  type GateReceipt,
+  type GateReviewReportEvidence,
+  type GateVerdict,
+  isGateMediaEvidence,
+  isGateReviewReportEvidence,
+} from "eris/gates-contract";
 import amended from "./templates/amended.mdx" with { type: "text" };
 import blocking from "./templates/blocking.mdx" with { type: "text" };
 import pass from "./templates/pass.mdx" with { type: "text" };
@@ -52,6 +63,35 @@ function fenced(content: string, maxLines = 20): string {
 /** A file name as image alt text: brackets and backslashes escaped, so the name cannot end the alt early. */
 const altText = (name: string): string => name.replace(/[\\[\]]/g, (c) => `\\${c}`);
 
+function reviewReportLines(e: GateReviewReportEvidence, maxLines = 20): string[] {
+  const { report: r } = e;
+  // An unendorsed refutation still counts as open, so the summary agrees with the derived pass.
+  const openHigh = r.findings.filter((f) => countsOpen(f, r)).length;
+  const out = [
+    `  - review-report${e.name !== undefined ? ` \`${e.name}\`` : ""} (sha256 \`${short(e.sha256)}\`)`,
+    `    - Target: \`${r.target.repo}#${r.target.pr}\` at \`${short(r.target.head_sha)}\` (diff sha256 \`${short(r.target.diff_sha256)}\`)`,
+    `    - Surface: \`${r.surface}\` · Effort: \`${r.effort}\` · Reviewer: \`${r.reviewer.actor}\` (\`${r.reviewer.model}\`, skill \`${r.reviewer.skill.name}@${short(r.reviewer.skill.harness_sha)}\`)`,
+    `    - Findings: ${openHigh} open blocking/major (${r.findings.length} total)`,
+  ];
+  for (const f of r.findings) {
+    const by = [
+      ...(f.raised_by !== undefined ? [`raised by \`${f.raised_by}\``] : []),
+      ...(f.refuted_by !== undefined ? [`refuted by \`${f.refuted_by}\``] : []),
+      ...(f.agreed_by !== undefined && f.agreed_by.length > 0 ? [`agreed by ${f.agreed_by.map((a) => `\`${a}\``).join(", ")}`] : []),
+    ];
+    const who = by.length > 0 ? ` (${by.join(", ")})` : "";
+    out.push(`      - \`${f.id}\` [${f.severity}/${f.status}] \`${f.class}\` at \`${f.file}:${f.line}\`${who}: ${oneLine(f.evidence)}`);
+  }
+  const body = (e.body ?? "").trim();
+  if (body !== "") {
+    const lines = body.split(/\r?\n/);
+    const shown = lines.slice(0, maxLines);
+    if (lines.length > maxLines) shown.push(`… ${lines.length - maxLines} more line(s) in the stored record`);
+    for (const l of shown) out.push(l === "" ? "    >" : `    > ${l}`);
+  }
+  return out;
+}
+
 function evidenceLines(evidence: ReadonlyArray<GateEvidence>): string {
   if (evidence.length === 0) return "";
   const out = ["- Evidence:"];
@@ -62,7 +102,7 @@ function evidenceLines(evidence: ReadonlyArray<GateEvidence>): string {
       if (e.kind === "screenshot") out.push(`  - screenshot \`${e.name}\` ${facts}`, `    ![${altText(e.name)}](${e.asset_url})`);
       else out.push(`  - ${e.kind} [\`${e.name}\`](${e.asset_url}) ${facts}`);
     } else if (isGateReviewReportEvidence(e)) {
-      out.push(`  - review-report${e.name !== undefined ? ` \`${e.name}\`` : ""} (sha256 \`${short(e.sha256)}\`)`);
+      out.push(...reviewReportLines(e));
     } else if (e.kind === "text") {
       out.push(`  - ${oneLine(e.content)}`);
     } else {

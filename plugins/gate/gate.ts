@@ -18,8 +18,10 @@ import { resolve } from "node:path";
 import {
   COPY_MAX_BYTES,
   type ContractFailure,
+  GATE_REVIEW_EFFORTS,
   GATE_USER_IMPACTS,
   GATE_VERDICTS,
+  type GateReviewEffort,
   type GateUserImpact,
   type GateVerdict,
   type GatesEndpoint,
@@ -60,7 +62,7 @@ Gate receipts: one gate-receipt@v2 comment per gate run on a tracker issue,
 written by 'record' and 'skip' and read back by 'check'.
 
 Commands:
-  record <gate> --issue <KEY> --verdict PASS|AMENDED|BLOCKING --artifact <path>
+  record <gate> --issue <KEY> [--verdict PASS|AMENDED|BLOCKING] [--artifact <path>]
                           Hash the artifact and append the receipt comment
   skip   <gate> --issue <KEY> --reason <why> --authorized <grant> --artifact <path>
                           Append a SKIPPED receipt naming the grant behind it
@@ -88,9 +90,12 @@ the receipt; no flag takes comment text.
 
   <gate>         The gate's kebab-case name (plan-review, posture-check, ...)
   --issue        The issue key (ABC-123)
-  --verdict      PASS, AMENDED or BLOCKING (a skip is 'eris gate skip')
+  --verdict      PASS, AMENDED or BLOCKING (a skip is 'eris gate skip'; optional
+                 with --review-report, which derives PASS or BLOCKING from the
+                 report's findings and actor binding)
   --artifact     The file the gate judged; its sha256 is recorded, and 'check'
                  fails a PASS/AMENDED receipt whose artifact has since changed.
+                 Optional with --review-report (defaults to the first report).
                  Inside a git checkout with a hosted origin it is recorded as
                  repo + branch + commit sha + repo-relative path, so 'check'
                  finds it from any directory; an in-repo artifact that is not
@@ -109,6 +114,10 @@ the receipt; no flag takes comment text.
   --evidence     One text evidence line; repeat for several
   --log, --test-run, --e2e
                  A text file (at most 16 KiB) carried inline with its sha256
+  --review-report
+                 A review-report@1 file (YAML frontmatter + prose body, no
+                 verdict key); validated, frontmatter stored in the record,
+                 prose and findings summary rendered to the comment
   --screenshot, --video
                  An image (.png .jpg .jpeg .gif .webp) or video (.mp4 .webm
                  .mov), at most 25 MiB, uploaded to the store's private asset
@@ -149,13 +158,14 @@ const CHECK_USAGE = `Usage: ${line("gate check")}
 Read <KEY>'s receipts and print one line per gate, '<gate>\\t<status>\\t<verdict>'.
 The latest receipt per gate (by the store's time) decides: missing,
 bad-digest (evidence no longer matches its sha256), blocking (a BLOCKING
-verdict, or review-report evidence, which this build does not judge),
-unresolved (the artifact's repo has no checkout here or in
-~/.eris/clones.json) or drift (artifact changed after PASS/AMENDED; when the
-artifact cannot be read at all, a carried copy that still re-hashes passes
-instead) or unauthorized-skip (a SKIPPED with no grant) or doctrine-stale (a
-doctrine skip the active posture no longer bears out) exit 3; pass, skipped and
-deferred exit 0.
+verdict, a failing review report, or review-report evidence in a build with no
+registered review skills), review-stale (the review skill or vocabulary moved on
+main or could not be verified, with no human grant), unresolved (the artifact's
+repo has no checkout here or in ~/.eris/clones.json) or drift (artifact or
+review target changed after PASS/AMENDED; when the artifact cannot be read at
+all, a carried copy that still re-hashes passes instead) or unauthorized-skip (a
+SKIPPED with no grant) or doctrine-stale (a doctrine skip the active posture no
+longer bears out) exit 3; pass, skipped and deferred exit 0.
 
 Naming final-gates or user-impact also checks the user-impact floor and prints
 '@floor\\t<pass|unmet|unclassified>\\t<class>': each requirement of the issue's
@@ -209,6 +219,12 @@ An issue with a remediate receipt prints '@remediate\\tunsupported\\t-' and exit
                  define-future in a repo with no root eris.yaml) prints
                  '<gate>\\tskipped\\t<reason>' and passes, and no SKIPPED receipt
                  is recorded
+  --effort       Minimum effort required of review-report@1 evidence
+                 (low, medium, high or max)
+  --head-sha     PR head commit sha to check review-report@1 targets against
+                 (default: checkout HEAD of the target repo)
+  --diff-sha256  PR diff sha256 to check review-report@1 targets against
+                 (default: merge-base diff to the target head)
 
 Naming final-gates also reads the issue's open blocking asks and prints
 '@asks\\t<clear|open>\\t<n>' last: any open blocking ask exits 3, named on
@@ -292,7 +308,12 @@ function impactOf(raw: string | undefined): GateUserImpact | undefined {
   return (GATE_USER_IMPACTS as readonly string[]).includes(raw) ? (raw as GateUserImpact) : usage(`--impact ${raw}: not a user-impact class`, "Pass --impact U0, U1, U2 or U3.");
 }
 
-const FILE_EVIDENCE = ["log", "test-run", "e2e", "screenshot", "video"] as const;
+function effortOf(raw: string | undefined): GateReviewEffort | undefined {
+  if (raw === undefined) return undefined;
+  return (GATE_REVIEW_EFFORTS as readonly string[]).includes(raw) ? (raw as GateReviewEffort) : usage(`--effort ${raw}: not a review effort`, "Pass --effort low, medium, high or max.");
+}
+
+const FILE_EVIDENCE = ["log", "test-run", "e2e", "review-report", "screenshot", "video"] as const;
 
 function copyWarn(v: Verb, artifact: string, res: Awaited<ReturnType<typeof recordGate>>): void {
   if (res.copied === "not-text") v.ctx.stderr.write(`WARN ${artifact}: no copy carried: not UTF-8 text (or binary), so the secret scan cannot read it; check needs the live file\n`);
@@ -307,15 +328,17 @@ async function runRecord(args: string[], ctx: VerbContext, defaults: GateDefault
   if (a === null) return 0;
   const [gate = ""] = a.pos;
   const fl = a.flags;
+  const reports = fl["--review-report"] ?? [];
   required(ctx, "gate record", [
     ...(gate === "" ? ["<gate>"] : []),
     ...(fl["--issue"] === undefined ? ["--issue"] : []),
-    ...(fl["--verdict"] === undefined ? ["--verdict"] : []),
-    ...(fl["--artifact"] === undefined ? ["--artifact"] : []),
+    ...(fl["--verdict"] === undefined && reports.length === 0 ? ["--verdict"] : []),
+    ...(fl["--artifact"] === undefined && reports.length === 0 ? ["--artifact"] : []),
   ]);
   const v = await verbFor(ctx, defaults, deps);
-  const verdict = verdictOf(fl["--verdict"]!);
+  const verdict = fl["--verdict"] === undefined ? undefined : verdictOf(fl["--verdict"]);
   if (verdict === "SKIPPED") usage("gate record: --verdict SKIPPED is not recorded here", `A skip names its grant: ${line("gate skip")}`);
+  const artifact = fl["--artifact"] ?? reports[0]!;
   const who = await resolveActor({ flag: fl["--actor"], g: v.g, cwd: v.cwd });
   const evidence: EvidenceInput[] = [
     ...(fl["--evidence"] ?? []).map((content): EvidenceInput => ({ kind: "text", content })),
@@ -324,8 +347,8 @@ async function runRecord(args: string[], ctx: VerbContext, defaults: GateDefault
   const res = await recordGate(await writeRun(v), {
     gate,
     issue: fl["--issue"]!,
-    verdict,
-    artifact: fl["--artifact"]!,
+    ...(verdict !== undefined ? { verdict } : {}),
+    artifact,
     rubrics: fl["--rubric"] ?? [],
     doctrine: fl["--doctrine"] ?? v.pulled?.doctrineFile,
     impact: impactOf(fl["--impact"]),
@@ -335,7 +358,7 @@ async function runRecord(args: string[], ctx: VerbContext, defaults: GateDefault
     actorInfo: who.actorInfo,
   });
   ctx.stdout.write(`${res.commentId}\n`);
-  copyWarn(v, fl["--artifact"]!, res);
+  copyWarn(v, artifact, res);
   ctx.stderr.write(`INFO ✓ recorded ${res.receipt.gate} ${res.receipt.verdict} on ${res.receipt.issue} (artifact sha256 ${res.receipt.artifact.sha256.slice(0, 12)}${storedNote(res.recordSha256)})\n`);
   return 0;
 }
@@ -399,6 +422,9 @@ async function runCheck(args: string[], ctx: VerbContext, defaults: GateDefaults
     if (!read.ok) stop({ ...read.failure, fix: "Check the file's permissions, or pass --doctrine <path>." });
     return read.value;
   };
+  const requiredEffort = effortOf(fl["--effort"]);
+  const headSha = fl["--head-sha"];
+  const diffSha256 = fl["--diff-sha256"];
   const ep = await v.endpoint();
   const delays = CHECK_RATE_LIMIT_DELAYS_MS;
   await checkGates({
@@ -422,6 +448,9 @@ async function runCheck(args: string[], ctx: VerbContext, defaults: GateDefaults
     ladder: { read: () => (ladderFile === undefined ? null : readLadder(ladderFile)) },
     applyModes: profile !== undefined,
     ...(fl["--dry-run"] === true ? { readOnly: true as const } : {}),
+    ...(defaults.reviews !== undefined ? { reviews: defaults.reviews } : {}),
+    ...(requiredEffort !== undefined ? { requiredEffort } : {}),
+    ...(headSha !== undefined || diffSha256 !== undefined || base !== undefined ? { head: { headSha, diffSha256, base } } : {}),
     now: v.now,
     asks: { ...(prFlag !== undefined ? { pr: Number(prFlag) } : {}), json: fl["--asks"] === true },
   });
@@ -443,7 +472,7 @@ export function gateHandler(defaults: GateDefaults = {}, deps: GateDeps = {}): V
     try {
       if (g.sub === "record") return await runRecord(g.rest, ctx, defaults, deps);
       if (g.sub === "skip") return await runSkip(g.rest, ctx, defaults, deps);
-      if (g.sub === "ci") return await (await import("./ci-verb")).runCi(g.rest, ctx, deps);
+      if (g.sub === "ci") return await (await import("./ci-verb")).runCi(g.rest, ctx, defaults, deps);
       return await runCheck(g.rest, ctx, defaults, deps);
     } catch (e) {
       if (!(e instanceof GateFailure)) throw e;

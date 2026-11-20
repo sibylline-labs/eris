@@ -10,7 +10,8 @@
  *   the posture sets `signoff.unlock: on`;
  *   every bar gate's latest receipt passes and is bound to the PR head: its `git` artifact's commit is
  *     the head, or an ancestor of it with only gate notes changed since (git.ts `commitBoundToHead`);
- *     a qualifier this build cannot judge never passes, and review-report evidence reads blocking;
+ *     a qualifier this build cannot judge never passes, and review-report evidence reads blocking
+ *     unless `reviews` is supplied;
  *   the surface's ledger issue holds a passing `audit-surfaces` receipt younger than `audit_ttl`, fewer
  *     than `change_budget` `unlocked-merge` receipts since it, and an announcement for this head;
  *   the surface is not locked;
@@ -33,6 +34,7 @@ import {
   GATE_REVIEW_EFFORTS,
   type GateArtifact,
   type GateReceipt,
+  type GateReviewEffort,
   type GatesEndpoint,
   decodePayload,
   isGateReviewReportEvidence,
@@ -43,9 +45,10 @@ import {
   type RetryOpts,
   retryRateLimited,
 } from "eris/gates-contract";
-import { type Checking, humanGrantGap, type Judged, type Latest, statusOf } from "./check";
+import { type CheckInput, type Checking, humanGrantGap, type Judged, type Latest, receiptsOfListing, statusOf } from "./check";
 import { precondition, unwrap } from "./failure";
 import { changedPaths, type CommitBound, commitBoundToHead, type Git, mergeBase, ok, repoRoot, revParse, run, untrackedFiles } from "./git";
+import type { GateReviews } from "./index";
 import { DOOR_SIGNOFF } from "./ladder";
 import { announcedHeads, countUnlocked, lockState, monDd, UNLOCKED_GATES } from "./ledger";
 import { classifyMonotone, type Dim, inSkillDir, named, readMonotoneSides, rowLine, type Signoff, uncovered } from "./monotone";
@@ -80,6 +83,8 @@ export interface UnlockInput {
   readonly g: Git;
   /** The posture's source: its name (the hosted bundle) and its read. */
   readonly doctrine: { readonly file: string; readonly read: DoctrineRead | null };
+  /** Distribution review-report judging (`gatePlugin({ reviews })`); absent fails closed as `blocking`. */
+  readonly reviews?: GateReviews | undefined;
   readonly now: Date;
   /** The 429 policy of the receipt reads. */
   readonly readRetry: RetryOpts;
@@ -187,31 +192,55 @@ function latestByGate(issue: string, receipts: ReadonlyArray<ListedReceipt>): Ma
   return latest;
 }
 
+/** The review-report@1 evidence on a receipt that reviewed `surface` against its own vocabulary. */
+function reportsFor(receipt: GateReceipt, surface: Pick<MatchedSurface, "name" | "class_taxonomy">) {
+  return receipt.evidence.filter(isGateReviewReportEvidence).filter((e) => e.report.surface === surface.name && e.report.reviewer.vocabulary.path === surface.class_taxonomy);
+}
+
 /**
- * One bar gate's status before head binding. `:<effort>` passes only on a receipt carrying a review
- * report at that effort, which this build reads as blocking, so it never passes here; `:clean` only on
- * a `PASS`; any other qualifier never passes.
+ * One bar gate's status before head binding. `:<effort>` passes only on a receipt carrying a
+ * review-report@1 for this surface at that effort or above; `:clean` only on a `PASS`; any other
+ * qualifier never passes. A receipt that carries reports must carry one for this surface and its
+ * vocabulary, qualified or not.
  */
-async function judgeBarGate(gate: string, qualifier: string | undefined, latest: Latest | undefined, judge: () => Promise<Judged>): Promise<{ readonly status: string; readonly why?: string | undefined }> {
-  const effort = (GATE_REVIEW_EFFORTS as readonly string[]).includes(qualifier ?? "") ? qualifier : undefined;
+async function judgeBarGate(
+  surface: Pick<MatchedSurface, "name" | "class_taxonomy">,
+  gate: string,
+  qualifier: string | undefined,
+  latest: Latest | undefined,
+  judge: (requiredEffort: GateReviewEffort | undefined) => Promise<Judged>,
+): Promise<{ readonly status: string; readonly why?: string | undefined }> {
+  const effort = (GATE_REVIEW_EFFORTS as readonly string[]).includes(qualifier ?? "") ? (qualifier as GateReviewEffort) : undefined;
   if (qualifier !== undefined && effort === undefined && qualifier !== CLEAN_QUALIFIER) {
     return { status: "unjudged", why: `the :${qualifier} qualifier is not one eris judges (${[...GATE_REVIEW_EFFORTS, CLEAN_QUALIFIER].join(", ")}), so it never unlocks` };
   }
-  const judged = await judge();
+  const judged = await judge(effort);
   if (judged.status !== "pass" || latest === undefined) return judged;
-  if (effort !== undefined && !latest.receipt.evidence.some(isGateReviewReportEvidence)) {
-    return { status: "no-report", why: `the receipt carries no review-report@1; record ${gate} with a review report at effort ${effort} or above` };
+  const reviewed = latest.receipt.evidence.some(isGateReviewReportEvidence);
+  const fix = `record ${gate} with a review-report@1 for surface ${surface.name} (vocabulary ${surface.class_taxonomy})${effort !== undefined ? ` at effort ${effort} or above` : ""}`;
+  if (effort !== undefined && !reviewed) return { status: "no-report", why: `the receipt carries no review-report@1; ${fix}` };
+  if (reviewed && reportsFor(latest.receipt, surface).length === 0) {
+    return { status: "wrong-surface", why: `no review-report@1 on the receipt names surface ${surface.name} and vocabulary ${surface.class_taxonomy}; ${fix}` };
   }
   if (qualifier === CLEAN_QUALIFIER && latest.receipt.verdict !== "PASS") return { status: "not-clean", why: `the latest receipt is ${latest.receipt.verdict}, not PASS; re-run it clean and record PASS` };
   return judged;
 }
 
 /** The issue's latest receipt for `gate` and, when it is a passing human-granted one, its artifact bytes. */
-export async function humanSignoff(input: Pick<UnlockInput, "ep" | "g" | "cwd" | "readRetry">, issue: string, gate: string): Promise<Signoff> {
+export async function humanSignoff(input: Pick<UnlockInput, "ep" | "g" | "cwd" | "readRetry" | "reviews">, issue: string, gate: string): Promise<Signoff> {
   const listing = unwrap(await retryRateLimited(() => listReceipts(input.ep, issue), input.readRetry));
   const l = latestByGate(issue, listing.receipts).get(gate);
   if (l === undefined) return { why: "missing" };
-  const judged = await statusOf({ input: { ep: input.ep, g: input.g, cwd: input.cwd, issue }, digests: new Map(), gitRepos: [] }, l, null);
+  const judged = await statusOf(
+    {
+      input: { ep: input.ep, g: input.g, cwd: input.cwd, issue, reviews: input.reviews, issueReceipts: receiptsOfListing(listing.receipts) },
+      digests: new Map(),
+      fresh: new Map(),
+      gitRepos: [],
+    },
+    l,
+    null,
+  );
   return { why: humanGrantGap(l, judged.status), bytes: judged.bytes };
 }
 
@@ -248,7 +277,30 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
   const listing = unwrap(await retryRateLimited(() => listReceipts(input.ep, input.issue), input.readRetry));
   const latest = latestByGate(input.issue, listing.receipts);
   const digests: Checking["digests"] = new Map();
-  const judgeOn = (issue: string): Checking => ({ input: { ep: input.ep, g, cwd: input.cwd, issue }, digests, gitRepos: [] });
+  const fresh: NonNullable<Checking["fresh"]> = new Map();
+  const skills: NonNullable<Checking["skills"]> = {};
+  // A review report counts only under a review skill the merge-base registry names, never one the PR registers.
+  const reviewSkills = Object.keys(baseRegistry?.review_skills ?? {}).sort();
+  const issueReceipts = receiptsOfListing(listing.receipts);
+  const atHead: CheckInput["head"] = { headSha: head, headSource: "--head-sha", base: input.base };
+  const judgeOn = (issue: string, at?: CheckInput["head"], requiredEffort?: GateReviewEffort): Checking => ({
+    input: {
+      ep: input.ep,
+      g,
+      cwd: input.cwd,
+      issue,
+      warn: input.warn,
+      reviews: input.reviews,
+      reviewSkills,
+      ...(at !== undefined ? { head: at } : {}),
+      ...(requiredEffort !== undefined ? { requiredEffort } : {}),
+      ...(issue === input.issue ? { issueReceipts } : {}),
+    },
+    digests,
+    fresh,
+    skills,
+    gitRepos: [],
+  });
 
   const posture = activePosture(read);
   if (posture?.policy?.signoff?.unlock !== "on") reasons.push(`doctrine ${posture?.slug ?? "(none)"} does not set signoff.unlock: on`);
@@ -295,7 +347,7 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
     for (const gate of bar.gates) {
       const [gateName, qualifier] = gate.split(":") as [string, string | undefined];
       const l = latest.get(gateName);
-      const judged = await judgeBarGate(gateName, qualifier, l, () => statusOf(judgeOn(input.issue), l, read));
+      const judged = await judgeBarGate(surface, gateName, qualifier, l, (requiredEffort) => statusOf(judgeOn(input.issue, atHead, requiredEffort), l, read));
       let status = judged.status;
       if (status === "pass" && l !== undefined) {
         const b = await boundToHead(g, top, l.receipt.artifact, head);

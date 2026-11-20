@@ -24,9 +24,9 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { type GateArtifact, sha256Hex } from "eris/gates-contract";
+import { type GateArtifact, headMatches, sha256Hex } from "eris/gates-contract";
 import { precondition } from "./failure";
-import { cloneRoot, type Git, ok, remoteSlug, repoRoot, revParse, run, worktreeForBranch } from "./git";
+import { cloneRoot, commitBoundToHead, type Git, ok, remoteSlug, repoRoot, revParse, run, worktreeForBranch } from "./git";
 
 const real = (p: string): string => {
   try {
@@ -251,4 +251,79 @@ export async function resolveArtifact(g: Git, cwd: string, a: GateArtifact, issu
 /** The primary checkout of `repo` (the first candidate), or null. */
 export async function targetRoot(g: Git, cwd: string, repo: string): Promise<string | null> {
   return (await candidateRoots(g, cwd, repo))[0] ?? null;
+}
+
+export interface TargetHead {
+  readonly headSha: string;
+  readonly diffSha256?: string | undefined;
+}
+
+/**
+ * The base recorded in `<git-dir>/eris/review-<pr>/context.json`, or undefined when none is recorded.
+ * A merged PR's head is an ancestor of origin/main, so its diff digest is only reproducible against
+ * its recorded base. A value that could read as a git option is ignored.
+ */
+async function recordedReviewBase(g: Git, root: string, pr: number): Promise<string | undefined> {
+  const gd = await run(g, root, ["rev-parse", "--absolute-git-dir"]);
+  if (!ok(gd)) return undefined;
+  const file = join(gd.stdout.toString("utf8").trim(), "eris", `review-${pr}`, "context.json");
+  try {
+    const raw: unknown = JSON.parse(readFileSync(file, "utf8"));
+    const b = typeof raw === "object" && raw !== null ? (raw as { base?: unknown }).base : undefined;
+    return typeof b === "string" && b !== "" && !/^-/.test(b) ? b : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Resolves `rev` (default HEAD) to a sha (and, when a merge-base with `base`, else the base recorded
+ * for `pr`, else `origin/main` exists in the checkout, the sha256 of its diff to `rev`) for a review
+ * report's `target.repo`, using the same repo lookup as `resolveArtifact`. When `reportHead` resolves
+ * to an ancestor of `rev` with only `thoughts/` changed since, resolves to that recorded commit and
+ * its diff. Returns null when no checkout of `repo` is present. An explicit `rev` whose commit,
+ * merge-base or diff cannot be read in the checkout fails closed: its diff digest is "", which no
+ * report matches.
+ */
+export async function resolveTargetHead(
+  g: Git,
+  cwd: string,
+  repo: string,
+  base?: string,
+  rev?: string,
+  reportHead?: string,
+  pr?: number,
+): Promise<TargetHead | null> {
+  const roots = await candidateRoots(g, cwd, repo);
+  if (roots.length === 0) return null;
+  if (rev !== undefined && (rev === "" || /^-/.test(rev))) return { headSha: rev, diffSha256: "" };
+  const target = rev ?? "HEAD";
+  let headRoot = roots[0]!;
+  let prHead = await revParse(g, target, headRoot);
+  if ((prHead === null || prHead === "") && rev !== undefined) {
+    for (const alt of roots.slice(1)) {
+      const found = await revParse(g, target, alt);
+      if (found !== null && found !== "") {
+        headRoot = alt;
+        prHead = found;
+        break;
+      }
+    }
+  }
+  if (prHead === null || prHead === "") return rev !== undefined ? { headSha: rev, diffSha256: "" } : null;
+  let headSha = prHead;
+  if (reportHead !== undefined && !headMatches(reportHead, prHead)) {
+    const recorded = await revParse(g, reportHead, headRoot);
+    if (recorded !== null && headMatches(reportHead, recorded)) {
+      const bound = await commitBoundToHead(g, headRoot, recorded, prHead);
+      if (bound.bound) headSha = recorded;
+    }
+  }
+  const unverified: TargetHead = rev !== undefined ? { headSha, diffSha256: "" } : { headSha };
+  const baseRef = base ?? (pr === undefined ? undefined : await recordedReviewBase(g, headRoot, pr)) ?? "origin/main";
+  const mb = await run(g, headRoot, ["merge-base", baseRef, headSha]);
+  const fork = ok(mb) ? mb.stdout.toString("utf8").trim() : "";
+  if (fork === "") return unverified;
+  const diff = await run(g, headRoot, ["diff", "--no-ext-diff", "--no-color", fork, headSha]);
+  return ok(diff) ? { headSha, diffSha256: sha256Hex(diff.stdout) } : unverified;
 }
