@@ -1735,7 +1735,7 @@ leaf's narrower claim could own a changed path). Exit 3.
 The door-class ladder `eris gate check` reads (`--ladder`, or the build's) cannot be read, is not
 YAML, or does not decode: `classes:` maps door classes (`all`, `U0`-`U3`, `U<n>:<crossing>`) to a rung,
 and no U3 class sits above the human-after rung. Fix the file, or move it aside to read every class at
-the default rung. Exit 3.
+its default rung (U0/U1 auto, U2/U3 human-after). Exit 3.
 
 ### gate-ci-event-invalid
 
@@ -1791,19 +1791,22 @@ changes or read a file at the merge-base. Check out the PR with `fetch-depth: 0`
 ### gate-unlock-human
 
 `eris gate ci`'s unlock leg did not unlock the merge, and no human signed it. The failure names every
-reason: the hosted posture does not set `signoff.unlock: on`; a bar gate is missing, failing or not
-bound to the PR head (`stale-head`), or its qualifier is not met (`no-report`, `not-clean`) or is one
-this build does not judge (`unjudged`); the surface does not list `merge` under `one_way_unlock`; it is
-not on the base registry yet; its ledger has no fresh passing `audit-surfaces` baseline, the change
-budget since it is spent, or no `unlocked-merge` announcement names this head; the surface is
-locked; or the diff touches a governance file (the registry, a registered vocabulary or review
-skill: always human, with each `@monotone` row named, and a wider row no human `surface-widen`
-receipt covers named again). A `door-signoff` on the issue that does not hold is named too:
-`stale-head` (recorded before a later code push, on a commit that is not its ancestor, or over a file
-artifact), `wrong-action` (no `door: merge` evidence line), or no human grant. A human signs off at
-the PR head with `eris gate record door-signoff --issue <KEY> --verdict PASS --artifact <committed
-plan or note> --evidence "door: merge" --authorized "<name> asked: <request>"`, or close each reason
-and re-run the job ([GATE.md](GATE.md#ci)). Exit 3.
+reason: the hosted posture holds two-way merges (`signoff.two-way: human`) or does not set
+`signoff.unlock: on` for a one-way merge; a bar gate is missing, failing or not bound to the PR head
+(`stale-head`, including a review naming no commit, which is not re-dispatched), or its qualifier is
+not met (`no-report`, `not-clean`) or is one this build does not judge (`unjudged`); the surface does
+not list `merge` under `one_way_unlock`; it is not on the base registry yet; its ledger has no fresh
+passing `audit-surfaces` baseline, the change budget since it is spent, or no `unlocked-merge`
+announcement names this head; the surface is locked; or the diff touches a governance file (the
+registry, a registered vocabulary or review skill: always human, with each `@monotone` row named, and
+a wider row no human `surface-widen` receipt covers named again). A `door-signoff` on the issue that
+does not hold is named too: `stale-head` (recorded before a later code push, on a commit that is not
+its ancestor, or over a file artifact), `wrong-action` (no `door: merge` evidence line), or no human
+grant. When `adversarial-review` has no receipt bound to the head on a one-way merge, stdout prints a
+`@dispatch` row with the loop launch command. A human signs off at the PR head with `eris gate record
+door-signoff --issue <KEY> --verdict PASS --artifact <committed plan or note> --evidence "door: merge"
+--authorized "<name> asked: <request>"`, or close each reason and re-run the job
+([GATE.md](GATE.md#ci)). Exit 3.
 
 ### gate-unlock-unresolved
 

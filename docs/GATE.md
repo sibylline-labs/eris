@@ -114,9 +114,9 @@ After the gate rows, in this order:
 - Naming a floor gate (`final-gates`, `user-impact`): one row per requirement of the issue's
   user-impact class, then `@floor\t<pass|unmet|unclassified>\t<class>`, then
   `@door\t<rung>\t<class>`. The door's rung comes from the ladder file (`--ladder`, or the build's;
-  none: every class at the human-after rung), lifted by the posture's `lifts` on a bleed-reducing
-  fix and capped by its `ceilings`. At the human-before rung the check fails unless a `door-signoff`
-  receipt passes with a human grant.
+  none: U0/U1 at the auto rung and U2/U3 at the human-after rung), lifted by the posture's `lifts`
+  on a bleed-reducing fix and capped by its `ceilings`. At the human-before rung the check fails
+  unless a `door-signoff` receipt passes with a human grant.
 - `@remediate\tunsupported\t-` when the issue has a `remediate` receipt: this build does not judge a
   remediation loop, so the check fails rather than pass it unread.
 - Naming `final-gates` (or with `--asks`): `@asks\t<clear|open>\t<n>`, the open blocking asks bound to
@@ -167,7 +167,7 @@ leg's failure:
 |---|---|
 | `profile` | when `settings.ci.check_profile_in_ci` is `on`: the hosted posture's `profile_default` (default `spine`) from the hosted bundle's profiles, as `check --profile --dry-run` does. A gate the posture sets `off` reads `skipped`. |
 | `monotone` | `.claude/surfaces.yml` (`--registry`), each surface's vocabulary and each registered review skill at the merge-base against the head, one `@monotone\t<scope>\t<subject>\t<field>\t<tighter\|wider>\t<detail>` row per changed dimension. Any wider row fails (`gate-monotone-wider`) unless the issue's latest `surface-widen` receipt passes with a human grant and its artifact carries every wider row verbatim. |
-| `unlock` | whether the merge may proceed without a human on each registered surface the diff crosses: `@surface`, `@lock`, the bar's gate rows, `@baseline`, `@budget`, `@announce`, and `@governance` plus `@monotone` rows for a diff that edits the registry, a vocabulary or a review skill. It reads `@unlock\tnot-needed` with no surface crossed, `unlocked` when the posture sets `signoff.unlock: on` and every bar gate passes bound to the PR head, or `human-signed` on the issue's latest `door-signoff` passing with a human grant, bound to the head and carrying a `door: merge` evidence line. Anything else fails (`gate-unlock-human`), naming every reason. |
+| `unlock` | whether the merge may proceed without a human on each registered surface the diff crosses. When a surface is crossed it first prints `@door\t<one-way\|two-way>\t<source>`: every signal can only close the door, so it reads one-way when the latest `define-future` (bar a valid doctrine/repo skip) does not pass, its verified artifact is a graph-target delta removing or changing anything (including sparse v1 deltas omitting empty fields) or failing strict decode, or a `door:` evidence line says `one-way` or counts `-n`, `−n` (`U+2212`), or `~n` above 0; when any earlier `define-future` on the issue (`define-future history`) has unverifiable recorded bytes, an invalid or removing/changing delta, or an inline one-way `door:` line (`text`, `log`, `test-run`, `e2e`); or when the issue is unclassified or its class's unladdered rung is human-before. A clean two-way merge with no governance path prints `@surface` and `@lock` per crossed surface and `@unlock\tnot-needed\tmerge` (a locked surface or `signoff.two-way: human` keeps it human-signed). A one-way merge checks the bar's gate rows, `@baseline`, `@budget`, `@announce`, and `@governance` plus `@monotone` rows for a governance edit; when `adversarial-review` has no receipt bound to the head (and no receipt naming no commit) it prints `@dispatch\tadversarial-review\teris loop launch ...` with the shell-quoted main clone just before `@unlock\thuman`. It reads `unlocked` when `signoff.unlock: on` and every bar gate passes bound to the head, or `human-signed` on a passing human `door-signoff` carrying `door: merge`; anything else fails (`gate-unlock-human`), naming every reason. |
 
 A PR with no key: under `settings.ci.untracked_prs: block` it fails (`gate-issue-missing`). An author
 on `settings.ci.bot_allowlist`, or `untracked_prs: warn` (one `WARN` line) or `allow`, runs the
@@ -201,5 +201,5 @@ in place of this build's gate plugin, with `pulledTree` as `pulled` to read the 
 tree and `reviews` (`GateReviews`) supplying the registered review skills and `main` skill/vocabulary
 freshness reader (`ReviewFreshness`). Without `reviews`, `check` and `ci` fail closed as `blocking`
 on `review-report@1` evidence. `ladderFile` is the door-class ladder `check` reads with no `--ladder`;
-without it every class reads the human-after rung. `loopPlugin` and `freshTree` compose the loop verbs
+without it U0/U1 read the auto rung and U2/U3 read the human-after rung. `loopPlugin` and `freshTree` compose the loop verbs
 the same way, and `examples/distribution` composes all three.
