@@ -283,10 +283,14 @@ server's body, `{url}`.
 a Logfire alert channel. It is a credential, so keep it out of chat and logs. `eris org webhooks
 logfire revoke` replaces it (`POST /v1/org/webhooks/logfire/revoke`) and prints the new one; the old
 URL stops working at once, so update every channel that used it. The dashboard's Webhooks section shows
-the same URL. Printing it for an org whose bus product is not active adds a `WARN` on stderr: the URL
+the same URL. Reading it also reports, on stderr, when the org's Logfire alert last reached it and what
+became of it (`GET /v1/org/webhooks/logfire/delivery`: `INFO last delivery: <time> (<status>)`, or `INFO no
+delivery yet`), so you can confirm a channel is wired; a revoke clears it. That read never fails the verb.
+Printing it for an org whose bus product is not active adds a `WARN` on stderr: the URL
 delivers nothing (deliveries answer 402). Both are an org admin's ([`org-admin-required`](ERRORS.md#org-admin-required)); a revoke
 for an org whose bus product is not active is refused ([`org-bus-lapsed`](ERRORS.md#org-bus-lapsed)).
-`--output json` prints `{url, path, generation}`.
+`--output json` prints `{url, path, generation, last_delivery}`, where `last_delivery` is `{at, status}`, null before the first
+delivery, and absent when it could not be read.
 
 ### `eris org delete`: schedule or cancel the org's deletion
 
