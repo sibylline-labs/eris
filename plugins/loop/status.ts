@@ -11,6 +11,8 @@
  *  - several sessions matching one ref show the single working one, else the newest (`updatedAt`, then
  *    `createdAt`, then the later id), across runtimes; more than one working is `loop-session-ambiguous`;
  *  - elapsed time is the verb's clock against the job's own timestamps;
+ *  - a Claude job `working` in `state.json` whose `claude agents --json` row is `idle`, unchanged for
+ *    `IDLE_STALL_MS`, is flagged `stalled:`; an unreadable listing says nothing;
  *  - the newest message keeps its last `STATUS_TEXT_MAX` characters (a blocked session's question ends it);
  *  - every line read from disk is decoded from `unknown`; one that does not decode is skipped.
  */
@@ -20,7 +22,7 @@ import { join } from "node:path";
 import * as Schema from "effect/Schema";
 import { decodeResult } from "eris/gates-contract";
 import { heldClaim } from "./claims";
-import { type ClaudeJob, readJobState, sessionAmbiguous, trimmed } from "./claude";
+import { claudeAgents, type ClaudeJob, readJobState, sessionAmbiguous, trimmed } from "./claude";
 import { type Run, runtimeEnv } from "./deps";
 import { usage } from "./failure";
 import { loopOf, oneLine } from "./names";
@@ -30,6 +32,8 @@ import { isWorking, type LoopSession, matchSessions, notFound, sessionIdOf, sess
 export const STATUS_TEXT_MAX = 4000;
 /** A tool call running this long is stalled. */
 export const COMMAND_BUDGET_MS = 25 * 60 * 1000;
+/** A job `working` in `state.json` but `idle` in `claude agents --json` this long is stalled. */
+export const IDLE_STALL_MS = 10 * 60 * 1000;
 const IN_FLIGHT_LABEL_MAX = 160;
 
 const Text = Schema.optionalKey(Schema.NullOr(Schema.String));
@@ -161,6 +165,20 @@ function pick(ref: string, matches: ReadonlyArray<LoopSession>): LoopSession {
   return working[0] ?? [...matches].sort((a, b) => sessionTime(b) - sessionTime(a) || (sessionIdOf(a) < sessionIdOf(b) ? 1 : -1))[0]!;
 }
 
+/** The `stalled:` line when `claude agents --json` reports a `state.json`-working job idle past `IDLE_STALL_MS`, else none. */
+async function idleStall(run: Run, job: ClaudeJob): Promise<ReadonlyArray<string>> {
+  if (job.state.state !== "working") return [];
+  const since = jobTime(job);
+  const sinceMs = run.now() - since;
+  if (since === 0 || sinceMs < IDLE_STALL_MS) return [];
+  const agents = await claudeAgents(run);
+  const row = agents.rows.find((r) => r.id === job.id || ((job.state.sessionId ?? "") !== "" && r.sessionId === job.state.sessionId));
+  if (row === undefined || row.status !== "idle") return [];
+  return [
+    `stalled: claude agents reports idle for ${Math.floor(sinceMs / 60_000)}m while state.json says working; a resumed session waiting on a background completion never wakes (stop it and resume with a foreground-only prompt)`,
+  ];
+}
+
 /** The status text for the session `ref` names (ends with a newline). */
 export async function loopStatus(run: Run, ref: string | undefined): Promise<string> {
   const clean = ref?.trim() ?? "";
@@ -183,6 +201,7 @@ export async function loopStatus(run: Run, ref: string | undefined): Promise<str
     const [mins, secs] = [Math.floor(c.elapsedS / 60), c.elapsedS % 60];
     return [`in-flight: ${c.kind} (${mins}m ${secs}s): ${c.label}`, ...(c.stalled ? [`stalled: ${c.kind} running ${mins}m (exceeds ${budgetM}m budget): ${c.label}`] : [])];
   });
+  const stall = await idleStall(run, job);
   const text = lastMessage(job);
   const chars = text === null ? [] : [...text];
   const message = text === null || text === "" ? [] : ["", "last message:", chars.length > STATUS_TEXT_MAX ? `…${chars.slice(-STATUS_TEXT_MAX).join("")}` : text];
@@ -193,6 +212,7 @@ export async function loopStatus(run: Run, ref: string | undefined): Promise<str
     ...field("claim", claim),
     ...field("also", also.join(", ")),
     ...calls,
+    ...stall,
     ...message,
   ];
   return `${lines.join("\n")}\n`;
