@@ -50,6 +50,7 @@ let store: Record<string, StoredRow[]>;
 let seen: { method: string; path: string }[];
 let clock: number;
 let settings: GatesSettings;
+let bundle: GatesOrgBundle;
 
 const ci = (over: Partial<GatesSettings["ci"]> = {}): GatesSettings => ({
   staleness: "soft",
@@ -57,8 +58,8 @@ const ci = (over: Partial<GatesSettings["ci"]> = {}): GatesSettings => ({
 });
 
 async function route(method: string, url: URL): Promise<Response> {
-  const sha = await computeGatesBundleSha(BUNDLE, settings);
-  if (method === "GET" && url.pathname === "/v1/gates/policy") return Response.json({ contract: "gates-contract/v1.5", bundle: BUNDLE, bundle_sha: sha });
+  const sha = await computeGatesBundleSha(bundle, settings);
+  if (method === "GET" && url.pathname === "/v1/gates/policy") return Response.json({ contract: "gates-contract/v1.5", bundle, bundle_sha: sha });
   if (method === "GET" && url.pathname === "/v1/gates/settings") return Response.json({ contract: "gates-contract/v1.5", settings, bundle_sha: sha });
   if (method === "GET" && url.pathname === "/v1/gates/receipts") {
     const issue = url.searchParams.get("issue") ?? "";
@@ -95,6 +96,7 @@ beforeEach(() => {
   seen = [];
   clock = 0;
   settings = ci();
+  bundle = BUNDLE;
 });
 
 function git(cwd: string, ...args: string[]): string {
@@ -213,7 +215,7 @@ async function gateCi(cwd: string, ev: string): Promise<Ran> {
   }
 }
 
-const policyRow = async () => `@policy\t${await computeGatesBundleSha(BUNDLE, settings)}\tci\n`;
+const policyRow = async () => `@policy\t${await computeGatesBundleSha(bundle, settings)}\tci\n`;
 
 describe("issueKeyFrom", () => {
   // admits: algorithmic: a key read from the wrong place routes a ticketed PR to gate-issue-missing, or an untracked one past it; regexes no type sees.
@@ -254,6 +256,74 @@ describe("eris gate ci: a ticketed PR", () => {
     });
     expect([...new Set(seen.map((s) => s.method))]).toEqual(["GET"]);
     expect(seen.some((s) => s.path === "/v1/gates/receipts")).toBe(true);
+  });
+
+  // admits: integration: proves GET /v1/gates/policy -> fetchOrgPolicy -> postureFromBundle -> checkUnlock prints @unlock\tunlocked\tmerge with zero door-signoff receipt and strictly GET-only wire traffic when the hosted bundle sets signoff.unlock: on.
+  it("unlocks a one-way surface merge without door-signoff when the hosted bundle sets signoff.unlock: on (GET-only)", async () => {
+    /** When the hosted bundle decoder drops signoff.unlock, gate ci fails gate-contract-mismatch or falls back to human-signed even when every bar gate, baseline, budget and announcement holds: observed on stdout, exit code and the loopback method log. */
+    const { d, head, base } = shop();
+    bundle = {
+      ...BUNDLE,
+      postures: {
+        ci: {
+          ...BUNDLE.postures.ci!,
+          policy: { ...BUNDLE.postures.ci!.policy, signoff: { "one-way": "human", "two-way": "self", unlock: "on" } },
+        },
+      },
+    };
+    put("ABC-1", bound("plan-review", head));
+    put("ABC-1", bound("adversarial-review", head));
+    put("ABC-1", bound("posture-check", head));
+    ledger(head);
+    const r = await gateCi(d, event(head, base));
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("@unlock\tunlocked\tmerge\n@ci\tunlock\tpass\n");
+    expect(r.out).not.toContain("door-signoff\t");
+    expect([...new Set(seen.map((s) => s.method))]).toEqual(["GET"]);
+  });
+
+  // admits: integration: proves hosted signoff.raise (surface and * wildcard with :qualifier) survives GET /v1/gates/policy -> renderBundle -> readDoctrine -> unlockBar and fails closed to @unlock\thuman\tmerge until every raised gate passes bound to the PR head.
+  it("enforces hosted signoff.raise (surface and * wildcard) in gate ci: human when a raised gate is missing, unlocked once bound", async () => {
+    /** When hosted signoff.raise is dropped or mis-parsed across bundle decode and render, a posture-raised bar gate is silently skipped and a surface merges without it: observed on gate rows, @unlock outcome and strictly GET-only traffic. */
+    const { d, head, base } = shop();
+    bundle = {
+      ...BUNDLE,
+      postures: {
+        ci: {
+          ...BUNDLE.postures.ci!,
+          policy: {
+            ...BUNDLE.postures.ci!.policy,
+            signoff: {
+              "one-way": "human",
+              "two-way": "self",
+              unlock: "on",
+              raise: {
+                auth: { merge: ["e2e"] },
+                "*": { merge: ["audit-surfaces:clean"] },
+              },
+            },
+          },
+        },
+      },
+    };
+    put("ABC-1", bound("plan-review", head));
+    put("ABC-1", bound("adversarial-review", head));
+    put("ABC-1", bound("posture-check", head));
+    ledger(head);
+    const missing = await gateCi(d, event(head, base));
+    expect(missing.code).toBe(3);
+    expect(missing.out).toContain("e2e\tmissing\t-\n");
+    expect(missing.out).toContain("audit-surfaces:clean\tmissing\t-\n");
+    expect(missing.out).toContain("@unlock\thuman\tmerge\n@ci\tunlock\tfail\n");
+
+    put("ABC-1", bound("e2e", head));
+    put("ABC-1", bound("audit-surfaces", head));
+    const passed = await gateCi(d, event(head, base));
+    expect(passed.code).toBe(0);
+    expect(passed.out).toContain("e2e\tpass\tPASS\n");
+    expect(passed.out).toContain("audit-surfaces:clean\tpass\tPASS\n");
+    expect(passed.out).toContain("@unlock\tunlocked\tmerge\n@ci\tunlock\tpass\n");
+    expect([...new Set(seen.map((s) => s.method))]).toEqual(["GET"]);
   });
 
   // admits: integration: a surface diff with no human sign-off must fail the unlock leg (never pass a one-way merge unsigned); observed at the leg row and the slug.
