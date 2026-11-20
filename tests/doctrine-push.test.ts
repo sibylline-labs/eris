@@ -337,6 +337,101 @@ describe("eris doctrine push", () => {
     expect(hits).toEqual([]);
   });
 
+  // admits: integration: red on main — lax GatesOrgBundle decode strips signoff.unlock so push prints unchanged and overwrites the edited tree; observed on exit status, slug, key path, request log and on-disk tree bytes.
+  it("refuses a posture policy key the bundle contract does not carry (signoff.unlock) before any request, leaving the tree intact", async () => {
+    /** When push decodes a posture policy laxly, an unsupported key such as signoff.unlock is stripped, bundle_sha still matches live, and push prints unchanged while discarding the edit: observed on the exit status, slug, stderr key path, request log and tree bytes. */
+    live = {
+      ...BUNDLE,
+      postures: {
+        ...BUNDLE.postures,
+        "business-as-usual": {
+          ...BUNDLE.postures["business-as-usual"]!,
+          policy: { ...BUNDLE.postures["business-as-usual"]!.policy, signoff: { "one-way": "human", "two-way": "self" } },
+        },
+      },
+    };
+    liveSha = await computeGatesBundleSha(live, SETTINGS);
+    expect((await doctrine(["pull"])).rc).toBe(0);
+    const docPath = join(linked(), "doctrine.md");
+    const orig = readFileSync(docPath, "utf8");
+    const bauAt = orig.indexOf("## business-as-usual");
+    const edited = orig.slice(0, bauAt) + orig.slice(bauAt).replace("two-way: self\n", "two-way: self\n    unlock: on\n");
+    expect(edited).not.toBe(orig);
+    writeFileSync(docPath, edited);
+    const before = treeState();
+    hits = [];
+    const r = await doctrine(["push"]);
+    expect(r.rc).toBe(3);
+    expect(r.stdout).toBe("");
+    expect(slugOf(r.stderr)).toBe("doctrine-push-invalid");
+    expect(r.stderr).toContain("doctrine.md: business-as-usual: policy.signoff.unlock");
+    expect(r.stderr).not.toContain("doctrine check");
+    expect(hits).toEqual([]);
+    expect(treeState()).toEqual(before);
+  });
+
+  // admits: algorithmic: covers nested policy structs, fence-root sibling keys, profiles.yaml union objects and co-occurring valid edits without echoing rejected values.
+  it("refuses unknown keys alongside a real edit across policy, fence root and profiles.yaml, naming every key and echoing no value", async () => {
+    /** When an unsupported key rides beside a real edit, at the fence root or inside a profiles.yaml object, lax decode would save the rest and drop the key silently; values must never echo in the refusal: observed on stderr, request log and tree bytes. */
+    expect((await doctrine(["pull"])).rc).toBe(0);
+    const sentinel = "NEVER_ECHO_VALUE_9911";
+    const docPath = join(linked(), "doctrine.md");
+    const orig = readFileSync(docPath, "utf8");
+    const bauAt = orig.indexOf("## business-as-usual");
+    const editedDoc =
+      orig.slice(0, bauAt) +
+      orig
+        .slice(bauAt)
+        .replace("- The default.", "- The default, edited.")
+        .replace("  profile_default: deep\n", `  profile_default: deep\n  signoff:\n    one-way: human\n    unlock: ${sentinel}\n  ask:\n    session_budget: 5\n  user_impact:\n    U4:\n      - e2e\n`)
+        .replace("\n```\n", "\nextra_root: true\n```\n");
+    writeFileSync(docPath, editedDoc);
+    const profPath = join(linked(), "profiles.yaml");
+    writeFileSync(profPath, `${readFileSync(profPath, "utf8")}custom:\n  require:\n    - final-gates\n  extra_prof: ${sentinel}\n`);
+    const before = treeState();
+    hits = [];
+    const r = await doctrine(["push"]);
+    expect(r.rc).toBe(3);
+    expect(slugOf(r.stderr)).toBe("doctrine-push-invalid");
+    for (const keyPath of [
+      "doctrine.md: business-as-usual: extra_root",
+      "doctrine.md: business-as-usual: policy.ask",
+      "doctrine.md: business-as-usual: policy.signoff.unlock",
+      "doctrine.md: business-as-usual: policy.user_impact.U4",
+      "profiles.yaml: custom.extra_prof",
+    ]) {
+      expect(r.stderr).toContain(keyPath);
+    }
+    expect(`${r.stdout}${r.stderr}`).not.toContain(sentinel);
+    expect(hits).toEqual([]);
+    expect(treeState()).toEqual(before);
+  });
+
+  // admits: boundary-io: positive control proving strict unknown-key rejection still accepts YAML comments/layout normalization and open Record maps (gates, close).
+  it("still accepts YAML comments and custom Record keys (gates, close) when pushing", async () => {
+    /** When strict decoding treats open Record maps or YAML comments as unknown keys, legitimate hand-edits break: observed on unchanged and saved push outcomes. */
+    expect((await doctrine(["pull"])).rc).toBe(0);
+    const docPath = join(linked(), "doctrine.md");
+    const orig = readFileSync(docPath, "utf8");
+    const bauAt = orig.indexOf("## business-as-usual");
+    writeFileSync(docPath, orig.slice(0, bauAt) + orig.slice(bauAt).replace("policy:\n", "# operator note\npolicy:\n"));
+    const noop = await doctrine(["push"]);
+    expect(noop.rc).toBe(0);
+    expect(noop.stdout).toBe(`org ${ORG}\tbundle_sha ${liveSha}\tversion unchanged\n`);
+    expect(puts).toEqual([]);
+    const nextDoc = readFileSync(join(linked(), "doctrine.md"), "utf8");
+    const bau2 = nextDoc.indexOf("## business-as-usual");
+    writeFileSync(
+      join(linked(), "doctrine.md"),
+      nextDoc.slice(0, bau2) + nextDoc.slice(bau2).replace("  profile_default: deep\n", "  profile_default: deep\n  gates:\n    custom-gate: on\n  close:\n    custom-close: off\n"),
+    );
+    const saved = await doctrine(["push"]);
+    expect(saved.rc).toBe(0);
+    expect(puts).toHaveLength(1);
+    expect(live.postures["business-as-usual"]?.policy.gates?.["custom-gate"]).toBe("on");
+    expect(live.postures["business-as-usual"]?.policy.close?.["custom-close"]).toBe("off");
+  });
+
   it("with no pulled policy exits 3, doctrine-file-missing, without a request", async () => {
     /** When push has no base it would save whatever it finds: observed on the slug and the request log. */
     const r = await doctrine(["push"]);

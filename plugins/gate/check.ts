@@ -4,7 +4,7 @@
  *
  *   no receipt                                   → missing           (fails)
  *   an evidence digest that does not hold        → bad-digest        (fails)
- *   review-report evidence                       → blocking          (fails: this build does not judge reports)
+ *   review-report evidence                       → blocking (public default with no reviews seam), or judged via reviews (blocking / drift / review-stale / pass)
  *   BLOCKING                                     → blocking          (fails)
  *   SKIPPED on a `doctrine:<posture>` grant      → skipped, or doctrine-stale when the posture no longer bears it out
  *   SKIPPED on `repo:no-eris-yaml`               → skipped, or doctrine-stale once the repo gains an eris.yaml
@@ -46,6 +46,7 @@ import {
   DEFINE_FUTURE_GATE,
   DOCTRINE_GRANT,
   decodePayload,
+  deriveReviewPass,
   doctrineActor,
   doctrineGrantPosture,
   doctrineShaped,
@@ -56,6 +57,8 @@ import {
   type GateArtifactCopy,
   type GateEvidence,
   type GateReceipt,
+  type GateReviewEffort,
+  type GateReviewReport,
   type GatesEndpoint,
   gateMode,
   invalidDoctrine,
@@ -69,26 +72,44 @@ import {
   NO_ERIS_YAML_GRANT,
   noErisYamlSkipBlocker,
   REQUIREMENTS,
+  type ReviewDiffSource,
+  type ReviewHeadSource,
   repoGrantShaped,
   requirementsFor,
   reviewReportDigest,
+  sameActor,
   sha256Hex,
+  staleness,
   type RetryOpts,
   retryRateLimited,
 } from "eris/gates-contract";
-import { resolveArtifact, targetRoot } from "./artifact";
+import { resolveArtifact, resolveTargetHead, targetRoot } from "./artifact";
 import { type BurdenRubric, burdenOf, type EvidenceKind, owedBy, unmet } from "./burden";
 import { precondition, stop, unwrap } from "./failure";
 import { effectiveClass } from "./floor";
 import { type Git, repoRoot } from "./git";
+import type { GateReviews } from "./index";
 import { BLEED_REDUCING, type DoorLadder, DOOR_SIGNOFF, doorRung, RUNG_MEANS } from "./ladder";
-import { skipGate, validateTarget } from "./record";
+import { knownActors, skipGate, validateTarget } from "./record";
 import { gitSurfaceBar, remediateRow, stateOf, type SurfaceBar } from "./remediate";
 import type { Crossed } from "./surfaces";
 
-export type GateStatus = "missing" | "bad-digest" | "blocking" | "unresolved" | "drift" | "pass" | "skipped" | "unauthorized-skip" | "doctrine-stale" | "deferred" | "forbidden" | "absent";
+export type GateStatus =
+  | "missing"
+  | "bad-digest"
+  | "blocking"
+  | "unresolved"
+  | "drift"
+  | "pass"
+  | "skipped"
+  | "unauthorized-skip"
+  | "doctrine-stale"
+  | "review-stale"
+  | "deferred"
+  | "forbidden"
+  | "absent";
 
-const FAILING: ReadonlySet<GateStatus> = new Set(["missing", "bad-digest", "blocking", "unresolved", "drift", "unauthorized-skip", "doctrine-stale", "forbidden"]);
+const FAILING: ReadonlySet<GateStatus> = new Set(["missing", "bad-digest", "blocking", "unresolved", "drift", "unauthorized-skip", "doctrine-stale", "review-stale", "forbidden"]);
 
 /** The gates that end a run: checking one also refuses an open blocking ask. */
 export const TERMINAL_GATES: ReadonlyArray<string> = ["final-gates"];
@@ -120,6 +141,23 @@ export interface CheckInput {
   readonly ladder?: { readonly read: () => DoorLadder | null } | undefined;
   readonly applyModes?: boolean | undefined;
   readonly readOnly?: true | undefined;
+  /** Distribution review-report judging (`gatePlugin({ reviews })`); absent fails closed as `blocking`. */
+  readonly reviews?: GateReviews | undefined;
+  /** Merge-base `review_skills` from `.claude/surfaces.yml` (unlock leg): a report naming any other skill reads `blocking`. */
+  readonly reviewSkills?: ReadonlyArray<string> | undefined;
+  /** Minimum effort required of `review-report@1` evidence (`--effort`). */
+  readonly requiredEffort?: GateReviewEffort | undefined;
+  /** Explicit PR head / diff sha256 to check `review-report@1` targets against (`--head-sha` / `--diff-sha256`). */
+  readonly head?:
+    | {
+        readonly headSha?: string | undefined;
+        readonly headSource?: ReviewHeadSource | undefined;
+        readonly diffSha256?: string | undefined;
+        readonly base?: string | undefined;
+      }
+    | undefined;
+  /** The issue's decoded receipts, which `knownActors` reads per gate; `checkGates` populates this from its listing. */
+  readonly issueReceipts?: ReadonlyArray<GateReceipt> | undefined;
   readonly now: Date;
   readonly asks?: { readonly pr?: number | undefined; readonly json?: boolean | undefined } | undefined;
   /** The remediation surface bar (default: `gitSurfaceBar(g, cwd)`). */
@@ -142,16 +180,35 @@ export interface Judged {
 
 type DigestCache = Map<string, AssetDigest>;
 
-/** What judging one issue's receipts reads: the store, git, the directory, and the issue. */
-export type JudgeOn = Pick<CheckInput, "ep" | "g" | "cwd" | "issue">;
+/** What judging one issue's receipts reads: the store, git, the directory, the issue, and optional review-report config. */
+export type JudgeOn = Pick<CheckInput, "ep" | "g" | "cwd" | "issue" | "reviews" | "reviewSkills" | "requiredEffort" | "head" | "issueReceipts"> & {
+  readonly warn?: ((line: string) => void) | undefined;
+};
 
 /** One check: its input plus what it has read so far. */
 export interface Checking {
   readonly input: JudgeOn;
   readonly digests: DigestCache;
+  /** Per-check cache handed to `reviews.freshness`. */
+  readonly fresh?: Map<string, unknown> | undefined;
+  /** Cached distribution `reviews.skills` list shared across calls in one check. */
+  readonly skills?: { value?: ReadonlyArray<string> } | undefined;
   /** The git checkouts the issue's `git` artifacts live in (for a `repo:no-eris-yaml` skip), resolved once. */
   gitRepos: ReadonlyArray<string>;
   roots?: ReadonlyArray<string>;
+}
+
+/** A listing's decoded receipts. */
+export const receiptsOfListing = (records: ReadonlyArray<ListedReceipt>): GateReceipt[] =>
+  records.flatMap((c) => {
+    const p = decodePayload(c.version, c.payload);
+    return p.kind === "receipt" ? [p.receipt] : [];
+  });
+
+/** Why a review-report on `r` is not bound to the receipt that records it, or null. */
+function unboundReviewer(report: GateReviewReport, r: GateReceipt): string | null {
+  if (sameActor(report.reviewer.actor, r.actor)) return null;
+  return `review-report reviewer ${report.reviewer.actor} is not the recording actor ${r.actor} (not-independent): the reviewer records its own receipt`;
 }
 
 function gitMetadataArtifact(top: string): string {
@@ -212,8 +269,56 @@ export async function statusOf(c: Checking, latest: Latest | undefined, doctrine
   const r = latest.receipt;
   const bad = await badDigest(c, r.evidence);
   if (bad !== null) return { status: "bad-digest", why: bad };
-  if (r.evidence.some(isGateReviewReportEvidence)) {
-    return { status: "blocking", why: "review-report evidence is judged only by an eris build that registers review skills; this build reads it as blocking" };
+  const accepted: string[] = [];
+  for (const e of r.evidence) {
+    if (!isGateReviewReportEvidence(e)) continue;
+    const reviews = c.input.reviews;
+    if (reviews === undefined) {
+      return { status: "blocking", why: "review-report evidence is judged only by an eris build that registers review skills; this build reads it as blocking" };
+    }
+    const skill = e.report.reviewer.skill.name;
+    if (c.input.reviewSkills !== undefined && !c.input.reviewSkills.includes(skill)) {
+      const listed = c.input.reviewSkills.length > 0 ? c.input.reviewSkills.join(", ") : "none";
+      return { status: "blocking", why: `review skill ${skill} is not a registered review skill (review_skills at the merge-base: ${listed}); a human registers it` };
+    }
+    if (reviews.skills !== undefined) {
+      const slot = c.skills ?? {};
+      if (slot.value === undefined) {
+        slot.value = typeof reviews.skills === "function" ? await reviews.skills({ cwd: c.input.cwd, env: c.input.g.env }) : reviews.skills;
+      }
+      if (!slot.value.includes(skill)) {
+        const listed = slot.value.length > 0 ? slot.value.join(", ") : "none";
+        return { status: "blocking", why: `review skill ${skill} is not a registered review skill (registered: ${listed}); a human registers it` };
+      }
+    }
+    const unbound = unboundReviewer(e.report, r);
+    if (unbound !== null) return { status: "blocking", why: unbound };
+    const resolved = await resolveTargetHead(c.input.g, c.input.cwd, e.report.target.repo, c.input.head?.base, c.input.head?.headSha, e.report.target.head_sha, e.report.target.pr);
+    const fresh = await reviews.freshness({
+      report: e.report,
+      cwd: c.input.cwd,
+      env: c.input.g.env,
+      targetRoot: () => targetRoot(c.input.g, c.input.cwd, e.report.target.repo),
+      cache: c.fresh ?? new Map(),
+    });
+    for (const note of fresh.notes ?? []) c.input.warn?.(note);
+    const headSource: ReviewHeadSource = c.input.head?.headSource ?? (c.input.head?.headSha !== undefined ? "--head-sha" : "checkout HEAD");
+    const diffSource: ReviewDiffSource = c.input.head?.diffSha256 !== undefined ? "--diff-sha256" : headSource;
+    const derived = deriveReviewPass(e.report, {
+      requiredEffort: c.input.requiredEffort,
+      headSha: resolved?.headSha ?? c.input.head?.headSha,
+      headSource,
+      diffSha256: c.input.head?.diffSha256 ?? resolved?.diffSha256,
+      diffSource,
+      vocabularyClasses: fresh.classes,
+      known: knownActors(c.input.issue, r.gate, c.input.issueReceipts ?? []),
+    });
+    if (!derived.pass) return { status: derived.status, why: derived.why };
+    // A stale or unverifiable skill/vocabulary falls back to human approval, never to a pass.
+    const stale = staleness(e.report, fresh.main);
+    if (stale.length === 0) continue;
+    if (!isHumanGrant(r.authorized)) return { status: "review-stale", why: `${stale.join("; ")}; needs human approval` };
+    accepted.push(...stale);
   }
   if (r.verdict === "BLOCKING") return { status: "blocking" };
   if (r.verdict === "SKIPPED" && r.authorized !== undefined && doctrineShaped(r.authorized)) {
@@ -237,10 +342,11 @@ export async function statusOf(c: Checking, latest: Latest | undefined, doctrine
     if (r.authorized !== undefined || (latest.version === "v1" && r.doctrine !== undefined)) return { status: "skipped" };
     return { status: "unauthorized-skip", why: "a SKIPPED receipt with no --authorized grant; record it with 'eris gate skip'" };
   }
+  const acceptance = accepted.length > 0 ? `${accepted.join("; ")}; accepted by human grant "${r.authorized}"` : undefined;
   const found = await resolveArtifact(c.input.g, c.input.cwd, r.artifact, c.input.issue);
   if (found?.kind === "bytes") {
     if (sha256Hex(found.bytes) !== r.artifact.sha256) return { status: "drift" };
-    return { status: "pass", bytes: found.bytes };
+    return acceptance !== undefined ? { status: "pass", why: acceptance, bytes: found.bytes } : { status: "pass", bytes: found.bytes };
   }
   // The live artifact always wins; a stored copy answers only when it cannot be read.
   const live: Judged = found === null ? { status: "drift", why: "the artifact is gone" } : { status: "unresolved", why: found.why };
@@ -252,7 +358,7 @@ export async function statusOf(c: Checking, latest: Latest | undefined, doctrine
   }
   const bytes = decodeCopy(copy);
   if (bytes !== null && bytes.byteLength === copy.bytes && sha256Hex(bytes) === r.artifact.sha256) {
-    return { status: "pass", why: `read from the stored copy (${live.why})`, bytes };
+    return { status: "pass", why: `read from the stored copy (${live.why})${acceptance !== undefined ? `; ${acceptance}` : ""}`, bytes };
   }
   return { status: live.status, why: `${live.why}; the stored copy did not verify` };
 }
@@ -323,6 +429,8 @@ const CHECK_FIX =
   "  A define-future over a non-empty delta owes its picture: eris graph diff <baseline.json> <target.delta.json> --image diff.png,\n" +
   "  then record define-future again with --screenshot diff.png.\n" +
   "doctrine-stale: the active posture no longer turns the gate off; run the gate and record it.\n" +
+  "review-stale: the review skill or surface vocabulary moved on main after the report was written (or could not be verified);\n" +
+  "  re-run the review on main's skill and vocabulary and record it, or record with a human --authorized grant.\n" +
   "unauthorized-skip: re-record the skip with 'eris gate skip <gate> --reason <why> --authorized <grant>'.\n" +
   "forbidden: this profile must not run that gate; re-recording never clears it. Check the issue with the profile\n" +
   "  that runs it (close: next, not terminus), or a human deletes the receipt comment if the run was wrong.\n" +
@@ -356,6 +464,7 @@ export async function checkGates(input: CheckInput): Promise<void> {
   const forbid = input.forbid ?? [];
   const wanted = new Set<string>([...input.gates, ...forbid, ...(floorChecked ? [...REQUIREMENTS, DOOR_SIGNOFF, BLEED_REDUCING] : [])]);
   const classed: { receipt: GateReceipt; at: string }[] = [];
+  const issueReceipts: GateReceipt[] = [];
   const gitRepos = new Set<string>();
   let invalid = listing.invalid;
   for (const row of listing.receipts) {
@@ -366,13 +475,14 @@ export async function checkGates(input: CheckInput): Promise<void> {
     }
     const r = parsed.receipt;
     if (r.issue !== input.issue) continue;
+    issueReceipts.push(r);
     if (r.artifact._tag === "git") gitRepos.add(r.artifact.repo);
     if (r.user_impact !== undefined) classed.push({ receipt: r, at: row.createdAt });
     if (!wanted.has(r.gate)) continue;
     const prev = latest.get(r.gate);
     if (prev === undefined || row.createdAt >= prev.at) latest.set(r.gate, { receipt: r, version: parsed.version, at: row.createdAt });
   }
-  const c: Checking = { input, digests: new Map(), gitRepos: [...gitRepos] };
+  const c: Checking = { input: { ...input, issueReceipts: input.issueReceipts ?? issueReceipts }, digests: new Map(), fresh: new Map(), skills: {}, gitRepos: [...gitRepos] };
   if (invalid > 0) input.warn(`WARN ${invalid} comment(s) on ${input.issue} carry a gate-receipt marker that does not decode; ignored`);
 
   const needsDoctrine = input.applyModes === true || floorChecked || [...latest.values()].some((l) => l.receipt.authorized !== undefined && doctrineGrantPosture(l.receipt.authorized) !== null);

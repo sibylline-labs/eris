@@ -8,9 +8,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeou
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { type ListedReceipt, sha256Hex } from "eris/gates-contract";
+import { formatReviewReport, GATE_REVIEW_REPORT_SCHEMA, type GateReviewReport, type ListedReceipt, sha256Hex } from "eris/gates-contract";
 import { gateHandler } from "../plugins/gate/gate";
 import { liveGit } from "../plugins/gate/git";
+import type { GateDefaults } from "../plugins/gate/index";
 import {
   gitSurfaceBar,
   handOffStands,
@@ -208,6 +209,23 @@ beforeAll(() => {
         const receipts = (store[issue] ?? []).map((r) => ({ ...r, source: "olympus", record_sha256: null }));
         return Response.json({ issue, receipts, invalid: 0, contract_version: "gates-contract/v1" });
       }
+      if (req.method === "POST" && url.pathname === "/v1/gates/receipts") {
+        const body = (await req.json()) as { comment_id: string; issue: string; receipt: { gate: string } };
+        const created_at = new Date(Date.UTC(2026, 10, 18, 12, 0, clock++)).toISOString();
+        const row = { comment_id: body.comment_id, created_at, marker_version: "v2" as const, payload: body.receipt };
+        (store[body.issue] ??= []).push(row);
+        return Response.json(
+          {
+            comment_id: body.comment_id,
+            issue: body.issue,
+            gate: body.receipt.gate,
+            created_at,
+            record_sha256: sha256Hex(JSON.stringify(body.receipt)),
+            contract_version: "gates-contract/v1",
+          },
+          { status: 201 },
+        );
+      }
       if (req.method === "GET" && url.pathname === "/v1/asks") return Response.json({ asks: [] });
       return Response.json({ status: 404, code: "not_found" }, { status: 404 });
     },
@@ -234,15 +252,15 @@ function put(payload: unknown): void {
   (store[ISSUE] ??= []).push({ comment_id: id, created_at, marker_version: "v2", payload });
 }
 
-async function runCheck(): Promise<{ rc: number; stdout: string; stderr: string }> {
+async function runGate(args: string[], opts: { cwd?: string; defaults?: GateDefaults } = {}): Promise<{ rc: number; stdout: string; stderr: string }> {
   let stdout = "";
   let stderr = "";
-  const handler = gateHandler({}, { cwd: repoDir, home, now: () => NOW, sleep: async () => undefined, jitter: () => 0 });
+  const handler = gateHandler(opts.defaults ?? {}, { cwd: opts.cwd ?? repoDir, home, now: () => NOW, sleep: async () => undefined, jitter: () => 0 });
   let rc: number;
   try {
-    rc = await handler(["check", "--issue", ISSUE, "--gates", "plan-review"], {
+    rc = await handler(args, {
       erisDir: REPO,
-      env: { PATH: process.env.PATH, HOME: home, ERIS_YAKS_TOKEN: LOGIN, ERIS_YAKS_URL: `http://127.0.0.1:${server.port}` },
+      env: { PATH: process.env.PATH, HOME: home, GIT_CEILING_DIRECTORIES: sandbox, ERIS_YAKS_TOKEN: LOGIN, ERIS_YAKS_URL: `http://127.0.0.1:${server.port}` },
       stdout: { write: (s: string) => ((stdout += s), true) },
       stderr: { write: (s: string) => ((stderr += s), true) },
       format: "text",
@@ -252,6 +270,10 @@ async function runCheck(): Promise<{ rc: number; stdout: string; stderr: string 
     rc = e.code;
   }
   return { rc, stdout, stderr };
+}
+
+async function runCheck(): Promise<{ rc: number; stdout: string; stderr: string }> {
+  return runGate(["check", "--issue", ISSUE, "--gates", "plan-review"]);
 }
 
 describe("remediate: gitSurfaceBar and gate check CLI wiring", () => {
@@ -305,5 +327,64 @@ describe("remediate: gitSurfaceBar and gate check CLI wiring", () => {
     const hand = await runCheck();
     expect({ rc: hand.rc, stdout: hand.stdout }).toEqual({ rc: 3, stdout: "plan-review\tpass\tPASS\n@remediate\thand-off\tround 2/2\n" });
     expect(hand.stderr).toContain("WARN @remediate: hand-off: max_rounds reached; a human signs off");
+  });
+
+  // admits: integration: recording review-report@1 receipts via gate record --review-report around a remediate launch must let gate check with gatePlugin({ reviews }) judge both the review gate and @remediate in one pass (and fail closed on the review gate without reviews).
+  it("records review-report@1 receipts around a remediate launch and judges both the review gate (via reviews seam) and @remediate together", async () => {
+    const hostedDir = realpathSync(mkdtempSync(join(sandbox, "hosted-")));
+    git(hostedDir, ["init", "-q", "-b", "main"]);
+    git(hostedDir, ["remote", "add", "origin", "https://github.com/o/r.git"]);
+    const baseSha = commitFile(hostedDir, "plan.md", "# plan\n", "base");
+    git(hostedDir, ["update-ref", "refs/remotes/origin/main", baseSha]);
+    const diffSha = (head: string) => {
+      const r = Bun.spawnSync(["git", "-C", hostedDir, "diff", "--no-ext-diff", "--no-color", baseSha, head]);
+      if (r.exitCode !== 0) throw new Error(r.stderr.toString());
+      return sha256Hex(r.stdout);
+    };
+    const skillSha = "d".repeat(64);
+    const vocabSha = "e".repeat(64);
+    const fullReport = (head: string, reviewer: string, author: string, open: boolean): GateReviewReport => ({
+      schema: GATE_REVIEW_REPORT_SCHEMA,
+      target: { repo: "o/r", pr: 7, head_sha: head, diff_sha256: diffSha(head) },
+      surface: "secrets",
+      effort: "high",
+      reviewer: {
+        actor: reviewer,
+        model: "model-alpha",
+        fresh_context: true,
+        skill: { name: "code-quality-review", harness_sha: "f".repeat(40), sha256: skillSha },
+        vocabulary: { path: "docs/vocabulary/secrets.md", sha256: vocabSha },
+      },
+      author: { actor: author },
+      classes_checked: ["S1"],
+      findings: [{ id: "finding-1", severity: "blocking", class: "S1", file: "src/app.ts", line: 1, status: open ? "open" : "fixed", evidence: "checked" }],
+    });
+
+    const sha0 = commitFile(hostedDir, "src/app.ts", "export const v = 0;\n", "initial change");
+    const r0Path = join(home, "r0.md");
+    writeFileSync(r0Path, formatReviewReport(fullReport(sha0, "session:rev1", "session:author", true), "Round 0 found a blocker.\n"));
+    const rec0 = await runGate(["record", "adversarial-review", "--issue", ISSUE, "--review-report", r0Path, "--actor", "session:rev1"], { cwd: hostedDir });
+    expect(rec0.rc).toBe(0);
+    expect(rec0.stderr).toContain("recorded adversarial-review BLOCKING");
+
+    put(launchPayload(roundRec(1, sha0, "ses_rem1")));
+
+    const sha1 = commitFile(hostedDir, "src/app.ts", "export const v = 1;\n", "fix blocker");
+    const r1Path = join(home, "r1.md");
+    writeFileSync(r1Path, formatReviewReport(fullReport(sha1, "session:rev2", "session:ses_rem1", false), "Round 1 verified fix.\n"));
+    const rec1 = await runGate(["record", "adversarial-review", "--issue", ISSUE, "--review-report", r1Path, "--actor", "session:rev2"], { cwd: hostedDir });
+    expect(rec1.rc).toBe(0);
+    expect(rec1.stderr).toContain("recorded adversarial-review PASS");
+
+    const reviews: NonNullable<GateDefaults["reviews"]> = {
+      skills: ["code-quality-review"],
+      freshness: () => ({ main: { skill: { sha256: skillSha, mainSha: "f".repeat(40) }, vocabulary: { sha256: vocabSha } }, classes: ["S1"] }),
+    };
+    const judged = await runGate(["check", "--issue", ISSUE, "--gates", "adversarial-review"], { cwd: hostedDir, defaults: { reviews } });
+    expect({ rc: judged.rc, stdout: judged.stdout }).toEqual({ rc: 0, stdout: "adversarial-review\tpass\tPASS\n@remediate\tok\tround 1/2\n" });
+
+    // Without reviews (public default), the review gate still fails closed as blocking while @remediate reports ok.
+    const defaultClosed = await runGate(["check", "--issue", ISSUE, "--gates", "adversarial-review"], { cwd: hostedDir });
+    expect({ rc: defaultClosed.rc, stdout: defaultClosed.stdout }).toEqual({ rc: 3, stdout: "adversarial-review\tblocking\tPASS\n@remediate\tok\tround 1/2\n" });
   });
 });

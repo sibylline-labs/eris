@@ -1518,11 +1518,12 @@ have been used: approve again at <https://dash.sibylline.group/gates/approve> be
 
 ### doctrine-push-invalid
 
-The tree cannot be pushed: it holds a file a policy bundle does not carry, a file that does not
-decode (the block names it), or the gateway refused the bundle (HTTP 400, 413 or 422: not a valid
-bundle, over 256 KiB, or holding a credential). Nothing was saved and the tree is untouched. Fix or
-remove the named file (`eris doctrine check --file <doctrine.md>` names doctrine problems), then push
-again. Exit 3.
+The tree cannot be pushed: it holds a file a policy bundle does not carry, an unsupported key in a
+posture `policy:` block or `profiles.yaml` entry that the bundle contract does not carry (pushing
+would drop it; the block names each key path), a file that does not decode (the block names it), or
+the gateway refused the bundle (HTTP 400, 413 or 422: not a valid bundle, over 256 KiB, or holding
+a credential). Nothing was saved and the tree is untouched. Remove the unsupported key(s) or fix or
+remove the named file, then push again (or run `eris doctrine pull` to discard local edits). Exit 3.
 
 ### doctrine-org-managed
 
@@ -1654,10 +1655,10 @@ An `eris gate` command line is wrong: a required flag or the `<gate>` operand is
 and `--profile` were both given, `--burden` came without `--base` (or the reverse), `--pr` is not a
 number (each exit 1, before anything is read); or a value is wrong once read: an issue key that is
 not `ABC-123`-shaped, a gate name that is not kebab-case, a `--verdict` other than `PASS`, `AMENDED` or
-`BLOCKING` (a skip is `eris gate skip`), an `--impact` other than `U0`-`U3`, a blank `--authorized` or
-`--reason`, a `--reason` under 12 characters, an unrecognised screenshot or video extension, or a
-reserved `unlocked-*` gate (exit 2). Nothing was sent. The block's `fix:` names the usage
-([GATE.md](GATE.md)).
+`BLOCKING` (a skip is `eris gate skip`), an `--impact` other than `U0`-`U3`, an `--effort` other than
+`low`, `medium`, `high` or `max`, a blank `--authorized` or `--reason`, a `--reason` under 12
+characters, an unrecognised screenshot or video extension, or a reserved `unlocked-*` gate (exit 2).
+Nothing was sent. The block's `fix:` names the usage ([GATE.md](GATE.md)).
 
 ### gate-profile-unknown
 
@@ -1675,6 +1676,14 @@ directory. Exit 3.
 An inline evidence file (`--log`, `--test-run`, `--e2e`, or one `--evidence` line) is over 16 KiB, or a
 `--screenshot`/`--video` is over 25 MiB. A receipt is a record, not a log store: record the part the
 gate relied on (a failure summary, the last lines). Nothing was sent. Exit 2.
+
+### gate-review-report-invalid
+
+A `--review-report` file is not a valid `review-report@1` document: unclosed YAML frontmatter,
+non-mapping frontmatter, an unknown key, a missing or invalid required field (`target`, `surface`,
+`effort`, `reviewer`, `author`, `classes_checked`, `findings`), or any `verdict` key (reports never
+declare their own verdict; `eris gate check` derives pass). Fix the frontmatter per
+[GATE.md](GATE.md#review-reports) and re-run. Nothing was sent. Exit 3.
 
 ### gate-artifact-uncommitted
 
@@ -1701,11 +1710,11 @@ it is a comment on this issue (`eris gate record` printed it). Exit 3.
 ### gate-check-failed
 
 At least one gate `eris gate check` judged does not pass: a row reads `missing`, `bad-digest`,
-`blocking`, `unresolved`, `drift`, `unauthorized-skip`, `doctrine-stale` or `forbidden`, the
-`burden` row reads `unmet`, the user-impact floor is `unmet` or `unclassified`, a door at the first
-rung has no human sign-off, `@remediate` reads `violated` or `hand-off`, or `@asks` reads `open`.
-The block names each, and its `fix:` says what clears each status ([GATE.md](GATE.md#statuses)).
-Exit 3.
+`blocking`, `review-stale`, `unresolved`, `drift`, `unauthorized-skip`, `doctrine-stale` or
+`forbidden`, the `burden` row reads `unmet`, the user-impact floor is `unmet` or `unclassified`, a
+door at the first rung has no human sign-off, `@remediate` reads `violated` or `hand-off`, or
+`@asks` reads `open`. The block names each, and its `fix:` says what clears each status
+([GATE.md](GATE.md#statuses)). Exit 3.
 
 ### gate-burden-unreadable
 
