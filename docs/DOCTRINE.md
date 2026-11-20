@@ -239,7 +239,7 @@ integer, or `unset`).
   the next `push`.
 
 `history` lists every stored version of the org's policy, oldest first, with who saved it
-(`auth_mode`: `portal_admin`, `mandate_passkey` or `seed`) and whether it loosened the policy.
+(`auth_mode`: `cli` for a save made with this CLI, `portal_admin` for one made in the portal, `mandate_passkey` for a loosening a passkey approved, or `seed`) and whether it loosened the policy.
 
 ## `set`
 
