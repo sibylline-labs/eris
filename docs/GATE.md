@@ -6,9 +6,9 @@ grant), what it judged, and the evidence it relied on. `eris gate` writes receip
 through the hosted gates store and reads them back to decide whether a change may close.
 
 ```
-eris gate record <gate> --issue <KEY> --verdict PASS|AMENDED|BLOCKING --artifact <path> [evidence flags]
+eris gate record <gate> --issue <KEY> [--verdict PASS|AMENDED|BLOCKING] [--artifact <path>] [evidence flags]
 eris gate skip   <gate> --issue <KEY> --reason <why> --authorized <grant> --artifact <path>
-eris gate check  --issue <KEY> (--gates <a,b,...> | --profile <name>) [--expect <id,...>]
+eris gate check  --issue <KEY> (--gates <a,b,...> | --profile <name>) [--expect <id,...>] [--effort <level>] [--head-sha <sha>] [--diff-sha256 <sha256>]
 eris gate ci     [--event <file>] [--registry <path>]
 
 eris surface lock   <name> --reason <why> --authorized <grant> [--registry <path>]
@@ -41,8 +41,13 @@ file, and appends one `gate-receipt@v2` record. stdout is the new comment's id, 
   re-hashes once the file itself is gone. No copy is carried when the bytes are not UTF-8 text or the
   secret scan matches; a `WARN` names why.
 - Evidence: `--evidence <text>` (repeatable), `--log`, `--test-run`, `--e2e` (text files up to 16 KiB,
-  carried inline with their sha256), `--screenshot`, `--video` (up to 25 MiB, uploaded; `check`
-  re-reads the stored asset's digest).
+  carried inline with their sha256), `--review-report <file>` (a `review-report@1` file: YAML
+  frontmatter with no `verdict` key plus prose body, strictly validated before anything is sent,
+  stored with its canonical sha256, and rendered with a findings summary and prose preview),
+  `--screenshot`, `--video` (up to 25 MiB, uploaded; `check` re-reads the stored asset's digest).
+- With `--review-report`, `--artifact` defaults to the first report file and `--verdict` may be
+  omitted: `record` derives `PASS` or `BLOCKING` from the report's findings, reviewer independence,
+  actor binding, and refutation endorsements across the issue's prior receipts.
 - `--impact U0|U1|U2|U3` proposes the issue's user-impact class; `--authorized <grant>` is the only
   way a later receipt may lower a U2 or U3 class.
 - A write the store rate-limits is retried a bounded number of times under the same comment id,
@@ -79,9 +84,10 @@ receipt per gate, by the store's time, decides. Exit 0 when every row passes, 3 
 | `absent` | a profile's forbidden gate with no receipt | yes |
 | `missing` | no receipt | no |
 | `bad-digest` | evidence no longer matches its sha256, or its stored asset is gone | no |
-| `blocking` | a BLOCKING verdict, or review-report evidence (this build does not judge review reports) | no |
+| `blocking` | a BLOCKING verdict, a failing review report, or review-report evidence in a build with no registered review skills | no |
+| `review-stale` | a review report's skill or vocabulary moved on `main` (or could not be verified) and the receipt carries no human grant | no |
 | `unresolved` | the artifact's repo has no checkout here, in `~/.eris/clones.json` or the harness clone, and no stored copy verifies | no |
-| `drift` | the artifact changed after it passed | no |
+| `drift` | the artifact or review-report target changed after it passed | no |
 | `unauthorized-skip` | SKIPPED with no grant | no |
 | `doctrine-stale` | a doctrine or `repo:no-eris-yaml` skip the posture or repo no longer bears out | no |
 | `forbidden` | a profile's forbidden gate that has a receipt | no |
@@ -117,6 +123,20 @@ After the gate rows, in this order:
   the issue (and, with `--pr <N>`, to that pull request). Any open one fails the check; an asks API
   that cannot be read fails it too, never reading as "no asks". `--asks` also prints the result as one
   JSON line.
+
+### Review reports
+
+When the build composes `gatePlugin({ reviews })`, `check` (and `ci`) judges `review-report@1`
+evidence on a receipt: the review skill must be registered (against `reviews.skills`, when supplied,
+and the merge-base `review_skills` during `ci` unlock), the recording actor must match
+`reviewer.actor`, no `blocking`/`major` finding may remain open or unendorsed-refuted, the reviewer
+must be independent of the author in a fresh context, `classes_checked` must cover every class in
+the vocabulary at `main`, `effort` must meet `--effort` (or a bar gate's `:<effort>` qualifier),
+and `target.head_sha` / `target.diff_sha256` must match `--head-sha` / `--diff-sha256` (or the
+target checkout's `HEAD` and merge-base diff). If the skill or vocabulary moved on `main` (or could
+not be verified), the gate reads `review-stale` unless the receipt carries a human `--authorized`
+grant. Without `reviews` (the public default), any `review-report` evidence fails closed as
+`blocking`.
 
 ### Read lag
 
@@ -176,8 +196,10 @@ counting the `unlocked-<action>` receipts on its ledger inside `--since` (defaul
 
 ## A distribution's gate
 
-A distribution composes these verbs from `eris/sdk` alone: `gatePlugin({ ladderFile, pulled })` in
-place of this build's gate plugin, with `pulledTree` as `pulled` to read the org's verified policy
-tree. `ladderFile` is the door-class ladder `check` reads with no `--ladder`; without it every class
-reads the human-after rung. `loopPlugin` and `freshTree` compose the loop verbs the same way, and
-`examples/distribution` composes all three.
+A distribution composes these verbs from `eris/sdk` alone: `gatePlugin({ ladderFile, pulled, reviews })`
+in place of this build's gate plugin, with `pulledTree` as `pulled` to read the org's verified policy
+tree and `reviews` (`GateReviews`) supplying the registered review skills and `main` skill/vocabulary
+freshness reader (`ReviewFreshness`). Without `reviews`, `check` and `ci` fail closed as `blocking`
+on `review-report@1` evidence. `ladderFile` is the door-class ladder `check` reads with no `--ladder`;
+without it every class reads the human-after rung. `loopPlugin` and `freshTree` compose the loop verbs
+the same way, and `examples/distribution` composes all three.

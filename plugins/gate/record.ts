@@ -26,6 +26,7 @@ import {
   DEFINE_FUTURE_GATE,
   DOCTRINE_GRANT,
   decodePayload,
+  deriveReviewPass,
   doctrineGrantPosture,
   doctrineShaped,
   doctrineSkipBlocker,
@@ -40,17 +41,24 @@ import {
   type GateMediaKind,
   type GateReceipt,
   type GateReceiptV2,
+  type GateReviewReport,
   type GatesEndpoint,
   type GateUserImpact,
   type GateVerdict,
   INLINE_MAX_BYTES,
   ISSUE_KEY,
+  isGateReviewReportEvidence,
+  isHumanGrant,
+  type KnownActors,
   listReceipts,
   NO_ERIS_YAML_GRANT,
   noErisYamlSkipBlocker,
+  parseReviewReport,
   policyHash,
   readDoctrine,
   repoGrantShaped,
+  reviewReportDigest,
+  sameActor,
   sha256Hex,
   uploadAsset,
   type RetryOpts,
@@ -90,7 +98,7 @@ export function readFileFor(cwd: string, path: string, flag: string): Buffer {
 /** One `--evidence`/`--log`/... value: inline text, or a file of a kind. */
 export type EvidenceInput =
   | { readonly kind: "text"; readonly content: string }
-  | { readonly kind: Exclude<GateInlineKind, "text"> | GateMediaKind; readonly path: string };
+  | { readonly kind: Exclude<GateInlineKind, "text"> | GateMediaKind | "review-report"; readonly path: string };
 
 const MEDIA_TYPES: Readonly<Record<string, string>> = {
   ".png": "image/png",
@@ -114,7 +122,8 @@ function tooLarge(flag: string, path: string, bytes: number, max = INLINE_MAX_BY
 type ReadEvidence =
   | { readonly kind: "text"; readonly content: string }
   | { readonly kind: Exclude<GateInlineKind, "text">; readonly name: string; readonly content: string }
-  | { readonly kind: GateMediaKind; readonly name: string; readonly path: string; readonly contentType: string; readonly bytes: Buffer };
+  | { readonly kind: GateMediaKind; readonly name: string; readonly path: string; readonly contentType: string; readonly bytes: Buffer }
+  | { readonly kind: "review-report"; readonly name: string; readonly report: GateReviewReport; readonly body: string };
 
 function readEvidence(cwd: string, inputs: ReadonlyArray<EvidenceInput>): ReadEvidence[] {
   const read: ReadEvidence[] = [];
@@ -126,6 +135,13 @@ function readEvidence(cwd: string, inputs: ReadonlyArray<EvidenceInput>): ReadEv
       continue;
     }
     const flag = `--${e.kind}`;
+    if (e.kind === "review-report") {
+      const bytes = readFileFor(cwd, e.path, flag);
+      const parsed = parseReviewReport(bytes.toString("utf8"), `${flag} ${e.path}`);
+      if (!parsed.ok) stop(parsed.failure);
+      read.push({ kind: "review-report", name: basename(e.path), report: parsed.value.report, body: parsed.value.body });
+      continue;
+    }
     if (e.kind === "screenshot" || e.kind === "video") {
       const contentType = MEDIA_TYPES[extname(e.path).toLowerCase()];
       if (contentType === undefined || !contentType.startsWith(e.kind === "video" ? "video/" : "image/")) {
@@ -141,6 +157,30 @@ function readEvidence(cwd: string, inputs: ReadonlyArray<EvidenceInput>): ReadEv
     read.push({ kind: e.kind, name: basename(e.path), content: bytes.toString("utf8") });
   }
   return read;
+}
+
+/** What one receipt by `actor` vouches for: itself as a human on a human grant, and each report it reviewed itself. */
+export function vouchedBy(actor: string, authorized: string | undefined, reports: ReadonlyArray<GateReviewReport>): KnownActors {
+  return {
+    reviewed: reports.flatMap((report) => (sameActor(report.reviewer.actor, actor) ? [{ actor: report.reviewer.actor, findings: report.findings }] : [])),
+    humans: isHumanGrant(authorized) ? [actor] : [],
+  };
+}
+
+/**
+ * The actors `issue`'s receipts vouch for on `gate`: each review-report's reviewer, with its
+ * findings, on a receipt for `gate` that reviewer recorded; and each human-grant receipt's actor.
+ */
+export function knownActors(issue: string, gate: string, receipts: ReadonlyArray<GateReceipt>, also: KnownActors = { reviewed: [], humans: [] }): KnownActors {
+  const reviewed = [...also.reviewed];
+  const humans = [...also.humans];
+  for (const r of receipts) {
+    if (r.issue !== issue) continue;
+    const v = vouchedBy(r.actor, r.authorized, r.gate === gate ? r.evidence.flatMap((e) => (isGateReviewReportEvidence(e) ? [e.report] : [])) : []);
+    reviewed.push(...v.reviewed);
+    humans.push(...v.humans);
+  }
+  return { reviewed, humans };
 }
 
 /** The verdicts whose artifact `check` re-reads, so the only ones that carry a copy. */
@@ -210,7 +250,8 @@ async function priorReceipts(run: WriteRun, issue: string): Promise<GateReceipt[
 export interface RecordInput {
   readonly gate: string;
   readonly issue: string;
-  readonly verdict: GateVerdict;
+  /** Optional when `--review-report` is given (derived from the report's findings and actor binding). */
+  readonly verdict?: GateVerdict | undefined;
   readonly artifact: string;
   readonly rubrics?: ReadonlyArray<string> | undefined;
   readonly doctrine?: string | undefined;
@@ -253,9 +294,34 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
   const located = await locateArtifact(run.g, run.cwd, input.artifact, sha256Hex(artifactBytes));
   const doctrine = input.doctrine === undefined ? undefined : snapshotDoctrine(input.doctrine, input.doctrineBytes ?? readFileFor(run.cwd, input.doctrine, "--doctrine"));
   const read = readEvidence(run.cwd, input.evidence);
+  const reports = read.filter((e): e is Extract<ReadEvidence, { readonly kind: "review-report" }> => e.kind === "review-report");
+  // A derived verdict judges each report as check will: bound to this record's actor, with the issue's known actors.
+  const derive = reports.length > 0 && input.verdict === undefined;
+  // One listing serves the derived verdict's known actors and the prose's unchanged-field omission.
+  let priorMemo: ReadonlyArray<GateReceipt> | undefined;
+  const loadPrior = async (): Promise<ReadonlyArray<GateReceipt>> => (priorMemo ??= await priorReceipts(run, input.issue));
+  const known = derive
+    ? knownActors(input.issue, input.gate, await loadPrior(), vouchedBy(input.actor, authorized, reports.map((e) => e.report)))
+    : undefined;
+  const verdict: GateVerdict | undefined =
+    input.verdict ??
+    (derive ? (reports.every((e) => sameActor(e.report.reviewer.actor, input.actor) && deriveReviewPass(e.report, { known }).pass) ? "PASS" : "BLOCKING") : undefined);
+  if (verdict === undefined) {
+    usage("gate record: missing --verdict", "Pass --verdict PASS|AMENDED|BLOCKING, or pass --review-report <file> to derive it.");
+  }
 
   const evidence: GateEvidence[] = [];
   for (const e of read) {
+    if (e.kind === "review-report") {
+      evidence.push({
+        kind: "review-report",
+        name: e.name,
+        report: e.report,
+        ...(e.body !== "" ? { body: e.body } : {}),
+        sha256: reviewReportDigest(e.report, e.body),
+      });
+      continue;
+    }
     if ("content" in e) {
       evidence.push({ ...e, sha256: sha256Hex(e.content) });
       continue;
@@ -274,14 +340,14 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
     evidence.push({ kind: e.kind, name: e.name, content_type: e.contentType, bytes: e.bytes.byteLength, sha256, asset_url: stored.assetUrl });
   }
 
-  const { copy: encoded, copied, secretRules } = copyOfBytes(artifactBytes, COPIED.has(input.verdict));
+  const { copy: encoded, copied, secretRules } = copyOfBytes(artifactBytes, COPIED.has(verdict));
   const artifact = encoded !== undefined ? { ...located, copy: encoded } : located;
   const [firstRubric, ...moreRubrics] = input.rubrics ?? [];
   const receipt: GateReceiptV2 = {
     schema: GATE_RECEIPT_SCHEMA,
     gate: input.gate,
     issue: input.issue,
-    verdict: input.verdict,
+    verdict,
     artifact,
     ...(firstRubric !== undefined ? { rubrics: [firstRubric, ...moreRubrics] as const } : {}),
     ...(doctrine !== undefined ? { doctrine } : {}),
@@ -293,7 +359,7 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
     evidence,
     recorded_at: run.now.toISOString(),
   };
-  const prose = renderProse(receipt, await priorReceipts(run, input.issue));
+  const prose = renderProse(receipt, await loadPrior());
   const commentId = input.commentId ?? randomUUID();
   const comment = unwrap(await retryRateLimited(() => appendReceipt(run.ep, { commentId, issue: input.issue, receipt, prose }), run.retry));
   return { receipt, commentId: comment.id, recordSha256: comment.recordSha256, copied, secretRules };

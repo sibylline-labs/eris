@@ -13,10 +13,12 @@
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readlinkSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_AUDIT_TTL, DEFAULT_CHANGE_BUDGET, DEFAULT_SEVERITY_FLOOR, SEVERITY_FLOORS, type SurfaceEntry, type SurfacesFile, UNLOCK_ACTIONS } from "eris/gates-contract";
+import { CLASS_HEADING, classIds, DEFAULT_AUDIT_TTL, DEFAULT_CHANGE_BUDGET, DEFAULT_SEVERITY_FLOOR, SEVERITY_FLOORS, type SurfaceEntry, type SurfacesFile, UNLOCK_ACTIONS } from "eris/gates-contract";
 import { precondition } from "./failure";
 import { changedPaths, type Git, mergeBase, ok, repoRoot, revParse, run, untrackedFiles } from "./git";
 import { issuesText, surfacesInvalid, validateSurfacesYaml, vocabularyPath } from "./registry";
+
+export { CLASS_HEADING, classIds };
 
 export type MonotoneVerdict = "tighter" | "same" | "wider";
 export type MonotoneScope = "surface" | "vocabulary" | "review-skill";
@@ -38,22 +40,6 @@ export interface MonotoneSide {
   readonly files: ReadonlyMap<string, FileState>;
   /** Head only: the content of each changed path under a review skill directory (`contentTag`). */
   readonly digests?: ReadonlyMap<string, string>;
-}
-
-/** A vocabulary class heading: `## [Class ]<PREFIX><n> — <name>` or `## <PREFIX><n>: <name>`. */
-export const CLASS_HEADING = /^##[ \t]+(?:Class[ \t]+)?([A-Z]+[0-9]+)(?:[ \t]+[—–-]|:)/;
-
-/** The class IDs of a vocabulary or checklist, in order, duplicates kept; headings inside fenced blocks do not count. */
-export function classIds(markdown: string): string[] {
-  const ids: string[] = [];
-  let fenced = false;
-  for (const line of markdown.split(/\r?\n/)) {
-    if (/^(```|~~~)/.test(line)) fenced = !fenced;
-    if (fenced) continue;
-    const m = CLASS_HEADING.exec(line);
-    if (m) ids.push(m[1]!);
-  }
-  return ids;
 }
 
 /**

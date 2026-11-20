@@ -22,7 +22,7 @@ import { checkGates } from "./check";
 import { decideCi, decodeEvent, eventInvalid, getOnlyFetch, issueKeyFrom, issueMissing, postureFromBundle, type PullRequestEvent, untrackedSurface, type WriteRefusal, writeRefused } from "./ci";
 import { GateFailure, stop, unwrap } from "./failure";
 import { changedPaths, type Git, liveGit, memoReads, mergeBase, repoRoot } from "./git";
-import plugin from "./index";
+import plugin, { type GateDefaults } from "./index";
 import { judgeMonotone } from "./monotone";
 import { matchSurfaces } from "./registry";
 import { type StoreOptions, storeEndpoint } from "./store";
@@ -108,7 +108,7 @@ async function surfacesLeg(g: Git, cwd: string, registry: string, ev: PullReques
 type TicketedLeg = "profile" | "monotone" | "unlock";
 
 /** `eris gate ci`. */
-export async function runCi(args: string[], ctx: VerbContext, deps: CiDeps): Promise<number> {
+export async function runCi(args: string[], ctx: VerbContext, defaults: GateDefaults = {}, deps: CiDeps = {}): Promise<number> {
   const a = readArgs(plugin.rows, "gate ci", args, ctx, { help: CI_USAGE });
   if (a === null) return 0;
   const cwd = deps.cwd ?? process.cwd();
@@ -188,6 +188,8 @@ export async function runCi(args: string[], ctx: VerbContext, deps: CiDeps): Pro
         doctrine,
         applyModes: true,
         readOnly: true,
+        ...(defaults.reviews !== undefined ? { reviews: defaults.reviews } : {}),
+        head: { headSha: pr.head.sha, base: pr.base.sha },
         now,
       });
     },
@@ -200,10 +202,25 @@ export async function runCi(args: string[], ctx: VerbContext, deps: CiDeps): Pro
         g,
         out: (l) => out(`@monotone\t${l}`),
         err: warn,
-        signoff: (issue) => humanSignoff({ ep, g, cwd, readRetry }, issue, "surface-widen"),
+        signoff: (issue) => humanSignoff({ ep, g, cwd, readRetry, reviews: defaults.reviews }, issue, "surface-widen"),
       }),
     unlock: () =>
-      checkUnlock({ ep, issue: route.key, action: "merge", base: pr.base.sha, headSha: pr.head.sha, registry, cwd, g, doctrine: { file: hostedName, read }, now, readRetry, out, warn }),
+      checkUnlock({
+        ep,
+        issue: route.key,
+        action: "merge",
+        base: pr.base.sha,
+        headSha: pr.head.sha,
+        registry,
+        cwd,
+        g,
+        doctrine: { file: hostedName, read },
+        ...(defaults.reviews !== undefined ? { reviews: defaults.reviews } : {}),
+        now,
+        readRetry,
+        out,
+        warn,
+      }),
   };
   let first: ContractFailure | undefined;
   for (const leg of ["profile", "monotone", "unlock"] as const) {

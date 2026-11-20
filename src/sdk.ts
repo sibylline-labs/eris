@@ -40,10 +40,11 @@
  *     and its handler (`doctrineHandler`, loaded on its first call), so a
  *     distribution points `eris doctrine` at its organisation's doctrine file
  *     (docs/DOCTRINE.md#a-distributions-defaults);
- *   - the gate plugin (`gatePlugin`, with `GateDefaults`: the door-class ladder file and the pulled
- *     tree) and the loop plugin (`loopPlugin`, with `LoopDefaults`), and the readers of the org's
- *     pulled, verified policy tree they take as defaults (`pulledTree`, `freshTree`, loaded on their
- *     first call), so a distribution composes the public gate, doctrine and loop verbs from here alone;
+ *   - the gate plugin (`gatePlugin`, with `GateDefaults`: the door-class ladder file, the pulled
+ *     tree, and `reviews`, the `GateReviews` skill registry and freshness reader) and the loop plugin
+ *     (`loopPlugin`, with `LoopDefaults`), and the readers of the org's pulled, verified policy tree
+ *     they take as defaults (`pulledTree`, `freshTree`, loaded on their first call), so a distribution
+ *     composes the public gate, doctrine and loop verbs from here alone;
  *   - the loop plugin's distribution seams (docs/LOOP.md#distribution-seams): the runtime contract
  *     (`LoopRuntime`, `LoopRuntimeEnv`, `LoopRuntimeSession`), the prompt-lines input
  *     (`ComposePromptInput`), `LoopFailure` (how a runtime refuses), and `launchLoopSession`, a
@@ -82,8 +83,9 @@ export { PLUGINS } from "../plugins";
 export type { DoctrineDefaults, DoctrineDefaultsSource } from "../plugins/doctrine";
 export { doctrinePlugin } from "../plugins/doctrine";
 export type { PullDeps } from "../plugins/doctrine/pull";
-export type { GateDefaults, PulledTree } from "../plugins/gate";
+export type { GateDefaults, GateReviews, PulledTree, ReviewFreshness, ReviewFreshnessRequest } from "../plugins/gate";
 export { gatePlugin } from "../plugins/gate";
+export type { GateReviewReport, ReviewMainState } from "eris/gates-contract";
 export type { LoopDefaults, LoopLegacy, LoopTree, PolicyRequest } from "../plugins/loop";
 export { loopPlugin } from "../plugins/loop";
 export type { LoopDeps } from "../plugins/loop/deps";
