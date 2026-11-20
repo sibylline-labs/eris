@@ -321,7 +321,7 @@ export function yakPlugin(opts: YakPluginOptions = {}) {
   eris org connect-github --account <org>  the same body, once bound
   eris org disconnect-github               the same body, installation null
   eris org billing checkout|portal         {url}
-  eris org webhooks logfire [revoke]       {url, path, generation} (url is the webhook address)
+  eris org webhooks logfire [revoke]       {url, path, generation, last_delivery} (url is the webhook address; last_delivery {at, status} | null, read only)
   eris slack link <link-url>               {slackUserId, slackTeamId, realName, displayName} (binds nothing)
   eris slack link <link-url> --confirm     {linked, slackUserId, slackTeamId}
   eris slack unlink                        {unlinked}

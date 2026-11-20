@@ -183,7 +183,10 @@ alerts to this org, so keep it out of chat and logs.
   stops working at once, so update every Logfire channel that uses it.
 
 Both are an org admin's (org-admin-required otherwise); the dashboard's Webhooks section shows
-the same URL. 'eris --output json org webhooks logfire' prints {url, path, generation}.
+the same URL. 'eris org webhooks logfire' also reports when this org's Logfire alert last
+reached it, and what became of it, so you can confirm a channel is wired. 'eris --output json
+org webhooks logfire' prints {url, path, generation, last_delivery} (last_delivery is {at, status}
+or null; it is absent when it could not be read).
 `;
 
 export const GITHUB_USAGE = `Usage: eris org github
@@ -624,6 +627,8 @@ async function runGithub(ctx: VerbContext, deps: OrgDeps): Promise<number> {
 /** `/v1/webhooks/logfire/<org ULID>/<token>`: the token is 32 MAC bytes as unpadded base64url. */
 const LOGFIRE_WEBHOOK_PATH = /^\/v1\/webhooks\/logfire\/[0-9A-HJKMNP-TV-Z]{26}\/[A-Za-z0-9_-]{43}$/;
 const LogfireUrl = z.object({ path: z.string(), generation: z.number().int().nonnegative() }).passthrough();
+/** `GET /v1/org/webhooks/logfire/delivery`: the org's latest authentic delivery (`at` an ISO time, `status` the outcome), or null. */
+const LogfireDelivery = z.object({ last: z.object({ at: z.string(), status: z.string() }).passthrough().nullable() }).passthrough();
 
 /** A printed webhook URL delivers nothing while the org's bus product is inactive (deliveries answer 402): say so on stderr. A lookup that fails says nothing. */
 async function warnIfBusInactive(ctx: VerbContext, deps: OrgDeps): Promise<void> {
@@ -652,10 +657,20 @@ async function runWebhooks(source: string | undefined, action: string | undefine
     return fail(ctx, { slug: "org-unavailable", what: "the org endpoint answered a webhook path outside /v1/webhooks/logfire/; nothing was printed", fix: "update eris: eris update   (or tell the platform's operator)" });
   }
   const url = `${got.base}${got.value.path}`;
+  // The last delivery confirms the alert channel is wired. It is a second read after the URL is known good, so a
+  // failure to read it (an older platform, a timeout) is a stderr line and never costs the admin the URL.
+  const delivery = revoke ? undefined : await request("GET", "/v1/org/webhooks/logfire/delivery", LogfireDelivery, ctx, deps);
+  const lastDelivery = delivery?.ok ? { last_delivery: delivery.value.last === null ? null : { at: delivery.value.last.at, status: delivery.value.last.status } } : {};
   // `url` last: a server field of the same name never replaces the address joined to the org's own url.
-  ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify({ ...got.value, url })}\n` : `${plain(url)}\n`);
+  ctx.stdout.write(ctx.format === "json" ? `${JSON.stringify({ ...got.value, ...lastDelivery, url })}\n` : `${plain(url)}\n`);
   if (revoke) ctx.stderr.write("INFO the previous URL no longer works; update every Logfire alert channel that used it\n");
-  else await warnIfBusInactive(ctx, deps);
+  else {
+    if (delivery === undefined) return 0;
+    if (!delivery.ok) ctx.stderr.write(`INFO could not read the last delivery: ${plain(delivery.failure.what)}\n`);
+    else if (delivery.value.last === null) ctx.stderr.write("INFO no delivery yet: fire a Logfire alert at this URL, then run this again\n");
+    else ctx.stderr.write(`INFO last delivery: ${plain(delivery.value.last.at)} (${plain(delivery.value.last.status)})\n`);
+    await warnIfBusInactive(ctx, deps);
+  }
   return 0;
 }
 

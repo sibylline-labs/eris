@@ -28,6 +28,7 @@ let server: ReturnType<typeof Bun.serve>;
 let base: string;
 let generation: number;
 let answer: ((method: string, path: string) => Response) | null;
+let lastDelivery: { at: string; status: string } | null;
 const seen: { method: string; path: string; auth: string | null }[] = [];
 
 beforeAll(() => {
@@ -41,6 +42,7 @@ beforeAll(() => {
       seen.push({ method: req.method, path, auth: req.headers.get("authorization") });
       if (answer !== null) return answer(req.method, path);
       if (req.method === "GET" && path === "/v1/org/webhooks/logfire") return Response.json({ path: pathAt(generation), generation });
+      if (req.method === "GET" && path === "/v1/org/webhooks/logfire/delivery") return Response.json({ last: lastDelivery });
       if (req.method === "POST" && path === "/v1/org/webhooks/logfire/revoke") {
         generation++;
         return Response.json({ path: pathAt(generation), generation });
@@ -60,6 +62,7 @@ afterAll(() => {
 beforeEach(() => {
   seen.length = 0;
   generation = 0;
+  lastDelivery = null;
   answer = null;
 });
 
@@ -89,10 +92,43 @@ describe("eris org webhooks logfire", () => {
     expect(text.code).toBe(0);
     expect(text.stdout).toBe(`${base}${pathAt(0)}\n`);
     const json = await run(["webhooks", "logfire"], "json");
-    expect(JSON.parse(json.stdout)).toEqual({ url: `${base}${pathAt(0)}`, path: pathAt(0), generation: 0 });
-    expect(seen.map((s) => `${s.method} ${s.path}`)).toEqual(["GET /v1/org/webhooks/logfire", "GET /v1/org/me", "GET /v1/org/webhooks/logfire", "GET /v1/org/me"]);
+    expect(JSON.parse(json.stdout)).toEqual({ url: `${base}${pathAt(0)}`, path: pathAt(0), generation: 0, last_delivery: null });
+    expect(seen.map((s) => `${s.method} ${s.path}`)).toEqual([
+      "GET /v1/org/webhooks/logfire",
+      "GET /v1/org/webhooks/logfire/delivery",
+      "GET /v1/org/me",
+      "GET /v1/org/webhooks/logfire",
+      "GET /v1/org/webhooks/logfire/delivery",
+      "GET /v1/org/me",
+    ]);
     for (const s of seen) expect(s.auth).toBe(`Bearer ${TOKEN}`);
     expect(text.stdout + text.stderr + json.stdout + json.stderr).not.toContain(TOKEN);
+  });
+
+  // admits: boundary-io: the operator's confirmation is what the server last stamped, shown as its time and status on stderr (stdout stays the bare URL, so it pipes) and carried in --output json as last_delivery; an org that never delivered is told so.
+  it("reports the last delivery on stderr and in json, and says when there is none", async () => {
+    const none = await run(["webhooks", "logfire"]);
+    expect(none.stdout).toBe(`${base}${pathAt(0)}\n`);
+    expect(none.stderr).toContain("INFO no delivery yet");
+    lastDelivery = { at: "2026-11-20T03:00:00.000Z", status: "enqueued" };
+    const text = await run(["webhooks", "logfire"]);
+    expect(text.stdout).toBe(`${base}${pathAt(0)}\n`);
+    expect(text.stderr).toContain("INFO last delivery: 2026-11-20T03:00:00.000Z (enqueued)");
+    const json = await run(["webhooks", "logfire"], "json");
+    expect(JSON.parse(json.stdout).last_delivery).toEqual({ at: "2026-11-20T03:00:00.000Z", status: "enqueued" });
+  });
+
+  // admits: integration: the delivery read is a second call after the URL is known good, so a failure of it (an older platform answers 404) must cost the admin neither the URL nor the exit code: observed as exit 0, the URL, one INFO line and no last_delivery key.
+  it("a failed delivery read still prints the URL, exits 0 and leaves last_delivery out", async () => {
+    answer = (method, path) =>
+      path === "/v1/org/webhooks/logfire/delivery" ? problem(404, "not_found") : method === "GET" ? Response.json({ path: pathAt(0), generation: 0 }) : problem(404, "not_found");
+    const text = await run(["webhooks", "logfire"]);
+    expect(text.code).toBe(0);
+    expect(text.stdout).toBe(`${base}${pathAt(0)}\n`);
+    expect(text.stderr).toContain("INFO could not read the last delivery");
+    const json = await run(["webhooks", "logfire"], "json");
+    expect(json.code).toBe(0);
+    expect("last_delivery" in JSON.parse(json.stdout)).toBe(false);
   });
 
   // admits: integration: a revoke that reads instead of posting, or prints the old URL, leaves a leaked credential live while the admin believes it dead: observed as the POST, the new generation's URL and the stderr warning.
@@ -173,7 +209,7 @@ describe("eris org webhooks logfire", () => {
 
   const ME = (bus: string) => Response.json({ orgId: ORG, memberId: "mem_1", role: "admin", entitlements: { accounts: "active", bus } });
   const urlWith = (bus: string) => (method: string, path: string) =>
-    path === "/v1/org/me" ? ME(bus) : Response.json({ path: pathAt(0), generation: 0 });
+    path === "/v1/org/me" ? ME(bus) : path === "/v1/org/webhooks/logfire/delivery" ? Response.json({ last: null }) : Response.json({ path: pathAt(0), generation: 0 });
 
   // admits: integration: a URL printed for an org without bus looks live and delivers nothing (402); the user sees the cause only if the verb says it: observed as the stderr WARN naming the product and the next step, with stdout still the bare URL.
   it("warns on stderr, never stdout, when the org's bus product is not active", async () => {
@@ -186,11 +222,12 @@ describe("eris org webhooks logfire", () => {
     expect(r.stderr).toContain("answer 402");
   });
 
-  // admits: integration: a warning on a healthy org trains users to ignore it: observed as no stderr when bus is active.
+  // admits: integration: a warning on a healthy org trains users to ignore it: observed as no WARN when bus is active (the delivery INFO is the only stderr).
   it("says nothing extra when bus is active", async () => {
     answer = urlWith("active");
     const r = await run(["webhooks", "logfire"]);
-    expect(r.stderr).toBe("");
+    expect(r.stderr).not.toContain("WARN");
+    expect(r.stderr.trim().split("\n")).toEqual(["INFO no delivery yet: fire a Logfire alert at this URL, then run this again"]);
   });
 
   // admits: algorithmic: the scope_denied and 402 fixes on a missing bus product must name the product and the billing verb, never `eris login` (a second login cannot add a product) or the dashboard: observed in each fix line.
