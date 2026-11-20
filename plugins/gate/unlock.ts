@@ -20,6 +20,13 @@
  *     rows against the merge-base are printed and named in the reason; a wider row no human
  *     `surface-widen` receipt covers is its own reason.
  *
+ * A merge first reads the change's door (`mergeDoor`): the bar is for one-way doors only. A two-way
+ * merge prints `@door two-way` and `@unlock not-needed` unless it is a governance diff, a crossed
+ * surface is locked, or the posture holds two-way doors for a human. A one-way merge whose
+ * `adversarial-review` has no receipt bound to the head prints, on the human path only, the
+ * `@dispatch` row that launches that review loop (`REVIEW_DISPATCH`), so the merging actor runs it;
+ * a review already recorded at the head, or naming no commit, is never re-dispatched.
+ *
  * Anything short of that falls back to a human: the issue's latest `door-signoff` signs it when it
  * passes with a human `--authorized` grant (never `doctrine:`), is bound to the PR head as a bar gate is,
  * and carries a `door: merge` evidence line; else `gate-unlock-human`, naming every reason.
@@ -30,7 +37,10 @@ import {
   activePosture,
   DEFAULT_AUDIT_TTL,
   DEFAULT_CHANGE_BUDGET,
+  DEFINE_FUTURE_GATE,
+  type DoctrinePolicy,
   type DoctrineRead,
+  GATE_INLINE_KINDS,
   GATE_REVIEW_EFFORTS,
   type GateArtifact,
   type GateReceipt,
@@ -45,11 +55,13 @@ import {
   type RetryOpts,
   retryRateLimited,
 } from "eris/gates-contract";
-import { type CheckInput, type Checking, humanGrantGap, type Judged, type Latest, receiptsOfListing, statusOf } from "./check";
+import { targetChanges } from "./burden";
+import { type CheckInput, type Checking, humanGrantGap, type Judged, type Latest, receiptsOfListing, recordedBytes, statusOf } from "./check";
 import { precondition, unwrap } from "./failure";
-import { changedPaths, type CommitBound, commitBoundToHead, type Git, mergeBase, ok, repoRoot, revParse, run, untrackedFiles } from "./git";
+import { effectiveClass } from "./floor";
+import { changedPaths, type CommitBound, commitBoundToHead, type Git, mergeBase, ok, repoRoot, revParse, run, shellQuote, untrackedFiles } from "./git";
 import type { GateReviews } from "./index";
-import { DOOR_SIGNOFF } from "./ladder";
+import { DOOR_SIGNOFF, doorRung } from "./ladder";
 import { announcedHeads, countUnlocked, lockState, monDd, UNLOCKED_GATES } from "./ledger";
 import { classifyMonotone, type Dim, inSkillDir, named, readMonotoneSides, rowLine, type Signoff, uncovered } from "./monotone";
 import { issuesText, type MatchedSurface, matchSurfaces, surfacesInvalid, validateSurfacesYaml, vocabularyPath } from "./registry";
@@ -65,6 +77,95 @@ export const CLEAN_QUALIFIER = "clean";
 
 /** The R0 gate whose human-granted artifact approves the wider monotone rows it carries verbatim. */
 export const SURFACE_WIDEN = "surface-widen";
+
+/** The gate whose receipt names the change's door (`door: one-way (+1 -0 ~1)`). */
+export const DEFINE_FUTURE = DEFINE_FUTURE_GATE;
+
+/** The review loop a one-way merge dispatches when its bar lacks it. */
+export const REVIEW_DISPATCH = { gate: "adversarial-review", loop: "adversarial-review", runtime: "opencode", pool: "neon" } as const;
+
+export interface MergeDoor {
+  readonly door: "one-way" | "two-way";
+  /** What decided it: `define-future`, `define-future <status>`, `rung <R> (<class>)` or `unclassified`. */
+  readonly source: string;
+}
+
+/**
+ * The door of a merge. Every signal can only close it, so it reads two-way only when all say
+ * two-way:
+ *
+ *   the latest define-future, unless it is a valid doctrine/repo skip: one-way when it does not
+ *     pass, when its verified artifact is a graph-target delta that removes or changes anything
+ *     (or fails strict decode), or when a door line labels one-way or counts a removal or change;
+ *   every define-future on the issue, whatever its verdict: one-way when the bytes it was recorded
+ *     over cannot be verified, when they are a delta that removes or changes anything (or fails
+ *     strict decode), or when an inline door line labels or counts one-way (a follow-up's later
+ *     empty-target note never hides the issue's door);
+ *   the issue's class: none is one-way; else the rung it reaches with no ladder file
+ *     (`DEFAULT_RUNGS` under the posture's ceilings; local and CI read the same), R0 one-way.
+ */
+export function mergeDoor(input: {
+  readonly defineFuture: { readonly receipt: GateReceipt; readonly status: string; readonly bytes?: Uint8Array | undefined } | undefined;
+  /** Every define-future receipt on the issue, with the bytes it was recorded over (null: none verifies; a skip records none). */
+  readonly defineFutures?: ReadonlyArray<{ readonly receipt: GateReceipt; readonly bytes: Uint8Array | null }> | undefined;
+  readonly classed: ReadonlyArray<GateReceipt>;
+  readonly policy: DoctrinePolicy | null | undefined;
+  readonly posture: string | undefined;
+  readonly crossings: ReadonlyArray<string>;
+}): MergeDoor {
+  const df = input.defineFuture?.status === "skipped" ? undefined : input.defineFuture;
+  if (df !== undefined) {
+    if (df.status !== "pass") return { door: "one-way", source: `${DEFINE_FUTURE} ${df.status}` };
+    const delta = df.bytes === undefined ? null : targetChanges(df.bytes);
+    if (delta?.kind === "invalid") return { door: "one-way", source: `${DEFINE_FUTURE} delta invalid` };
+    if (delta !== null && delta.remove + delta.change > 0) return { door: "one-way", source: `${DEFINE_FUTURE} delta (-${delta.remove} ~${delta.change})` };
+    if (doorLines(df.receipt).some(oneWayDoorLine)) return { door: "one-way", source: DEFINE_FUTURE };
+  }
+  for (const h of input.defineFutures ?? []) {
+    if (h.bytes === null) return { door: "one-way", source: `${DEFINE_FUTURE} history unverified` };
+    const delta = targetChanges(h.bytes);
+    if (delta?.kind === "invalid") return { door: "one-way", source: `${DEFINE_FUTURE} history invalid` };
+    if (delta !== null && delta.remove + delta.change > 0) return { door: "one-way", source: `${DEFINE_FUTURE} history (-${delta.remove} ~${delta.change})` };
+    if (doorLines(h.receipt).some(oneWayDoorLine)) return { door: "one-way", source: `${DEFINE_FUTURE} history` };
+  }
+  const { cls } = effectiveClass(input.classed);
+  if (cls === undefined) return { door: "one-way", source: "unclassified" };
+  const d = doorRung({ ladder: null, policy: input.policy, posture: input.posture, u: cls, crossings: input.crossings, bleedReducing: false });
+  const rung = `rung ${d.rung} (${d.door})`;
+  if (d.rung === "R0") return { door: "one-way", source: rung };
+  return { door: "two-way", source: df === undefined ? rung : `${DEFINE_FUTURE}, ${rung}` };
+}
+
+/** A receipt's inline evidence lines (text, log, test-run, e2e), trimmed. */
+function doorLines(r: GateReceipt): string[] {
+  const inline: ReadonlyArray<string> = GATE_INLINE_KINDS;
+  return r.evidence.flatMap((e) => (inline.includes(e.kind) && "content" in e && typeof e.content === "string" ? e.content.split("\n").map((l) => l.trim()) : []));
+}
+
+/**
+ * A define-future door line that names a one-way door: labelled `one-way`, or any of whose counts,
+ * wherever they sit on the line (`(+1 -1 ~0)`, `(+1 −1 ~0)`, `(edges +3 -1 ~0, nodes +0 -0 ~0)`),
+ * shows a removal or a change, whatever its label (`-`, `−` (U+2212), or `~` above 0).
+ */
+export function oneWayDoorLine(line: string): boolean {
+  const m = /^door:\s*(one-way|two-way)\b(.*)$/i.exec(line);
+  if (m === null) return false;
+  if (m[1]!.toLowerCase() === "one-way") return true;
+  return [...m[2]!.matchAll(/(?:^|[\s(,])[-\u2212~](\d+)\b/g)].some((c) => Number(c[1]) > 0);
+}
+
+/** The `eris loop launch` command a missing review on a one-way merge dispatches; `cwd` is shell-quoted. */
+export function reviewDispatch(issue: string, cwd: string): string {
+  const r = REVIEW_DISPATCH;
+  return `eris loop launch ${r.loop} ${issue} --cwd ${shellQuote(cwd)} --runtime ${r.runtime} --pool ${r.pool} --unclaimed`;
+}
+
+/** The main clone a checkout belongs to: the git common dir's parent when it is a `.git`, else the checkout itself. */
+async function mainClone(g: Git, top: string): Promise<string> {
+  const r = await run(g, top, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  const common = ok(r) ? r.stdout.toString("utf8").trim() : "";
+  return posix.basename(common) === ".git" ? posix.dirname(common) : top;
+}
 
 /** The one action `gate ci` judges. */
 export type CiAction = "merge";
@@ -192,6 +293,23 @@ function latestByGate(issue: string, receipts: ReadonlyArray<ListedReceipt>): Ma
   return latest;
 }
 
+/** `issue`'s receipts for `gate`, in listing order. */
+function gateReceiptsOf(issue: string, gate: string, receipts: ReadonlyArray<ListedReceipt>): GateReceipt[] {
+  return receipts.flatMap((c) => {
+    const parsed = decodePayload(c.version, c.payload);
+    return parsed.kind === "receipt" && parsed.receipt.issue === issue && parsed.receipt.gate === gate ? [parsed.receipt] : [];
+  });
+}
+
+/** `issue`'s receipts that propose a user-impact class, oldest first (`effectiveClass` folds them in order). */
+function classedOf(issue: string, receipts: ReadonlyArray<ListedReceipt>): GateReceipt[] {
+  return receipts
+    .map((c) => ({ c, parsed: decodePayload(c.version, c.payload) }))
+    .flatMap(({ c, parsed }) => (parsed.kind === "receipt" && parsed.receipt.issue === issue && parsed.receipt.user_impact !== undefined ? [{ at: c.createdAt, r: parsed.receipt }] : []))
+    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+    .map((x) => x.r);
+}
+
 /** The review-report@1 evidence on a receipt that reviewed `surface` against its own vocabulary. */
 function reportsFor(receipt: GateReceipt, surface: Pick<MatchedSurface, "name" | "class_taxonomy">) {
   return receipt.evidence.filter(isGateReviewReportEvidence).filter((e) => e.report.surface === surface.name && e.report.reviewer.vocabulary.path === surface.class_taxonomy);
@@ -303,7 +421,6 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
   });
 
   const posture = activePosture(read);
-  if (posture?.policy?.signoff?.unlock !== "on") reasons.push(`doctrine ${posture?.slug ?? "(none)"} does not set signoff.unlock: on`);
   const raise = posture?.policy?.signoff?.raise;
 
   if (governed.length > 0) {
@@ -326,12 +443,45 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
     }
   }
 
+  const df = latest.get(DEFINE_FUTURE);
+  const judgedDf = df === undefined || input.action !== "merge" || names.length === 0 ? undefined : await statusOf(judgeOn(input.issue), df, read);
+  const history: { receipt: GateReceipt; bytes: Uint8Array | null }[] = [];
+  if (input.action === "merge" && names.length > 0) {
+    for (const r of gateReceiptsOf(input.issue, DEFINE_FUTURE, listing.receipts)) {
+      history.push({ receipt: r, bytes: r.verdict === "SKIPPED" ? new Uint8Array() : await recordedBytes(input.ep, g, input.cwd, input.issue, r.artifact, input.readRetry) });
+    }
+  }
+  const door =
+    input.action !== "merge" || names.length === 0
+      ? undefined
+      : mergeDoor({
+          defineFuture: df === undefined || judgedDf === undefined ? undefined : { receipt: df.receipt, status: judgedDf.status, bytes: judgedDf.bytes },
+          defineFutures: history,
+          classed: classedOf(input.issue, listing.receipts),
+          policy: posture?.policy,
+          posture: posture?.slug,
+          crossings: names,
+        });
+  if (door !== undefined) input.out(`@door\t${door.door}\t${door.source}`);
+  // A two-way merge crossing a tier-1 surface merges on its own gates, with no review bar;
+  // it still honours each surface's lock and a posture that holds two-way doors for a human.
+  const twoWay = door?.door === "two-way" && governed.length === 0;
+  if (twoWay && posture?.policy?.signoff?.["two-way"] === "human") {
+    reasons.push(`doctrine ${posture.slug} sets signoff.two-way: human, so a two-way merge is human-signed`);
+  }
+  // The review bar's own switch: a two-way merge carries no bar, so it does not need it.
+  if (!twoWay && posture?.policy?.signoff?.unlock !== "on") {
+    reasons.push(`doctrine ${posture?.slug ?? "(none)"} does not set signoff.unlock: on`);
+  }
+  let dispatch = false;
+
   for (const name of names) {
     const surface = fromBase.find((s) => s.name === name);
     const files = (surface ?? fromHead.find((s) => s.name === name))!.matched_files.length;
     input.out(`@surface\t${name}\t${files}`);
     if (surface === undefined) {
-      reasons.push(`${name}: not on the base registry yet (a surface the PR adds unlocks after it merges)`);
+      // A surface the PR adds sets no bar yet; a two-way merge owes it nothing.
+      if (!twoWay) reasons.push(`${name}: not on the base registry yet (a surface the PR adds unlocks after it merges)`);
       continue;
     }
     const ledgerReceipts = surface.ledger === undefined ? undefined : unwrap(await retryRateLimited(() => listReceipts(input.ep, surface.ledger!), input.readRetry)).receipts;
@@ -339,9 +489,10 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
     input.out(`@lock\t${lock.locked ? "locked" : "open"}\t${name}`);
     if (lock.locked) {
       const l = lock as { actor?: string; at?: string; reason?: string };
-      reasons.push(`${name}: locked${l.actor !== undefined ? ` by ${l.actor}` : ""}${l.at !== undefined ? ` on ${monDd(l.at, input.now)}` : ""}${l.reason !== undefined ? ` (${l.reason})` : ""}`);
+      reasons.push(`${name}: locked${l.actor !== undefined ? ` by ${l.actor}` : ""}${l.at !== undefined ? ` on ${monDd(l.at, input.now)}` : ""}${l.reason !== undefined ? ` (${l.reason})` : ""}; 'eris surface unlock ${name}' lifts it`);
       continue;
     }
+    if (twoWay) continue;
     const bar = unlockBar(surface, input.action, raise);
     if (bar.unlisted) reasons.push(`${name}: one_way_unlock.${input.action} is not listed, so ${input.action} stays human-signed`);
     for (const gate of bar.gates) {
@@ -359,6 +510,17 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
         reasons.push(`${name}: ${gate}: ${status}${judged.why !== undefined ? ` (${judged.why})` : ""}`);
       }
       input.out(`${gate}\t${status}\t${l?.receipt.verdict ?? "-"}`);
+      if (gateName === REVIEW_DISPATCH.gate && status !== "pass" && door?.door === "one-way") {
+        // Only a review the code has moved past is dispatched: none yet, or one recorded at an older commit.
+        // One at this head (BLOCKING, no report), or naming no commit, goes back to a builder, never to a
+        // second review on the same code (no verdict shopping).
+        const a = l?.receipt.artifact;
+        const named = a?._tag === "git" && a.commit !== undefined;
+        const moved = l === undefined || (named && !(await boundToHead(g, top, a, head)).bound);
+        if (moved) dispatch = true;
+        else if (l !== undefined && !named) reasons.push(`${name}: ${gate} names no commit, so it is not re-dispatched here: re-record it over the PR head (a git artifact)`);
+        else reasons.push(`${name}: ${gate} was recorded at this head: fix its findings in a builder pass at a new head; it is not re-dispatched here`);
+      }
     }
 
     if (surface.ledger === undefined || ledgerReceipts === undefined) {
@@ -398,7 +560,11 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
     if (own === 0) reasons.push(`${name}: no ${UNLOCKED_GATES[input.action]} announcement for head ${head.slice(0, 12)} on ${ledger}: the merging actor announces at this head (it spends the budget and re-reads the lock)`);
   }
 
-  if (reasons.length === 0) {
+  if (twoWay && reasons.length === 0) {
+    input.out(`@unlock\tnot-needed\t${input.action}`);
+    return "not-needed";
+  }
+  if (!twoWay && reasons.length === 0) {
     input.out(`@unlock\tunlocked\t${input.action}`);
     return "unlocked";
   }
@@ -418,12 +584,13 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
     return "human-signed";
   }
   if (signoff !== undefined) reasons.push(`${DOOR_SIGNOFF}: ${held.status === "wrong-action" ? held.why : `${held.status}${held.why !== undefined ? ` (${held.why})` : ""}`}`);
+  if (dispatch) input.out(`@dispatch\t${REVIEW_DISPATCH.gate}\t${reviewDispatch(input.issue, await mainClone(g, top))}`);
   input.out(`@unlock\thuman\t${input.action}`);
   return precondition(
     "gate-unlock-human",
     `${input.action} on ${input.issue} needs a human sign-off: ${reasons.join("; ")}`,
     `A human signs at the PR head: 'eris gate record door-signoff --issue <KEY> --verdict PASS --artifact <committed plan or note> --evidence "door: ${input.action}" --authorized "<name> asked: <request>"'.\n` +
-      "Or close each reason: record the missing gate on the PR head; re-run the surface audit and record audit-surfaces on the ledger;\n" +
+      "Or close each reason: record the missing gate on the PR head (a @dispatch row is the command that launches it); re-run the surface audit and record audit-surfaces on the ledger;\n" +
       "set signoff.unlock: on in the org's hosted posture and re-run the job.",
   );
 }

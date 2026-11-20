@@ -209,3 +209,30 @@ export async function commitBoundToHead(g: Git, top: string, c: string, head: st
   const code = diff.stdout.toString("utf8").split("\0").filter((p) => p !== "" && !p.startsWith(NOTE_PREFIX));
   return code.length === 0 ? { bound: true } : { bound: false, why: `${code.length} path(s) changed after it was recorded at ${c.slice(0, 12)} (${code.slice(0, 3).join(", ")})` };
 }
+
+/** Single-word POSIX/ANSI-C shell escaping so printed commands copy cleanly even when paths hold spaces or control chars. */
+// lift-candidate: shell-quote — POSIX/ANSI-C single-word shell escaping
+export function shellQuote(s: string): string {
+  if (s === "") return "''";
+  if (/[\x00-\x1f\x7f]/.test(s)) {
+    let out = "$'";
+    for (const ch of s) {
+      const c = ch.codePointAt(0)!;
+      if (ch === "\\") out += "\\\\";
+      else if (ch === "'") out += "\\'";
+      else if (ch === "\t") out += "\\t";
+      else if (ch === "\n") out += "\\n";
+      else if (ch === "\r") out += "\\r";
+      else if (c === 0x1b) out += "\\E";
+      else if (c < 0x20 || c === 0x7f) out += `\\${c.toString(8).padStart(3, "0")}`;
+      else out += ch;
+    }
+    return `${out}'`;
+  }
+  let out = "";
+  [...s].forEach((ch, i) => {
+    if (" \t\n'\"\\|&;()<>!{}*[?]^$`,".includes(ch) || (i === 0 && (ch === "~" || ch === "#"))) out += `\\${ch}`;
+    else out += ch;
+  });
+  return out;
+}

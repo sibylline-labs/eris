@@ -248,6 +248,7 @@ describe("eris gate ci: a ticketed PR", () => {
         `${await policyRow()}@issue\tABC-1\tref\n` +
         "plan-review\tpass\tPASS\nsdk-check\tskipped\tdoctrine ci sets gates.sdk-check: off\n@ci\tprofile\tpass\n" +
         "@ci\tmonotone\tpass\n" +
+        "@door\tone-way\tunclassified\n" +
         "@surface\tauth\t1\n@lock\topen\tauth\nadversarial-review\tpass\tPASS\nposture-check\tpass\tPASS\n@baseline\tfresh\tauth\n@budget\t1/2\tauth\n@announce\tpresent\tauth\n" +
         "door-signoff\tpass\tPASS\n@unlock\thuman-signed\tmerge\n@ci\tunlock\tpass\n",
     });
@@ -272,7 +273,7 @@ describe("eris gate ci: a ticketed PR", () => {
     const { d, head, base } = shop();
     put("ABC-1", bound("door-signoff", head, "ABC-1", { authorized: "Pat asked: ship it" }));
     const wrong = await gateCi(d, event(head, base));
-    expect(wrong.out).toContain("door-signoff\twrong-action\tPASS\n@unlock\thuman\tmerge\n");
+    expect(wrong.out).toContain(`door-signoff\twrong-action\tPASS\n@dispatch\tadversarial-review\teris loop launch adversarial-review ABC-1 --cwd ${d} --runtime opencode --pool neon --unclaimed\n@unlock\thuman\tmerge\n`);
 
     store = {};
     put("ABC-1", signoff(head));
@@ -281,7 +282,7 @@ describe("eris gate ci: a ticketed PR", () => {
     const later = git(d, "rev-parse", "HEAD");
     const stale = await gateCi(d, event(later, base));
     expect(stale.code).toBe(3);
-    expect(stale.out).toContain("door-signoff\tstale-head\tPASS\n@unlock\thuman\tmerge\n@ci\tunlock\tfail\n");
+    expect(stale.out).toContain(`door-signoff\tstale-head\tPASS\n@dispatch\tadversarial-review\teris loop launch adversarial-review ABC-1 --cwd ${d} --runtime opencode --pool neon --unclaimed\n@unlock\thuman\tmerge\n@ci\tunlock\tfail\n`);
   });
 
   // admits: integration: a PR that widens the registry must fail monotone unless a human surface-widen covers it, and still run unlock; observed at the rows and the first failure's slug.

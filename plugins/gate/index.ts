@@ -4,7 +4,7 @@
  * gates client (docs/dev/GATES-CLIENT.md) on the `eris login` bearer; `ci` only reads.
  *
  * `gatePlugin(defaults)` is the same plugin with what a build supplies: the door-class ladder file
- * `check` reads (none: every class at R1), the org's pulled, verified policy tree, whose doctrine
+ * `check` reads (none: U0/U1 at R2, U2/U3 at R1), the org's pulled, verified policy tree, whose doctrine
  * and profiles are read when `--doctrine` and `--profiles` are absent and whose bundle sha the receipt
  * routes send, and `reviews`, the review-skill registry and skill/vocabulary freshness reader
  * `check` and `ci` use to judge `review-report@1` evidence (none: reports read as `blocking`). The
@@ -60,7 +60,7 @@ export interface GateReviews {
 
 /** What a build supplies the gate verbs. */
 export interface GateDefaults {
-  /** The door-class ladder `check` reads with no `--ladder`; absent, every class reads R1. */
+  /** The door-class ladder `check` reads with no `--ladder`; absent, U0/U1 read R2 and U2/U3 read R1. */
   readonly ladderFile?: string;
   /** The org's pulled tree (null: none pulled), or the failure that refuses an edited one. */
   readonly pulled?: (ctx: VerbContext) => Promise<{ readonly ok: true; readonly value: PulledTree | null } | { readonly ok: false; readonly failure: ContractFailure }>;

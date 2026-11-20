@@ -19,7 +19,7 @@
 
 import { readFileSync } from "node:fs";
 import * as Schema from "effect/Schema";
-import { decodeResult, GATE_INLINE_KINDS, GATE_MEDIA_KINDS, GATE_REVIEW_REPORT_KIND, type GateEvidence } from "eris/gates-contract";
+import { decodeResult, decodeResultStrict, GATE_INLINE_KINDS, GATE_MEDIA_KINDS, GATE_REVIEW_REPORT_KIND, type GateEvidence } from "eris/gates-contract";
 import { parse as parseYaml } from "yaml";
 import { precondition } from "./failure";
 
@@ -65,21 +65,56 @@ export function unmet(required: ReadonlyArray<EvidenceKind>, evidence: ReadonlyA
 }
 
 /** Just enough of an `eris.graph-target` delta to tell empty from not. */
-const Changes = Schema.Struct({ add: Schema.Array(Schema.Unknown), remove: Schema.Array(Schema.Unknown), change: Schema.Array(Schema.Unknown) });
-const GraphTargetShape = Schema.Struct({ kind: Schema.Literal("eris.graph-target"), nodes: Changes, edges: Changes });
+const Changes = Schema.Struct({
+  add: Schema.optionalKey(Schema.Array(Schema.Unknown)),
+  remove: Schema.optionalKey(Schema.Array(Schema.Unknown)),
+  change: Schema.optionalKey(Schema.Array(Schema.Unknown)),
+});
+const GraphTargetShape = Schema.Struct({
+  kind: Schema.Literal("eris.graph-target"),
+  version: Schema.optionalKey(Schema.Literal(1)),
+  issue: Schema.optionalKey(Schema.Unknown),
+  baseline: Schema.optionalKey(Schema.Unknown),
+  nodes: Schema.optionalKey(Changes),
+  edges: Schema.optionalKey(Changes),
+  why: Schema.optionalKey(Schema.Unknown),
+});
 
-/** The kinds a passing `gate` receipt owes by its artifact's bytes: a `screenshot` for a `define-future` over a non-empty delta. */
-export function owedBy(gate: string, artifact: Uint8Array): EvidenceKind[] {
-  if (gate !== "define-future") return [];
+export type TargetChanges =
+  | { readonly kind: "delta"; readonly add: number; readonly remove: number; readonly change: number }
+  | { readonly kind: "invalid" };
+
+/**
+ * The add/remove/change counts of an `eris.graph-target` delta's bytes, nodes and edges summed:
+ * `{ kind: "delta", ... }` when it decodes strictly (omitted `nodes`/`edges`/`add`/`remove`/`change`
+ * default to empty), `{ kind: "invalid" }` when a JSON object claims `kind: "eris.graph-target"`
+ * but fails strict decode (callers fail closed), or `null` when the bytes are not a graph-target
+ * document.
+ */
+export function targetChanges(artifact: Uint8Array): TargetChanges | null {
   let doc: unknown;
   try {
     doc = JSON.parse(new TextDecoder().decode(artifact));
   } catch {
-    return [];
+    return null;
   }
-  const decoded = decodeResult(GraphTargetShape, doc);
-  if (decoded._tag !== "Success") return [];
+  if (typeof doc !== "object" || doc === null || Array.isArray(doc) || !Object.hasOwn(doc, "kind") || (doc as { readonly kind: unknown }).kind !== "eris.graph-target") {
+    return null;
+  }
+  const decoded = decodeResultStrict(GraphTargetShape, doc);
+  if (decoded._tag !== "Success") return { kind: "invalid" };
   const { nodes, edges } = decoded.success;
-  const changes = [nodes, edges].reduce((n, f) => n + f.add.length + f.remove.length + f.change.length, 0);
-  return changes > 0 ? ["screenshot"] : [];
+  return {
+    kind: "delta",
+    add: (nodes?.add?.length ?? 0) + (edges?.add?.length ?? 0),
+    remove: (nodes?.remove?.length ?? 0) + (edges?.remove?.length ?? 0),
+    change: (nodes?.change?.length ?? 0) + (edges?.change?.length ?? 0),
+  };
+}
+
+/** The kinds a passing `gate` receipt owes by its artifact's bytes: a `screenshot` for a `define-future` over a non-empty delta. */
+export function owedBy(gate: string, artifact: Uint8Array): EvidenceKind[] {
+  if (gate !== "define-future") return [];
+  const t = targetChanges(artifact);
+  return t?.kind === "delta" && t.add + t.remove + t.change > 0 ? ["screenshot"] : [];
 }
