@@ -13,7 +13,9 @@
  *    bundle they were rendered from.
  */
 
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import type * as SchemaIssue from "effect/SchemaIssue";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { effectiveRemediate, GateDoctrinePolicy } from "./doctrine";
 import { readBundleSections } from "./file";
@@ -167,12 +169,69 @@ export function isBundleFile(rel: string): boolean {
   return rel === BUNDLE_DOCTRINE_FILE || rel === BUNDLE_PROFILES_FILE || (rel.startsWith(`${BUNDLE_LOOPS_DIR}/`) && rel.endsWith(".md") && rel.length > BUNDLE_LOOPS_DIR.length + 4);
 }
 
+const MAX_KEY_SEGMENT = 64;
+
+function safeKeySegment(segment: string): string {
+  const clean = segment.replace(/[\x00-\x1f\x7f]/g, "").trim();
+  if (clean.length === 0) return "<key>";
+  return clean.length > MAX_KEY_SEGMENT ? `${clean.slice(0, MAX_KEY_SEGMENT)}…` : clean;
+}
+
+function collectUnexpectedKeyPaths(issue: SchemaIssue.Issue, path: readonly PropertyKey[] = []): string[][] {
+  switch (issue._tag) {
+    case "Pointer":
+      return collectUnexpectedKeyPaths(issue.issue, [...path, ...issue.path]);
+    case "Composite":
+      return issue.issues.flatMap((child) => collectUnexpectedKeyPaths(child, path));
+    case "Filter":
+    case "Encoding":
+      return collectUnexpectedKeyPaths(issue.issue, path);
+    case "AnyOf": {
+      const hits = issue.issues.map((child) => collectUnexpectedKeyPaths(child, path)).filter((p) => p.length > 0);
+      return hits.length === 1 ? hits[0]! : [];
+    }
+    case "UnexpectedKey":
+      return [path.map(String)];
+    default:
+      return [];
+  }
+}
+
+function formatUnexpectedKeyPath(path: readonly string[]): string {
+  if (path[0] === "postures" && path[1] !== undefined && path[2] === "policy" && path.length > 3) {
+    return `${BUNDLE_DOCTRINE_FILE}: ${safeKeySegment(path[1])}: policy.${path.slice(3).map(safeKeySegment).join(".")}`;
+  }
+  if (path[0] === "profiles" && path[1] !== undefined && path.length > 2) {
+    return `${BUNDLE_PROFILES_FILE}: ${safeKeySegment(path[1])}.${path.slice(2).map(safeKeySegment).join(".")}`;
+  }
+  return path.map(safeKeySegment).join(".");
+}
+
+const strictBundleDecoder = Schema.decodeUnknownResult(GatesOrgBundle, { errors: "all", reportInput: false, onExcessProperty: "error" });
+
+/**
+ * Decode an operator-edited bundle strictly, refusing any undeclared object key in `doctrine.md`
+ * posture `policy:` blocks or `profiles.yaml` profile structs (plus any `extraKeys` from a fence
+ * root), returning each refused key path without echoing values.
+ */
+export function decodeOrgBundleStrict(
+  input: unknown,
+  extraKeys: readonly string[] = [],
+): { readonly ok: true; readonly bundle: GatesOrgBundle } | { readonly ok: false; readonly unsupportedKeys: readonly string[] } {
+  const decoded = strictBundleDecoder(input);
+  const schemaUnexpected = Result.isFailure(decoded) ? collectUnexpectedKeyPaths(decoded.failure.issue).map(formatUnexpectedKeyPath) : [];
+  const unsupportedKeys = [...new Set([...extraKeys, ...schemaUnexpected])].sort();
+  if (unsupportedKeys.length > 0) return { ok: false, unsupportedKeys };
+  if (Result.isFailure(decoded)) return { ok: false, unsupportedKeys: [] };
+  return { ok: true, bundle: decoded.success };
+}
+
 /**
  * The bundle a tree's files hold, undecoded (the caller decodes it as `GatesOrgBundle`), or the first
  * file that cannot be read as one. Each posture's policy is its fence's raw `policy:` value, so the
  * bundle decode, not the doctrine reader's wider policy Schema, decides what it holds.
  */
-export function bundleFromFiles(files: Readonly<Record<string, string>>): { readonly value: unknown } | { readonly bad: string } {
+export function bundleFromFiles(files: Readonly<Record<string, string>>): { readonly value: unknown; readonly extraKeys: readonly string[] } | { readonly bad: string } {
   const read = readBundleSections(files[BUNDLE_DOCTRINE_FILE] ?? "");
   if (read.problems.length > 0) return { bad: `${BUNDLE_DOCTRINE_FILE} line ${read.problems[0]!.line}: ${read.problems[0]!.message}` };
   let profiles: unknown;
@@ -185,6 +244,7 @@ export function bundleFromFiles(files: Readonly<Record<string, string>>): { read
   for (const [rel, body] of Object.entries(files)) {
     if (rel.startsWith(`${BUNDLE_LOOPS_DIR}/`) && rel.endsWith(".md")) loops[rel.slice(BUNDLE_LOOPS_DIR.length + 1, -3)] = body;
   }
+  const extraKeys = read.postures.flatMap((p) => p.extraKeys.map((k) => `${BUNDLE_DOCTRINE_FILE}: ${safeKeySegment(p.slug)}: ${safeKeySegment(k)}`));
   const postures = Object.fromEntries(read.postures.map((p) => [p.slug, { name: p.name, bullets: p.bullets, policy: p.policy }]));
-  return { value: { active: read.active, postures, profiles, loops } };
+  return { value: { active: read.active, postures, profiles, loops }, extraKeys };
 }
