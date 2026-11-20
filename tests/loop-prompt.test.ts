@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { LoopFailure } from "../plugins/loop/failure";
-import { composePrompt, continuationPrompt } from "../plugins/loop/prompt";
+import { composePrompt, continuationPrompt, NO_BACKGROUND_LINE } from "../plugins/loop/prompt";
 
 describe("composePrompt", () => {
   it("writes every header line that was given, in order, then the body", () => {
@@ -62,11 +62,17 @@ describe("composePrompt", () => {
     expect(slug).toBe("loop-usage");
   });
 
-  it("gives a resumed session its claim and hand-back lines again", () => {
-    /** When a resume re-reserves a claim but the session is not told its new id, its hand-back releases the old one and the new claim is held until expiry: observed on the continuation text. */
-    expect(continuationPrompt("Carry on.", { issue: "ABC-7", claimId: "claim-0002" })).toBe(
+  // admits: algorithmic: runtime-keyed prompt branching and foreground-only text for resumed Claude sessions (claimed and claimless) while leaving non-Claude runtimes byte-identical; no type enforces prompt text.
+  it("appends the no-background line for claude (claimed and claimless), and leaves other runtimes unchanged", () => {
+    /** When a resumed Claude session is not told to avoid run_in_background=true, it idles forever waiting on a completion that never wakes it; when another runtime gets the Claude-specific line, its prompt drifts: observed on the continuation text for both runtimes. */
+    expect(NO_BACKGROUND_LINE).toContain("run_in_background=true");
+    expect(continuationPrompt("Carry on.", { issue: "ABC-7", claimId: "claim-0002" }, "claude")).toBe(
+      `Carry on.\n${NO_BACKGROUND_LINE}\nClaim: claim-0002 — this loop holds ABC-7's claim until its hand-back.\nHand-back: post your hand-back once, with \`eris loop hand-back ABC-7 --claim claim-0002 < <file>\` (the body on stdin): it releases ABC-7's claim with the hand-back as its response, and comments wherever no claim holds.`,
+    );
+    expect(continuationPrompt("Carry on.", null, "claude")).toBe(`Carry on.\n${NO_BACKGROUND_LINE}`);
+    expect(continuationPrompt("Carry on.", { issue: "ABC-7", claimId: "claim-0002" }, "other")).toBe(
       "Carry on.\nClaim: claim-0002 — this loop holds ABC-7's claim until its hand-back.\nHand-back: post your hand-back once, with `eris loop hand-back ABC-7 --claim claim-0002 < <file>` (the body on stdin): it releases ABC-7's claim with the hand-back as its response, and comments wherever no claim holds.",
     );
-    expect(continuationPrompt("Carry on.", null)).toBe("Carry on.");
+    expect(continuationPrompt("Carry on.", null, "other")).toBe("Carry on.");
   });
 });

@@ -178,7 +178,7 @@ export async function stopClaude(run: Run, job: ClaudeJob): Promise<void> {
 }
 
 /** A `claude agents --json` row, as far as eris reads it. */
-export const AgentRow = Schema.Struct({ id: Schema.String, name: Text, state: Text, kind: Text, cwd: Text, sessionId: Text });
+export const AgentRow = Schema.Struct({ id: Schema.String, name: Text, state: Text, kind: Text, cwd: Text, sessionId: Text, status: Text });
 export type AgentRow = typeof AgentRow.Type;
 
 export interface ClaudeAgents {

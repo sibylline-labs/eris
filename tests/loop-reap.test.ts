@@ -11,10 +11,13 @@
 
 import { afterAll, afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { LOOP_DEFAULTS } from "../plugins/index";
 import { claimPath, readClaim, writeClaim } from "../plugins/loop/claims";
-import { loop, loopWorld, type LoopWorld, slugOf, stopServer } from "./helpers/loop-fixture";
+import { runOf } from "../plugins/loop/deps";
+import { busyProcessCwds } from "../plugins/loop/reap-worktrees";
+import { loop, loopWorld, type LoopWorld, REPO, slugOf, stopServer } from "./helpers/loop-fixture";
 
 setDefaultTimeout(60_000);
 
@@ -125,5 +128,22 @@ describe("eris loop reap", () => {
     expect([r.rc, slugOf(r.stderr)]).toEqual([2, "loop-usage"]);
     expect(w.calls()).toEqual([]);
     expect(existsSync(claimPath(w.home, "ABC-9"))).toBe(false);
+  });
+
+  // admits: boundary-io: calling realpathSync on lsof process cwds hangs indefinitely on macOS TCC-protected container directories; a symlink emitted by fake lsof proves paths pass through verbatim without realpath.
+  it("returns lsof process cwds verbatim without calling realpath", async () => {
+    /** When busyProcessCwds re-resolves every lsof path with realpathSync, reap hangs indefinitely on macOS TCC-protected container cwds: observed by passing a symlink through fake lsof and asserting the returned path is not resolved to its target. */
+    const target = join(w.dir, "cwd-target");
+    const link = join(w.dir, "cwd-link");
+    mkdirSync(target);
+    symlinkSync(target, link);
+    const run = runOf(
+      { erisDir: REPO, env: { ...w.env, FAKE_LSOF_CWD: link }, format: "text", stdout: { write: () => true }, stderr: { write: () => true } },
+      LOOP_DEFAULTS,
+      { home: w.home, cwd: w.repo },
+    );
+    const cwds = await busyProcessCwds(run);
+    expect(cwds).toEqual([link]);
+    expect(cwds[0]).not.toBe(realpathSync(target));
   });
 });

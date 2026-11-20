@@ -87,7 +87,7 @@ if (args[0] === "--bg") {
   writeFileSync(f, JSON.stringify({ ...s, state: "stopped" }));
 } else if (args[0] === "agents") {
   if (process.env.FAKE_CLAUDE_AGENTS_FAIL) process.exit(1);
-  const rows = existsSync(jobs) ? readdirSync(jobs).map((id) => { const s = JSON.parse(readFileSync(join(jobs, id, "state.json"), "utf8")); return { id, name: s.name, state: s.state, kind: "background", cwd: s.cwd, sessionId: s.sessionId }; }) : [];
+  const rows = existsSync(jobs) ? readdirSync(jobs).map((id) => { const s = JSON.parse(readFileSync(join(jobs, id, "state.json"), "utf8")); return { id, name: s.name, state: s.state, kind: "background", cwd: s.cwd, sessionId: s.sessionId, ...(s.status !== undefined ? { status: s.status } : {}) }; }) : [];
   process.stdout.write(JSON.stringify(rows));
 }
 `;
