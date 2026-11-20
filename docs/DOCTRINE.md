@@ -191,7 +191,8 @@ eris doctrine check --file "$(eris doctrine path)"   # the same file, named
 - A tree whose files decode to the live bundle saves nothing: no request is sent, the tree is
   re-pulled, and the verb prints `unchanged`.
 - A file a bundle does not carry (anything but `doctrine.md`, `profiles.yaml` and `loops/<slug>.md`),
-  or a file that no longer decodes, is `doctrine-push-invalid` before any request.
+  an unsupported policy or profile key the bundle contract cannot carry (named in the refusal), or a
+  file that no longer decodes, is `doctrine-push-invalid` before any request.
 - The save is sent once, and judged as a save from the org's Gates settings is. The gateway refuses
   it unless the bearer is an org admin's `eris login` (`doctrine-push-refused`); a policy it will
   not take is `doctrine-push-invalid`. After a save the tree is replaced by the saved bundle,

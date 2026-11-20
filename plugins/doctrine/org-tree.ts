@@ -29,6 +29,7 @@ import {
   bundleFromFiles,
   computeGatesBundleSha,
   type ContractFailure,
+  decodeOrgBundleStrict,
   decodeResult,
   GATES_POLICY_CONTRACT_VERSION,
   GatesBundleSha,
@@ -152,9 +153,20 @@ function pushInvalid(org: string, what: string): ContractFailure {
   };
 }
 
+function pushUnsupportedKeys(org: string, keys: readonly string[]): ContractFailure {
+  return {
+    slug: "doctrine-push-invalid",
+    what: `~/.eris/doctrine/${org}/: unsupported key(s) not carried by the policy bundle contract (${keys.join(", ")}) — pushing would drop them`,
+    fix: "Remove the unsupported key(s) from the named file, then run 'eris doctrine push' again; or run 'eris doctrine pull' to discard local edits.",
+    docs: "docs/ERRORS.md#doctrine-push-invalid",
+    exit: 3,
+  };
+}
+
 /**
  * Read an edited tree for a push, trusting none of its file hashes: the manifest (for the base `bundle_sha`
- * and the settings), then every file, decoded as `verifyTree` decodes them. A file a bundle would not carry
+ * and the settings), then every file, decoded strictly against `GatesOrgBundle` so unknown policy or profile
+ * keys are refused rather than stripped and discarded on re-materialization. A file a bundle would not carry
  * is refused rather than dropped, because the swap after a push removes the old tree and everything in it.
  */
 export async function readLocalBundle(dir: string, org: string): Promise<Outcome<LocalBundle>> {
@@ -187,9 +199,12 @@ export async function readLocalBundle(dir: string, org: string): Promise<Outcome
   }
   const input = bundleFromFiles(files);
   if ("bad" in input) return invalid(input.bad);
-  const bundle = decodeResult(GatesOrgBundle, input.value);
-  if (bundle._tag !== "Success") return invalid("its files do not decode as a policy bundle");
-  return { ok: true, value: { manifest, bundle: bundle.success, bundle_sha: await computeGatesBundleSha(bundle.success, manifest.settings) } };
+  const bundle = decodeOrgBundleStrict(input.value, input.extraKeys);
+  if (!bundle.ok) {
+    if (bundle.unsupportedKeys.length > 0) return { ok: false, failure: pushUnsupportedKeys(org, bundle.unsupportedKeys) };
+    return invalid("its files do not decode as a policy bundle");
+  }
+  return { ok: true, value: { manifest, bundle: bundle.bundle, bundle_sha: await computeGatesBundleSha(bundle.bundle, manifest.settings) } };
 }
 
 /** The org's verified tree, null when it has none; `doctrine-local-modified` when it was edited. */

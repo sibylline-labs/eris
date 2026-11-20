@@ -1518,11 +1518,12 @@ have been used: approve again at <https://dash.sibylline.group/gates/approve> be
 
 ### doctrine-push-invalid
 
-The tree cannot be pushed: it holds a file a policy bundle does not carry, a file that does not
-decode (the block names it), or the gateway refused the bundle (HTTP 400, 413 or 422: not a valid
-bundle, over 256 KiB, or holding a credential). Nothing was saved and the tree is untouched. Fix or
-remove the named file (`eris doctrine check --file <doctrine.md>` names doctrine problems), then push
-again. Exit 3.
+The tree cannot be pushed: it holds a file a policy bundle does not carry, an unsupported key in a
+posture `policy:` block or `profiles.yaml` entry that the bundle contract does not carry (pushing
+would drop it; the block names each key path), a file that does not decode (the block names it), or
+the gateway refused the bundle (HTTP 400, 413 or 422: not a valid bundle, over 256 KiB, or holding
+a credential). Nothing was saved and the tree is untouched. Remove the unsupported key(s) or fix or
+remove the named file, then push again (or run `eris doctrine pull` to discard local edits). Exit 3.
 
 ### doctrine-org-managed
 

@@ -70,7 +70,7 @@ function sections(lines: readonly string[]): { active: string | null; sections: 
 }
 
 /** The section's fenced `policy:` value, undecoded, or the problems that stopped it being read. */
-function fencedPolicy(s: Section): { found: { line: number; yaml: string; value: unknown } | null; problems: DoctrineProblem[] } {
+function fencedPolicy(s: Section): { found: { line: number; yaml: string; value: unknown; extraKeys: readonly string[] } | null; problems: DoctrineProblem[] } {
   const problems: DoctrineProblem[] = [];
   const blocks: { line: number; yaml: string }[] = [];
   let open: { line: number; lines: string[] } | null = null;
@@ -87,7 +87,7 @@ function fencedPolicy(s: Section): { found: { line: number; yaml: string; value:
   }
   if (open !== null) problems.push({ line: open.line, message: `${s.slug}: unclosed \`\`\`yaml fence` });
 
-  const found: { line: number; yaml: string; value: unknown }[] = [];
+  const found: { line: number; yaml: string; value: unknown; extraKeys: readonly string[] }[] = [];
   for (const b of blocks) {
     let doc: unknown;
     try {
@@ -96,7 +96,10 @@ function fencedPolicy(s: Section): { found: { line: number; yaml: string; value:
       problems.push({ line: b.line, message: `${s.slug}: invalid YAML: ${(e as Error).message.split("\n")[0]}` });
       continue;
     }
-    if (doc !== null && typeof doc === "object" && "policy" in doc) found.push({ line: b.line, yaml: b.yaml, value: (doc as { policy: unknown }).policy });
+    if (doc !== null && typeof doc === "object" && !Array.isArray(doc) && Object.hasOwn(doc, "policy")) {
+      const rec = doc as Record<string, unknown>;
+      found.push({ line: b.line, yaml: b.yaml, value: rec.policy, extraKeys: Object.keys(rec).filter((k) => k !== "policy") });
+    }
   }
   if (found.length > 1) problems.push({ line: found[1]!.line, message: `${s.slug}: more than one policy: block` });
   return { found: problems.length > 0 ? null : (found[0] ?? null), problems };
@@ -141,6 +144,8 @@ export interface BundlePosture {
   readonly bullets: readonly string[];
   /** The fence's `policy:` value as YAML parsed it, undecoded; undefined when the section has none. */
   readonly policy: unknown;
+  /** Any sibling top-level keys sitting beside `policy:` inside the same YAML fence. */
+  readonly extraKeys: readonly string[];
 }
 
 export interface BundleSectionsRead {
@@ -168,7 +173,7 @@ export function readBundleSections(text: string): BundleSectionsRead {
     }
     const r = fencedPolicy(s);
     problems.push(...r.problems);
-    return { slug: s.slug, name: s.name, bullets, policy: r.found?.value };
+    return { slug: s.slug, name: s.name, bullets, policy: r.found?.value, extraKeys: r.found?.extraKeys ?? [] };
   });
   if (active !== null && !secs.some((s) => s.slug === active)) problems.push({ line: 1, message: `active: ${active} names no ## section` });
   return { active, postures, problems };
