@@ -67,9 +67,10 @@ import {
   retryRateLimited,
 } from "eris/gates-contract";
 import { scanStrings } from "eris/outbound-scan";
-import { locateArtifact } from "./artifact";
+import { locateArtifact, rebuildEvidence } from "./artifact";
 import { precondition, stop, unwrap, usage } from "./failure";
 import { type Git, repoRoot } from "./git";
+import type { ReceiptLink } from "./index";
 import { renderProse } from "./render";
 
 /** What a write needs from its run: the store, git, where relative paths resolve from, the clock and the 429 policy. */
@@ -99,7 +100,7 @@ export function readFileFor(cwd: string, path: string, flag: string): Buffer {
 
 /** One `--evidence`/`--log`/... value: inline text, or a file of a kind. */
 export type EvidenceInput =
-  | { readonly kind: "text"; readonly content: string }
+  | { readonly kind: "text"; readonly content: string; readonly name?: string | undefined }
   | { readonly kind: Exclude<GateInlineKind, "text"> | GateMediaKind | "review-report"; readonly path: string };
 
 const MEDIA_TYPES: Readonly<Record<string, string>> = {
@@ -122,7 +123,7 @@ function tooLarge(flag: string, path: string, bytes: number, max = INLINE_MAX_BY
 }
 
 type ReadEvidence =
-  | { readonly kind: "text"; readonly content: string }
+  | { readonly kind: "text"; readonly content: string; readonly name?: string | undefined }
   | { readonly kind: Exclude<GateInlineKind, "text">; readonly name: string; readonly content: string }
   | { readonly kind: GateMediaKind; readonly name: string; readonly path: string; readonly contentType: string; readonly bytes: Buffer }
   | { readonly kind: "review-report"; readonly name: string; readonly report: GateReviewReport; readonly body: string };
@@ -133,7 +134,7 @@ function readEvidence(cwd: string, inputs: ReadonlyArray<EvidenceInput>): ReadEv
     if (e.kind === "text") {
       const n = Buffer.byteLength(e.content);
       if (n > INLINE_MAX_BYTES) tooLarge("--evidence", "(text)", n);
-      read.push({ kind: "text", content: e.content });
+      read.push({ kind: "text", content: e.content, ...(e.name !== undefined ? { name: e.name } : {}) });
       continue;
     }
     const flag = `--${e.kind}`;
@@ -269,6 +270,10 @@ export interface RecordInput {
   readonly commentId?: string | undefined;
   /** Validated, redacted mandate handle for the store to spend one use and stamp Receipt v3. */
   readonly mandate?: Redacted.Redacted<MandateHandle> | undefined;
+  /** Optional permalink rendered inside the receipt prose (`{link}` template slot). */
+  readonly receiptLink?: ReceiptLink | null | undefined;
+  /** Internal only: permits recording `unlocked-<action>` announcements from the unlock engine. */
+  readonly allowReservedGate?: boolean | undefined;
 }
 
 export interface Recorded {
@@ -277,6 +282,8 @@ export interface Recorded {
   readonly recordSha256?: string | undefined;
   readonly copied: CopyOutcome;
   readonly secretRules: ReadonlyArray<string>;
+  readonly linkUrl?: string | undefined;
+  readonly linkMismatch?: true | undefined;
 }
 
 /** The `unlocked-<action>` announcements are written by the unlock decision only, never by hand. */
@@ -285,7 +292,7 @@ const RESERVED_GATE = /^unlocked-/;
 /** Hash, snapshot, upload, and append one receipt. */
 export async function recordGate(run: WriteRun, input: RecordInput): Promise<Recorded> {
   validateTarget([input.gate], input.issue);
-  if (RESERVED_GATE.test(input.gate)) {
+  if (RESERVED_GATE.test(input.gate) && input.allowReservedGate !== true) {
     usage(
       `gate ${input.gate} is reserved: only the unlock decision records an unlocked-<action> announcement`,
       "Record the gate the bar names instead; the announcement is written when the unlock is decided.",
@@ -295,7 +302,8 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
   const authorized = input.authorized?.trim();
   if (authorized === "") usage("--authorized is blank", "Name the grant: '<name> asked: <request>', or doctrine:<posture>.");
   const artifactBytes = readFileFor(run.cwd, input.artifact, "--artifact");
-  const located = await locateArtifact(run.g, run.cwd, input.artifact, sha256Hex(artifactBytes));
+  const artifactSha = sha256Hex(artifactBytes);
+  const located = await locateArtifact(run.g, run.cwd, input.artifact, artifactSha);
   const doctrine = input.doctrine === undefined ? undefined : snapshotDoctrine(input.doctrine, input.doctrineBytes ?? readFileFor(run.cwd, input.doctrine, "--doctrine"));
   const read = readEvidence(run.cwd, input.evidence);
   const reports = read.filter((e): e is Extract<ReadEvidence, { readonly kind: "review-report" }> => e.kind === "review-report");
@@ -346,6 +354,9 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
 
   const { copy: encoded, copied, secretRules } = copyOfBytes(artifactBytes, COPIED.has(verdict));
   const artifact = encoded !== undefined ? { ...located, copy: encoded } : located;
+  // A diff too large to carry is bound to git instead: check re-derives it from the recorded base and head.
+  const rebuild = copied === "too-large" && located._tag === "file" ? await rebuildEvidence(run.g, run.cwd, input.artifact, artifactSha) : null;
+  if (rebuild !== null) evidence.push({ kind: "text", content: rebuild, sha256: sha256Hex(rebuild) });
   const [firstRubric, ...moreRubrics] = input.rubrics ?? [];
   const receipt: GateReceiptV2 = {
     schema: GATE_RECEIPT_SCHEMA,
@@ -364,7 +375,9 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
     recorded_at: run.now.toISOString(),
   };
   const sha = sha256Hex(JSON.stringify(receipt));
-  const prose = renderProse(receipt, await loadPrior());
+  const linkUrl = input.receiptLink != null ? input.receiptLink.url(sha) : undefined;
+  const linkLine = input.receiptLink != null && linkUrl !== undefined ? input.receiptLink.line(sha, linkUrl) : "";
+  const prose = renderProse(receipt, await loadPrior(), linkLine);
   const commentId = input.commentId ?? randomUUID();
   const comment = unwrap(
     await retryRateLimited(
@@ -377,7 +390,16 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
   if (input.mandate !== undefined && (comment.recordSha256 === undefined || comment.recordSha256 === sha)) {
     mandateNotStamped(comment.id, authorized !== undefined);
   }
-  return { receipt, commentId: comment.id, recordSha256: comment.recordSha256, copied, secretRules };
+  const linkMismatch = input.mandate === undefined && linkUrl !== undefined && comment.recordSha256 !== undefined && comment.recordSha256 !== sha ? (true as const) : undefined;
+  return {
+    receipt,
+    commentId: comment.id,
+    recordSha256: comment.recordSha256,
+    copied,
+    secretRules,
+    ...(linkUrl !== undefined ? { linkUrl } : {}),
+    ...(linkMismatch !== undefined ? { linkMismatch } : {}),
+  };
 }
 
 /** A mandate skip the store kept as an unstamped v2: the mandate granted nothing. */
@@ -405,6 +427,8 @@ export interface SkipInput {
   readonly actorInfo?: GateActor | undefined;
   /** Validated, redacted mandate handle: the store spends one use and stamps v3, so `authorized` becomes optional context. */
   readonly mandate?: Redacted.Redacted<MandateHandle> | undefined;
+  /** Optional permalink rendered inside the receipt prose (`{link}` template slot). */
+  readonly receiptLink?: ReceiptLink | null | undefined;
 }
 
 function unauthorized(what: string, fix: string): never {
@@ -486,5 +510,6 @@ export async function skipGate(run: WriteRun, input: SkipInput): Promise<Recorde
     actor: input.actor,
     ...(input.actorInfo !== undefined ? { actorInfo: input.actorInfo } : {}),
     ...(input.mandate !== undefined ? { mandate: input.mandate } : {}),
+    ...(input.receiptLink !== undefined ? { receiptLink: input.receiptLink } : {}),
   });
 }

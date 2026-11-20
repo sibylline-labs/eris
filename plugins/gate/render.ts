@@ -33,7 +33,7 @@ import skipped from "./templates/skipped.mdx" with { type: "text" };
 
 export const TEMPLATES: Readonly<Record<GateVerdict, string>> = { PASS: pass, AMENDED: amended, BLOCKING: blocking, SKIPPED: skipped };
 
-type ReceiptView = Readonly<Record<"gate" | "verdict" | "artifact" | "rubrics" | "doctrine" | "impact" | "authorized" | "reason" | "actor" | "recorded" | "evidence", string>>;
+type ReceiptView = Readonly<Record<"gate" | "verdict" | "artifact" | "rubrics" | "doctrine" | "impact" | "authorized" | "reason" | "actor" | "recorded" | "evidence" | "link", string>>;
 
 const EXPR = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 const ONLY_EXPR = /^\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
@@ -135,7 +135,7 @@ export function formatActor(r: Pick<GateReceipt, "actor" | "actor_info">): strin
   return info.launched_by !== undefined ? `${linked} (launched by ${oneLine(info.launched_by)})` : linked;
 }
 
-function view(r: GateReceipt, priors: ReadonlyArray<GateReceipt>): ReceiptView {
+function view(r: GateReceipt, priors: ReadonlyArray<GateReceipt>, link: string): ReceiptView {
   const last = priors.at(-1);
   let priorImpact: GateReceipt["user_impact"];
   for (const p of priors) if (p.user_impact !== undefined) priorImpact = p.user_impact;
@@ -154,6 +154,7 @@ function view(r: GateReceipt, priors: ReadonlyArray<GateReceipt>): ReceiptView {
     actor: showActor ? `- Actor: ${formatActor(r)}` : "",
     recorded: r.recorded_at,
     evidence: evidenceLines(r.evidence),
+    link,
   };
 }
 
@@ -173,6 +174,6 @@ export function renderTemplate(template: string, v: Readonly<Record<string, stri
 }
 
 /** The receipt comment's prose; `priors` (oldest first) omit an unchanged artifact, impact and actor line. */
-export function renderProse(r: GateReceipt, priors: ReadonlyArray<GateReceipt> = []): string {
-  return renderTemplate(TEMPLATES[r.verdict], view(r, priors));
+export function renderProse(r: GateReceipt, priors: ReadonlyArray<GateReceipt> = [], link = ""): string {
+  return renderTemplate(TEMPLATES[r.verdict], view(r, priors, link));
 }

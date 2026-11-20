@@ -1,11 +1,11 @@
 /**
- * unlock.ts — `gate ci`'s unlock leg: whether merging a change that crosses registered surfaces may
- * proceed without a human. It reads and never writes: no `unlocked-merge` announcement is recorded here.
+ * unlock.ts — `eris gate check --unlock <merge|deploy|effect>` and `gate ci`'s unlock leg: whether
+ * a one-way action on the registered surfaces a change crosses may proceed without a human.
  *
- * The bar for each crossed surface is the repo's `one_way_unlock.merge`, read from the registry at the
- * merge-base so a PR never sets its own bar, ∪ the active posture's `signoff.raise` (doctrine only
- * raises) ∪ `posture-check`. A surface that does not list merge stays human-signed, whatever the
- * posture raises. It unlocks when:
+ * The bar for each crossed surface is the repo's `one_way_unlock.<action>`, read from the registry at
+ * the merge-base so a PR never sets its own bar, ∪ the active posture's `signoff.raise` (doctrine
+ * only raises) ∪ `posture-check`. A surface that does not list `<action>` stays human-signed, whatever
+ * the posture raises. It unlocks when:
  *
  *   the posture sets `signoff.unlock: on`;
  *   every bar gate's latest receipt passes and is bound to the PR head: its `git` artifact's commit is
@@ -13,8 +13,11 @@
  *     a qualifier this build cannot judge never passes, and review-report evidence reads blocking
  *     unless `reviews` is supplied;
  *   the surface's ledger issue holds a passing `audit-surfaces` receipt younger than `audit_ttl`, fewer
- *     than `change_budget` `unlocked-merge` receipts since it, and an announcement for this head;
+ *     than `change_budget` `unlocked-<action>` receipts since it, and an announcement for this head
+ *     (or `--announce` writes it now, re-reading the lock first);
  *   the surface is not locked;
+ *   no hard rule applies: a deploy to a system another owner holds, or a data-destroying effect,
+ *     never unlocks (constants, never config);
  *   the diff touches no governance file: the registry, a registered vocabulary or a registered review
  *     skill (either side). Such a diff sets the bar itself, so it always reads human, and the monotone
  *     rows against the merge-base are printed and named in the reason; a wider row no human
@@ -28,11 +31,12 @@
  * a review already recorded at the head, or naming no commit, is never re-dispatched.
  *
  * Anything short of that falls back to a human: the issue's latest `door-signoff` signs it when it
- * passes with a human `--authorized` grant (never `doctrine:`), is bound to the PR head as a bar gate is,
- * and carries a `door: merge` evidence line; else `gate-unlock-human`, naming every reason.
+ * passes with a human `--authorized` grant (never `doctrine:`), is bound to the PR head as a bar gate
+ * is, carries a `door: <action>` evidence line (plus `hard-rule: <id>` when overriding a hard rule);
+ * else `gate-unlock-human`, naming every reason.
  */
 
-import { posix } from "node:path";
+import { join, posix } from "node:path";
 import {
   activePosture,
   DEFAULT_AUDIT_TTL,
@@ -42,6 +46,7 @@ import {
   type DoctrineRead,
   GATE_INLINE_KINDS,
   GATE_REVIEW_EFFORTS,
+  type GateActor,
   type GateArtifact,
   type GateReceipt,
   type GateReviewEffort,
@@ -50,27 +55,36 @@ import {
   isGateReviewReportEvidence,
   type ListedReceipt,
   listReceipts,
+  policyHash,
   RAISE_ALL,
   type SurfacesFile,
   type RetryOpts,
   retryRateLimited,
 } from "eris/gates-contract";
 import { targetChanges } from "./burden";
-import { type CheckInput, type Checking, humanGrantGap, type Judged, type Latest, receiptsOfListing, recordedBytes, statusOf } from "./check";
+import { type CheckInput, type Checking, humanGrantGap, type Judged, type Latest, readListing, receiptsOfListing, recordedBytes, statusOf } from "./check";
 import { precondition, unwrap } from "./failure";
 import { effectiveClass } from "./floor";
-import { changedPaths, type CommitBound, commitBoundToHead, type Git, mergeBase, ok, repoRoot, revParse, run, shellQuote, untrackedFiles } from "./git";
-import type { GateReviews } from "./index";
+import { changedPaths, type CommitBound, commitBoundToHead, type Git, mergeBase, ok, remoteSlug, repoRoot, revParse, run, shellQuote, untrackedFiles } from "./git";
+import type { GateReviews, ReceiptLink } from "./index";
 import { DOOR_SIGNOFF, doorRung } from "./ladder";
-import { announcedHeads, countUnlocked, lockState, monDd, UNLOCKED_GATES } from "./ledger";
+import { type AnnouncedSurface, announcedHeads, announceUnlocked, countUnlocked, lockState, monDd, UNLOCKED_GATES, type UnlockAction } from "./ledger";
 import { classifyMonotone, type Dim, inSkillDir, named, readMonotoneSides, rowLine, type Signoff, uncovered } from "./monotone";
 import { issuesText, type MatchedSurface, matchSurfaces, surfacesInvalid, validateSurfacesYaml, vocabularyPath } from "./registry";
+
+export { UNLOCKED_GATES, type UnlockAction };
 
 /** Every bar holds posture-check: the diff itself passed the surface posture gate. */
 export const ALWAYS_UNLOCK_GATES = ["posture-check"] as const;
 
 /** The gate an audit-surfaces baseline is recorded under, on the surface's ledger issue. */
 export const AUDIT_GATE = "audit-surfaces";
+
+/** An effect kind with any of these segments destroys data, so it never unlocks. */
+export const DATA_DESTROYING = ["drop", "delete", "truncate", "destroy", "purge", "wipe"] as const;
+
+/** The id a sign-off names to override the hard rule on `action` (`hard-rule: <id>`). */
+export const HARD_RULE_IDS = { deploy: "foreign-deploy", effect: "data-destroying-effect" } as const;
 
 /** The qualifier that requires a strict `PASS`: an `AMENDED` pass is not clean. */
 export const CLEAN_QUALIFIER = "clean";
@@ -92,17 +106,7 @@ export interface MergeDoor {
 
 /**
  * The door of a merge. Every signal can only close it, so it reads two-way only when all say
- * two-way:
- *
- *   the latest define-future, unless it is a valid doctrine/repo skip: one-way when it does not
- *     pass, when its verified artifact is a graph-target delta that removes or changes anything
- *     (or fails strict decode), or when a door line labels one-way or counts a removal or change;
- *   every define-future on the issue, whatever its verdict: one-way when the bytes it was recorded
- *     over cannot be verified, when they are a delta that removes or changes anything (or fails
- *     strict decode), or when an inline door line labels or counts one-way (a follow-up's later
- *     empty-target note never hides the issue's door);
- *   the issue's class: none is one-way; else the rung it reaches with no ladder file
- *     (`DEFAULT_RUNGS` under the posture's ceilings; local and CI read the same), R0 one-way.
+ * two-way.
  */
 export function mergeDoor(input: {
   readonly defineFuture: { readonly receipt: GateReceipt; readonly status: string; readonly bytes?: Uint8Array | undefined } | undefined;
@@ -173,37 +177,70 @@ export type CiAction = "merge";
 export interface UnlockInput {
   readonly ep: GatesEndpoint;
   readonly issue: string;
-  readonly action: CiAction;
-  /** The PR's base sha: the bar's registry is read at the merge-base of it and HEAD. */
+  readonly action: UnlockAction;
+  /** The PR's base ref or sha: the bar's registry is read at the merge-base of it and HEAD. */
   readonly base: string;
-  /** The PR head the receipts must be bound to: the checkout's HEAD, or the PR parent of the merge commit CI checks out. */
-  readonly headSha: string;
+  /** The PR head the receipts must be bound to: omitted defaults to the checkout's HEAD. */
+  readonly headSha?: string | undefined;
   /** The registry path, relative to the repo root. */
   readonly registry: string;
+  /** For `deploy`: the `owner/repo` that owns the deployed system (hard rule: must match origin). */
+  readonly target?: string | undefined;
+  /** For `effect`: the effect kind (hard rule: never contains a data-destroying segment). */
+  readonly effectKind?: string | undefined;
+  /** Receipt comment ids that must be present in the issue's listing before judging (`--expect`). */
+  readonly expect?: ReadonlyArray<string> | undefined;
+  readonly expectDelaysMs?: ReadonlyArray<number> | undefined;
+  readonly sleep?: ((ms: number) => Promise<void>) | undefined;
   readonly cwd: string;
   readonly g: Git;
-  /** The posture's source: its name (the hosted bundle) and its read. */
+  /** The posture's source: its name and its read. */
   readonly doctrine: { readonly file: string; readonly read: DoctrineRead | null };
   /** Distribution review-report judging (`gatePlugin({ reviews })`); absent fails closed as `blocking`. */
   readonly reviews?: GateReviews | undefined;
   readonly now: Date;
   /** The 429 policy of the receipt reads. */
   readonly readRetry: RetryOpts;
+  /** Set (`--announce`): an `unlocked` decision records its `unlocked-<action>` receipts. */
+  readonly announce?:
+    | {
+        readonly actor: string;
+        readonly actorInfo?: GateActor | undefined;
+        readonly writeRetry: RetryOpts;
+        readonly receiptLink?: ReceiptLink | null | undefined;
+      }
+    | undefined;
   readonly out: (line: string) => void;
   readonly warn: (line: string) => void;
 }
 
 export type Decision = "unlocked" | "human-signed" | "not-needed";
 
-/** The bar's gates for one surface, and whether the surface does not list the action at all. */
+/** The bar's gates for one surface and action, and whether the surface does not list the action at all. */
 export function unlockBar(
   surface: Pick<MatchedSurface, "name" | "one_way_unlock">,
-  action: CiAction,
-  raise: Readonly<Record<string, Partial<Record<CiAction, ReadonlyArray<string>>>>> | undefined,
+  action: UnlockAction,
+  raise: Readonly<Record<string, Partial<Record<UnlockAction, ReadonlyArray<string>>>>> | undefined,
 ): { readonly gates: readonly string[]; readonly unlisted: boolean } {
   const repo = surface.one_way_unlock?.[action];
   const raised = [...(raise?.[surface.name]?.[action] ?? []), ...(raise?.[RAISE_ALL]?.[action] ?? [])];
   return { gates: [...new Set([...(repo ?? []), ...raised, ...ALWAYS_UNLOCK_GATES])], unlisted: repo === undefined };
+}
+
+/** The hard rule that keeps this action with a human whatever the evidence, or null. */
+export function hardRule(action: UnlockAction, facts: { readonly target?: string | undefined; readonly effectKind?: string | undefined; readonly origin: string | null }): string | null {
+  if (action === "deploy") {
+    if (facts.origin === null || facts.target === undefined || facts.target.toLowerCase() !== facts.origin.toLowerCase()) {
+      return `deploy to ${facts.target ?? "(no --target)"}: a system another owner holds stays with that owner (this checkout is ${facts.origin ?? "not a hosted origin"})`;
+    }
+  }
+  if (action === "effect") {
+    const hit = (facts.effectKind ?? "").split("-").find((seg) => (DATA_DESTROYING as readonly string[]).includes(seg));
+    if (facts.effectKind === undefined || hit !== undefined) {
+      return `effect ${facts.effectKind ?? "(no --effect-kind)"}: a data-destroying effect never unlocks`;
+    }
+  }
+  return null;
 }
 
 /** `30d` / `720h` in milliseconds. */
@@ -288,7 +325,7 @@ function latestByGate(issue: string, receipts: ReadonlyArray<ListedReceipt>): Ma
     const parsed = decodePayload(c.version, c.payload);
     if (parsed.kind !== "receipt" || parsed.receipt.issue !== issue) continue;
     const prev = latest.get(parsed.receipt.gate);
-    if (prev === undefined || c.createdAt >= prev.at) latest.set(parsed.receipt.gate, { receipt: parsed.receipt, version: parsed.version, at: c.createdAt });
+    if (prev === undefined || c.createdAt >= prev.at) latest.set(parsed.receipt.gate, { receipt: parsed.receipt, version: parsed.version, at: c.createdAt, id: c.id });
   }
   return latest;
 }
@@ -365,14 +402,20 @@ export async function humanSignoff(input: Pick<UnlockInput, "ep" | "g" | "cwd" |
 export async function checkUnlock(input: UnlockInput): Promise<Decision> {
   const g = input.g;
   const top = await repoRoot(g, input.cwd);
-  if (top === null) return unresolved(`${input.cwd} is not inside a git checkout`, "Run gate ci from a checkout of the changed repo.");
+  if (top === null) return unresolved(`${input.cwd} is not inside a git checkout`, "Run check --unlock from a checkout of the changed repo.");
   const tip = await revParse(g, input.base, top);
   if (tip === null) return unresolved(`base ${input.base}: does not name a commit in this checkout`);
   const fork = await mergeBase(g, top, tip, "HEAD");
   if (fork === null) return unresolved(`base ${input.base}: shares no history with HEAD`);
   const checkout = await revParse(g, "HEAD", top);
-  if (checkout === null) return unresolved("HEAD does not resolve", "Run gate ci from a checkout with a commit.");
-  const head = await verifiedHeadSha(g, top, input.headSha, checkout, tip);
+  if (checkout === null) return unresolved("HEAD does not resolve", "Run check --unlock from a checkout with a commit.");
+  if (input.announce !== undefined && input.headSha !== undefined && !/^[0-9a-f]{40}$/i.test(input.headSha)) {
+    return unresolved(
+      `--head-sha ${input.headSha} is not a full 40-hex commit sha: an announcement at it would spend budget no check can read`,
+      'Pass the PR head\'s full sha: --head-sha "$(git rev-parse HEAD)".',
+    );
+  }
+  const head = input.headSha === undefined ? checkout : await verifiedHeadSha(g, top, input.headSha, checkout, tip);
   const tracked = await changedPaths(g, top, fork);
   const untracked = await untrackedFiles(g, top);
   if (tracked === null || untracked === null) return unresolved("git could not list the changes", "Re-run; check 'git status' works in this checkout.");
@@ -391,8 +434,21 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
   }
 
   const reasons: string[] = [];
+  const originRes = await run(g, top, ["remote", "get-url", "origin"]);
+  const origin = ok(originRes) ? remoteSlug(originRes.stdout.toString("utf8")) : null;
+  const never = hardRule(input.action, { target: input.target, effectKind: input.effectKind, origin });
   const read = input.doctrine.read;
-  const listing = unwrap(await retryRateLimited(() => listReceipts(input.ep, input.issue), input.readRetry));
+  const listing =
+    input.expect !== undefined && input.expect.length > 0
+      ? await readListing({
+          ep: input.ep,
+          issue: input.issue,
+          expect: input.expect,
+          expectDelaysMs: input.expectDelaysMs,
+          sleep: input.sleep ?? ((ms: number) => Bun.sleep(ms)),
+          readRetry: input.readRetry,
+        })
+      : unwrap(await retryRateLimited(() => listReceipts(input.ep, input.issue), input.readRetry));
   const latest = latestByGate(input.issue, listing.receipts);
   const digests: Checking["digests"] = new Map();
   const fresh: NonNullable<Checking["fresh"]> = new Map();
@@ -474,6 +530,8 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
     reasons.push(`doctrine ${posture?.slug ?? "(none)"} does not set signoff.unlock: on`);
   }
   let dispatch = false;
+  const barUsed: { readonly gate: string; readonly id: string | undefined; readonly receipt: GateReceipt | undefined }[] = [];
+  const crossed: AnnouncedSurface[] = [];
 
   for (const name of names) {
     const surface = fromBase.find((s) => s.name === name);
@@ -515,12 +573,13 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
         // One at this head (BLOCKING, no report), or naming no commit, goes back to a builder, never to a
         // second review on the same code (no verdict shopping).
         const a = l?.receipt.artifact;
-        const named = a?._tag === "git" && a.commit !== undefined;
-        const moved = l === undefined || (named && !(await boundToHead(g, top, a, head)).bound);
+        const namedCommit = a?._tag === "git" && a.commit !== undefined;
+        const moved = l === undefined || (namedCommit && !(await boundToHead(g, top, a, head)).bound);
         if (moved) dispatch = true;
-        else if (l !== undefined && !named) reasons.push(`${name}: ${gate} names no commit, so it is not re-dispatched here: re-record it over the PR head (a git artifact)`);
+        else if (l !== undefined && !namedCommit) reasons.push(`${name}: ${gate} names no commit, so it is not re-dispatched here: re-record it over the PR head (a git artifact)`);
         else reasons.push(`${name}: ${gate} was recorded at this head: fix its findings in a builder pass at a new head; it is not re-dispatched here`);
       }
+      if (status === "pass" && !barUsed.some((b) => b.gate === gate)) barUsed.push({ gate, id: l?.id, receipt: l?.receipt });
     }
 
     if (surface.ledger === undefined || ledgerReceipts === undefined) {
@@ -555,22 +614,57 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
     }
     const due = spent - Math.min(own, 1);
     input.out(`@budget\t${spent}/${budget}\t${name}`);
+    crossed.push({ name, ledger, budget, baselineAt: audit.at });
     if (due >= budget) reasons.push(`${name}: change budget exhausted (${due} of ${budget} unlocked actions since the baseline on ${ledger})`);
-    input.out(`@announce\t${own > 0 ? "present" : "missing"}\t${name}`);
-    if (own === 0) reasons.push(`${name}: no ${UNLOCKED_GATES[input.action]} announcement for head ${head.slice(0, 12)} on ${ledger}: the merging actor announces at this head (it spends the budget and re-reads the lock)`);
+    if (input.announce === undefined) {
+      input.out(`@announce\t${own > 0 ? "present" : "missing"}\t${name}`);
+      if (own === 0) {
+        reasons.push(
+          `${name}: no ${UNLOCKED_GATES[input.action]} announcement for head ${head.slice(0, 12)} on ${ledger}: the merging actor runs 'eris gate check --unlock ${input.action} --announce' at this head (it spends the budget and re-reads the lock)`,
+        );
+      }
+    }
   }
 
-  if (twoWay && reasons.length === 0) {
+  if (twoWay && never === null && reasons.length === 0) {
     input.out(`@unlock\tnot-needed\t${input.action}`);
     return "not-needed";
   }
-  if (!twoWay && reasons.length === 0) {
-    input.out(`@unlock\tunlocked\t${input.action}`);
-    return "unlocked";
+  if (!twoWay && never === null && reasons.length === 0) {
+    if (input.announce === undefined) {
+      input.out(`@unlock\tunlocked\t${input.action}`);
+      return "unlocked";
+    }
+    const announced = await announceUnlocked({
+      ep: input.ep,
+      action: input.action,
+      issue: input.issue,
+      head,
+      surfaces: crossed,
+      bar: barUsed,
+      posture: `${posture?.slug ?? "-"}@${posture === undefined ? "-" : (policyHash(posture) ?? "-")}`,
+      registryFile: join(top, input.registry),
+      actor: input.announce.actor,
+      actorInfo: input.announce.actorInfo,
+      cwd: input.cwd,
+      top,
+      g,
+      now: input.now,
+      readRetry: input.readRetry,
+      writeRetry: input.announce.writeRetry,
+      receiptLink: input.announce.receiptLink,
+      out: input.out,
+      warn: input.warn,
+    });
+    if (announced.kind === "recorded") {
+      input.out(`@unlock\tunlocked\t${input.action}`);
+      return "unlocked";
+    }
+    for (const n of announced.names) reasons.push(`${n}: locked while the announcement was being recorded; nothing was recorded`);
   }
 
   const signoff = latest.get(DOOR_SIGNOFF);
-  const signed = signoff === undefined ? undefined : await statusOf(judgeOn(input.issue), signoff, read);
+  const signed = signoff === undefined ? undefined : await statusOf(judgeOn(input.issue, atHead), signoff, read);
   const grant = humanGrantGap(signoff, signed?.status ?? "missing");
   let held: { readonly status: string; readonly why?: string | undefined } = { status: grant ?? "pass", ...(grant === null ? {} : { why: signed?.why }) };
   if (grant === null && signoff !== undefined) {
@@ -580,16 +674,27 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
   }
   if (signoff !== undefined) input.out(`${DOOR_SIGNOFF}\t${held.status}\t${signoff.receipt.verdict}`);
   if (held.status === "pass" && signoff !== undefined) {
-    input.out(`@unlock\thuman-signed\t${input.action}`);
-    return "human-signed";
+    // A hard rule yields only to a sign-off that names it, and the override is said out loud.
+    const rule = never === null || input.action === "merge" ? undefined : HARD_RULE_IDS[input.action];
+    if (rule !== undefined && !carriesLine(signoff.receipt, `hard-rule: ${rule}`)) {
+      reasons.push(`door-signoff does not name the hard rule it overrides (no 'hard-rule: ${rule}' evidence line)`);
+    } else {
+      if (rule !== undefined) {
+        input.warn(`WARN door-signoff overrides hard rule ${rule}: ${never}`);
+        input.out(`@hard-rule\toverridden\t${rule}`);
+      }
+      input.out(`@unlock\thuman-signed\t${input.action}`);
+      return "human-signed";
+    }
   }
-  if (signoff !== undefined) reasons.push(`${DOOR_SIGNOFF}: ${held.status === "wrong-action" ? held.why : `${held.status}${held.why !== undefined ? ` (${held.why})` : ""}`}`);
+  if (signoff !== undefined && held.status !== "pass") reasons.push(`${DOOR_SIGNOFF}: ${held.status === "wrong-action" ? held.why : `${held.status}${held.why !== undefined ? ` (${held.why})` : ""}`}`);
   if (dispatch) input.out(`@dispatch\t${REVIEW_DISPATCH.gate}\t${reviewDispatch(input.issue, await mainClone(g, top))}`);
-  input.out(`@unlock\thuman\t${input.action}`);
+  input.out(`@unlock\t${never !== null ? "never" : "human"}\t${input.action}`);
+  const all = never !== null ? [never, ...reasons] : reasons;
   return precondition(
     "gate-unlock-human",
-    `${input.action} on ${input.issue} needs a human sign-off: ${reasons.join("; ")}`,
-    `A human signs at the PR head: 'eris gate record door-signoff --issue <KEY> --verdict PASS --artifact <committed plan or note> --evidence "door: ${input.action}" --authorized "<name> asked: <request>"'.\n` +
+    `${input.action} on ${input.issue} needs a human sign-off: ${all.join("; ")}`,
+    `A human signs at the PR head: 'eris gate record door-signoff --issue <KEY> --verdict PASS --artifact <committed plan or note> --evidence "door: ${input.action}"${never !== null && input.action !== "merge" ? ` --evidence "hard-rule: ${HARD_RULE_IDS[input.action]}"` : ""} --authorized "<name> asked: <request>"'.\n` +
       "Or close each reason: record the missing gate on the PR head (a @dispatch row is the command that launches it); re-run the surface audit and record audit-surfaces on the ledger;\n" +
       "set signoff.unlock: on in the org's hosted posture and re-run the job.",
   );

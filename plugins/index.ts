@@ -17,7 +17,7 @@ import { yakPlugin } from "./yak";
 const yak = yakPlugin({ afterLogin: async () => (await import("./doctrine/pull")).seedAfterLogin() });
 
 /** The gate verbs read the org's pulled, verified tree for their doctrine, profiles and policy sha. */
-const gate = gatePlugin({ pulled: async (ctx) => (await import("./doctrine/pull")).pulledTree(ctx) });
+const gate = gatePlugin({ pulled: async (ctx, req) => (await import("./doctrine/pull")).pulledTree(ctx, req) });
 
 /** The loop verbs read loop bodies only from the org's pulled, verified tree, pulled again when a claim names a newer bundle. */
 export const LOOP_DEFAULTS: LoopDefaults = {

@@ -1,6 +1,7 @@
 /**
- * gate.ts — `eris gate record | skip | check | ci`: the command line, read from the plugin's rows, handed
- * to the engines (record.ts, check.ts, ci-verb.ts) over the gates client.
+ * gate.ts — `eris gate record | skip | check | ci` (plus any distribution subcommands): the command
+ * line, read from `gateRows(defaults)`, handed to the engines (record.ts, check.ts, unlock.ts,
+ * ci-verb.ts) over the gates client.
  *
  * Every failure below the command line is one thrown `GateFailure`, caught once here and written as its
  * slugged block, so the exit code is the failure's own (2 for a wrong command line, 3 for anything the
@@ -28,6 +29,7 @@ import {
   readDoctrineFile,
   readProfiles,
   type RetryOpts,
+  UNLOCK_ACTIONS,
 } from "eris/gates-contract";
 import { CliExit, groupArgs, readArgs, renderFailureBlock, type VerbContext, type VerbHandler } from "../../src/cli/plugin";
 import { resolveActor } from "./actor";
@@ -35,14 +37,14 @@ import { readBurdenRubric } from "./burden";
 import { checkGates } from "./check";
 import { GateFailure, stop, usage } from "./failure";
 import { type Git, liveGit, memoReads } from "./git";
-import plugin, { type GateDefaults, type PulledTree } from "./index";
+import { type GateDefaults, type GateRows, gateRows, type PulledTree, type ReceiptLink, type ResolvedGateActor } from "./index";
 import { readLadder } from "./ladder";
+import type { UnlockAction } from "./ledger";
 import { resolveMandateSkip } from "./mandate";
 import { type EvidenceInput, recordGate, skipGate, type WriteRun } from "./record";
 import { storeEndpoint } from "./store";
 import { discoverPathsSurfaces } from "./surfaces";
-
-const ROWS = plugin.rows;
+import { checkUnlock } from "./unlock";
 
 /** What the network, the clock and the waits are in a test; the process's own when absent. */
 export interface GateDeps {
@@ -57,7 +59,13 @@ export interface GateDeps {
   readonly expectDelaysMs?: ReadonlyArray<number>;
 }
 
-const USAGE = `Usage: eris gate <command>
+const NO_ORG_POLICY = "(no org policy pulled)";
+
+function gateUsage(defaults: GateDefaults): string {
+  const extra = Object.entries(defaults.subcommands ?? {}).map(([sub, def]) =>
+    def.usageLine !== undefined ? `  ${def.usageLine}` : `  ${sub.padEnd(7)} ${def.row.usage ?? ""}\n                          ${def.row.summary}`,
+  );
+  return `Usage: eris gate <command>
 
 Gate receipts: one gate-receipt@v2 comment per gate run on a tracker issue,
 written by 'record' and 'skip' and read back by 'check'.
@@ -69,7 +77,9 @@ Commands:
                           Append a SKIPPED receipt naming the grant or mandate behind it
   check  --issue <KEY> --gates <a,b,...> | --profile <name> [--expect <id,...>]
                           Exit 3 unless every gate's latest receipt passes
-  ci     [--event <file>] [--registry <path>]
+  check  --issue <KEY> --unlock merge|deploy|effect [--base <ref>]
+                          Exit 3 unless the one-way action is unlocked or human-signed
+${extra.length > 0 ? `${extra.join("\n")}\n` : ""}  ci     [--event <file>] [--registry <path>]
                           The required PR check under the org's hosted policy
                           (GET-only: it records nothing)
 
@@ -78,11 +88,12 @@ signed in with 'eris login' (run it once per machine; ERIS_YAKS_TOKEN, a sib_
 service token, wins when set). Host: ERIS_YAKS_URL, else the login's url, else
 the gateway default. No eris.yaml is needed. See docs/GATE.md.
 `;
+}
 
 type Sub = "gate record" | "gate skip" | "gate check";
-const line = (path: Sub) => `eris ${path} ${ROWS[path].usage}`;
+const line = (rows: GateRows, path: Sub) => `eris ${path} ${rows[path].usage}`;
 
-const RECORD_USAGE = `Usage: ${line("gate record")}
+const recordUsage = (rows: GateRows) => `Usage: ${line(rows, "gate record")}
 
 Store one gate-receipt@v2 record and append its comment to <KEY>: the
 verdict's template, then the store's footer naming the record. 'eris gate
@@ -129,7 +140,7 @@ the receipt; no flag takes comment text.
 stdout: the new comment's id.
 `;
 
-const SKIP_USAGE = `Usage: ${line("gate skip")}
+const skipUsage = (rows: GateRows) => `Usage: ${line(rows, "gate skip")}
 
 Append one SKIPPED comment to <KEY> that records why the gate is not run, the
 grant behind the decision, and who recorded it. Pass --authorized, or present a
@@ -160,7 +171,7 @@ skipped requirement never meets it.
 stdout: the new comment's id.
 `;
 
-const CHECK_USAGE = `Usage: ${line("gate check")}
+const checkUsage = (rows: GateRows) => `Usage: ${line(rows, "gate check")}
 
 Read <KEY>'s receipts and print one line per gate, '<gate>\\t<status>\\t<verdict>'.
 The latest receipt per gate (by the store's time) decides: missing,
@@ -187,11 +198,21 @@ remediate PASS) exit 3; ok and pending exit 0.
   --gates        The gates to check, comma-separated
   --profile      Check the gates a work profile requires instead (built in:
                  spine, deep; else the org's pulled profiles.yaml); exactly
-                 one of --gates and --profile
+                 one of --gates, --profile and --unlock
   --profiles     A YAML map of profile name to gate list, read instead. An
                  entry may be '{ require: [...], forbid: [...] }': a forbidden
                  gate prints '<gate>\\tabsent\\t-', or '<gate>\\tforbidden\\t<verdict>'
                  (exit 3) when any receipt for it is on the issue
+  --unlock       Evaluate one-way unlock for merge, deploy or effect against
+                 .claude/surfaces.yml at the merge-base of --base (default
+                 origin/main) and HEAD; exclusive with --gates, --profile and
+                 --burden. --target <owner/repo> is required for deploy;
+                 --effect-kind <kind> for effect; --announce records
+                 unlocked-<action> receipts when the action unlocks
+  --registry     The surfaces registry path for --unlock (default .claude/surfaces.yml)
+  --target       For --unlock deploy: owner/repo of the deployed system
+  --effect-kind  For --unlock effect: the effect kind
+  --announce     For --unlock: record unlocked-<action> receipts on crossed ledgers
   --ladder       The door-class ladder (default: the build's, else none: U0/U1
                  at R2, U2/U3 at R1). The class is the U-class crossing each
                  --burden surface, its rung the ladder's, raised by the active
@@ -214,12 +235,11 @@ remediate PASS) exit 3; ok and pending exit 0.
                  its writes, so check re-reads (about 30 s) until one listing
                  holds every id, and exits 3 (gate-receipt-unseen) if none does
   --burden       A rubric YAML ('surfaces:' map of surface to evidence kinds).
-                 The paths changed since --base resolve to surfaces through the
-                 root eris.yaml's discover.paths (most specific claim; an estate
-                 with leaf eris.yaml files is refused, gate-burden-unresolved);
-                 check prints 'burden\\t<pass|unmet>\\t<kinds>' and exits 3 unless
-                 the passing receipts carry every kind those surfaces require
-  --base         The ref the change forked from; with --burden
+                 The paths changed since --base resolve to surfaces through
+                 discover.paths; check prints 'burden\\t<pass|unmet>\\t<kinds>'
+                 and exits 3 unless the passing receipts carry every kind those
+                 surfaces require
+  --base         The ref the change forked from; with --burden or --unlock
   --pr           With a terminal gate (final-gates): also read the open
                  blocking asks bound to this pull request number
   --asks         Read the asks whatever the gates, and print the result as one
@@ -230,7 +250,7 @@ remediate PASS) exit 3; ok and pending exit 0.
                  is recorded
   --effort       Minimum effort required of review-report@1 evidence
                  (low, medium, high or max)
-  --head-sha     PR head commit sha to check review-report@1 targets against
+  --head-sha     PR head commit sha to check review-report@1 targets (or --unlock) against
                  (default: checkout HEAD of the target repo)
   --diff-sha256  PR diff sha256 to check review-report@1 targets against
                  (default: merge-base diff to the target head)
@@ -243,13 +263,13 @@ asks-listing-truncated): it is never read as no asks.
 `;
 
 /** Refuse the command line before anything is read: the block, exit 1. */
-function refuse(ctx: VerbContext, what: string, path: Sub): never {
-  ctx.stderr.write(renderFailureBlock({ slug: "gate-usage", what, fix: `usage: ${line(path)}`, docs: "docs/ERRORS.md#gate-usage" }, ctx.erisDir));
+function refuse(rows: GateRows, ctx: VerbContext, what: string, path: Sub): never {
+  ctx.stderr.write(renderFailureBlock({ slug: "gate-usage", what, fix: `usage: ${line(rows, path)}`, docs: "docs/ERRORS.md#gate-usage" }, ctx.erisDir));
   throw new CliExit(1);
 }
 
-function required(ctx: VerbContext, path: "gate record" | "gate skip" | "gate check", missing: readonly string[]): void {
-  if (missing.length > 0) refuse(ctx, `${path}: missing ${missing.join(", ")}`, path);
+function required(rows: GateRows, ctx: VerbContext, path: Sub, missing: readonly string[]): void {
+  if (missing.length > 0) refuse(rows, ctx, `${path}: missing ${missing.join(", ")}`, path);
 }
 
 /** Everything a sub-verb shares: the context, the pulled tree (or null), and how to reach the store. */
@@ -277,7 +297,7 @@ export async function verbFor(ctx: VerbContext, defaults: GateDefaults, deps: Ga
   const home = deps.home ?? ctx.env.HOME ?? homedir();
   let pulled: PulledTree | null = null;
   if (defaults.pulled !== undefined) {
-    const p = await defaults.pulled(ctx);
+    const p = await defaults.pulled(ctx, { cwd, home });
     if (!p.ok) stop(p.failure);
     pulled = p.value;
   }
@@ -308,6 +328,19 @@ export async function verbFor(ctx: VerbContext, defaults: GateDefaults, deps: Ga
 
 export const writeRun = async (v: Verb, g = v.g): Promise<WriteRun> => ({ ep: await v.endpoint(), g, cwd: v.cwd, now: v.now, retry: v.retry(RECORD_RETRY_DELAYS_MS, RECORD_RETRY_MAX_WAIT_MS) });
 
+/** Resolve actor through `defaults.resolveActor` when supplied, else public `resolveActor`. */
+export async function resolveActorWith(defaults: GateDefaults, input: { readonly flag?: string | undefined; readonly g: Git; readonly cwd: string }): Promise<ResolvedGateActor> {
+  if (defaults.resolveActor !== undefined) return defaults.resolveActor({ flag: input.flag, cwd: input.cwd, env: input.g.env });
+  return resolveActor(input);
+}
+
+/** Optional INFO-line suffix and mismatch notification for a `ReceiptLink`. */
+export function linkNote(link: ReceiptLink | null, res: { readonly linkUrl?: string | undefined; readonly linkMismatch?: true | undefined; readonly recordSha256?: string | undefined }): string {
+  if (link === null || res.linkUrl === undefined) return "";
+  if (res.linkMismatch === true) link.onMismatch?.(res.linkUrl, res.recordSha256);
+  return link.note !== undefined ? link.note(res.linkUrl) : "";
+}
+
 function verdictOf(raw: string): GateVerdict {
   return (GATE_VERDICTS as readonly string[]).includes(raw) ? (raw as GateVerdict) : usage(`--verdict ${raw}: not PASS, AMENDED or BLOCKING`, "Pass --verdict PASS|AMENDED|BLOCKING.");
 }
@@ -327,18 +360,23 @@ const FILE_EVIDENCE = ["log", "test-run", "e2e", "review-report", "screenshot", 
 function copyWarn(v: Verb, artifact: string, res: Awaited<ReturnType<typeof recordGate>>): void {
   if (res.copied === "not-text") v.ctx.stderr.write(`WARN ${artifact}: no copy carried: not UTF-8 text (or binary), so the secret scan cannot read it; check needs the live file\n`);
   if (res.copied === "secret") v.ctx.stderr.write(`WARN ${artifact}: no copy carried: the secret scan matched ${res.secretRules.join(", ")}; check needs the live file\n`);
-  if (res.copied === "too-large") v.ctx.stderr.write(`WARN ${artifact}: no copy carried (encoded past ${COPY_MAX_BYTES} bytes); check needs the live file\n`);
+  if (res.copied === "too-large") {
+    const bound = res.receipt.evidence.some((e) => e.kind === "text" && "content" in e && e.content.startsWith("diff-rebuild: "));
+    v.ctx.stderr.write(
+      `WARN ${artifact}: no copy carried (encoded past ${COPY_MAX_BYTES} bytes); ${bound ? "check re-derives it from the recorded base and head" : "check needs the live file"}\n`,
+    );
+  }
 }
 
 const storedNote = (sha: string | undefined) => (sha !== undefined ? `, stored record ${sha.slice(0, 12)}` : "");
 
-async function runRecord(args: string[], ctx: VerbContext, defaults: GateDefaults, deps: GateDeps): Promise<number> {
-  const a = readArgs(ROWS, "gate record", args, ctx, { help: RECORD_USAGE });
+async function runRecord(rows: GateRows, args: string[], ctx: VerbContext, defaults: GateDefaults, deps: GateDeps): Promise<number> {
+  const a = readArgs(rows, "gate record", args, ctx, { help: recordUsage(rows) });
   if (a === null) return 0;
   const [gate = ""] = a.pos;
   const fl = a.flags;
   const reports = fl["--review-report"] ?? [];
-  required(ctx, "gate record", [
+  required(rows, ctx, "gate record", [
     ...(gate === "" ? ["<gate>"] : []),
     ...(fl["--issue"] === undefined ? ["--issue"] : []),
     ...(fl["--verdict"] === undefined && reports.length === 0 ? ["--verdict"] : []),
@@ -346,9 +384,10 @@ async function runRecord(args: string[], ctx: VerbContext, defaults: GateDefault
   ]);
   const v = await verbFor(ctx, defaults, deps);
   const verdict = fl["--verdict"] === undefined ? undefined : verdictOf(fl["--verdict"]);
-  if (verdict === "SKIPPED") usage("gate record: --verdict SKIPPED is not recorded here", `A skip names its grant: ${line("gate skip")}`);
+  if (verdict === "SKIPPED") usage("gate record: --verdict SKIPPED is not recorded here", `A skip names its grant: ${line(rows, "gate skip")}`);
   const artifact = fl["--artifact"] ?? reports[0]!;
-  const who = await resolveActor({ flag: fl["--actor"], g: v.g, cwd: v.cwd });
+  const who = await resolveActorWith(defaults, { flag: fl["--actor"], g: v.g, cwd: v.cwd });
+  const link = defaults.receiptLink?.(ctx) ?? null;
   const evidence: EvidenceInput[] = [
     ...(fl["--evidence"] ?? []).map((content): EvidenceInput => ({ kind: "text", content })),
     ...FILE_EVIDENCE.flatMap((kind) => (fl[`--${kind}`] ?? []).map((path): EvidenceInput => ({ kind, path }))),
@@ -365,23 +404,25 @@ async function runRecord(args: string[], ctx: VerbContext, defaults: GateDefault
     evidence,
     actor: who.actor,
     actorInfo: who.actorInfo,
+    receiptLink: link,
   });
   ctx.stdout.write(`${res.commentId}\n`);
   copyWarn(v, artifact, res);
-  ctx.stderr.write(`INFO ✓ recorded ${res.receipt.gate} ${res.receipt.verdict} on ${res.receipt.issue} (artifact sha256 ${res.receipt.artifact.sha256.slice(0, 12)}${storedNote(res.recordSha256)})\n`);
+  ctx.stderr.write(`INFO ✓ recorded ${res.receipt.gate} ${res.receipt.verdict} on ${res.receipt.issue} (artifact sha256 ${res.receipt.artifact.sha256.slice(0, 12)}${storedNote(res.recordSha256)}${linkNote(link, res)})\n`);
   return 0;
 }
 
-async function runSkip(args: string[], ctx: VerbContext, defaults: GateDefaults, deps: GateDeps): Promise<number> {
-  const a = readArgs(ROWS, "gate skip", args, ctx, { help: SKIP_USAGE });
+async function runSkip(rows: GateRows, args: string[], ctx: VerbContext, defaults: GateDefaults, deps: GateDeps): Promise<number> {
+  const a = readArgs(rows, "gate skip", args, ctx, { help: skipUsage(rows) });
   if (a === null) return 0;
   const [gate = ""] = a.pos;
   const fl = a.flags;
-  required(ctx, "gate skip", [...(gate === "" ? ["<gate>"] : []), ...(["--issue", "--reason", "--artifact"] as const).filter((k) => fl[k] === undefined)]);
+  required(rows, ctx, "gate skip", [...(gate === "" ? ["<gate>"] : []), ...(["--issue", "--reason", "--artifact"] as const).filter((k) => fl[k] === undefined)]);
   const v = await verbFor(ctx, defaults, deps);
-  const who = await resolveActor({ flag: fl["--actor"], g: v.g, cwd: v.cwd });
+  const who = await resolveActorWith(defaults, { flag: fl["--actor"], g: v.g, cwd: v.cwd });
   const impact = impactOf(fl["--impact"]);
   const mandate = resolveMandateSkip({ flags: fl, env: ctx.env, gate, issue: fl["--issue"]!, actor: who.actor });
+  const link = defaults.receiptLink?.(ctx) ?? null;
   const res = await skipGate(await writeRun(v), {
     gate,
     issue: fl["--issue"]!,
@@ -392,11 +433,12 @@ async function runSkip(args: string[], ctx: VerbContext, defaults: GateDefaults,
     impact,
     actor: who.actor,
     actorInfo: who.actorInfo,
+    receiptLink: link,
     ...(mandate !== undefined ? { mandate } : {}),
   });
   ctx.stdout.write(`${res.commentId}\n`);
   const note = mandate !== undefined ? `mandate stamped, record ${res.recordSha256?.slice(0, 12)}` : `authorized: ${res.receipt.authorized}`;
-  ctx.stderr.write(`INFO ✓ recorded ${res.receipt.gate} SKIPPED on ${res.receipt.issue} (${note})\n`);
+  ctx.stderr.write(`INFO ✓ recorded ${res.receipt.gate} SKIPPED on ${res.receipt.issue} (${note}${linkNote(link, res)})\n`);
   return 0;
 }
 
@@ -406,17 +448,80 @@ function profileGates(profiles: Readonly<Record<string, { readonly require: read
   return profile ?? usage(`--profile ${name}: no such profile`, `Name one of: ${Object.keys(profiles).sort().join(", ") || "(none)"}.`, "gate-profile-unknown");
 }
 
-async function runCheck(args: string[], ctx: VerbContext, defaults: GateDefaults, deps: GateDeps): Promise<number> {
-  const a = readArgs(ROWS, "gate check", args, ctx, { help: CHECK_USAGE });
+function defaultLadder(defaults: GateDefaults, ctx: VerbContext): string | undefined {
+  return typeof defaults.ladderFile === "function" ? defaults.ladderFile(ctx) : defaults.ladderFile;
+}
+
+async function runCheck(rows: GateRows, args: string[], ctx: VerbContext, defaults: GateDefaults, deps: GateDeps): Promise<number> {
+  const a = readArgs(rows, "gate check", args, ctx, { help: checkUsage(rows) });
   if (a === null) return 0;
   const fl = a.flags;
-  required(ctx, "gate check", [...(fl["--issue"] === undefined ? ["--issue"] : []), ...(fl["--gates"] === undefined && fl["--profile"] === undefined ? ["--gates or --profile"] : [])]);
-  if (fl["--gates"] !== undefined && fl["--profile"] !== undefined) refuse(ctx, "gate check: --gates and --profile are exclusive", "gate check");
-  if ((fl["--burden"] === undefined) !== (fl["--base"] === undefined)) refuse(ctx, "gate check: --burden and --base go together", "gate check");
-  const prFlag = fl["--pr"];
-  if (prFlag !== undefined && !/^[1-9][0-9]{0,9}$/.test(prFlag)) refuse(ctx, `gate check: --pr takes a pull request number, got '${prFlag}'`, "gate check");
-  const v = await verbFor(ctx, defaults, deps);
   const list = (raw: string | undefined) => (raw ?? "").split(",").map((x) => x.trim()).filter((x) => x !== "");
+  if (fl["--unlock"] !== undefined) {
+    required(rows, ctx, "gate check", fl["--issue"] === undefined ? ["--issue"] : []);
+    const action = fl["--unlock"];
+    if (fl["--gates"] !== undefined || fl["--profile"] !== undefined || fl["--burden"] !== undefined) {
+      refuse(rows, ctx, "gate check: --unlock is exclusive with --gates, --profile and --burden", "gate check");
+    }
+    if (!(UNLOCK_ACTIONS as readonly string[]).includes(action)) refuse(rows, ctx, `gate check: --unlock ${action}: not merge, deploy or effect`, "gate check");
+    if (action === "deploy" && fl["--target"] === undefined) refuse(rows, ctx, "gate check: --unlock deploy needs --target <owner/repo> (the repo that owns the deployed system)", "gate check");
+    if (action === "effect" && fl["--effect-kind"] === undefined) refuse(rows, ctx, "gate check: --unlock effect needs --effect-kind <kind>", "gate check");
+    const v = await verbFor(ctx, defaults, deps);
+    const g = memoReads(v.g);
+    const doctrineFile = fl["--doctrine"] ?? v.pulled?.doctrineFile;
+    let doctrineRead = null;
+    if (doctrineFile !== undefined) {
+      const read = readDoctrineFile(doctrineFile);
+      if (!read.ok) stop({ ...read.failure, fix: "Check the file's permissions, or pass --doctrine <path>." });
+      doctrineRead = read.value;
+    }
+    const ep = await v.endpoint();
+    const delays = CHECK_RATE_LIMIT_DELAYS_MS;
+    const readRetry = v.retry(delays, CHECK_RATE_LIMIT_MAX_WAIT_MS, (waitMs, attempt) =>
+      ctx.stderr.write(`WARN rate-limited the receipt read; retry ${attempt}/${delays.length} in ${Math.round(waitMs / 1000)}s\n`),
+    );
+    const who = fl["--announce"] === true ? await resolveActorWith(defaults, { flag: undefined, g: v.g, cwd: v.cwd }) : undefined;
+    const link = fl["--announce"] === true ? (defaults.receiptLink?.(ctx) ?? null) : null;
+    await checkUnlock({
+      ep,
+      issue: fl["--issue"]!,
+      action: action as UnlockAction,
+      base: fl["--base"] ?? "origin/main",
+      ...(fl["--head-sha"] !== undefined ? { headSha: fl["--head-sha"] } : {}),
+      registry: fl["--registry"] ?? ".claude/surfaces.yml",
+      ...(fl["--target"] !== undefined ? { target: fl["--target"] } : {}),
+      ...(fl["--effect-kind"] !== undefined ? { effectKind: fl["--effect-kind"] } : {}),
+      expect: list(fl["--expect"]),
+      expectDelaysMs: deps.expectDelaysMs,
+      sleep: deps.sleep ?? ((ms: number) => Bun.sleep(ms)),
+      cwd: v.cwd,
+      g,
+      doctrine: { file: doctrineFile ?? NO_ORG_POLICY, read: doctrineRead },
+      ...(defaults.reviews !== undefined ? { reviews: defaults.reviews } : {}),
+      now: v.now,
+      readRetry,
+      ...(who !== undefined
+        ? {
+            announce: {
+              actor: who.actor,
+              actorInfo: who.actorInfo,
+              writeRetry: v.retry(RECORD_RETRY_DELAYS_MS, RECORD_RETRY_MAX_WAIT_MS),
+              receiptLink: link,
+            },
+          }
+        : {}),
+      out: (l) => ctx.stdout.write(`${l}\n`),
+      warn: (l) => ctx.stderr.write(`${l}\n`),
+    });
+    return 0;
+  }
+
+  required(rows, ctx, "gate check", [...(fl["--issue"] === undefined ? ["--issue"] : []), ...(fl["--gates"] === undefined && fl["--profile"] === undefined ? ["--gates or --profile"] : [])]);
+  if (fl["--gates"] !== undefined && fl["--profile"] !== undefined) refuse(rows, ctx, "gate check: --gates and --profile are exclusive", "gate check");
+  if ((fl["--burden"] === undefined) !== (fl["--base"] === undefined)) refuse(rows, ctx, "gate check: --burden and --base go together", "gate check");
+  const prFlag = fl["--pr"];
+  if (prFlag !== undefined && !/^[1-9][0-9]{0,9}$/.test(prFlag)) refuse(rows, ctx, `gate check: --pr takes a pull request number, got '${prFlag}'`, "gate check");
+  const v = await verbFor(ctx, defaults, deps);
   const profile = fl["--profile"];
   let chosen = { require: list(fl["--gates"]) as readonly string[], forbid: [] as readonly string[] };
   if (profile !== undefined) {
@@ -427,9 +532,15 @@ async function runCheck(args: string[], ctx: VerbContext, defaults: GateDefaults
   const g = memoReads(v.g);
   const burdenFlag = fl["--burden"];
   const base = fl["--base"];
-  const burden = burdenFlag === undefined || base === undefined ? undefined : { rubric: readBurdenRubric(burdenFlag), crossing: () => discoverPathsSurfaces(g, v.cwd, base) };
+  const burden =
+    burdenFlag === undefined || base === undefined
+      ? undefined
+      : {
+          rubric: readBurdenRubric(burdenFlag),
+          crossing: () => (defaults.burdenSurfaces !== undefined ? defaults.burdenSurfaces({ cwd: v.cwd, base, env: g.env }) : discoverPathsSurfaces(g, v.cwd, base)),
+        };
   const doctrineFile = fl["--doctrine"] ?? v.pulled?.doctrineFile;
-  const ladderFile = fl["--ladder"] !== undefined ? resolve(v.cwd, fl["--ladder"]) : defaults.ladderFile;
+  const ladderFile = fl["--ladder"] !== undefined ? resolve(v.cwd, fl["--ladder"]) : defaultLadder(defaults, ctx);
   const doctrineRead = (file: string) => () => {
     const read = readDoctrineFile(file);
     if (!read.ok) stop({ ...read.failure, fix: "Check the file's permissions, or pass --doctrine <path>." });
@@ -453,7 +564,7 @@ async function runCheck(args: string[], ctx: VerbContext, defaults: GateDefaults
     expectDelaysMs: deps.expectDelaysMs,
     sleep: deps.sleep ?? ((ms: number) => Bun.sleep(ms)),
     readRetry: v.retry(delays, CHECK_RATE_LIMIT_MAX_WAIT_MS, (waitMs, attempt) =>
-      ctx.stderr.write(`WARN Linear rate-limited the receipt read; retry ${attempt}/${delays.length} in ${Math.round(waitMs / 1000)}s\n`),
+      ctx.stderr.write(`WARN rate-limited the receipt read; retry ${attempt}/${delays.length} in ${Math.round(waitMs / 1000)}s\n`),
     ),
     writeRetry: v.retry(RECORD_RETRY_DELAYS_MS, RECORD_RETRY_MAX_WAIT_MS),
     burden,
@@ -472,10 +583,11 @@ async function runCheck(args: string[], ctx: VerbContext, defaults: GateDefaults
 
 /** The `eris gate` group: dispatch, then one place that renders a failure. */
 export function gateHandler(defaults: GateDefaults = {}, deps: GateDeps = {}): VerbHandler {
+  const rows = gateRows(defaults);
   return async (args, ctx) => {
-    const g = groupArgs(ROWS, "gate", args);
+    const g = groupArgs(rows, "gate", args);
     if (g.kind === "bare" || g.kind === "help") {
-      ctx.stdout.write(USAGE);
+      ctx.stdout.write(gateUsage(defaults));
       return 0;
     }
     if (g.kind === "unknown") {
@@ -483,10 +595,14 @@ export function gateHandler(defaults: GateDefaults = {}, deps: GateDeps = {}): V
       return 1;
     }
     try {
-      if (g.sub === "record") return await runRecord(g.rest, ctx, defaults, deps);
-      if (g.sub === "skip") return await runSkip(g.rest, ctx, defaults, deps);
+      if (g.sub === "record") return await runRecord(rows, g.rest, ctx, defaults, deps);
+      if (g.sub === "skip") return await runSkip(rows, g.rest, ctx, defaults, deps);
       if (g.sub === "ci") return await (await import("./ci-verb")).runCi(g.rest, ctx, defaults, deps);
-      return await runCheck(g.rest, ctx, defaults, deps);
+      if (g.sub === "check") return await runCheck(rows, g.rest, ctx, defaults, deps);
+      const custom = defaults.subcommands?.[g.sub];
+      if (custom !== undefined) return await custom.run(g.rest, ctx);
+      ctx.stderr.write(`ERROR Unknown gate command: ${g.sub}\n`);
+      return 1;
     } catch (e) {
       if (!(e instanceof GateFailure)) throw e;
       const f: ContractFailure = e.failure;
