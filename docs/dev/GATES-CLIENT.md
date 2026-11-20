@@ -27,6 +27,7 @@ The failure map, by what the gateway answered:
 | any other status, a body that does not decode, a reply over the cap, or a `bundle_sha` the values do not hash to | `gate-contract-mismatch` |
 | `/policy` and `/settings` name different `bundle_sha`s twice running | `gate-store-unreachable` |
 | a receipt route: HTTP 409 `doctrine_out_of_date` (the org's staleness is `hard`) | `doctrine-out-of-date` |
+| `POST /v1/gates/receipts` with `mandate_handle`: any of the 14 mandate store codes at its status (`401 revoked\|org_mismatch`, `403 agent_root\|widened\|mandate_out_of_path\|expired\|not_covered\|exhausted`, `404 unknown_mandate`, `422 mandate_session_required\|mandate_act_unsupported\|handle_in_receipt\|mandate_client_supplied`, `503 mandate_unavailable`) | `mandate-*` (fixed text, never echoing the handle) |
 | a receipt or `/v1/linear` route: HTTP 404 `issue_not_found` | `linear-issue-not-found` |
 | `POST /v1/linear/issues/<key>/claim`: HTTP 409 `issue_already_claimed` with `fields.holder` (the block names the holder's loop, runtime, session and expiry) | `linear-issue-claimed` |
 | `POST /v1/linear/issues/<key>/transition`: HTTP 404 `state_not_found` | `linear-state-not-found` |
@@ -64,8 +65,9 @@ fields. A 429 is returned with its `Retry-After`; the client never retries, and 
 reuses the same comment id, which the gateway dedupes on.
 
 What the public `gate` verbs do not judge fails closed rather than passing: a receipt whose evidence
-is a review report reads `blocking` (judging one needs a distribution's registered review skills),
-and an issue carrying a `remediate` receipt prints `@remediate unsupported` and fails.
+is a review report reads `blocking` (judging one needs a distribution's registered review skills).
+An issue carrying a `remediate` receipt is judged locally and prints
+`@remediate\t<ok|pending|violated|hand-off>\tround <n>/<max>`.
 
 ## Tracker writes happen server-side
 

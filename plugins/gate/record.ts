@@ -18,6 +18,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename, extname, isAbsolute, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
+import type * as Redacted from "effect/Redacted";
 import {
   activePosture,
   appendReceipt,
@@ -46,6 +47,7 @@ import {
   INLINE_MAX_BYTES,
   ISSUE_KEY,
   listReceipts,
+  type MandateHandle,
   NO_ERIS_YAML_GRANT,
   noErisYamlSkipBlocker,
   policyHash,
@@ -224,6 +226,8 @@ export interface RecordInput {
   readonly actorInfo?: GateActor | undefined;
   /** The comment id, when the caller keys the receipt itself (default: a fresh UUID). */
   readonly commentId?: string | undefined;
+  /** Validated, redacted mandate handle for the store to spend one use and stamp Receipt v3. */
+  readonly mandate?: Redacted.Redacted<MandateHandle> | undefined;
 }
 
 export interface Recorded {
@@ -293,10 +297,33 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
     evidence,
     recorded_at: run.now.toISOString(),
   };
+  const sha = sha256Hex(JSON.stringify(receipt));
   const prose = renderProse(receipt, await priorReceipts(run, input.issue));
   const commentId = input.commentId ?? randomUUID();
-  const comment = unwrap(await retryRateLimited(() => appendReceipt(run.ep, { commentId, issue: input.issue, receipt, prose }), run.retry));
+  const comment = unwrap(
+    await retryRateLimited(
+      () => appendReceipt(run.ep, { commentId, issue: input.issue, receipt, prose, ...(input.mandate !== undefined ? { mandateHandle: input.mandate } : {}) }),
+      run.retry,
+    ),
+  );
+  // The store stamps a mandate use into a v3 record whose hash differs from the v2 sent; the same
+  // hash (or none) means it kept the v2 unstamped, which grants nothing.
+  if (input.mandate !== undefined && (comment.recordSha256 === undefined || comment.recordSha256 === sha)) {
+    mandateNotStamped(comment.id, authorized !== undefined);
+  }
   return { receipt, commentId: comment.id, recordSha256: comment.recordSha256, copied, secretRules };
+}
+
+/** A mandate skip the store kept as an unstamped v2: the mandate granted nothing. */
+function mandateNotStamped(commentId: string, proseGrant: boolean): never {
+  const judged = proseGrant
+    ? "'eris gate check' judges it by its --authorized grant alone"
+    : "it carries no grant, and 'eris gate check' reads it unauthorized-skip";
+  return precondition(
+    "mandate-not-stamped",
+    `the gate receipt store kept comment ${commentId} without a mandate stamp, so the mandate granted nothing: ${judged}`,
+    "The gateway does not stamp Receipt v3 yet: record the skip with --authorized, or re-run once the gateway stamps mandates.",
+  );
 }
 
 export interface SkipInput {
@@ -310,6 +337,8 @@ export interface SkipInput {
   readonly impact?: GateUserImpact | undefined;
   readonly actor: string;
   readonly actorInfo?: GateActor | undefined;
+  /** Validated, redacted mandate handle: the store spends one use and stamps v3, so `authorized` becomes optional context. */
+  readonly mandate?: Redacted.Redacted<MandateHandle> | undefined;
 }
 
 function unauthorized(what: string, fix: string): never {
@@ -368,11 +397,15 @@ export async function skipGate(run: WriteRun, input: SkipInput): Promise<Recorde
   const reason = input.reason.trim();
   if (reason === "") usage("--reason is blank", "Say why the gate is not run.");
   if (reason.length < MIN_REASON) usage(`--reason ${JSON.stringify(reason)}: under ${MIN_REASON} characters`, "Say why the gate is not run, in words a reviewer can check.");
-  if (input.authorized === undefined) usage("gate skip: missing --authorized", "A skip names the grant behind it: --authorized '<name> asked: <request>', or doctrine:<posture>.");
-  const grant = input.authorized!.trim();
+  if (input.authorized === undefined && input.mandate === undefined) {
+    usage("gate skip: missing --authorized", "A skip names the grant behind it: --authorized '<name> asked: <request>', doctrine:<posture>, or --mandate <mnd_ handle>.");
+  }
+  const grant = input.authorized?.trim();
   if (grant === "") usage("--authorized is blank", "Name the grant: '<name> asked: <request>', or doctrine:<posture>.");
-  const doctrineBytes = doctrineShaped(grant) ? checkDoctrineGrant(run, input, grant) : undefined;
-  if (repoGrantShaped(grant)) await checkRepoGrant(run, input, grant);
+  // Beside a mandate, a prose grant is context: the stamp authorizes, so it is not judged here.
+  const judged = input.mandate === undefined ? grant : undefined;
+  const doctrineBytes = judged !== undefined && doctrineShaped(judged) ? checkDoctrineGrant(run, input, judged) : undefined;
+  if (judged !== undefined && repoGrantShaped(judged)) await checkRepoGrant(run, input, judged);
   return recordGate(run, {
     gate: input.gate,
     issue: input.issue,
@@ -386,5 +419,6 @@ export async function skipGate(run: WriteRun, input: SkipInput): Promise<Recorde
     evidence: [],
     actor: input.actor,
     ...(input.actorInfo !== undefined ? { actorInfo: input.actorInfo } : {}),
+    ...(input.mandate !== undefined ? { mandate: input.mandate } : {}),
   });
 }

@@ -160,28 +160,37 @@ const SCOPE_SEGMENT = /^[a-z][a-z0-9_]*$/;
 const SCOPE_ACTION = /^[a-z][a-z0-9_]*(?:@[1-9][0-9]*)?$/;
 const SCOPE_VALUE = /^[A-Za-z0-9._:/-]+$/;
 
-/** Whether `raw` is a scope literal in canonical form: `sr:us:mandate:<domain>:<action>[?k=v(&k=v)*]`, keys sorted, at most 16, no handle-shaped value. */
-function canonicalScope(raw: string): boolean {
-  if (raw.length > 512 || !raw.startsWith(SCOPE_PREFIX)) return false;
+/** A harness session id (`session:<id>` or bare runtime id) a mandate can bind to. */
+export const MANDATE_SESSION_RE = /^[A-Za-z0-9_:.-]{1,128}$/;
+
+/** Parse `raw` as a mandate scope and return its canonical form (`sr:us:mandate:<domain>:<action>[?k=v(&k=v)*]`, keys sorted, at most 16, no handle-shaped value), or null. */
+export function canonicalMandateScope(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.length > 512 || !raw.startsWith(SCOPE_PREFIX)) return null;
   const rest = raw.slice(SCOPE_PREFIX.length);
   const q = rest.indexOf("?");
-  const segments = (q === -1 ? rest : rest.slice(0, q)).split(":");
-  if (segments.length !== 2 || !SCOPE_SEGMENT.test(segments[0]!) || !SCOPE_ACTION.test(segments[1]!)) return false;
-  if (q === -1) return true;
+  const verb = q === -1 ? rest : rest.slice(0, q);
+  const segments = verb.split(":");
+  if (segments.length !== 2 || !SCOPE_SEGMENT.test(segments[0]!) || !SCOPE_ACTION.test(segments[1]!)) return null;
+  if (q === -1) return `${SCOPE_PREFIX}${verb}`;
   const pairs = rest.slice(q + 1).split("&");
-  if (pairs.length > 16) return false;
-  const keys: string[] = [];
+  if (pairs.length > 16) return null;
+  const params: Array<readonly [string, string]> = [];
+  const seen = new Set<string>();
   for (const pair of pairs) {
     const eq = pair.indexOf("=");
-    if (eq === -1) return false;
+    if (eq === -1) return null;
     const key = pair.slice(0, eq);
     const value = pair.slice(eq + 1);
-    if (!SCOPE_SEGMENT.test(key) || !SCOPE_VALUE.test(value) || value.includes("mnd_") || keys.includes(key)) return false;
-    keys.push(key);
+    if (!SCOPE_SEGMENT.test(key) || !SCOPE_VALUE.test(value) || value.includes("mnd_") || seen.has(key)) return null;
+    seen.add(key);
+    params.push([key, value]);
   }
-  return keys.every((k, i) => i === 0 || keys[i - 1]! < k);
+  params.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const canonical = `${SCOPE_PREFIX}${verb}?${params.map(([k, v]) => `${k}=${v}`).join("&")}`;
+  return canonical.length <= 512 ? canonical : null;
 }
-const MandateScope = Schema.String.check(Schema.makeFilter((s: string) => canonicalScope(s), { expected: "canonical sr:us:mandate:{domain}:{action}?{params} scope" }));
+
+const MandateScope = Schema.String.check(Schema.makeFilter((s: string) => canonicalMandateScope(s) === s, { expected: "canonical sr:us:mandate:{domain}:{action}?{params} scope" }));
 
 /** The mandate use the gateway stamped a v3 receipt with: public ids, digests and the signed attestation only. */
 export const GateMandateStamp = Schema.Struct({

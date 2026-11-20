@@ -410,12 +410,17 @@ describe("floor, door, remediate and asks rows", () => {
     expect(door.err).toContain(`door ${HUMAN_BEFORE} (U0): no passing door-signoff receipt with a human --authorized grant (missing)`);
   });
 
-  // admits: boundary-io: a remediation loop this build cannot judge must fail closed with its own row, never be ignored; observed at the row and exit.
-  it("prints @remediate unsupported when the issue has a remediate receipt", async () => {
+  // admits: integration: a remediation loop prints its @remediate row (pending on an open round, hand-off exit 3 on BLOCKING) rather than unsupported; observed at the row and exit.
+  it("prints @remediate pending on an open launch and hand-off (exit 3) on a remediate BLOCKING receipt", async () => {
     put(passing("plan-review"));
-    put(receipt({ gate: "remediate", verdict: "AMENDED" }));
-    const r = await gate(["check", "--issue", ISSUE, "--gates", "plan-review"]);
-    expect({ code: r.code, out: r.out }).toEqual({ code: 3, out: "plan-review\tpass\tPASS\n@remediate\tunsupported\t-\n" });
+    const round = { round: 1, max_rounds: 2, loop: "follow-up", runtime: "opencode", session: "ses_rem1", head: "a".repeat(40), findings: ["finding-1"], report: "c0" };
+    put(receipt({ gate: "remediate", verdict: "AMENDED", evidence: [{ kind: "text", name: "remediate-round", content: JSON.stringify(round), sha256: sha256Hex(JSON.stringify(round)) }] }));
+    const open = await gate(["check", "--issue", ISSUE, "--gates", "plan-review"]);
+    expect({ code: open.code, out: open.out }).toEqual({ code: 0, out: "plan-review\tpass\tPASS\n@remediate\tpending\tround 1/2\n" });
+
+    put(receipt({ gate: "remediate", verdict: "BLOCKING" }));
+    const hand = await gate(["check", "--issue", ISSUE, "--gates", "plan-review"]);
+    expect({ code: hand.code, out: hand.out }).toEqual({ code: 3, out: "plan-review\tpass\tPASS\n@remediate\thand-off\tround 1/2\n" });
   });
 
   // admits: boundary-io: an open blocking ask must hold the terminal gate, and a full asks page must fail closed (asks past it may be open); observed at the @asks row, the PR filter and the slug.
