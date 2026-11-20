@@ -7,6 +7,9 @@
 
 import * as Schema from "effect/Schema";
 import * as Explains from "./explains";
+import { GateSignoffPolicy } from "./signoff";
+
+export * from "./signoff";
 
 export {
   GATE_CLOSE_EXPLAINS,
@@ -32,10 +35,6 @@ export type GateMode = typeof GateMode.Type;
 export const GATE_CLOSE_MODES = ["on", "file-only", "off"] as const;
 export const GateCloseMode = Schema.Literals(GATE_CLOSE_MODES).annotate(Explains.closeModeMeanings);
 export type GateCloseMode = typeof GateCloseMode.Type;
-
-export const GATE_SIGNOFFS = ["human", "self"] as const;
-export const GateSignoff = Schema.Literals(GATE_SIGNOFFS).annotate(Explains.signoffMeanings);
-export type GateSignoff = typeof GateSignoff.Type;
 
 /** Door-class ladder rungs: R0 human-pre, R1 human-post, R2 auto. */
 export const GATE_RUNGS = ["R0", "R1", "R2"] as const;
@@ -136,10 +135,6 @@ export const GATE_REMEDIATE_DEFAULTS = {
 
 const ProfileDefault = Schema.String.annotate(Explains.profileDefaultExplained).check(Schema.isPattern(KEBAB));
 const EscalateOn = Schema.Array(GateEscalation).annotate(Explains.escalateOnExplained);
-const SignoffByDoor = Schema.Struct({
-  "one-way": Schema.optionalKey(GateSignoff.annotate(Explains.oneWayExplained)),
-  "two-way": Schema.optionalKey(GateSignoff.annotate(Explains.twoWayExplained)),
-}).annotate(Explains.signoffExplained);
 const Close = keyedRecord(KEBAB, GateCloseMode, "kebab-case close stage names", Explains.closeExplained);
 const Ceilings = doorRungs(Explains.ceilingsExplained);
 
@@ -159,7 +154,7 @@ export const GateDoctrinePolicy = Schema.Struct({
   profile_default: Schema.optionalKey(ProfileDefault),
   escalate_on: Schema.optionalKey(EscalateOn),
   gates: Schema.optionalKey(Gates),
-  signoff: Schema.optionalKey(SignoffByDoor),
+  signoff: Schema.optionalKey(GateSignoffPolicy),
   close: Schema.optionalKey(Close),
   ceilings: Schema.optionalKey(Ceilings),
   lifts: Schema.optionalKey(GateDoorLifts),

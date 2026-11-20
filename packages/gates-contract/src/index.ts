@@ -30,6 +30,7 @@ export * from "./file";
 export * from "./policy";
 export * from "./profile";
 export * from "./schema";
+export * from "./signoff";
 export * from "./surfaces";
 export * from "./grants";
 export * from "./linear";
