@@ -665,24 +665,24 @@ admin grant <member-id>` or `eris org members admin revoke <member-id>`. Exit 1.
 
 ### org-delete-flags
 
-`eris org delete` was given neither `--confirm <workspace>` nor `--cancel`, was
+`eris org delete` was given neither `--confirm <workspace>` nor `--export`, was
 given both, or `--confirm` named a blank workspace (an empty value is the
 parser's [`flag-value-missing`](#flag-value-missing)). Nothing was sent.
-Run `eris org delete --confirm <workspace>` to schedule the org's deletion or
-`eris org delete --cancel` to cancel it. Exit 1.
+Run `eris org delete --export > org-export.json` to export org data first, then
+`eris org delete --confirm <workspace>` to delete the org immediately. Exit 1.
 
 ### org-confirmation-mismatch
 
 `eris org delete --confirm <workspace>` was refused with `400
 confirmation_mismatch`: the name is not the org's stored workspace name (the
-server compares it, trimmed). Nothing was scheduled. Give the name exactly as the
+server compares it, trimmed). Nothing was deleted. Give the name exactly as the
 dashboard shows it. Exit 1.
 
 ### org-workspace-name-unknown
 
 `eris org delete --confirm <workspace>` was refused with `409
 workspace_name_unknown`: the org has no stored workspace name to confirm against,
-so no name can match. Nothing was scheduled. Connect or reconnect the org's Linear
+so no name can match. Nothing was deleted. Connect or reconnect the org's Linear
 workspace in the dashboard, then run it again. Exit 1.
 
 ### org-connect-unconfigured
@@ -772,11 +772,9 @@ operator to grant it. Then run it again. Exit 1.
 
 ### org-tokens-revoked
 
-An `eris org` command was refused with `401 revoked`: the token is revoked. While
-an org's deletion is scheduled the gateway revokes every token the org holds, this
-machine's included, so `eris org delete --cancel` and `eris whoami` cannot reach it
-with a CLI token. Cancel from the dashboard's Danger zone after signing in again;
-if no deletion is scheduled, run `eris login`. Exit 1.
+An `eris org` command was refused with `401 revoked`: the token is revoked. Deleting
+an org revokes every token it holds immediately, this machine's included, and cannot
+be cancelled; if the org is not being deleted, run `eris login`. Exit 1.
 
 ### org-unknown-verb
 

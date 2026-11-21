@@ -187,7 +187,6 @@ describe("eris whoami", () => {
         "role: admin",
         "tier: free",
         "linear: disconnected (oauth_revoked)",
-        "deletion: scheduled for 2026-12-01T00:00:00.000Z",
         "entitlements: accounts active, yak trialing",
         "",
       ].join("\n"),

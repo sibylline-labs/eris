@@ -183,7 +183,7 @@ describe("a repo that selects org B sends org B's bearer and url", () => {
       [["members"], members, "/v1/org/members"],
       [["members", "deactivate", "01J0CCCCCCCCCCCCCCCCCCCCCC"], deactivated, "/v1/org/members/01J0CCCCCCCCCCCCCCCCCCCCCC/deactivate"],
       [["delete", "--confirm", "Acme"], { dueAt: "2026-11-17T12:00:00.000Z", cause: "self_serve" }, "/v1/org/deletion"],
-      [["delete", "--cancel"], { cancelled: true }, "/v1/org/deletion"],
+      [["delete", "--export"], { orgId: ORG_A, members: [], tokens: [] }, "/v1/org/me"],
     ] as const) {
       for (const [cwd, token, url] of [[repoB, TOKEN_B, URL_B], [repoDefault, TOKEN_A, URL_A], ["/", TOKEN_A, URL_A]] as const) {
         const { seen, fetch } = recorder(() => body);
