@@ -121,7 +121,7 @@ rule:
 id: mandate-handle-single-reader
 language: typescript
 severity: error
-message: ERIS_MANDATE or --mandate is read outside plugins/gate/mandate.ts. Resolve the handle through resolveMandateSkip.
+message: ERIS_MANDATE or --mandate is read outside plugins/gate/mandate.ts. Resolve the handle through resolveMandateSkip or resolveMandateRecord.
 note: Only plugins/gate/mandate.ts reads ERIS_MANDATE and flags["--mandate"].
 files:
   - packages/**/*.ts

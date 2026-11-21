@@ -181,7 +181,7 @@ export function canonicalMandateScope(raw: unknown): string | null {
     if (eq === -1) return null;
     const key = pair.slice(0, eq);
     const value = pair.slice(eq + 1);
-    if (!SCOPE_SEGMENT.test(key) || !SCOPE_VALUE.test(value) || value.includes("mnd_") || seen.has(key)) return null;
+    if (!SCOPE_SEGMENT.test(key) || !SCOPE_VALUE.test(value) || /(?:mnd|mct)_/i.test(value) || seen.has(key)) return null;
     seen.add(key);
     params.push([key, value]);
   }
@@ -201,6 +201,7 @@ export const GateMandateStamp = Schema.Struct({
   chain_digest: MandateDigest,
   attestation: MandateAttestation,
 });
+export type GateMandateStamp = typeof GateMandateStamp.Type;
 
 export const GateReceiptV3 = Schema.Struct({
   ...GateReceiptV2.fields,

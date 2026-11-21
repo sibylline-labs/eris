@@ -615,6 +615,7 @@ const ReceiptListing = Schema.Struct({
     }),
   ),
   invalid: Schema.Number,
+  mandate_active: Schema.optionalKey(Schema.Boolean),
   contract_version: Schema.Literal(GATES_RECEIPTS_CONTRACT_VERSION),
 });
 
@@ -650,6 +651,8 @@ export interface ReceiptListingRead {
   readonly receipts: ReadonlyArray<ListedReceipt>;
   /** Records the store itself could not read as a marker. */
   readonly invalid: number;
+  /** Whether the org has Mandate active, when reported by the gateway. */
+  readonly mandateActive?: boolean | undefined;
 }
 
 /** The headers a receipt route sends: the bearer's, plus the pulled bundle's sha when there is one. */
@@ -676,6 +679,7 @@ export async function listReceipts(ep: GatesEndpoint, issue: string): Promise<Ou
   return succeed({
     receipts: d.value.receipts.map((r) => ({ id: r.comment_id, createdAt: r.created_at, version: r.marker_version, payload: r.payload })),
     invalid: d.value.invalid,
+    ...(d.value.mandate_active !== undefined ? { mandateActive: d.value.mandate_active } : {}),
   });
 }
 
@@ -688,13 +692,13 @@ export const MANDATE_STORE_CODES = {
   widened: { status: 403, slug: "mandate-widened", what: "the child mandate is not inside its parent" },
   mandate_out_of_path: { status: 403, slug: "mandate-out-of-path", what: "the mandate is bound to another session" },
   expired: { status: 403, slug: "mandate-expired", what: "the mandate has expired" },
-  not_covered: { status: 403, slug: "mandate-not-covered", what: "no scope on the mandate covers this gate skip" },
+  not_covered: { status: 403, slug: "mandate-not-covered", what: "no scope on the mandate covers this gate act" },
   exhausted: { status: 403, slug: "mandate-exhausted", what: "the mandate has no uses left" },
   unknown_mandate: { status: 404, slug: "mandate-unknown-mandate", what: "no mandate matches the handle" },
   revoked: { status: 401, slug: "mandate-revoked", what: "the mandate was revoked" },
   org_mismatch: { status: 401, slug: "mandate-org-mismatch", what: "the handle belongs to another org than this login" },
   mandate_session_required: { status: 422, slug: "mandate-session-required", what: "a mandate is presented from a session: --actor must be session:<id>" },
-  mandate_act_unsupported: { status: 422, slug: "mandate-act-unsupported", what: "the mandate service covers a gate skip of this gate and issue only" },
+  mandate_act_unsupported: { status: 422, slug: "mandate-act-unsupported", what: "the mandate service covers a gate skip or a review-report refutation endorsement (review:endorse) only" },
   handle_in_receipt: { status: 422, slug: "mandate-handle-in-receipt", what: "the receipt or its prose carries a mandate handle" },
   mandate_client_supplied: { status: 422, slug: "mandate-client-supplied", what: "the receipt carries its own mandate stamp; only the store writes one" },
   mandate_unavailable: { status: 503, slug: "mandate-unavailable", what: "the mandate service is unavailable, so nothing was stamped or stored" },
@@ -716,7 +720,7 @@ export function mandateRefused(code: MandateStoreCode): ContractFailure {
     `the gate receipt store refused the mandate (${code}): ${entry.what}; no receipt was stored`,
     code === "mandate_unavailable"
       ? "Re-run once the mandate service answers; the same comment id spends no second use."
-      : "Ask the mandate's holder for a handle that covers this act from this session, or record the skip with --authorized.",
+      : "Ask the mandate's holder for a handle that covers this act from this session, or record with --authorized.",
   );
 }
 

@@ -18,10 +18,18 @@ import * as Schema from "effect/Schema";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { type DecodeResult, decodeResultStrict } from "./decode";
 import { type ContractFailure, fail, type Outcome, succeed } from "./failure";
+import type { GateMandateStamp } from "./receipt";
 
 export const GATE_REVIEW_REPORT_SCHEMA = "review-report@1";
 /** The evidence `kind` a review report rides under. */
 export const GATE_REVIEW_REPORT_KIND = "review-report";
+/** The authority verb for direct-root passkey endorsement of a refuted blocking/major finding. */
+export const REVIEW_ENDORSE_VERB = "review:endorse";
+
+const ENDORSE_ISSUE_KEY = /^[A-Z][A-Z0-9]*-[0-9]+$/;
+const ENDORSE_FINDING_VALUE = /^[A-Za-z0-9._:/-]+$/;
+const ENDORSE_BEARER_RE = /(?:mnd|mct)_/i;
+const ENDORSE_SCOPE_MAX_LENGTH = 512;
 
 export const GATE_REVIEW_EFFORTS = ["low", "medium", "high", "max"] as const;
 export const GateReviewEffort = Schema.Literals(GATE_REVIEW_EFFORTS);
@@ -210,13 +218,95 @@ export function independenceFailure(report: GateReviewReport): IndependenceFailu
 }
 
 /**
+ * A server-stamped `review:endorse` endorsement extracted from a `gate-receipt@v3` on `(issue, gate)`:
+ * pairs the exact finding row carried on that stamped receipt with the receipt's issue and `MandateStamp`.
+ */
+export interface EndorsedFinding {
+  readonly finding: GateReviewFinding;
+  readonly issue: string;
+  readonly stamp: GateMandateStamp;
+}
+
+/**
  * The actors an issue's receipts vouch for: `reviewed`, for every review-report on the judged gate
  * whose receipt its reviewer recorded, that reviewer and its findings; `humans`, the actor of every
- * receipt carrying a human grant. A report's own text never adds to either.
+ * receipt carrying a human grant; `endorsed`, every refuted blocking/major finding backed by a
+ * server-stamped direct-root `review:endorse` `MandateStamp` on `(issue, gate)`. A report's own
+ * text never adds to any of them.
  */
 export interface KnownActors {
   readonly reviewed: ReadonlyArray<{ readonly actor: string; readonly findings: ReadonlyArray<GateReviewFinding> }>;
   readonly humans: ReadonlyArray<string>;
+  readonly endorsed?: ReadonlyArray<EndorsedFinding> | undefined;
+}
+
+/**
+ * Canonical `review:endorse` mandate scope for `(findingId, issue)`, or `null` when either value
+ * fails shape validation, carries a bearer prefix (`mnd_`/`mct_`), or exceeds the scope length cap.
+ * Rejects delimiter smuggling (`&`, `=`, `?`, whitespace, `,`) before composing the query string.
+ */
+export function reviewEndorseScope(findingId: string, issue: string): string | null {
+  if (!ENDORSE_ISSUE_KEY.test(issue) || !ENDORSE_FINDING_VALUE.test(findingId) || ENDORSE_BEARER_RE.test(findingId)) return null;
+  const scope = `sr:us:mandate:${REVIEW_ENDORSE_VERB}?finding=${findingId}&work_ref=linear:${issue}`;
+  return scope.length <= ENDORSE_SCOPE_MAX_LENGTH ? scope : null;
+}
+
+export type ReviewEndorseFailureReason = "no_review_report" | "open_findings" | "no_refuted_high_finding" | "multiple_refuted_high_findings" | "invalid_scope";
+
+export type ReviewEndorseExtraction =
+  | { readonly ok: true; readonly finding: GateReviewFinding; readonly findingId: string; readonly scope: string }
+  | { readonly ok: false; readonly reason: ReviewEndorseFailureReason; readonly detail: string };
+
+/**
+ * Extracts the single refuted blocking/major finding from `reports` and builds its canonical
+ * `review:endorse` scope, failing closed on empty reports, open blocking/major findings, 0 or >1
+ * refuted blocking/major findings, or a finding/issue pair that cannot form a canonical scope.
+ */
+export function extractReviewEndorseFinding(reports: ReadonlyArray<GateReviewReport>, issue: string): ReviewEndorseExtraction {
+  if (reports.length === 0) {
+    return {
+      ok: false,
+      reason: "no_review_report",
+      detail: "review:endorse requires --review-report with one refuted blocking or major finding",
+    };
+  }
+  const candidates: GateReviewFinding[] = [];
+  for (const report of reports) {
+    if (report.findings.some((f) => f.status === "open" && isHigh(f))) {
+      return {
+        ok: false,
+        reason: "open_findings",
+        detail: "review-report still carries open blocking/major findings; resolve them before endorsing a refutation",
+      };
+    }
+    for (const f of report.findings) {
+      if (f.status === "refuted" && isHigh(f)) candidates.push(f);
+    }
+  }
+  if (candidates.length === 0) {
+    return {
+      ok: false,
+      reason: "no_refuted_high_finding",
+      detail: "review:endorse requires a refuted blocking or major finding in review-report evidence",
+    };
+  }
+  if (candidates.length > 1) {
+    return {
+      ok: false,
+      reason: "multiple_refuted_high_findings",
+      detail: "review:endorse stamps one refuted blocking or major finding per receipt; found multiple candidates",
+    };
+  }
+  const finding = candidates[0]!;
+  const scope = reviewEndorseScope(finding.id, issue);
+  if (scope === null) {
+    return {
+      ok: false,
+      reason: "invalid_scope",
+      detail: `finding ${finding.id} on linear:${issue} does not form a review:endorse mandate scope`,
+    };
+  }
+  return { ok: true, finding, findingId: finding.id, scope };
 }
 
 const knownIn = (actors: ReadonlyArray<string> | undefined, a: string): boolean => (actors ?? []).some((k) => sameActor(k, a));
@@ -232,33 +322,65 @@ const recordedBy = (known: KnownActors | undefined, actor: string, f: GateReview
   );
 
 /**
+ * Whether `f` on `issue` is backed by a server-stamped direct passkey root (`id === root_id`)
+ * `review:endorse` `MandateStamp` matching both the canonical `(f.id, issue)` scope and the exact
+ * finding row (`sameFinding`). Delegated children, wrong finding/issue, and row swaps return false.
+ */
+export function hasDirectReviewEndorsement(f: GateReviewFinding, issue: string | undefined, known?: KnownActors): boolean {
+  if (issue === undefined) return false;
+  const expected = reviewEndorseScope(f.id, issue);
+  if (expected === null) return false;
+  return (known?.endorsed ?? []).some(
+    (e) =>
+      e.issue === issue &&
+      e.stamp.id === e.stamp.root_id &&
+      e.stamp.scope === expected &&
+      e.finding.status === "refuted" &&
+      isHigh(e.finding) &&
+      sameFinding(e.finding, f),
+  );
+}
+
+/**
  * The finding's raiser: its `raised_by` when that reviewer's own recorded report on the gate carries
  * the same finding row, else the report's reviewer.
  */
 export const raiserOf = (f: GateReviewFinding, report: GateReviewReport, known?: KnownActors): string =>
   f.raised_by !== undefined && recordedBy(known, f.raised_by, f, false) ? f.raised_by : report.reviewer.actor;
 
+export interface RefutationOptions {
+  /** Issue key the report is being judged on, required to match `review:endorse` `MandateStamp` scopes. */
+  readonly issue?: string | undefined;
+  /** When true (Mandate-active org), prose `known.humans` grants never vouch a refutation. */
+  readonly mandateActive?: boolean | undefined;
+}
+
 /**
- * A `refuted` finding's refutation holds when an endorser (`refuted_by` or an `agreed_by` actor) is
- * neither its raiser nor the author, and is vouched for: the report's reviewer, a reviewer whose own
- * recorded report on the gate marks the finding refuted, or a human-grant receipt's actor.
+ * A `refuted` finding's refutation holds when:
+ *  - a server-stamped direct-root (`id === root_id`) `review:endorse` `MandateStamp` in `known.endorsed`
+ *    endorses `(f, opts.issue)` over the same finding row; OR
+ *  - an endorser (`refuted_by` or an `agreed_by` actor) is neither its raiser nor the author, and is
+ *    vouched for: the report's reviewer, a reviewer whose own recorded report on the gate marks the
+ *    finding refuted, or (only when `opts.mandateActive !== true`) a human-grant receipt's actor.
  */
-export function refutationHolds(f: GateReviewFinding, report: GateReviewReport, known?: KnownActors): boolean {
+export function refutationHolds(f: GateReviewFinding, report: GateReviewReport, known?: KnownActors, opts?: RefutationOptions): boolean {
+  if (hasDirectReviewEndorsement(f, opts?.issue, known)) return true;
   const raiser = raiserOf(f, report, known);
   const endorsers = [...(f.refuted_by !== undefined ? [f.refuted_by] : []), ...(f.agreed_by ?? [])];
-  const vouched = (a: string): boolean => sameActor(a, report.reviewer.actor) || recordedBy(known, a, f, true) || knownIn(known?.humans, a);
+  const allowProseHuman = opts?.mandateActive !== true;
+  const vouched = (a: string): boolean => sameActor(a, report.reviewer.actor) || recordedBy(known, a, f, true) || (allowProseHuman && knownIn(known?.humans, a));
   return endorsers.some((a) => vouched(a) && !sameActor(a, raiser) && !sameActor(a, report.author.actor));
 }
 
 const isHigh = (f: GateReviewFinding): boolean => (GATE_BLOCKING_SEVERITIES as readonly string[]).includes(f.severity);
 
 /** The blocking/major findings marked `refuted` whose refutation does not hold. */
-export const unendorsedRefutations = (report: GateReviewReport, known?: KnownActors): GateReviewFinding[] =>
-  report.findings.filter((f) => f.status === "refuted" && isHigh(f) && !refutationHolds(f, report, known));
+export const unendorsedRefutations = (report: GateReviewReport, known?: KnownActors, opts?: RefutationOptions): GateReviewFinding[] =>
+  report.findings.filter((f) => f.status === "refuted" && isHigh(f) && !refutationHolds(f, report, known, opts));
 
 /** A finding that still counts against the pass: `open`, or `refuted` without an endorser. */
-export const countsOpen = (f: GateReviewFinding, report: GateReviewReport, known?: KnownActors): boolean =>
-  isHigh(f) && (f.status === "open" || (f.status === "refuted" && !refutationHolds(f, report, known)));
+export const countsOpen = (f: GateReviewFinding, report: GateReviewReport, known?: KnownActors, opts?: RefutationOptions): boolean =>
+  isHigh(f) && (f.status === "open" || (f.status === "refuted" && !refutationHolds(f, report, known, opts)));
 
 /** Heading pattern for a surface vocabulary (`## <PREFIX><n> — <name>`, `## <PREFIX><n>: <name>`) or reviewer checklist (`## Class <PREFIX><n> — <name>`). */
 export const CLASS_HEADING = /^##[ \t]+(?:Class[ \t]+)?([A-Z]+[0-9]+)(?:[ \t]+[—–-]|:)/;
@@ -336,6 +458,10 @@ export interface ReviewCheckContext {
   readonly diffSha256?: string | undefined;
   /** The issue's known actors; absent, a raiser or endorser other than the report's reviewer counts for nothing. */
   readonly known?: KnownActors | undefined;
+  /** Issue key the report is being judged on, for verifying `review:endorse` `MandateStamp` scopes. */
+  readonly issue?: string | undefined;
+  /** When true (Mandate-active org), prose human grants cannot vouch a refutation. */
+  readonly mandateActive?: boolean | undefined;
   /** The surface vocabulary's class ids at `main`; `classes_checked` must cover them. */
   readonly vocabularyClasses?: readonly string[] | undefined;
   /** Which head `headSha` came from (`--head-sha` vs `checkout HEAD`), named on `head-mismatch`. */
@@ -380,14 +506,14 @@ export function deriveReviewPass(report: GateReviewReport, ctx: ReviewCheckConte
     const list = openHigh.map((f) => `${f.id} (${f.severity} ${f.class} at ${f.file}:${f.line})`).join(", ");
     return block("blocking", "open-findings", `review-report has ${openHigh.length} open blocking/major finding(s): ${list}`);
   }
-  const selfRefuted = unendorsedRefutations(report, ctx.known);
+  const selfRefuted = unendorsedRefutations(report, ctx.known, { issue: ctx.issue, mandateActive: ctx.mandateActive });
   if (selfRefuted.length > 0) {
     const list = selfRefuted.map((f) => `${f.id} (${f.severity} ${f.class})`).join(", ");
-    return block(
-      "blocking",
-      "self-refuted",
-      `review-report has ${selfRefuted.length} refuted blocking/major finding(s) no one but the raiser or author agrees with: ${list}`,
-    );
+    const detail =
+      ctx.mandateActive === true
+        ? `review-report has ${selfRefuted.length} refuted blocking/major finding(s) without a second reviewer or a direct-root review:endorse mandate stamp: ${list}`
+        : `review-report has ${selfRefuted.length} refuted blocking/major finding(s) no one but the raiser or author agrees with: ${list}`;
+    return block("blocking", "self-refuted", detail);
   }
   const notIndependent = independenceFailure(report);
   if (notIndependent !== null) return block("blocking", notIndependent.reason, notIndependent.why);
