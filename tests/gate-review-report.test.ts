@@ -37,7 +37,7 @@ import { gateHandler, type GateDeps } from "../plugins/gate/gate";
 import type { GateDefaults } from "../plugins/gate/index";
 import { liveGit, memoReads } from "../plugins/gate/git";
 import { GateFailure } from "../plugins/gate/failure";
-import { checkUnlock } from "../plugins/gate/unlock";
+import { checkUnlock, humanSignoff } from "../plugins/gate/unlock";
 import { CliExit } from "../src/cli/ts-verb";
 
 setDefaultTimeout(60_000);
@@ -258,7 +258,7 @@ describe("pure review-report@1 parsing, digest, and derivation", () => {
     ]) {
       expect(reviewEndorseScope(badId, "ABC-42")).toBeNull();
     }
-    for (const badIssue of ["", "abc-42", "ABC-42&x=1", "not-an-issue"]) {
+    for (const badIssue of ["", "abc-42", "ABC-0", "ABC-01", "ABCDEFGHIJKLMNOPQ-1", "ABC-1000000000", "ABC-42&x=1", "not-an-issue"]) {
       expect(reviewEndorseScope("item-1", badIssue)).toBeNull();
     }
   });
@@ -291,9 +291,16 @@ describe("pure review-report@1 parsing, digest, and derivation", () => {
         ISSUE,
       ),
     ).toMatchObject({ ok: false, reason: "multiple_refuted_high_findings" });
-    expect(
-      extractReviewEndorseFinding([makeReport({ findings: [makeFinding({ id: "item-1&extra=1", severity: "major", status: "refuted" })] })], ISSUE),
-    ).toMatchObject({ ok: false, reason: "invalid_scope" });
+    const leakedMnd = ["mnd", ORG, "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
+    const leakedMct = ["mct", ORG, "ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210-_ZyXwV"].join("_");
+    for (const badId of ["item-1&extra=1", leakedMnd, leakedMct, "item-1\nslug: forged-slug"]) {
+      const bad = extractReviewEndorseFinding([makeReport({ findings: [makeFinding({ id: badId, severity: "major", status: "refuted" })] })], ISSUE);
+      expect(bad).toEqual({
+        ok: false,
+        reason: "invalid_scope",
+        detail: "the finding id and issue do not form a review:endorse mandate scope",
+      });
+    }
   });
 
   // admits: algorithmic: direct-root MandateStamp recognition requires id === root_id, matching canonical review:endorse scope for (finding, issue), and exact finding-row equality; cross-field runtime invariants cannot be enforced by types.
@@ -985,5 +992,78 @@ describe("gate record --review-report, gate check, and gatePlugin({ reviews }) s
       warn: () => {},
     });
     expect(stampedUnlock).toBe("unlocked");
+
+    // humanSignoff must also thread mandate_active: a door-signoff carrying an un-stamped human-endorsed review-report fails under mandate_active=true and passes under mandate_active=false.
+    const signoffInput = {
+      ep: ep.value,
+      g: memoReads(liveGit({ HOME: home, PATH: process.env.PATH, GIT_CEILING_DIRECTORIES: sandbox })),
+      cwd: dir,
+      readRetry: { delaysMs: [], maxWaitMs: 0, sleep: async () => {}, jitter: () => 0 },
+      reviews: distReviews,
+    };
+    seed(ISSUE, {
+      gate: "door-signoff",
+      authorized: "alice asked: sign off",
+      evidence: [{ kind: "review-report", name: "signoff-refuted.md", report: refutedRep, sha256: reviewReportDigest(refutedRep) }],
+    });
+    mandateActive = true;
+    expect((await humanSignoff(signoffInput, ISSUE, "door-signoff")).why).toBe("blocking");
+    mandateActive = false;
+    expect((await humanSignoff(signoffInput, ISSUE, "door-signoff")).why).toBeNull();
+    store[ISSUE] = store[ISSUE]!.filter((r) => (r.payload as { gate: string }).gate !== "door-signoff");
+
+    // Ledger audit-surfaces must also thread mandate_active: an un-stamped human-endorsed review-report on LEDGER's audit-surfaces blocks checkUnlock under mandate_active=true and unlocks under mandate_active=false.
+    const ledgerRep = makeReport({ target: { repo: slug, pr: 9, head_sha: headSha, diff_sha256: prDiffSha }, findings: [refutedFinding] });
+    seed(LEDGER, { gate: "plan-review", actor: "human@example.com", authorized: "alice asked: endorse ledger refutation" });
+    seed(LEDGER, {
+      gate: "audit-surfaces",
+      artifact: { _tag: "git", repo: slug, ref: "main", commit: baseSha, path: ".claude/surfaces.yml", sha256: sha256Hex(surfacesYaml) },
+      evidence: [{ kind: "review-report", name: "ledger-refuted.md", report: ledgerRep, sha256: reviewReportDigest(ledgerRep) }],
+    });
+    seed(LEDGER, { gate: "unlocked-merge", evidence: [{ kind: "text", content: `issue: ${ISSUE} head: ${headSha}`, sha256: sha256Hex(`issue: ${ISSUE} head: ${headSha}`) }] });
+    mandateActive = true;
+    let ledgerBlocked: GateFailure | undefined;
+    try {
+      await checkUnlock({
+        ep: ep.value,
+        issue: ISSUE,
+        action: "merge",
+        base: baseSha,
+        headSha,
+        registry: ".claude/surfaces.yml",
+        cwd: dir,
+        g: memoReads(liveGit({ HOME: home, PATH: process.env.PATH, GIT_CEILING_DIRECTORIES: sandbox })),
+        doctrine: { file: "doctrine.md", read: readDoctrine("active: auto\n\n## auto\n\nAuto posture.\n\n```yaml\npolicy:\n  signoff:\n    unlock: on\n```\n") },
+        reviews: distReviews,
+        now: new Date("2026-11-20T10:00:00.000Z"),
+        readRetry: { delaysMs: [], maxWaitMs: 0, sleep: async () => {}, jitter: () => 0 },
+        out: () => {},
+        warn: () => {},
+      });
+    } catch (e) {
+      if (e instanceof GateFailure) ledgerBlocked = e;
+      else throw e;
+    }
+    expect(ledgerBlocked?.failure.slug).toBe("gate-unlock-human");
+    expect(ledgerBlocked?.failure.what).toContain(`audit-surfaces baseline on ${LEDGER} is failing`);
+    mandateActive = false;
+    expect(
+      await checkUnlock({
+        ep: ep.value,
+        issue: ISSUE,
+        action: "merge",
+        base: baseSha,
+        headSha,
+        registry: ".claude/surfaces.yml",
+        cwd: dir,
+        g: memoReads(liveGit({ HOME: home, PATH: process.env.PATH, GIT_CEILING_DIRECTORIES: sandbox })),
+        doctrine: { file: "doctrine.md", read: readDoctrine("active: auto\n\n## auto\n\nAuto posture.\n\n```yaml\npolicy:\n  signoff:\n    unlock: on\n```\n") },
+        reviews: distReviews,
+        now: new Date("2026-11-20T10:00:00.000Z"),
+        readRetry: { delaysMs: [], maxWaitMs: 0, sleep: async () => {}, jitter: () => 0 },
+        out: () => {},
+        warn: () => {},
+      }),
+    ).toBe("unlocked");
   });
 });

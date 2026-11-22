@@ -432,10 +432,20 @@ async function runRecord(rows: GateRows, args: string[], ctx: VerbContext, defau
     actorInfo: who.actorInfo,
     receiptLink: link,
     ...(endorsement !== undefined
-      ? {
-          mandate: endorsement.mandate,
-          mandateEndorsement: { mode: endorsement.mode, finding: endorsement.finding, findingId: endorsement.findingId, scope: endorsement.scope },
-        }
+      ? endorsement.mode === "explicit"
+        ? {
+            mandate: endorsement.mandate,
+            mandateEndorsement: { mode: "explicit" as const, finding: endorsement.finding, findingId: endorsement.findingId, scope: endorsement.scope },
+          }
+        : {
+            mandateEndorsement: {
+              mode: "env" as const,
+              resolveMandate: endorsement.resolveMandate,
+              finding: endorsement.finding,
+              findingId: endorsement.findingId,
+              scope: endorsement.scope,
+            },
+          }
       : {}),
   });
   ctx.stdout.write(`${res.commentId}\n`);

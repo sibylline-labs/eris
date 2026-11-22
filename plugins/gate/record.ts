@@ -286,12 +286,20 @@ async function priorReceipts(run: WriteRun, issue: string): Promise<PriorListing
 }
 
 /** Local metadata for a `review:endorse` mandate accompanying `gate record --review-report`. */
-export interface MandateRecordEndorsement {
-  readonly mode: "explicit" | "env";
-  readonly finding: GateReviewFinding;
-  readonly findingId: string;
-  readonly scope: string;
-}
+export type MandateRecordEndorsement =
+  | {
+      readonly mode: "explicit";
+      readonly finding: GateReviewFinding;
+      readonly findingId: string;
+      readonly scope: string;
+    }
+  | {
+      readonly mode: "env";
+      readonly resolveMandate: () => Redacted.Redacted<MandateHandle>;
+      readonly finding: GateReviewFinding;
+      readonly findingId: string;
+      readonly scope: string;
+    };
 
 export interface RecordInput {
   readonly gate: string;
@@ -381,7 +389,7 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
   let activeMandate = input.mandate;
   const endorsement = input.mandateEndorsement;
   let verdict: GateVerdict | undefined = input.verdict;
-  if (derive || (activeMandate !== undefined && endorsement !== undefined)) {
+  if (derive || endorsement !== undefined) {
     const prior = await loadPrior();
     const baseKnown = knownActors(
       input.issue,
@@ -393,10 +401,18 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
         reports.map((e) => e.report),
       ),
     );
-    if (activeMandate !== undefined && endorsement !== undefined && endorsement.mode === "env") {
-      // Do not spend an ambient ERIS_MANDATE when a second reviewer or prior direct-root stamp already endorsed the finding.
-      const alreadyEndorsed = reports.every((e) => deriveReviewPass(e.report, { issue: input.issue, known: baseKnown, mandateActive: true }).pass);
-      if (alreadyEndorsed) activeMandate = undefined;
+    if (endorsement !== undefined && endorsement.mode === "env") {
+      // Do not validate or spend an ambient ERIS_MANDATE when the refutation already holds under the
+      // gateway's mandate_active posture (e.g. second independent reviewer, prior direct-root stamp,
+      // or a human-grant receipt when mandate_active is false/omitted).
+      const alreadyEndorsed = reports.every((e) => deriveReviewPass(e.report, { issue: input.issue, known: baseKnown, mandateActive: prior.mandateActive }).pass);
+      if (!alreadyEndorsed) {
+        const pendingKnown: KnownActors = { ...baseKnown, endorsed: [...(baseKnown.endorsed ?? []), pendingEndorsementOf(input.issue, endorsement)] };
+        const wouldPass = reports.every(
+          (e) => sameActor(e.report.reviewer.actor, input.actor) && deriveReviewPass(e.report, { issue: input.issue, known: pendingKnown, mandateActive: prior.mandateActive }).pass,
+        );
+        if (wouldPass) activeMandate = endorsement.resolveMandate();
+      }
     }
     const deriveKnown: KnownActors =
       activeMandate !== undefined && endorsement !== undefined

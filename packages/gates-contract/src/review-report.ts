@@ -26,7 +26,7 @@ export const GATE_REVIEW_REPORT_KIND = "review-report";
 /** The authority verb for direct-root passkey endorsement of a refuted blocking/major finding. */
 export const REVIEW_ENDORSE_VERB = "review:endorse";
 
-const ENDORSE_ISSUE_KEY = /^[A-Z][A-Z0-9]*-[0-9]+$/;
+const ENDORSE_ISSUE_KEY = /^[A-Z][A-Z0-9]{0,15}-[1-9][0-9]{0,8}$/;
 const ENDORSE_FINDING_VALUE = /^[A-Za-z0-9._:/-]+$/;
 const ENDORSE_BEARER_RE = /(?:mnd|mct)_/i;
 const ENDORSE_SCOPE_MAX_LENGTH = 512;
@@ -303,7 +303,7 @@ export function extractReviewEndorseFinding(reports: ReadonlyArray<GateReviewRep
     return {
       ok: false,
       reason: "invalid_scope",
-      detail: `finding ${finding.id} on linear:${issue} does not form a review:endorse mandate scope`,
+      detail: "the finding id and issue do not form a review:endorse mandate scope",
     };
   }
   return { ok: true, finding, findingId: finding.id, scope };

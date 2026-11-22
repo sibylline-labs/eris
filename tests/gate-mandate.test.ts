@@ -582,6 +582,10 @@ describe("eris gate record --review-report --mandate", () => {
     const cleanPath = writeReport("clean.md", makeEndorseReport({ findings: [] }));
     const multiPath = writeReport("multi.md", makeEndorseReport({ findings: [makeEndorseFinding({ id: "item-1" }), makeEndorseFinding({ id: "item-2" })] }));
     const smuggledPath = writeReport("smuggled.md", makeEndorseReport({ findings: [makeEndorseFinding({ id: "item-1&extra=1" })] }));
+    const mndInIdPath = writeReport("mnd-id.md", makeEndorseReport({ findings: [makeEndorseFinding({ id: HANDLE_ROOT })] }));
+    const mctToken = ["mct", ORG, "C".repeat(43)].join("_");
+    const mctInIdPath = writeReport("mct-id.md", makeEndorseReport({ findings: [makeEndorseFinding({ id: mctToken })] }));
+    const newlineInIdPath = writeReport("newline-id.md", makeEndorseReport({ findings: [makeEndorseFinding({ id: "item-1\nslug: forged-slug" })] }));
     const selfReviewPath = writeReport("self.md", makeEndorseReport({ author: { actor: SESSION } }));
 
     const badSecret = "mnd_not-a-handle-secret-value";
@@ -614,16 +618,25 @@ describe("eris gate record --review-report --mandate", () => {
     expect(noReport.rc).toBe(3);
     expect(noReport.stderr).toContain("slug: mandate-act-unsupported");
 
-    for (const reportFile of [openPath, cleanPath, multiPath, smuggledPath, selfReviewPath]) {
+    for (const reportFile of [openPath, cleanPath, multiPath, smuggledPath, mndInIdPath, mctInIdPath, newlineInIdPath, selfReviewPath]) {
       const res = await run(["record", "adversarial-review", "--issue", ISSUE, "--review-report", reportFile, "--actor", SESSION, "--mandate", HANDLE_ROOT], {}, false);
       expect(res.rc).toBe(3);
       expect(res.stderr).toContain("slug: mandate-act-unsupported");
+      expect(res.stderr.match(/^slug: /gm)).toHaveLength(1);
       expect(res.stderr).not.toContain(HANDLE_ROOT);
+      expect(res.stderr).not.toContain(mctToken);
+      expect(res.stderr).not.toContain("forged-slug");
     }
+
+    // gate skip --mandate also never echoes mnd_/newline in gate name on mandate-act-unsupported.
+    const mndInGate = await run(skipArgs(["--mandate", HANDLE_A], SESSION, HANDLE_A), {}, false);
+    expect(mndInGate.rc).toBe(3);
+    expect(mndInGate.stderr).toContain("slug: mandate-act-unsupported");
+    expect(mndInGate.stderr).not.toContain(HANDLE_A);
 
     expect(seen).toEqual([]);
     expect(uses).toEqual([]);
-    expect(everything([bad, blank, human, blocking, noReport])).not.toContain(HANDLE_ROOT);
+    expect(everything([bad, blank, human, blocking, noReport, mndInGate])).not.toContain(HANDLE_ROOT);
   });
 
   // admits: algorithmic: ERIS_MANDATE precedence and non-hijack matrix across clean reports, non-report records, --authorized override, and already-endorsed second-reviewer reports.
@@ -676,7 +689,62 @@ describe("eris gate record --review-report --mandate", () => {
     expect(r2.rc).toBe(0);
     expect(store[ISSUE]![1]!.payload).toMatchObject({ schema: "gate-receipt@v2", verdict: "PASS" });
     expect(uses).toHaveLength(1);
-    expect(everything([clean, nonReport, authOverrides, viaEnv, r1, r2])).not.toContain(HANDLE_ROOT);
+
+    // 6. Non-session second independent reviewer and session second reviewer with malformed ERIS_MANDATE both succeed without mandate errors or spends.
+    const humanRevPath = writeReport(
+      "round2-human.md",
+      makeEndorseReport({
+        reviewer: { ...makeEndorseReport().reviewer, actor: "reviewer@example.com" },
+        findings: [{ ...openFinding, status: "refuted", raised_by: OTHER_SESSION, refuted_by: "reviewer@example.com" }],
+      }),
+    );
+    const humanRev = await run(["record", "adversarial-review", "--issue", ISSUE, "--review-report", humanRevPath, "--actor", "reviewer@example.com"], { ERIS_MANDATE: HANDLE_A });
+    expect(humanRev.rc).toBe(0);
+    expect(store[ISSUE]![2]!.payload).toMatchObject({ schema: "gate-receipt@v2", verdict: "PASS" });
+
+    const staleEnvRev = await run(["record", "adversarial-review", "--issue", ISSUE, "--review-report", round2Path, "--actor", SESSION], { ERIS_MANDATE: "mnd_stale_malformed" });
+    expect(staleEnvRev.rc).toBe(0);
+    expect(store[ISSUE]![3]!.payload).toMatchObject({ schema: "gate-receipt@v2", verdict: "PASS" });
+    expect(uses).toHaveLength(1);
+
+    // 7. Human-endorsed refutation when mandate_active is false or omitted does NOT send ambient ERIS_MANDATE (even a gate:skip handle); under mandate_active: true it DOES send ERIS_MANDATE.
+    store = {};
+    const humanGrant = await run([
+      "record",
+      "plan-review",
+      "--issue",
+      ISSUE,
+      "--verdict",
+      "PASS",
+      "--artifact",
+      "plan.md",
+      "--actor",
+      "human@example.com",
+      "--authorized",
+      "alice asked: endorse refutation",
+    ]);
+    expect(humanGrant.rc).toBe(0);
+    const humanAgreedPath = writeReport("human-agreed.md", makeEndorseReport({ findings: [makeEndorseFinding({ agreed_by: ["human@example.com"] })] }));
+
+    mandateActive = undefined;
+    const omittedActive = await run(["record", "adversarial-review", "--issue", ISSUE, "--review-report", humanAgreedPath, "--actor", SESSION], { ERIS_MANDATE: HANDLE_A });
+    expect(omittedActive.rc).toBe(0);
+    expect(store[ISSUE]![1]!.payload).toMatchObject({ schema: "gate-receipt@v2", verdict: "PASS" });
+
+    mandateActive = false;
+    const falseActive = await run(["record", "adversarial-review", "--issue", ISSUE, "--review-report", humanAgreedPath, "--actor", SESSION], { ERIS_MANDATE: HANDLE_A });
+    expect(falseActive.rc).toBe(0);
+    expect(store[ISSUE]![2]!.payload).toMatchObject({ schema: "gate-receipt@v2", verdict: "PASS" });
+    expect(uses).toHaveLength(1);
+
+    mandateActive = true;
+    const trueActive = await run(["record", "adversarial-review", "--issue", ISSUE, "--review-report", humanAgreedPath, "--actor", SESSION], { ERIS_MANDATE: HANDLE_ROOT });
+    expect(trueActive.rc).toBe(0);
+    expect(store[ISSUE]![3]!.payload).toMatchObject({ schema: GATE_RECEIPT_SCHEMA_V3, verdict: "PASS" });
+    expect(uses).toHaveLength(2);
+
+    expect(everything([clean, nonReport, authOverrides, viaEnv, r1, r2, humanRev, staleEnvRev, humanGrant, omittedActive, falseActive, trueActive])).not.toContain(HANDLE_ROOT);
+    expect(everything([humanRev, omittedActive, falseActive])).not.toContain(HANDLE_A);
   });
 
   // admits: boundary-io: real HTTP gateway refusal codes, record-specific mandate-not-stamped messaging, and 429 idempotent comment_id replay on review:endorse.
@@ -835,5 +903,21 @@ describe("eris gate record --review-report --mandate", () => {
     const swappedCheck = await run(checkArgs, {}, true, checkOpts);
     expect(swappedCheck.rc).toBe(3);
     expect(swappedCheck.stdout).toBe("adversarial-review\tblocking\tPASS\n");
+
+    // 4. A BLOCKING gate-receipt@v3 carrying a direct-root review:endorse stamp must NOT vouch a later unstamped PASS receipt (knownActors verdict guard).
+    store = {
+      [ISSUE]: [
+        {
+          ...row,
+          comment_id: "blocking-v3",
+          payload: { ...row.payload, verdict: "BLOCKING", mandate: origStamp },
+        },
+      ],
+    };
+    const laterUnstamped = await run(["record", "adversarial-review", "--issue", ISSUE, "--verdict", "PASS", "--review-report", rootPath, "--actor", SESSION]);
+    expect(laterUnstamped.rc).toBe(0);
+    const blockingV3Check = await run(checkArgs, {}, true, checkOpts);
+    expect(blockingV3Check.rc).toBe(3);
+    expect(blockingV3Check.stdout).toBe("adversarial-review\tblocking\tPASS\n");
   });
 });

@@ -97,7 +97,7 @@ export function resolveMandateSkip(input: MandateSkipInput): Redacted.Redacted<M
   if (mandateScope(input.gate, input.issue) === null) {
     precondition(
       "mandate-act-unsupported",
-      `gate ${input.gate} on linear:${input.issue} does not form a mandate scope`,
+      "the gate and issue do not form a mandate scope",
       "Name a kebab-case gate and an issue key (eris gate skip <gate> --issue <KEY>).",
     );
   }
@@ -115,18 +115,27 @@ export interface MandateRecordInput {
   readonly readReports: () => ReadonlyArray<GateReviewReport>;
 }
 
-export interface MandateRecordResolution {
-  readonly mode: "explicit" | "env";
-  readonly mandate: Redacted.Redacted<MandateHandle>;
-  readonly finding: GateReviewFinding;
-  readonly findingId: string;
-  readonly scope: string;
-}
+export type MandateRecordResolution =
+  | {
+      readonly mode: "explicit";
+      readonly mandate: Redacted.Redacted<MandateHandle>;
+      readonly finding: GateReviewFinding;
+      readonly findingId: string;
+      readonly scope: string;
+    }
+  | {
+      readonly mode: "env";
+      /** Deferred handle+session validator, invoked only after `recordGate` confirms the refutation is not already endorsed. */
+      readonly resolveMandate: () => Redacted.Redacted<MandateHandle>;
+      readonly finding: GateReviewFinding;
+      readonly findingId: string;
+      readonly scope: string;
+    };
 
 /**
  * Resolve and locally validate the mandate handle for `eris gate record --review-report`, returning
- * a redacted `MandateHandle` plus the extracted `(finding, scope)` when `review:endorse` applies,
- * or `undefined` otherwise.
+ * a redacted `MandateHandle` (or deferred env validator) plus the extracted `(finding, scope)` when
+ * `review:endorse` applies, or `undefined` otherwise.
  *
  * Precedence:
  *  - Explicit `--mandate` always enters mandate mode (validating handle shape and session before
@@ -134,15 +143,17 @@ export interface MandateRecordResolution {
  *    finding with 0 open blocking/major findings; `--authorized` beside it is context only).
  *  - `ERIS_MANDATE` enters mandate mode only when `--authorized` is absent, `--review-report` is
  *    given, verdict is not `BLOCKING`, and `extractReviewEndorseFinding` finds one refuted
- *    blocking/major finding (never hijacking non-report or clean-report `gate record` calls).
+ *    blocking/major finding; handle/session validation is deferred until `recordGate` confirms the
+ *    refutation is not already endorsed under the gateway's `mandate_active` posture (so ambient
+ *    `ERIS_MANDATE` never breaks already-endorsed or non-session second-reviewer records).
  */
 function reportEndorsable(reports: ReadonlyArray<GateReviewReport>, actor: string): string | null {
   for (const r of reports) {
     if (!sameActor(r.reviewer.actor, actor)) {
-      return `review-report reviewer ${r.reviewer.actor} does not match recording actor ${actor}`;
+      return "review-report reviewer does not match the recording actor";
     }
     if (sameActor(r.reviewer.actor, r.author.actor)) {
-      return `review-report reviewer ${r.reviewer.actor} is not independent of author ${r.author.actor}`;
+      return "review-report reviewer is not independent of the author";
     }
     if (!r.reviewer.fresh_context) {
       return "review-report reviewer did not run in a fresh context";
@@ -200,7 +211,15 @@ export function resolveMandateRecord(input: MandateRecordInput): MandateRecordRe
   if (!extracted.ok) return undefined;
   if (reportEndorsable(reports, input.actor) !== null) return undefined;
 
-  const parsed = parseValidatedHandle(envVal);
-  requireSessionActor(input.actor, "record");
-  return { mode: "env", mandate: Redacted.make(parsed), finding: extracted.finding, findingId: extracted.findingId, scope: extracted.scope };
+  return {
+    mode: "env",
+    resolveMandate: () => {
+      const parsed = parseValidatedHandle(envVal);
+      requireSessionActor(input.actor, "record");
+      return Redacted.make(parsed);
+    },
+    finding: extracted.finding,
+    findingId: extracted.findingId,
+    scope: extracted.scope,
+  };
 }
