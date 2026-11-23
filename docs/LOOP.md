@@ -184,6 +184,7 @@ supplies none behaves exactly as this one.
 | `legacy` | Older session-name prefixes (`<prefix><slug>-<issue>`) and claim-ledger directories. Status, stop, resume, reap and the live check read them beside `eris-loop-` and `~/.eris/loop/claims`. Nothing is named or written with them: a re-bound claim moves to the primary ledger, and a released one is removed from whichever directory held it. Reap treats each ledger file as its own record. |
 | `claimless` | Loop slugs that launch and resume as if `--unclaimed`: no claim, no status write, and only a session of the same loop counts in the live check. |
 | `scrubEnv` | Env names no loop child inherits, beside the built-in ones. An entry ending `*` drops every name it prefixes. It applies to every `claude` child and to the env a supplied runtime is handed. |
+| `launchEnv` | Names a launch or a resume adds to the session's env, told the issue, slug, cwd and runtime. They are added after the scrub, so a name `scrubEnv` drops from the launcher's env can still be set here for the child. A failed outcome stops the verb with its failure block and releases the claim it reserved, before anything is spawned. |
 | `afterHandBack` | Runs once a hand-back reached every target. A failure prints a `WARN` line and the verb still exits 0. |
 
 With runtimes supplied, a `<ref>` resolves over the Claude jobs and every runtime's `find` together:
