@@ -47,6 +47,15 @@ export interface LoopLegacy {
   readonly claimDirs: (home: string) => ReadonlyArray<string>;
 }
 
+/** What `launchEnv` is told about the session about to start. */
+export interface LaunchEnvInput {
+  readonly issue: string;
+  readonly slug: string;
+  /** The directory the session runs in. */
+  readonly cwd: string;
+  readonly runtime: string;
+}
+
 /** What a build supplies the loop verbs. Each seam left out behaves as it does in the public build. */
 export interface LoopDefaults {
   /** The org's verified tree, pulled first when absent or older than the claim's view; an edited tree is refused. */
@@ -61,6 +70,12 @@ export interface LoopDefaults {
   readonly claimless?: ReadonlyArray<string>;
   /** Env names no loop child inherits, beside the built-in ones; `X*` drops every name starting `X`. */
   readonly scrubEnv?: ReadonlyArray<string>;
+  /**
+   * Names a launch or a resume adds to its session's env, after the scrub (so a scrubbed name the
+   * build sets here still arrives). A failed outcome stops the verb with its failure block and
+   * releases the claim it reserved, before anything is spawned.
+   */
+  readonly launchEnv?: (ctx: VerbContext, input: LaunchEnvInput) => Promise<Outcome<Readonly<Record<string, string>>>>;
   /** Run once a hand-back reached every target, best effort: a failure only warns. */
   readonly afterHandBack?: (ctx: VerbContext, input: { readonly issue: string }) => Promise<void>;
 }

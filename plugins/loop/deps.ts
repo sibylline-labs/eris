@@ -83,8 +83,8 @@ export function runOf(ctx: VerbContext, defaults: LoopDefaults, deps: LoopDeps):
 }
 
 /** What a supplied runtime runs on, acting from `cwd`: the run's clock and the scrubbed child env. */
-export function runtimeEnv(run: Run, cwd = run.cwd): LoopRuntimeEnv {
-  return { home: run.home, cwd, env: childEnv(run.env, run.scrub), fetch: run.fetch, now: run.now, sleep: run.sleep, warn: run.warn };
+export function runtimeEnv(run: Run, cwd = run.cwd, extra: Readonly<Record<string, string>> = {}): LoopRuntimeEnv {
+  return { home: run.home, cwd, env: { ...childEnv(run.env, run.scrub), ...extra }, fetch: run.fetch, now: run.now, sleep: run.sleep, warn: run.warn };
 }
 
 /** The gates endpoint on the `eris login` bearer of the org `cwd` acts as; no login stops with `eris-login-required`. */
@@ -143,11 +143,15 @@ const DETAIL_MAX = 2000;
 export type ChildRun = { readonly kind: "exited"; readonly code: number; readonly stdout: string; readonly stderr: string } | { readonly kind: "failed"; readonly why: string };
 
 /** Run `argv` to completion, stdin closed, under a deadline; never throws. */
-export async function runChild(run: Run, argv: readonly string[], opts: { cwd?: string; timeoutMs?: number } = {}): Promise<ChildRun> {
+export async function runChild(
+  run: Run,
+  argv: readonly string[],
+  opts: { cwd?: string; timeoutMs?: number; extraEnv?: Readonly<Record<string, string>> } = {},
+): Promise<ChildRun> {
   const timeoutMs = opts.timeoutMs ?? CHILD_TIMEOUT_MS;
   let res;
   try {
-    res = await runCommand(argv, { env: childEnv(run.env, run.scrub), timeoutMs, ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}) });
+    res = await runCommand(argv, { env: { ...childEnv(run.env, run.scrub), ...opts.extraEnv }, timeoutMs, ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}) });
   } catch (e) {
     return { kind: "failed", why: `could not run ${argv[0] ?? ""}: ${(e as Error).message}` };
   }

@@ -12,6 +12,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, setDefaultTimeou
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readClaim } from "../plugins/loop/claims";
+import { LOOP_DEFAULTS } from "../plugins/index";
+import type { LoopDefaults } from "../plugins/loop/index";
 import { BUNDLE, LOGIN, loop, loopWorld, type LoopWorld, slugOf, stopServer } from "./helpers/loop-fixture";
 
 setDefaultTimeout(60_000);
@@ -100,6 +102,34 @@ describe("eris loop launch", () => {
     expect([unknown.rc, slugOf(unknown.stderr)]).toEqual([2, "loop-unknown"]);
     expect(w.claims.has("ABC-7")).toBe(false);
     expect(paths().at(-1)).toBe("POST /v1/linear/issues/ABC-7/release");
+  });
+
+  it("hands the session the names the build's launchEnv returns, after the scrub, and passes the seam the launch", async () => {
+    /** When a build's names never reach the session, or the scrub drops a name the build adds, a loop runs with no caller to wake and no bus identity: observed on the fake claude's env and the seam's input. */
+    const asked: unknown[] = [];
+    const defaults: LoopDefaults = {
+      ...LOOP_DEFAULTS,
+      scrubEnv: ["ERIS_BUS_LEASE"],
+      launchEnv: async (_ctx, input) => {
+        asked.push(input);
+        return { ok: true, value: { ERIS_CALLER_SESSION: "tpm-1", ERIS_BUS_LEASE: "minted-for-the-child" } };
+      },
+    };
+    const r = await launch([], { defaults, env: { ERIS_BUS_LEASE: "the-launchers-own", FAKE_CLAUDE_ENV_KEYS: "ERIS_CALLER_SESSION,ERIS_BUS_LEASE" } });
+    expect(r.rc).toBe(0);
+    expect(asked).toEqual([{ issue: "ABC-7", slug: "one-shot", cwd: w.repo, runtime: "claude" }]);
+    expect(w.childEnvs()[0]).toMatchObject({ ERIS_CALLER_SESSION: "tpm-1", ERIS_BUS_LEASE: "minted-for-the-child", ERIS_YAKS_TOKEN: null });
+  });
+
+  it("releases the claim and spawns nothing when the build's launchEnv fails", async () => {
+    /** When a failed launchEnv (a lease the build could not mint) still spawns, or leaves the reservation held, a session runs without what the build requires or the issue stays claimed by no one: observed on the spawn log, the release body and the gateway's claim. */
+    const failure = { slug: "bus-lease-forbidden", what: "the lease mint was refused", fix: "Sign in as a member.", docs: "docs/ERRORS.md#bus-lease-forbidden", exit: 3 as const };
+    const defaults: LoopDefaults = { ...LOOP_DEFAULTS, launchEnv: async () => ({ ok: false, failure }) };
+    const r = await launch([], { defaults });
+    expect([r.rc, slugOf(r.stderr), r.stdout]).toEqual([3, "bus-lease-forbidden", ""]);
+    expect(w.calls()).toEqual([]);
+    expect(w.claims.has("ABC-7")).toBe(false);
+    expect(w.seen.find((s) => s.path.endsWith("/release"))!.body).toMatchObject({ outcome: "aborted", body: expect.stringContaining("the lease mint was refused") });
   });
 
   it("refuses an issue another loop holds, spawning nothing", async () => {

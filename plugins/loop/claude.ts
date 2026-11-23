@@ -130,8 +130,8 @@ export function claudeOnPath(run: Run): string {
 }
 
 /** Run a `claude --bg …` and read the new session's id from its receipt line. */
-async function spawnBg(run: Run, what: string, argv: readonly string[], cwd: string): Promise<string> {
-  const r = await runChild(run, argv, { cwd });
+async function spawnBg(run: Run, what: string, argv: readonly string[], cwd: string, extraEnv: Readonly<Record<string, string>> = {}): Promise<string> {
+  const r = await runChild(run, argv, { cwd, extraEnv });
   if (r.kind === "failed") launchFailed(`${what} ${r.why}`);
   const m = BACKGROUNDED_RE.exec(r.stdout);
   if (r.code !== 0 || m === null) launchFailed(`${what} failed (rc=${r.code}): ${childDetail(r)}`);
@@ -139,8 +139,8 @@ async function spawnBg(run: Run, what: string, argv: readonly string[], cwd: str
 }
 
 /** `claude --bg <prompt> --name <name> --model <m>` in `cwd`; the new session's id. */
-export function spawnClaude(run: Run, input: { claude: string; prompt: string; name: string; cwd: string; model: string }): Promise<string> {
-  return spawnBg(run, "claude --bg", [input.claude, "--bg", input.prompt, "--name", input.name, "--model", input.model], input.cwd);
+export function spawnClaude(run: Run, input: { claude: string; prompt: string; name: string; cwd: string; model: string; env?: Readonly<Record<string, string>> }): Promise<string> {
+  return spawnBg(run, "claude --bg", [input.claude, "--bg", input.prompt, "--name", input.name, "--model", input.model], input.cwd, input.env);
 }
 
 /**
@@ -148,7 +148,7 @@ export function spawnClaude(run: Run, input: { claude: string; prompt: string; n
  * effort), then `claude --bg --resume <session> <prompt> ...respawnFlags` in the job's cwd when it is
  * still a directory, else `fallbackCwd`. The resumed session's id.
  */
-export async function resumeClaude(run: Run, job: ClaudeJob, prompt: string, fallbackCwd: string): Promise<string> {
+export async function resumeClaude(run: Run, job: ClaudeJob, prompt: string, fallbackCwd: string, extraEnv: Readonly<Record<string, string>> = {}): Promise<string> {
   if (job.state.state === "working") refuseWorking(job);
   const claude = claudeOnPath(run);
   if (job.state.state !== "stopped") await runChild(run, [claude, "stop", job.id]);
@@ -161,7 +161,7 @@ export async function resumeClaude(run: Run, job: ClaudeJob, prompt: string, fal
   } catch {
     // the job's directory is gone: the fallback
   }
-  return spawnBg(run, "claude --bg --resume", [claude, "--bg", "--resume", session, prompt, ...flags], cwd);
+  return spawnBg(run, "claude --bg --resume", [claude, "--bg", "--resume", session, prompt, ...flags], cwd, extraEnv);
 }
 
 export function refuseWorking(job: ClaudeJob): never {

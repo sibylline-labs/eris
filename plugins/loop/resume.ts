@@ -21,7 +21,7 @@ import type { GatesEndpoint } from "eris/gates-contract";
 import { bindClaim, heldClaim, releaseClaim, reserveClaim, RUNTIME } from "./claims";
 import { listJobs, refuseWorking, resumeClaude, trimmed } from "./claude";
 import { endpoint, type Run, runtimeEnv } from "./deps";
-import { LoopFailure, usage } from "./failure";
+import { LoopFailure, unwrap, usage } from "./failure";
 import { HAND_BACK_MAX, loopOf, normaliseResumePrompt } from "./names";
 import { continuationPrompt } from "./prompt";
 import { findSession, type LoopSession, sessionIdOf, sessionNameOf } from "./sessions";
@@ -62,6 +62,14 @@ async function holdClaim(run: Run, ep: () => Promise<GatesEndpoint>, s: LoopSess
   return { issue: l.issue, claimId: reserved.claimId, slug: l.slug, fresh: true };
 }
 
+/** The build's `launchEnv` names for a loop session's resume (none for a session no loop name matches). */
+async function resumeEnv(run: Run, s: LoopSession): Promise<Readonly<Record<string, string>>> {
+  const l = loopOf(sessionNameOf(s), run.legacyPrefixes);
+  if (l === null || run.defaults.launchEnv === undefined) return {};
+  const cwd = (s.kind === "claude" ? trimmed(s.job.state.cwd) : s.session.cwd?.trim()) || run.cwd;
+  return unwrap(await run.defaults.launchEnv(run.ctx, { issue: l.issue, slug: l.slug, cwd, runtime: runtimeOf(s) }));
+}
+
 function refuseWorkingSession(s: LoopSession): void {
   if (s.kind === "claude") {
     if (s.job.state.state === "working") refuseWorking(s.job);
@@ -77,7 +85,8 @@ async function resumeOne(run: Run, ep: () => Promise<GatesEndpoint>, s: LoopSess
   let session: string;
   try {
     const next = continuationPrompt(prompt, held, runtimeOf(s));
-    session = s.kind === "claude" ? await resumeClaude(run, s.job, next, run.cwd) : await s.rt.resume(runtimeEnv(run), s.session, next);
+    const env = await resumeEnv(run, s);
+    session = s.kind === "claude" ? await resumeClaude(run, s.job, next, run.cwd, env) : await s.rt.resume(runtimeEnv(run, run.cwd, env), s.session, next);
   } catch (e) {
     if (held?.fresh === true) {
       const why = e instanceof LoopFailure ? e.failure.what : String(e);

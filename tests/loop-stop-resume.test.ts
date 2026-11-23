@@ -9,6 +9,8 @@
 
 import { afterAll, afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { readClaim } from "../plugins/loop/claims";
+import { LOOP_DEFAULTS } from "../plugins/index";
+import type { LoopDefaults } from "../plugins/loop/index";
 import { NO_BACKGROUND_LINE } from "../plugins/loop/prompt";
 import { loop, loopWorld, type LoopWorld, slugOf, stopServer } from "./helpers/loop-fixture";
 
@@ -69,6 +71,19 @@ describe("eris loop stop", () => {
 });
 
 describe("eris loop resume", () => {
+  it("hands the resumed session the names the build's launchEnv returns", async () => {
+    /** When a resume rebuilds the session's env without the build's names, a resumed loop loses its caller and its bus identity: observed on the fake claude's env for the --resume spawn and the seam's input. */
+    await launch();
+    w.setJob("job00001", { state: "done" });
+    const asked: unknown[] = [];
+    const defaults: LoopDefaults = { ...LOOP_DEFAULTS, launchEnv: async (_ctx, input) => (asked.push(input), { ok: true, value: { ERIS_CALLER_SESSION: "tpm-2" } }) };
+    const r = await loop(w, ["resume", "ABC-7"], { defaults, env: { FAKE_CLAUDE_ENV_KEYS: "ERIS_CALLER_SESSION" } });
+    expect(r.rc).toBe(0);
+    expect(w.calls().at(-1)!.slice(0, 2)).toEqual(["--bg", "--resume"]);
+    expect(asked).toEqual([{ issue: "ABC-7", slug: "one-shot", cwd: w.repo, runtime: "claude" }]);
+    expect(w.childEnvs().at(-1)).toMatchObject({ ERIS_CALLER_SESSION: "tpm-2" });
+  });
+
   it("re-binds the claim this session holds to the resumed session, and tells it the claim again", async () => {
     /** When a resume reserves anew although its own claim is held (or does not re-bind it), the claim is held by a dead session or refused by itself: observed on the claim requests, the ledger and the continuation prompt. */
     await launch();

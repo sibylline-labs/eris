@@ -22,7 +22,7 @@ import { readLoopBody } from "./body";
 import { bindClaim, heldClaim, releaseClaim, type Reserved, reserveClaim, RUNTIME } from "./claims";
 import { claudeOnPath, liveSessions, spawnClaude } from "./claude";
 import { endpoint, type Run, runtimeEnv, treeOf } from "./deps";
-import { LoopFailure, usage } from "./failure";
+import { LoopFailure, unwrap, usage } from "./failure";
 import { checkCwd, HAND_BACK_MAX, normaliseCaller, normaliseContext, normaliseModel, normaliseReportTo, normaliseSlug, sessionName } from "./names";
 import { type ComposePromptInput, composePrompt } from "./prompt";
 import type { LoopRuntime, LoopRuntimeFlags } from "./runtime";
@@ -128,7 +128,8 @@ export async function launchLoop(run: Run, input: LaunchInput): Promise<Launched
     const body = readLoopBody(tree, slug);
     const header: ComposePromptInput = { slug, issue, body, context, yak, reportTo, caller, model, claimId };
     const prompt = composePrompt(header, run.defaults.promptLines?.({ ...header, cwd }) ?? []);
-    session = rt === null ? await spawnClaude(run, { claude: claude!, prompt, name, cwd, model }) : await rt.spawn(runtimeEnv(run, cwd), { prompt, name, cwd, model, flags });
+    const env = run.defaults.launchEnv === undefined ? {} : unwrap(await run.defaults.launchEnv(run.ctx, { issue, slug, cwd, runtime }));
+    session = rt === null ? await spawnClaude(run, { claude: claude!, prompt, name, cwd, model, env }) : await rt.spawn(runtimeEnv(run, cwd, env), { prompt, name, cwd, model, flags });
   } catch (e) {
     if (ep !== undefined && claimId !== undefined) {
       const why = e instanceof LoopFailure ? e.failure.what : String(e);
