@@ -89,6 +89,7 @@ import { rebuildDiff, resolveArtifact, resolveTargetHead, targetRoot } from "./a
 import { type BurdenRubric, burdenOf, type EvidenceKind, owedBy, unmet } from "./burden";
 import { precondition, stop, unwrap } from "./failure";
 import { effectiveClass } from "./floor";
+import { FIRST_CONTACT, INGRESS_LINE, shapeGap } from "./shape";
 import { type Git, repoRoot } from "./git";
 import type { GateReviews } from "./index";
 import { BLEED_REDUCING, type DoorLadder, DOOR_SIGNOFF, doorRung, RUNG_MEANS } from "./ladder";
@@ -103,6 +104,7 @@ export type GateStatus =
   | "unresolved"
   | "drift"
   | "pass"
+  | "incomplete"
   | "skipped"
   | "unauthorized-skip"
   | "doctrine-stale"
@@ -111,7 +113,7 @@ export type GateStatus =
   | "forbidden"
   | "absent";
 
-const FAILING: ReadonlySet<GateStatus> = new Set(["missing", "bad-digest", "blocking", "unresolved", "drift", "unauthorized-skip", "doctrine-stale", "review-stale", "forbidden"]);
+const FAILING: ReadonlySet<GateStatus> = new Set(["missing", "bad-digest", "blocking", "unresolved", "drift", "incomplete", "unauthorized-skip", "doctrine-stale", "review-stale", "forbidden"]);
 
 /** The gates that end a run: checking one also refuses an open blocking ask. */
 export const TERMINAL_GATES: ReadonlyArray<string> = ["final-gates"];
@@ -299,7 +301,16 @@ export async function recordedBytes(
   return found?.kind === "bytes" && sha256Hex(found.bytes) === artifact.sha256 ? found.bytes : null;
 }
 
+/** The judged status, held to the gate's evidence shape (`shape.ts`) when it passes: a pass short of it reads `incomplete`. */
 export async function statusOf(c: Checking, latest: Latest | undefined, doctrine: DoctrineRead | null): Promise<Judged> {
+  const judged = await judge(c, latest, doctrine);
+  if (judged.status !== "pass" || latest === undefined) return judged;
+  const texts = latest.receipt.evidence.flatMap((e) => (e.kind === "text" ? [e.content] : []));
+  const gap = shapeGap(latest.receipt.gate, texts, judged.bytes);
+  return gap === null ? judged : { status: "incomplete", why: gap };
+}
+
+async function judge(c: Checking, latest: Latest | undefined, doctrine: DoctrineRead | null): Promise<Judged> {
   if (latest === undefined) return { status: "missing" };
   const r = latest.receipt;
   const bad = await badDigest(c, r.evidence);
@@ -536,7 +547,7 @@ export async function checkGates(input: CheckInput): Promise<void> {
   const latest = new Map<string, Latest>();
   const floorChecked = input.gates.some((g) => (FLOOR_GATES as readonly string[]).includes(g));
   const forbid = input.forbid ?? [];
-  const wanted = new Set<string>([...input.gates, ...forbid, ...(floorChecked ? [...REQUIREMENTS, DOOR_SIGNOFF, BLEED_REDUCING] : [])]);
+  const wanted = new Set<string>([...input.gates, ...forbid, ...(floorChecked ? [...REQUIREMENTS, FIRST_CONTACT, DOOR_SIGNOFF, BLEED_REDUCING] : [])]);
   const classed: { receipt: GateReceipt; at: string }[] = [];
   const issueReceipts: GateReceipt[] = [];
   const gitRepos = new Set<string>();
@@ -687,19 +698,23 @@ export async function checkGates(input: CheckInput): Promise<void> {
     } else {
       const passing = new Set<string>();
       const statuses = new Map<string, GateStatus>();
-      for (const req of REQUIREMENTS) {
-        const status = (await statusOf(c, latest.get(req), doctrine)).status;
-        statuses.set(req, status);
-        if (status === "pass") passing.add(req);
+      const whys = new Map<string, string>();
+      for (const req of [...REQUIREMENTS, FIRST_CONTACT]) {
+        const judged = await statusOf(c, latest.get(req), doctrine);
+        statuses.set(req, judged.status);
+        if (judged.status === "incomplete" && judged.why !== undefined) whys.set(req, judged.why);
+        if (judged.status === "pass") passing.add(req);
       }
       // Each requirement of the class reads as its own row; one already named in the gates printed above.
       const raise = posture?.policy?.user_impact?.[cls];
-      const required = requirementsFor(cls, raise);
+      // A declared ingress owes one real delivery from the real sender, whatever the class.
+      const ingress = (c.input.issueReceipts ?? []).some((r) => r.evidence.some((e) => e.kind === "text" && e.content.split("\n").some((l) => INGRESS_LINE.test(l.trim()))));
+      const required = [...requirementsFor(cls, raise), ...(ingress ? [FIRST_CONTACT] : [])];
       for (const req of required) if (!input.gates.includes(req)) input.out(`${req}\t${statuses.get(req)}\t${latest.get(req)?.receipt.verdict ?? "-"}`);
       const lacking = required.filter((req) => !passing.has(req));
       input.out(`@floor\t${lacking.length === 0 ? "pass" : "unmet"}\t${cls}`);
-      const raisedBy = required.length > requirementsFor(cls).length ? ` (raised by doctrine ${posture?.slug})` : "";
-      if (lacking.length > 0) failing.push(`${cls} floor unmet${raisedBy}: ${lacking.map((req) => `${req} (${statuses.get(req)})`).join(", ")}`);
+      const raisedBy = requirementsFor(cls, raise).length > requirementsFor(cls).length ? ` (raised by doctrine ${posture?.slug})` : "";
+      if (lacking.length > 0) failing.push(`${cls} floor unmet${raisedBy}: ${lacking.map((req) => `${req} (${statuses.get(req)}${whys.has(req) ? `: ${whys.get(req)}` : ""})`).join(", ")}`);
       const ladder = input.ladder;
       if (ladder !== undefined) {
         const active = activePosture(doctrine);

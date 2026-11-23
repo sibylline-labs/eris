@@ -101,6 +101,7 @@ receipt per gate, by the store's time, decides. Exit 0 when every row passes, 3 
 | `deferred` | the posture runs the gate `once-at-end`, and `final-gates` is not being checked | yes |
 | `absent` | a profile's forbidden gate with no receipt | yes |
 | `missing` | no receipt | no |
+| `incomplete` | it would pass, but its evidence lacks the lines its gate's shape names ([Evidence shapes](#evidence-shapes)); the WARN names each missing line | no |
 | `bad-digest` | evidence no longer matches its sha256, or its stored asset is gone | no |
 | `blocking` | a BLOCKING verdict, a failing review report, or review-report evidence in a build with no registered review skills | no |
 | `review-stale` | a review report's skill or vocabulary moved on `main` (or could not be verified) and the receipt carries no human grant | no |
@@ -109,6 +110,23 @@ receipt per gate, by the store's time, decides. Exit 0 when every row passes, 3 
 | `unauthorized-skip` | SKIPPED with no grant | no |
 | `doctrine-stale` | a doctrine or `repo:no-eris-yaml` skip the posture or repo no longer bears out | no |
 | `forbidden` | a profile's forbidden gate that has a receipt | no |
+
+### Evidence shapes
+
+A verdict alone does not show that a merged change is live. Three gates are held to the lines their
+receipt carries, read from its text evidence (`--evidence`) and its artifact, a leading `- ` and
+backticks ignored, keys matched case-insensitively at the start of a line:
+
+| Gate | Lines a passing receipt carries |
+|---|---|
+| `zero-downtime` | `skew old->new: <result>` (an old caller against the new callee) and `skew new->old: <result>` (a new caller against the old callee), plus `enforced-by: preflight\|fallback\|atomic <how>`: the deploy path refuses the wrong order, the caller falls back when the new callee is absent, or both ship as one deploy unit. A stated order ("deploy A, then B") is not enforcement. |
+| `first-contact` | `delivery: <id>`, `status: <code>`, `log: <line>`, `effect: <downstream effect>`: one real delivery from the real sender, accepted. |
+| `deployed` | `merge: <sha>`, one `version: <unit> <sha>` per deployed unit, each SHA the merge's (either a prefix of the other), and `smoke: pass <what ran>`. Or, for a repo with no deploy step, one `deploy: none <why>`. |
+
+Any receipt on the issue whose evidence carries an `ingress: <name>` line declares a new public
+ingress (a webhook, an OAuth callback, a vendor push), and the floor then owes `first-contact`
+whatever the class. `deployed` is the issue's last door: `eris gate check --issue <KEY> --gates deployed`
+passes once what merged is what runs.
 
 ### Profiles and doctrine
 
@@ -130,7 +148,8 @@ After the gate rows, in this order:
   owe. An estate with leaf `eris.yaml` files is refused (`gate-burden-unresolved`): this build reads
   the root's claims only.
 - Naming a floor gate (`final-gates`, `user-impact`): one row per requirement of the issue's
-  user-impact class, then `@floor\t<pass|unmet|unclassified>\t<class>`, then
+  user-impact class (plus `first-contact` when a receipt declares an ingress), then
+  `@floor\t<pass|unmet|unclassified>\t<class>`, then
   `@door\t<rung>\t<class>`. The door's rung comes from the ladder file (`--ladder`, or the build's;
   none: U0/U1 at the auto rung and U2/U3 at the human-after rung), lifted by the posture's `lifts`
   on a bleed-reducing fix and capped by its `ceilings`. At the human-before rung the check fails

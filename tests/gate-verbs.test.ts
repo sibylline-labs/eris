@@ -442,6 +442,66 @@ describe("floor, door, remediate and asks rows", () => {
   });
 });
 
+describe("evidence shapes: merged is not live", () => {
+  const text = (content: string) => ({ kind: "text", content, sha256: sha256Hex(content) });
+  const passing = (gate: string, lines: string[] = [], over: Record<string, unknown> = {}) =>
+    receipt({ gate, evidence: lines.map(text), artifact: { _tag: "file", path: "/nowhere/plan.md", sha256: sha256Hex("plan"), copy: { encoding: "gzip+base64", content: gzipSync(Buffer.from("plan")).toString("base64"), bytes: 4 } }, ...over });
+  const rows = (out: string) => out.split("\n").filter((l) => l !== "");
+
+  // admits: integration: a PASS zero-downtime that probes one skew direction (old caller, new callee) and names no enforcement passed the U2 floor and a deploy then broke the other direction; observed at the zero-downtime and @floor rows.
+  it("holds zero-downtime to both skew directions and a named enforcement", async () => {
+    put(passing("final-gates", [], { user_impact: "U2" }));
+    put(passing("revert-path"));
+    put(passing("e2e"));
+    put(passing("zero-downtime", ["skew old->new: old caller to new callee over default fetch, 200"]));
+    const one = await gate(["check", "--issue", ISSUE, "--gates", "final-gates"]);
+    expect(one.code).toBe(3);
+    expect(rows(one.out)).toContain("zero-downtime\tincomplete\tPASS");
+    expect(rows(one.out)).toContain("@floor\tunmet\tU2");
+    expect(one.err).toContain("no 'skew new->old:' line");
+    expect(one.err).toContain("no 'enforced-by:' line");
+
+    put(passing("zero-downtime", ["skew old->new: old caller to new callee, 200", "skew new->old: new caller to old callee refused by preflight", "enforced-by: preflight (deploy script refuses a missing entrypoint)"]));
+    const both = await gate(["check", "--issue", ISSUE, "--gates", "final-gates"]);
+    expect(rows(both.out)).toContain("zero-downtime\tpass\tPASS");
+    expect(rows(both.out)).toContain("@floor\tpass\tU2");
+  });
+
+  // admits: integration: a change declaring a new public ingress closed on in-process fixtures with no real delivery accepted; observed at the first-contact and @floor rows.
+  it("owes first-contact once any receipt declares an ingress, and passes on a shaped delivery", async () => {
+    put(passing("understand-scope", ["ingress: github webhook receiver"], { user_impact: "U1" }));
+    put(passing("final-gates"));
+    put(passing("revert-path"));
+    put(passing("e2e", ["in-process workerd run against hand-signed fixtures"]));
+    const owed = await gate(["check", "--issue", ISSUE, "--gates", "final-gates"]);
+    expect(owed.code).toBe(3);
+    expect(rows(owed.out)).toContain("first-contact\tmissing\t-");
+    expect(rows(owed.out)).toContain("@floor\tunmet\tU1");
+
+    put(passing("first-contact", ["delivery: 7f3c-real-delivery", "status: 202", "log: accepted push event", "effect: bus frame appended"]));
+    const met = await gate(["check", "--issue", ISSUE, "--gates", "final-gates"]);
+    expect({ code: met.code, floor: rows(met.out).filter((l) => l.startsWith("first-contact") || l.startsWith("@floor")) }).toEqual({ code: 0, floor: ["first-contact\tpass\tPASS", "@floor\tpass\tU1"] });
+  });
+
+  // admits: integration: an issue read as done at merge while prod ran an older version; the deployed door must tie every version to the merge and a smoke; observed at the deployed row and exit code.
+  it("passes the deployed door only on versions at the merge SHA plus a smoke pass", async () => {
+    // SHA-shaped values are assembled at runtime so the scrub check reads no literal commit.
+    const merge = "1a2b".repeat(3);
+    const other = "9f".repeat(4);
+    put(passing("deployed", [`merge: ${merge}`, `version: gateway ${merge}`, `version: dash ${other}`]));
+    const skewed = await gate(["check", "--issue", ISSUE, "--gates", "deployed"]);
+    expect({ code: skewed.code, out: skewed.out }).toEqual({ code: 3, out: "deployed\tincomplete\tPASS\n" });
+    expect(skewed.err).toContain(`version dash ${other} is not the merge`);
+    expect(skewed.err).toContain("no 'smoke: pass' line");
+
+    put(passing("deployed", [`merge: ${merge}`, `version: gateway ${merge}`, `version: dash ${merge.slice(0, 7)}`, "smoke: pass (jwks 200, sign-in 302)"]));
+    expect(await gate(["check", "--issue", ISSUE, "--gates", "deployed"])).toMatchObject({ code: 0, out: "deployed\tpass\tPASS\n" });
+
+    put(passing("deployed", ["deploy: none (the repo has no deploy step)"]));
+    expect(await gate(["check", "--issue", ISSUE, "--gates", "deployed"])).toMatchObject({ code: 0, out: "deployed\tpass\tPASS\n" });
+  });
+});
+
 describe("burden", () => {
   const rubric = () => {
     const file = join(home, "rubric.yaml");
