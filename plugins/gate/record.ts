@@ -32,8 +32,10 @@ import {
   doctrineShaped,
   doctrineSkipBlocker,
   type DoctrineRead,
+  type EndorsedFinding,
   GATE_NAME,
   GATE_RECEIPT_SCHEMA,
+  GATE_RECEIPT_SCHEMA_V3,
   type GateActor,
   type GateArtifactCopy,
   type GateDoctrine,
@@ -42,6 +44,7 @@ import {
   type GateMediaKind,
   type GateReceipt,
   type GateReceiptV2,
+  type GateReviewFinding,
   type GateReviewReport,
   type GatesEndpoint,
   type GateUserImpact,
@@ -55,10 +58,12 @@ import {
   type MandateHandle,
   NO_ERIS_YAML_GRANT,
   noErisYamlSkipBlocker,
+  type ParsedGateReviewReport,
   parseReviewReport,
   policyHash,
   readDoctrine,
   repoGrantShaped,
+  reviewEndorseScope,
   reviewReportDigest,
   sameActor,
   sha256Hex,
@@ -128,7 +133,15 @@ type ReadEvidence =
   | { readonly kind: GateMediaKind; readonly name: string; readonly path: string; readonly contentType: string; readonly bytes: Buffer }
   | { readonly kind: "review-report"; readonly name: string; readonly report: GateReviewReport; readonly body: string };
 
-function readEvidence(cwd: string, inputs: ReadonlyArray<EvidenceInput>): ReadEvidence[] {
+/** Reads and strictly parses one `--review-report` file, failing with `gate-file-unreadable` or `gate-review-report-invalid`. */
+export function readReviewReportFile(cwd: string, path: string): ParsedGateReviewReport {
+  const bytes = readFileFor(cwd, path, "--review-report");
+  const parsed = parseReviewReport(bytes.toString("utf8"), `--review-report ${path}`);
+  if (!parsed.ok) stop(parsed.failure);
+  return parsed.value;
+}
+
+function readEvidence(cwd: string, inputs: ReadonlyArray<EvidenceInput>, parsedReports?: ReadonlyMap<string, ParsedGateReviewReport>): ReadEvidence[] {
   const read: ReadEvidence[] = [];
   for (const e of inputs) {
     if (e.kind === "text") {
@@ -139,10 +152,8 @@ function readEvidence(cwd: string, inputs: ReadonlyArray<EvidenceInput>): ReadEv
     }
     const flag = `--${e.kind}`;
     if (e.kind === "review-report") {
-      const bytes = readFileFor(cwd, e.path, flag);
-      const parsed = parseReviewReport(bytes.toString("utf8"), `${flag} ${e.path}`);
-      if (!parsed.ok) stop(parsed.failure);
-      read.push({ kind: "review-report", name: basename(e.path), report: parsed.value.report, body: parsed.value.body });
+      const parsed = parsedReports?.get(e.path) ?? readReviewReportFile(cwd, e.path);
+      read.push({ kind: "review-report", name: basename(e.path), report: parsed.report, body: parsed.body });
       continue;
     }
     if (e.kind === "screenshot" || e.kind === "video") {
@@ -172,18 +183,37 @@ export function vouchedBy(actor: string, authorized: string | undefined, reports
 
 /**
  * The actors `issue`'s receipts vouch for on `gate`: each review-report's reviewer, with its
- * findings, on a receipt for `gate` that reviewer recorded; and each human-grant receipt's actor.
+ * findings, on a receipt for `gate` that reviewer recorded; each human-grant receipt's actor; and
+ * each refuted blocking/major finding backed by a server-stamped direct-root (`id === root_id`)
+ * `review:endorse` `MandateStamp` on a passing `gate-receipt@v3` for `(issue, gate)`.
  */
 export function knownActors(issue: string, gate: string, receipts: ReadonlyArray<GateReceipt>, also: KnownActors = { reviewed: [], humans: [] }): KnownActors {
   const reviewed = [...also.reviewed];
   const humans = [...also.humans];
+  const endorsed: EndorsedFinding[] = [...(also.endorsed ?? [])];
   for (const r of receipts) {
     if (r.issue !== issue) continue;
-    const v = vouchedBy(r.actor, r.authorized, r.gate === gate ? r.evidence.flatMap((e) => (isGateReviewReportEvidence(e) ? [e.report] : [])) : []);
+    const gateReports = r.gate === gate ? r.evidence.flatMap((e) => (isGateReviewReportEvidence(e) ? [e.report] : [])) : [];
+    const v = vouchedBy(r.actor, r.authorized, gateReports);
     reviewed.push(...v.reviewed);
     humans.push(...v.humans);
+    if (
+      r.gate === gate &&
+      r.schema === GATE_RECEIPT_SCHEMA_V3 &&
+      (r.verdict === "PASS" || r.verdict === "AMENDED") &&
+      r.mandate !== undefined &&
+      r.mandate.id === r.mandate.root_id
+    ) {
+      for (const report of gateReports) {
+        for (const f of report.findings) {
+          if (f.status === "refuted" && reviewEndorseScope(f.id, issue) === r.mandate.scope) {
+            endorsed.push({ finding: f, issue, stamp: r.mandate });
+          }
+        }
+      }
+    }
   }
-  return { reviewed, humans };
+  return { reviewed, humans, ...(endorsed.length > 0 ? { endorsed } : {}) };
 }
 
 /** The verdicts whose artifact `check` re-reads, so the only ones that carry a copy. */
@@ -238,8 +268,13 @@ function snapshotDoctrine(path: string, bytes: Buffer): GateDoctrine {
   };
 }
 
-/** The issue's prior decoded receipts, oldest first, so the prose omits unchanged fields. */
-async function priorReceipts(run: WriteRun, issue: string): Promise<GateReceipt[]> {
+interface PriorListing {
+  readonly receipts: GateReceipt[];
+  readonly mandateActive?: boolean | undefined;
+}
+
+/** The issue's prior decoded receipts, oldest first, plus whether Mandate is active on the org. */
+async function priorReceipts(run: WriteRun, issue: string): Promise<PriorListing> {
   const listing = unwrap(await retryRateLimited(() => listReceipts(run.ep, issue), run.retry));
   const dated: { readonly receipt: GateReceipt; readonly at: string }[] = [];
   for (const c of listing.receipts) {
@@ -247,8 +282,24 @@ async function priorReceipts(run: WriteRun, issue: string): Promise<GateReceipt[
     if (parsed.kind === "receipt" && parsed.receipt.issue === issue) dated.push({ receipt: parsed.receipt, at: c.createdAt });
   }
   dated.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
-  return dated.map((d) => d.receipt);
+  return { receipts: dated.map((d) => d.receipt), mandateActive: listing.mandateActive };
 }
+
+/** Local metadata for a `review:endorse` mandate accompanying `gate record --review-report`. */
+export type MandateRecordEndorsement =
+  | {
+      readonly mode: "explicit";
+      readonly finding: GateReviewFinding;
+      readonly findingId: string;
+      readonly scope: string;
+    }
+  | {
+      readonly mode: "env";
+      readonly resolveMandate: () => Redacted.Redacted<MandateHandle>;
+      readonly finding: GateReviewFinding;
+      readonly findingId: string;
+      readonly scope: string;
+    };
 
 export interface RecordInput {
   readonly gate: string;
@@ -264,12 +315,16 @@ export interface RecordInput {
   readonly authorized?: string | undefined;
   readonly reason?: string | undefined;
   readonly evidence: ReadonlyArray<EvidenceInput>;
+  /** Pre-parsed `--review-report` files already validated by `resolveMandateRecord` (eliminates TOCTOU). */
+  readonly parsedReports?: ReadonlyMap<string, ParsedGateReviewReport> | undefined;
   readonly actor: string;
   readonly actorInfo?: GateActor | undefined;
   /** The comment id, when the caller keys the receipt itself (default: a fresh UUID). */
   readonly commentId?: string | undefined;
   /** Validated, redacted mandate handle for the store to spend one use and stamp Receipt v3. */
   readonly mandate?: Redacted.Redacted<MandateHandle> | undefined;
+  /** Extracted `review:endorse` finding context when `mandate` accompanies `gate record --review-report`. */
+  readonly mandateEndorsement?: MandateRecordEndorsement | undefined;
   /** Optional permalink rendered inside the receipt prose (`{link}` template slot). */
   readonly receiptLink?: ReceiptLink | null | undefined;
   /** Internal only: permits recording `unlocked-<action>` announcements from the unlock engine. */
@@ -280,6 +335,8 @@ export interface Recorded {
   readonly receipt: GateReceiptV2;
   readonly commentId: string;
   readonly recordSha256?: string | undefined;
+  /** True when the receipt was sent with a mandate handle and stamped by the store as v3. */
+  readonly mandateStamped?: true | undefined;
   readonly copied: CopyOutcome;
   readonly secretRules: ReadonlyArray<string>;
   readonly linkUrl?: string | undefined;
@@ -288,6 +345,23 @@ export interface Recorded {
 
 /** The `unlocked-<action>` announcements are written by the unlock decision only, never by hand. */
 const RESERVED_GATE = /^unlocked-/;
+
+const PENDING_MANDATE_ULID = "00000000000000000000000000";
+
+function pendingEndorsementOf(issue: string, endorsement: MandateRecordEndorsement): EndorsedFinding {
+  return {
+    finding: endorsement.finding,
+    issue,
+    stamp: {
+      id: PENDING_MANDATE_ULID,
+      use_id: PENDING_MANDATE_ULID,
+      root_id: PENDING_MANDATE_ULID,
+      scope: endorsement.scope,
+      chain_digest: "A".repeat(43),
+      attestation: "pending.pending.pending",
+    },
+  };
+}
 
 /** Hash, snapshot, upload, and append one receipt. */
 export async function recordGate(run: WriteRun, input: RecordInput): Promise<Recorded> {
@@ -305,19 +379,60 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
   const artifactSha = sha256Hex(artifactBytes);
   const located = await locateArtifact(run.g, run.cwd, input.artifact, artifactSha);
   const doctrine = input.doctrine === undefined ? undefined : snapshotDoctrine(input.doctrine, input.doctrineBytes ?? readFileFor(run.cwd, input.doctrine, "--doctrine"));
-  const read = readEvidence(run.cwd, input.evidence);
+  const read = readEvidence(run.cwd, input.evidence, input.parsedReports);
   const reports = read.filter((e): e is Extract<ReadEvidence, { readonly kind: "review-report" }> => e.kind === "review-report");
   // A derived verdict judges each report as check will: bound to this record's actor, with the issue's known actors.
   const derive = reports.length > 0 && input.verdict === undefined;
   // One listing serves the derived verdict's known actors and the prose's unchanged-field omission.
-  let priorMemo: ReadonlyArray<GateReceipt> | undefined;
-  const loadPrior = async (): Promise<ReadonlyArray<GateReceipt>> => (priorMemo ??= await priorReceipts(run, input.issue));
-  const known = derive
-    ? knownActors(input.issue, input.gate, await loadPrior(), vouchedBy(input.actor, authorized, reports.map((e) => e.report)))
-    : undefined;
-  const verdict: GateVerdict | undefined =
-    input.verdict ??
-    (derive ? (reports.every((e) => sameActor(e.report.reviewer.actor, input.actor) && deriveReviewPass(e.report, { known }).pass) ? "PASS" : "BLOCKING") : undefined);
+  let priorMemo: PriorListing | undefined;
+  const loadPrior = async (): Promise<PriorListing> => (priorMemo ??= await priorReceipts(run, input.issue));
+  let activeMandate = input.mandate;
+  const endorsement = input.mandateEndorsement;
+  let verdict: GateVerdict | undefined = input.verdict;
+  if (derive || endorsement !== undefined) {
+    const prior = await loadPrior();
+    const baseKnown = knownActors(
+      input.issue,
+      input.gate,
+      prior.receipts,
+      vouchedBy(
+        input.actor,
+        authorized,
+        reports.map((e) => e.report),
+      ),
+    );
+    if (endorsement !== undefined && endorsement.mode === "env") {
+      // Do not validate or spend an ambient ERIS_MANDATE when the refutation already holds under the
+      // gateway's mandate_active posture (e.g. second independent reviewer, prior direct-root stamp,
+      // or a human-grant receipt when mandate_active is false/omitted).
+      const alreadyEndorsed = reports.every((e) => deriveReviewPass(e.report, { issue: input.issue, known: baseKnown, mandateActive: prior.mandateActive }).pass);
+      if (!alreadyEndorsed) {
+        const pendingKnown: KnownActors = { ...baseKnown, endorsed: [...(baseKnown.endorsed ?? []), pendingEndorsementOf(input.issue, endorsement)] };
+        const wouldPass = reports.every(
+          (e) => sameActor(e.report.reviewer.actor, input.actor) && deriveReviewPass(e.report, { issue: input.issue, known: pendingKnown, mandateActive: prior.mandateActive }).pass,
+        );
+        if (wouldPass) activeMandate = endorsement.resolveMandate();
+      }
+    }
+    const deriveKnown: KnownActors =
+      activeMandate !== undefined && endorsement !== undefined
+        ? { ...baseKnown, endorsed: [...(baseKnown.endorsed ?? []), pendingEndorsementOf(input.issue, endorsement)] }
+        : baseKnown;
+    const reportsPass = reports.every(
+      (e) => sameActor(e.report.reviewer.actor, input.actor) && deriveReviewPass(e.report, { issue: input.issue, known: deriveKnown, mandateActive: prior.mandateActive }).pass,
+    );
+    if (derive) verdict = reportsPass ? "PASS" : "BLOCKING";
+    if (activeMandate !== undefined && endorsement !== undefined && (verdict === "BLOCKING" || !reportsPass)) {
+      if (endorsement.mode === "explicit") {
+        precondition(
+          "mandate-act-unsupported",
+          "review:endorse requires a passing review-report (independent reviewer in a fresh context matching the recording actor)",
+          "Record as the independent reviewer session that produced the report, or record without --mandate.",
+        );
+      }
+      activeMandate = undefined;
+    }
+  }
   if (verdict === undefined) {
     usage("gate record: missing --verdict", "Pass --verdict PASS|AMENDED|BLOCKING, or pass --review-report <file> to derive it.");
   }
@@ -377,24 +492,25 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
   const sha = sha256Hex(JSON.stringify(receipt));
   const linkUrl = input.receiptLink != null ? input.receiptLink.url(sha) : undefined;
   const linkLine = input.receiptLink != null && linkUrl !== undefined ? input.receiptLink.line(sha, linkUrl) : "";
-  const prose = renderProse(receipt, await loadPrior(), linkLine);
+  const prose = renderProse(receipt, (await loadPrior()).receipts, linkLine);
   const commentId = input.commentId ?? randomUUID();
   const comment = unwrap(
     await retryRateLimited(
-      () => appendReceipt(run.ep, { commentId, issue: input.issue, receipt, prose, ...(input.mandate !== undefined ? { mandateHandle: input.mandate } : {}) }),
+      () => appendReceipt(run.ep, { commentId, issue: input.issue, receipt, prose, ...(activeMandate !== undefined ? { mandateHandle: activeMandate } : {}) }),
       run.retry,
     ),
   );
   // The store stamps a mandate use into a v3 record whose hash differs from the v2 sent; the same
   // hash (or none) means it kept the v2 unstamped, which grants nothing.
-  if (input.mandate !== undefined && (comment.recordSha256 === undefined || comment.recordSha256 === sha)) {
-    mandateNotStamped(comment.id, authorized !== undefined);
+  if (activeMandate !== undefined && (comment.recordSha256 === undefined || comment.recordSha256 === sha)) {
+    mandateNotStamped(comment.id, authorized !== undefined, verdict);
   }
-  const linkMismatch = input.mandate === undefined && linkUrl !== undefined && comment.recordSha256 !== undefined && comment.recordSha256 !== sha ? (true as const) : undefined;
+  const linkMismatch = activeMandate === undefined && linkUrl !== undefined && comment.recordSha256 !== undefined && comment.recordSha256 !== sha ? (true as const) : undefined;
   return {
     receipt,
     commentId: comment.id,
     recordSha256: comment.recordSha256,
+    ...(activeMandate !== undefined ? { mandateStamped: true as const } : {}),
     copied,
     secretRules,
     ...(linkUrl !== undefined ? { linkUrl } : {}),
@@ -402,15 +518,22 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
   };
 }
 
-/** A mandate skip the store kept as an unstamped v2: the mandate granted nothing. */
-function mandateNotStamped(commentId: string, proseGrant: boolean): never {
-  const judged = proseGrant
-    ? "'eris gate check' judges it by its --authorized grant alone"
-    : "it carries no grant, and 'eris gate check' reads it unauthorized-skip";
+/** A mandate receipt the store kept as an unstamped v2: the mandate granted nothing. */
+function mandateNotStamped(commentId: string, proseGrant: boolean, verdict: GateVerdict): never {
+  if (verdict === "SKIPPED") {
+    const judged = proseGrant
+      ? "'eris gate check' judges it by its --authorized grant alone"
+      : "it carries no grant, and 'eris gate check' reads it unauthorized-skip";
+    return precondition(
+      "mandate-not-stamped",
+      `the gate receipt store kept comment ${commentId} without a mandate stamp, so the mandate granted nothing: ${judged}`,
+      "The gateway does not stamp Receipt v3 yet: record the skip with --authorized, or re-run once the gateway stamps mandates.",
+    );
+  }
   return precondition(
     "mandate-not-stamped",
-    `the gate receipt store kept comment ${commentId} without a mandate stamp, so the mandate granted nothing: ${judged}`,
-    "The gateway does not stamp Receipt v3 yet: record the skip with --authorized, or re-run once the gateway stamps mandates.",
+    `the gate receipt store kept comment ${commentId} without a mandate stamp, so the review:endorse mandate granted nothing: 'eris gate check' judges its review-report without a mandate endorsement`,
+    "The gateway does not stamp Receipt v3 for review:endorse yet: re-run once the gateway stamps mandates.",
   );
 }
 

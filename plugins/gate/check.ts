@@ -72,6 +72,7 @@ import {
   modeSource,
   NO_ERIS_YAML_GRANT,
   noErisYamlSkipBlocker,
+  type ReceiptListingRead,
   REQUIREMENTS,
   type ReviewDiffSource,
   type ReviewHeadSource,
@@ -159,6 +160,8 @@ export interface CheckInput {
     | undefined;
   /** The issue's decoded receipts, which `knownActors` reads per gate; `checkGates` populates this from its listing. */
   readonly issueReceipts?: ReadonlyArray<GateReceipt> | undefined;
+  /** Whether the org has Mandate active (from `GET /v1/gates/receipts` `mandate_active`); under Mandate, prose human refutations fail closed. */
+  readonly mandateActive?: boolean | undefined;
   readonly now: Date;
   readonly asks?: { readonly pr?: number | undefined; readonly json?: boolean | undefined } | undefined;
   /** The remediation surface bar (default: `gitSurfaceBar(g, cwd)`). */
@@ -183,7 +186,7 @@ export interface Judged {
 type DigestCache = Map<string, AssetDigest>;
 
 /** What judging one issue's receipts reads: the store, git, the directory, the issue, and optional review-report config. */
-export type JudgeOn = Pick<CheckInput, "ep" | "g" | "cwd" | "issue" | "reviews" | "reviewSkills" | "requiredEffort" | "head" | "issueReceipts"> & {
+export type JudgeOn = Pick<CheckInput, "ep" | "g" | "cwd" | "issue" | "reviews" | "reviewSkills" | "requiredEffort" | "head" | "issueReceipts" | "mandateActive"> & {
   readonly warn?: ((line: string) => void) | undefined;
 };
 
@@ -343,6 +346,8 @@ export async function statusOf(c: Checking, latest: Latest | undefined, doctrine
       diffSha256: c.input.head?.diffSha256 ?? resolved?.diffSha256,
       diffSource,
       vocabularyClasses: fresh.classes,
+      issue: c.input.issue,
+      mandateActive: c.input.mandateActive,
       known: knownActors(c.input.issue, r.gate, c.input.issueReceipts ?? []),
     });
     if (!derived.pass) return { status: derived.status, why: derived.why };
@@ -417,7 +422,7 @@ export function humanGrantGap(latest: Latest | undefined, status: GateStatus): s
 }
 
 /** The issue's listing, re-read on `delays` until it holds every `expect` id, or `gate-receipt-unseen`. */
-export async function readListing(input: Pick<CheckInput, "ep" | "issue" | "expect" | "expectDelaysMs" | "sleep" | "readRetry">): Promise<{ receipts: ReadonlyArray<ListedReceipt>; invalid: number }> {
+export async function readListing(input: Pick<CheckInput, "ep" | "issue" | "expect" | "expectDelaysMs" | "sleep" | "readRetry">): Promise<ReceiptListingRead> {
   const delays = input.expectDelaysMs ?? EXPECT_RETRY_DELAYS_MS;
   const expect = input.expect ?? [];
   const read = async () => unwrap(await retryRateLimited(() => listReceipts(input.ep, input.issue), input.readRetry));
@@ -518,7 +523,7 @@ export async function checkGates(input: CheckInput): Promise<void> {
   const crossed = input.burden === undefined ? undefined : await input.burden.crossing();
   // A receipt read that fails (rate-limited, receipts unseen) must not hide a successful asks read
   // from a `--asks` caller: its `{"asks":` line prints first, then the failure re-raises.
-  let listing: { receipts: ReadonlyArray<ListedReceipt>; invalid: number };
+  let listing: ReceiptListingRead;
   try {
     listing = await readListing(input);
   } catch (err) {
@@ -551,7 +556,8 @@ export async function checkGates(input: CheckInput): Promise<void> {
     const prev = latest.get(r.gate);
     if (prev === undefined || row.createdAt >= prev.at) latest.set(r.gate, { receipt: r, version: parsed.version, at: row.createdAt, id: row.id });
   }
-  const c: Checking = { input: { ...input, issueReceipts: input.issueReceipts ?? issueReceipts }, digests: new Map(), fresh: new Map(), skills: {}, gitRepos: [...gitRepos] };
+  const mandateActive = input.mandateActive ?? listing.mandateActive;
+  const c: Checking = { input: { ...input, issueReceipts: input.issueReceipts ?? issueReceipts, mandateActive }, digests: new Map(), fresh: new Map(), skills: {}, gitRepos: [...gitRepos] };
   if (invalid > 0) input.warn(`WARN ${invalid} comment(s) on ${input.issue} carry a gate-receipt marker that does not decode; ignored`);
 
   const needsDoctrine = input.applyModes === true || floorChecked || [...latest.values()].some((l) => l.receipt.authorized !== undefined && doctrineGrantPosture(l.receipt.authorized) !== null);

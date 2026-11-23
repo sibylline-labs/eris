@@ -14,14 +14,17 @@ import {
   decodeReviewReport,
   deriveReviewPass,
   effortMeets,
+  extractReviewEndorseFinding,
   formatReviewReport,
   GATE_REVIEW_REPORT_SCHEMA,
+  type GateMandateStamp,
   type GateReviewFinding,
   type GateReviewReport,
   type GatesOrgBundle,
   type GatesSettings,
   headMatches,
   parseReviewReport,
+  reviewEndorseScope,
   reviewReportDigest,
   sameActor,
   sha256Hex,
@@ -33,7 +36,8 @@ import { composeCli, gatePlugin, type GateReviews, HANDLERS, main, PLUGINS, REGI
 import { gateHandler, type GateDeps } from "../plugins/gate/gate";
 import type { GateDefaults } from "../plugins/gate/index";
 import { liveGit, memoReads } from "../plugins/gate/git";
-import { checkUnlock } from "../plugins/gate/unlock";
+import { GateFailure } from "../plugins/gate/failure";
+import { checkUnlock, humanSignoff } from "../plugins/gate/unlock";
 import { CliExit } from "../src/cli/ts-verb";
 
 setDefaultTimeout(60_000);
@@ -232,6 +236,185 @@ describe("pure review-report@1 parsing, digest, and derivation", () => {
       `cannot verify review vocabulary ${VOCAB_PATH}: missing on main`,
     ]);
   });
+
+  // admits: algorithmic: reviewEndorseScope must canonicalize valid finding/issue pairs and reject delimiter smuggling (&, =, ?, whitespace, comma), mixed-case bearer prefixes, and invalid issue keys; GateReviewFinding.id is NonEmptyText so no schema holds it.
+  it("builds canonical review:endorse scopes and rejects smuggled or bearer-prefixed finding ids", () => {
+    expect(reviewEndorseScope("item-1", "ABC-42")).toBe("sr:us:mandate:review:endorse?finding=item-1&work_ref=linear:ABC-42");
+    expect(reviewEndorseScope("sec/finding.1:a_b", "ABC-42")).toBe("sr:us:mandate:review:endorse?finding=sec/finding.1:a_b&work_ref=linear:ABC-42");
+
+    const mndPrefix = ["mnd", "01HZX3K5Q8W2N4R6T8V0Y2B4D6"].join("_");
+    const mctPrefix = ["MCT", "01HZX3K5Q8W2N4R6T8V0Y2B4D6"].join("_");
+    for (const badId of [
+      "",
+      "item-1&extra=1",
+      "item-1&work_ref=linear:ABC-99",
+      "item=1",
+      "item?1",
+      "item 1",
+      "item,1",
+      mndPrefix,
+      mctPrefix,
+      "x".repeat(500),
+    ]) {
+      expect(reviewEndorseScope(badId, "ABC-42")).toBeNull();
+    }
+    for (const badIssue of ["", "abc-42", "ABC-0", "ABC-01", "ABCDEFGHIJKLMNOPQ-1", "ABC-1000000000", "ABC-42&x=1", "not-an-issue"]) {
+      expect(reviewEndorseScope("item-1", badIssue)).toBeNull();
+    }
+  });
+
+  // admits: algorithmic: extractReviewEndorseFinding must select the single refuted blocking/major finding while ignoring minor/fixed findings and fail closed on 0 reports, open high findings, 0 or >1 refuted high findings, and invalid scopes.
+  it("extracts a single refuted blocking/major finding and fails closed on every other report shape", () => {
+    const refutedMajor = makeFinding({ id: "item-1", severity: "major", status: "refuted" });
+    const fixedBlocking = makeFinding({ id: "item-2", severity: "blocking", status: "fixed" });
+    const openMinor = makeFinding({ id: "item-3", severity: "minor", status: "open" });
+
+    const single = extractReviewEndorseFinding([makeReport({ findings: [refutedMajor, fixedBlocking, openMinor] })], ISSUE);
+    expect(single).toEqual({
+      ok: true,
+      finding: refutedMajor,
+      findingId: "item-1",
+      scope: `sr:us:mandate:review:endorse?finding=item-1&work_ref=linear:${ISSUE}`,
+    });
+
+    expect(extractReviewEndorseFinding([], ISSUE)).toMatchObject({ ok: false, reason: "no_review_report" });
+    expect(
+      extractReviewEndorseFinding([makeReport({ findings: [refutedMajor, makeFinding({ id: "item-4", severity: "blocking", status: "open" })] })], ISSUE),
+    ).toMatchObject({ ok: false, reason: "open_findings" });
+    expect(extractReviewEndorseFinding([makeReport({ findings: [fixedBlocking, openMinor] })], ISSUE)).toMatchObject({
+      ok: false,
+      reason: "no_refuted_high_finding",
+    });
+    expect(
+      extractReviewEndorseFinding(
+        [makeReport({ findings: [refutedMajor, makeFinding({ id: "item-5", severity: "blocking", status: "refuted" })] })],
+        ISSUE,
+      ),
+    ).toMatchObject({ ok: false, reason: "multiple_refuted_high_findings" });
+    const leakedMnd = ["mnd", ORG, "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"].join("_");
+    const leakedMct = ["mct", ORG, "ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210-_ZyXwV"].join("_");
+    for (const badId of ["item-1&extra=1", leakedMnd, leakedMct, "item-1\nslug: forged-slug"]) {
+      const bad = extractReviewEndorseFinding([makeReport({ findings: [makeFinding({ id: badId, severity: "major", status: "refuted" })] })], ISSUE);
+      expect(bad).toEqual({
+        ok: false,
+        reason: "invalid_scope",
+        detail: "the finding id and issue do not form a review:endorse mandate scope",
+      });
+    }
+  });
+
+  // admits: algorithmic: direct-root MandateStamp recognition requires id === root_id, matching canonical review:endorse scope for (finding, issue), and exact finding-row equality; cross-field runtime invariants cannot be enforced by types.
+  it("accepts a direct-root review:endorse MandateStamp and rejects delegated child, wrong finding, wrong issue, gate:skip stamp, and row swaps", () => {
+    const finding = makeFinding({ id: "item-1", severity: "blocking", status: "refuted" });
+    const report = makeReport({ findings: [finding] });
+    const rootId = "01JZ8K3M4N5P6Q7R8S9T0V1W3R";
+    const childId = "01JZ8K3M4N5P6Q7R8S9T0V1W3C";
+    const scope = `sr:us:mandate:review:endorse?finding=item-1&work_ref=linear:${ISSUE}`;
+    const directStamp: GateMandateStamp = {
+      id: rootId,
+      use_id: "01JZ8K3M4N5P6Q7R8S9T0V1W01",
+      root_id: rootId,
+      scope,
+      chain_digest: "A".repeat(43),
+      attestation: "aa.bb.cc",
+    };
+
+    expect(
+      deriveReviewPass(report, {
+        issue: ISSUE,
+        mandateActive: true,
+        known: { reviewed: [], humans: [], endorsed: [{ finding, issue: ISSUE, stamp: directStamp }] },
+      }),
+    ).toEqual({ pass: true, verdict: "PASS" });
+
+    // Delegated child (id !== root_id) fails closed.
+    expect(
+      deriveReviewPass(report, {
+        issue: ISSUE,
+        mandateActive: true,
+        known: { reviewed: [], humans: [], endorsed: [{ finding, issue: ISSUE, stamp: { ...directStamp, id: childId } }] },
+      }),
+    ).toMatchObject({ pass: false, status: "blocking", reason: "self-refuted" });
+
+    // Wrong finding id in stamp scope fails closed.
+    expect(
+      deriveReviewPass(report, {
+        issue: ISSUE,
+        mandateActive: true,
+        known: {
+          reviewed: [],
+          humans: [],
+          endorsed: [{ finding, issue: ISSUE, stamp: { ...directStamp, scope: `sr:us:mandate:review:endorse?finding=item-2&work_ref=linear:${ISSUE}` } }],
+        },
+      }),
+    ).toMatchObject({ pass: false, status: "blocking", reason: "self-refuted" });
+
+    // Wrong issue in stamp scope or receipt issue fails closed.
+    expect(
+      deriveReviewPass(report, {
+        issue: ISSUE,
+        mandateActive: true,
+        known: {
+          reviewed: [],
+          humans: [],
+          endorsed: [{ finding, issue: "ABC-99", stamp: { ...directStamp, scope: "sr:us:mandate:review:endorse?finding=item-1&work_ref=linear:ABC-99" } }],
+        },
+      }),
+    ).toMatchObject({ pass: false, status: "blocking", reason: "self-refuted" });
+
+    // gate:skip stamp never counts as review:endorse.
+    expect(
+      deriveReviewPass(report, {
+        issue: ISSUE,
+        mandateActive: true,
+        known: {
+          reviewed: [],
+          humans: [],
+          endorsed: [{ finding, issue: ISSUE, stamp: { ...directStamp, scope: `sr:us:mandate:gate:skip?gate=adversarial-review&work_ref=linear:${ISSUE}` } }],
+        },
+      }),
+    ).toMatchObject({ pass: false, status: "blocking", reason: "self-refuted" });
+
+    // Finding-row swap with the same id (different line/evidence) fails closed.
+    expect(
+      deriveReviewPass(report, {
+        issue: ISSUE,
+        mandateActive: true,
+        known: { reviewed: [], humans: [], endorsed: [{ finding: { ...finding, line: 99 }, issue: ISSUE, stamp: directStamp }] },
+      }),
+    ).toMatchObject({ pass: false, status: "blocking", reason: "self-refuted" });
+  });
+
+  // admits: algorithmic: under mandateActive: true, prose human grants must fail closed while second independent reviewers still pass; when mandateActive is false or omitted, legacy prose human grants still hold.
+  it("fails closed on un-stamped human names under mandateActive while preserving second-reviewer and non-Mandate legacy behavior", () => {
+    const raised = makeFinding({ id: "item-1", status: "open" });
+    const humanEndorsed = makeReport({ findings: [{ ...raised, status: "refuted", agreed_by: ["human@example.com"] }] });
+
+    expect(deriveReviewPass(humanEndorsed, { issue: ISSUE, mandateActive: false, known: { reviewed: [], humans: ["human@example.com"] } })).toEqual({
+      pass: true,
+      verdict: "PASS",
+    });
+    expect(deriveReviewPass(humanEndorsed, { issue: ISSUE, known: { reviewed: [], humans: ["human@example.com"] } })).toEqual({
+      pass: true,
+      verdict: "PASS",
+    });
+    const underMandate = deriveReviewPass(humanEndorsed, { issue: ISSUE, mandateActive: true, known: { reviewed: [], humans: ["human@example.com"] } });
+    expect(underMandate).toMatchObject({ pass: false, status: "blocking", reason: "self-refuted" });
+    if (!underMandate.pass) expect(underMandate.why).toContain("direct-root review:endorse mandate stamp");
+
+    // Second independent reviewer still holds under mandateActive: true.
+    const secondReport = makeReport({
+      reviewer: { ...makeReport().reviewer, actor: "session:reviewer-2" },
+      findings: [{ ...raised, status: "refuted", raised_by: "session:reviewer-1", refuted_by: "session:reviewer-2" }],
+    });
+    expect(
+      deriveReviewPass(secondReport, {
+        issue: ISSUE,
+        mandateActive: true,
+        known: { reviewed: [{ actor: "session:reviewer-1", findings: [raised] }], humans: [] },
+      }),
+    ).toEqual({ pass: true, verdict: "PASS" });
+  });
 });
 
 describe("gate record --review-report, gate check, and gatePlugin({ reviews }) seam", () => {
@@ -251,6 +434,7 @@ describe("gate record --review-report, gate check, and gatePlugin({ reviews }) s
   let clock: number;
   let bundle: GatesOrgBundle;
   let settings: GatesSettings;
+  let mandateActive: boolean | undefined;
 
   beforeAll(() => {
     mkdirSync(join(REPO, ".scratch"), { recursive: true });
@@ -267,7 +451,13 @@ describe("gate record --review-report, gate check, and gatePlugin({ reviews }) s
         if (req.method === "GET" && url.pathname === "/v1/gates/settings") return Response.json({ contract: "gates-contract/v1.5", settings, bundle_sha: sha });
         if (req.method === "GET" && url.pathname === "/v1/gates/receipts") {
           const issue = url.searchParams.get("issue") ?? "";
-          return Response.json({ issue, receipts: store[issue] ?? [], invalid: 0, contract_version: "gates-contract/v1" });
+          return Response.json({
+            issue,
+            receipts: store[issue] ?? [],
+            invalid: 0,
+            ...(mandateActive !== undefined ? { mandate_active: mandateActive } : {}),
+            contract_version: "gates-contract/v1",
+          });
         }
         if (req.method === "POST" && url.pathname === "/v1/gates/receipts") {
           const parsed = JSON.parse(body) as { comment_id: string; issue: string; receipt: { gate: string }; prose?: string };
@@ -302,6 +492,7 @@ describe("gate record --review-report, gate check, and gatePlugin({ reviews }) s
     store = {};
     seen = [];
     clock = 0;
+    mandateActive = undefined;
     bundle = {
       active: "ci",
       postures: {
@@ -732,5 +923,147 @@ describe("gate record --review-report, gate check, and gatePlugin({ reviews }) s
     expect(unregCi.code).toBe(3);
     expect(unregCi.out).toContain("adversarial-review:high\tblocking\tPASS");
     expect(unregCi.err).toContain("is not a registered review skill (review_skills at the merge-base:");
+
+    // Under mandate_active: true, checkUnlock refuses an un-stamped human-grant refutation and accepts a direct-root review:endorse stamp.
+    mandateActive = true;
+    const refutedFinding = makeFinding({ id: "item-1", status: "refuted", agreed_by: ["human@example.com"] });
+    const refutedRep = makeReport({ target: { repo: slug, pr: 9, head_sha: headSha, diff_sha256: prDiffSha }, findings: [refutedFinding] });
+    seed(ISSUE, { gate: "plan-review", actor: "human@example.com", authorized: "alice asked: endorse refutation" });
+    seed(ISSUE, {
+      gate: "adversarial-review",
+      evidence: [{ kind: "review-report", name: "refuted.md", report: refutedRep, sha256: reviewReportDigest(refutedRep) }],
+    });
+    const blockedOut: string[] = [];
+    let blockedErr: GateFailure | undefined;
+    try {
+      await checkUnlock({
+        ep: ep.value,
+        issue: ISSUE,
+        action: "merge",
+        base: baseSha,
+        headSha,
+        registry: ".claude/surfaces.yml",
+        cwd: dir,
+        g: memoReads(liveGit({ HOME: home, PATH: process.env.PATH, GIT_CEILING_DIRECTORIES: sandbox })),
+        doctrine: { file: "doctrine.md", read: readDoctrine("active: auto\n\n## auto\n\nAuto posture.\n\n```yaml\npolicy:\n  signoff:\n    unlock: on\n```\n") },
+        reviews: distReviews,
+        now: new Date("2026-11-20T10:00:00.000Z"),
+        readRetry: { delaysMs: [], maxWaitMs: 0, sleep: async () => {}, jitter: () => 0 },
+        out: (l) => blockedOut.push(l),
+        warn: () => {},
+      });
+    } catch (e) {
+      if (e instanceof GateFailure) blockedErr = e;
+      else throw e;
+    }
+    expect(blockedErr?.failure.slug).toBe("gate-unlock-human");
+    expect(blockedErr?.failure.what).toContain("direct-root review:endorse mandate stamp");
+    expect(blockedOut).toContain("adversarial-review:high\tblocking\tPASS");
+    expect(blockedOut).toContain("@unlock\thuman\tmerge");
+
+    const rootId = "01JZ8K3M4N5P6Q7R8S9T0V1W7R";
+    seed(ISSUE, {
+      schema: "gate-receipt@v3",
+      gate: "adversarial-review",
+      evidence: [{ kind: "review-report", name: "refuted.md", report: refutedRep, sha256: reviewReportDigest(refutedRep) }],
+      mandate: {
+        id: rootId,
+        use_id: "01JZ8K3M4N5P6Q7R8S9T0V1W71",
+        root_id: rootId,
+        scope: `sr:us:mandate:review:endorse?finding=item-1&work_ref=linear:${ISSUE}`,
+        chain_digest: "A".repeat(43),
+        attestation: "aa.bb.cc",
+      },
+    });
+    const stampedUnlock = await checkUnlock({
+      ep: ep.value,
+      issue: ISSUE,
+      action: "merge",
+      base: baseSha,
+      headSha,
+      registry: ".claude/surfaces.yml",
+      cwd: dir,
+      g: memoReads(liveGit({ HOME: home, PATH: process.env.PATH, GIT_CEILING_DIRECTORIES: sandbox })),
+      doctrine: { file: "doctrine.md", read: readDoctrine("active: auto\n\n## auto\n\nAuto posture.\n\n```yaml\npolicy:\n  signoff:\n    unlock: on\n```\n") },
+      reviews: distReviews,
+      now: new Date("2026-11-20T10:00:00.000Z"),
+      readRetry: { delaysMs: [], maxWaitMs: 0, sleep: async () => {}, jitter: () => 0 },
+      out: () => {},
+      warn: () => {},
+    });
+    expect(stampedUnlock).toBe("unlocked");
+
+    // humanSignoff must also thread mandate_active: a door-signoff carrying an un-stamped human-endorsed review-report fails under mandate_active=true and passes under mandate_active=false.
+    const signoffInput = {
+      ep: ep.value,
+      g: memoReads(liveGit({ HOME: home, PATH: process.env.PATH, GIT_CEILING_DIRECTORIES: sandbox })),
+      cwd: dir,
+      readRetry: { delaysMs: [], maxWaitMs: 0, sleep: async () => {}, jitter: () => 0 },
+      reviews: distReviews,
+    };
+    seed(ISSUE, {
+      gate: "door-signoff",
+      authorized: "alice asked: sign off",
+      evidence: [{ kind: "review-report", name: "signoff-refuted.md", report: refutedRep, sha256: reviewReportDigest(refutedRep) }],
+    });
+    mandateActive = true;
+    expect((await humanSignoff(signoffInput, ISSUE, "door-signoff")).why).toBe("blocking");
+    mandateActive = false;
+    expect((await humanSignoff(signoffInput, ISSUE, "door-signoff")).why).toBeNull();
+    store[ISSUE] = store[ISSUE]!.filter((r) => (r.payload as { gate: string }).gate !== "door-signoff");
+
+    // Ledger audit-surfaces must also thread mandate_active: an un-stamped human-endorsed review-report on LEDGER's audit-surfaces blocks checkUnlock under mandate_active=true and unlocks under mandate_active=false.
+    const ledgerRep = makeReport({ target: { repo: slug, pr: 9, head_sha: headSha, diff_sha256: prDiffSha }, findings: [refutedFinding] });
+    seed(LEDGER, { gate: "plan-review", actor: "human@example.com", authorized: "alice asked: endorse ledger refutation" });
+    seed(LEDGER, {
+      gate: "audit-surfaces",
+      artifact: { _tag: "git", repo: slug, ref: "main", commit: baseSha, path: ".claude/surfaces.yml", sha256: sha256Hex(surfacesYaml) },
+      evidence: [{ kind: "review-report", name: "ledger-refuted.md", report: ledgerRep, sha256: reviewReportDigest(ledgerRep) }],
+    });
+    seed(LEDGER, { gate: "unlocked-merge", evidence: [{ kind: "text", content: `issue: ${ISSUE} head: ${headSha}`, sha256: sha256Hex(`issue: ${ISSUE} head: ${headSha}`) }] });
+    mandateActive = true;
+    let ledgerBlocked: GateFailure | undefined;
+    try {
+      await checkUnlock({
+        ep: ep.value,
+        issue: ISSUE,
+        action: "merge",
+        base: baseSha,
+        headSha,
+        registry: ".claude/surfaces.yml",
+        cwd: dir,
+        g: memoReads(liveGit({ HOME: home, PATH: process.env.PATH, GIT_CEILING_DIRECTORIES: sandbox })),
+        doctrine: { file: "doctrine.md", read: readDoctrine("active: auto\n\n## auto\n\nAuto posture.\n\n```yaml\npolicy:\n  signoff:\n    unlock: on\n```\n") },
+        reviews: distReviews,
+        now: new Date("2026-11-20T10:00:00.000Z"),
+        readRetry: { delaysMs: [], maxWaitMs: 0, sleep: async () => {}, jitter: () => 0 },
+        out: () => {},
+        warn: () => {},
+      });
+    } catch (e) {
+      if (e instanceof GateFailure) ledgerBlocked = e;
+      else throw e;
+    }
+    expect(ledgerBlocked?.failure.slug).toBe("gate-unlock-human");
+    expect(ledgerBlocked?.failure.what).toContain(`audit-surfaces baseline on ${LEDGER} is failing`);
+    mandateActive = false;
+    expect(
+      await checkUnlock({
+        ep: ep.value,
+        issue: ISSUE,
+        action: "merge",
+        base: baseSha,
+        headSha,
+        registry: ".claude/surfaces.yml",
+        cwd: dir,
+        g: memoReads(liveGit({ HOME: home, PATH: process.env.PATH, GIT_CEILING_DIRECTORIES: sandbox })),
+        doctrine: { file: "doctrine.md", read: readDoctrine("active: auto\n\n## auto\n\nAuto posture.\n\n```yaml\npolicy:\n  signoff:\n    unlock: on\n```\n") },
+        reviews: distReviews,
+        now: new Date("2026-11-20T10:00:00.000Z"),
+        readRetry: { delaysMs: [], maxWaitMs: 0, sleep: async () => {}, jitter: () => 0 },
+        out: () => {},
+        warn: () => {},
+      }),
+    ).toBe("unlocked");
   });
 });

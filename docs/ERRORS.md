@@ -1901,11 +1901,12 @@ record the skip with `--authorized`. The handle is never printed. See [GATE.md](
 
 ### mandate-not-covered
 
-`eris gate skip --mandate` (or `ERIS_MANDATE`): the gate receipt store refused the mandate use with
-`not_covered` (403): no scope on the mandate covers `gate:skip` for this gate and issue. No receipt
-was stored. Exit status 3. Fix: ask the mandate's holder for a handle that covers this act from this
-session, or record the skip with `--authorized`. The handle is never printed. See
-[GATE.md](GATE.md#skip).
+`eris gate skip --mandate` or `eris gate record --review-report --mandate` (or `ERIS_MANDATE`): the
+gate receipt store refused the mandate use with `not_covered` (403): no scope on the mandate covers
+`gate:skip` for this gate and issue, or a direct-root `review:endorse` for this finding and issue
+(delegated children and role mandates do not cover `review:endorse`). No receipt was stored. Exit
+status 3. Fix: ask the mandate's holder for a handle that covers this act from this session, or
+record with `--authorized`. The handle is never printed. See [GATE.md](GATE.md#skip).
 
 ### mandate-exhausted
 
@@ -1940,18 +1941,20 @@ session, or record the skip with `--authorized`. The handle is never printed. Se
 
 ### mandate-session-required
 
-`eris gate skip --mandate` (or `ERIS_MANDATE`): the receipt's actor is not `session:<id>`; a
-mandate is presented from a session (refused locally before sending, or by the store with
-`422 mandate_session_required`). No receipt was stored. Exit status 3. Fix: run the skip from the
-agent session that holds the mandate (or pass `--actor session:<id>`), or record the skip with
-`--authorized`. The handle is never printed. See [GATE.md](GATE.md#skip).
+`eris gate skip --mandate` or `eris gate record --review-report --mandate` (or `ERIS_MANDATE`): the
+receipt's actor is not `session:<id>`; a mandate is presented from a session (refused locally before
+sending, or by the store with `422 mandate_session_required`). No receipt was stored. Exit status 3.
+Fix: run the command from the agent session that holds the mandate (or pass `--actor session:<id>`),
+or record with `--authorized`. The handle is never printed. See [GATE.md](GATE.md#skip).
 
 ### mandate-act-unsupported
 
-`eris gate skip --mandate` (or `ERIS_MANDATE`): the gate and issue do not form a canonical
-`gate:skip` mandate scope (refused locally before sending, or by the store with
-`422 mandate_act_unsupported`). No receipt was stored. Exit status 3. Fix: name a kebab-case gate
-and an issue key (`eris gate skip <gate> --issue <KEY>`), or record the skip with `--authorized`.
+`eris gate skip --mandate` or `eris gate record --review-report --mandate` (or `ERIS_MANDATE`): the
+act does not form a canonical `gate:skip` scope or a valid `review:endorse` endorsement (which
+requires a passing `PASS`/`AMENDED` receipt with `--review-report` carrying 0 open blocking/major
+findings, exactly 1 refuted blocking/major finding, and a valid finding/issue scope; refused locally
+before sending, or by the store with `422 mandate_act_unsupported`). No receipt was stored. Exit
+status 3. Fix: check the gate, issue, verdict, and review report, or record without `--mandate`.
 The handle is never printed. See [GATE.md](GATE.md#skip).
 
 ### mandate-handle-in-receipt
@@ -1980,18 +1983,20 @@ The handle is never printed. See [GATE.md](GATE.md#skip).
 
 ### mandate-not-stamped
 
-`eris gate skip --mandate`: the store answered with the hash of the unstamped `gate-receipt@v2` eris
-sent (or no hash), so it kept the receipt without a mandate stamp: a gateway that predates Receipt
-v3 ignores `mandate_handle`. The mandate granted nothing. With no `--authorized` beside it, the kept
-receipt has no grant and `eris gate check` reads it `unauthorized-skip`; with one, `check` judges it
-by that prose grant alone. Exit status 3. Fix: record the skip with `--authorized`, or re-run once
-the gateway stamps mandates.
+`eris gate skip --mandate` or `eris gate record --review-report --mandate`: the store answered with
+the hash of the unstamped `gate-receipt@v2` eris sent (or no hash), so it kept the receipt without a
+mandate stamp: a gateway that predates Receipt v3 ignores `mandate_handle`. The mandate granted
+nothing. On `skip` with no `--authorized` beside it, `eris gate check` reads it `unauthorized-skip`
+(with `--authorized`, `check` judges it by that prose grant alone). On `record --review-report`,
+`check` judges the review report without a mandate endorsement. Exit status 3. Fix: record with
+`--authorized` (for skips), or re-run once the gateway stamps mandates.
 
 ### mandate-handle-malformed
 
-`eris gate skip --mandate` (or `ERIS_MANDATE`): the handle is not `mnd_<org ULID>_<43 base64url>`.
-Nothing was sent, and the handle is never printed. Exit status 3. Fix: pass the handle the mandate's
-holder gave you, unchanged, in `--mandate` or `ERIS_MANDATE`.
+`eris gate skip --mandate` or `eris gate record --review-report --mandate` (or `ERIS_MANDATE`): the
+handle is not `mnd_<org ULID>_<43 base64url>`. Nothing was sent, and the handle is never printed.
+Exit status 3. Fix: pass the handle the mandate's holder gave you, unchanged, in `--mandate` or
+`ERIS_MANDATE`.
 
 ## Adding a new slug
 

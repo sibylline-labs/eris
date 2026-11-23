@@ -48,6 +48,17 @@ file, and appends one `gate-receipt@v2` record. stdout is the new comment's id, 
 - With `--review-report`, `--artifact` defaults to the first report file and `--verdict` may be
   omitted: `record` derives `PASS` or `BLOCKING` from the report's findings, reviewer independence,
   actor binding, and refutation endorsements across the issue's prior receipts.
+- `--mandate <handle>` (or `ERIS_MANDATE` when `--authorized` is absent and `--review-report` carries
+  one unendorsed refuted `blocking`/`major` finding with no open `blocking`/`major` findings):
+  validates handle shape, `session:<id>` actor, and canonical
+  `sr:us:mandate:review:endorse?finding=<id>&work_ref=linear:<KEY>` scope locally before sending,
+  holds the handle redacted until serialization, sends `mandate_handle` on `POST /v1/gates/receipts`
+  for the gateway to spend one direct-root passkey use and stamp `gate-receipt@v3`, and fails closed
+  (`mandate-not-stamped`, exit 3) if the gateway keeps v2 unstamped. When `--verdict` is omitted,
+  `record` derives `PASS` with that pending endorsement (still requiring reviewer independence,
+  fresh context, and matching recording actor). A `--authorized` flag beside `--mandate` is stored
+  as context only; `--authorized` without `--mandate` ignores `ERIS_MANDATE`. Clean or non-report
+  records never spend an ambient `ERIS_MANDATE`.
 - `--impact U0|U1|U2|U3` proposes the issue's user-impact class; `--authorized <grant>` is the only
   way a later receipt may lower a U2 or U3 class.
 - A write the store rate-limits is retried a bounded number of times under the same comment id,
@@ -145,7 +156,14 @@ and the merge-base `review_skills` during `ci` unlock), the recording actor must
 must be independent of the author in a fresh context, `classes_checked` must cover every class in
 the vocabulary at `main`, `effort` must meet `--effort` (or a bar gate's `:<effort>` qualifier),
 and `target.head_sha` / `target.diff_sha256` must match `--head-sha` / `--diff-sha256` (or the
-target checkout's `HEAD` and merge-base diff). If the skill or vocabulary moved on `main` (or could
+target checkout's `HEAD` and merge-base diff). A `refuted` `blocking`/`major` finding holds when a
+second independent reviewer records its refutation on the same gate, when a passing `gate-receipt@v3`
+on the same `(issue, gate)` carries a server-stamped direct-root (`id === root_id`) `review:endorse`
+`MandateStamp` matching `(finding, issue)` and the same finding row, or (when `GET /v1/gates/receipts`
+does not report `mandate_active: true`) when a human-grant receipt's actor agrees with it. When
+`mandate_active: true`, un-stamped human names fail closed (`self-refuted`), as do delegated child
+stamps (`id !== root_id`), wrong findings, wrong issues, and row swaps. If the skill or vocabulary
+moved on `main` (or could
 not be verified), the gate reads `review-stale` unless the receipt carries a human `--authorized`
 grant. Without `reviews` (the public default), any `review-report` evidence fails closed as
 `blocking`.

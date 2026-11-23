@@ -40,8 +40,8 @@ import { type Git, liveGit, memoReads } from "./git";
 import { type GateDefaults, type GateRows, gateRows, type PulledTree, type ReceiptLink, type ResolvedGateActor } from "./index";
 import { readLadder } from "./ladder";
 import type { UnlockAction } from "./ledger";
-import { resolveMandateSkip } from "./mandate";
-import { type EvidenceInput, recordGate, skipGate, type WriteRun } from "./record";
+import { resolveMandateRecord, resolveMandateSkip } from "./mandate";
+import { type EvidenceInput, readReviewReportFile, recordGate, skipGate, type WriteRun } from "./record";
 import { storeEndpoint } from "./store";
 import { discoverPathsSurfaces } from "./surfaces";
 import { checkUnlock } from "./unlock";
@@ -122,7 +122,13 @@ the receipt; no flag takes comment text.
                  the org's pulled doctrine.md, when one is pulled)
   --impact       The user-impact class: U0, U1, U2 or U3
   --authorized   The human grant behind this receipt ('<name> asked: ...'); the
-                 only way a later receipt may lower a U2/U3 class
+                 only way a later receipt may lower a U2/U3 class. Beside
+                 --mandate, recorded as context; the stamp authorizes.
+  --mandate      A direct-root passkey mandate handle (mnd_<org>_<secret>; else
+                 ERIS_MANDATE when --authorized is absent and --review-report
+                 has one unendorsed refuted blocking/major finding). Presented
+                 from a session:<id> actor; the gateway spends one use of
+                 review:endorse and stamps gate-receipt@v3.
   --evidence     One text evidence line; repeat for several
   --log, --test-run, --e2e
                  A text file (at most 16 KiB) carried inline with its sha256
@@ -387,6 +393,25 @@ async function runRecord(rows: GateRows, args: string[], ctx: VerbContext, defau
   if (verdict === "SKIPPED") usage("gate record: --verdict SKIPPED is not recorded here", `A skip names its grant: ${line(rows, "gate skip")}`);
   const artifact = fl["--artifact"] ?? reports[0]!;
   const who = await resolveActorWith(defaults, { flag: fl["--actor"], g: v.g, cwd: v.cwd });
+  const parsedReports = new Map<string, ReturnType<typeof readReviewReportFile>>();
+  const readReportsOnce = () =>
+    reports.map((p) => {
+      let cached = parsedReports.get(p);
+      if (cached === undefined) {
+        cached = readReviewReportFile(v.cwd, p);
+        parsedReports.set(p, cached);
+      }
+      return cached.report;
+    });
+  const endorsement = resolveMandateRecord({
+    flags: fl,
+    env: ctx.env,
+    issue: fl["--issue"]!,
+    actor: who.actor,
+    verdict,
+    hasReports: reports.length > 0,
+    readReports: readReportsOnce,
+  });
   const link = defaults.receiptLink?.(ctx) ?? null;
   const evidence: EvidenceInput[] = [
     ...(fl["--evidence"] ?? []).map((content): EvidenceInput => ({ kind: "text", content })),
@@ -402,13 +427,31 @@ async function runRecord(rows: GateRows, args: string[], ctx: VerbContext, defau
     impact: impactOf(fl["--impact"]),
     authorized: fl["--authorized"],
     evidence,
+    ...(parsedReports.size > 0 ? { parsedReports } : {}),
     actor: who.actor,
     actorInfo: who.actorInfo,
     receiptLink: link,
+    ...(endorsement !== undefined
+      ? endorsement.mode === "explicit"
+        ? {
+            mandate: endorsement.mandate,
+            mandateEndorsement: { mode: "explicit" as const, finding: endorsement.finding, findingId: endorsement.findingId, scope: endorsement.scope },
+          }
+        : {
+            mandateEndorsement: {
+              mode: "env" as const,
+              resolveMandate: endorsement.resolveMandate,
+              finding: endorsement.finding,
+              findingId: endorsement.findingId,
+              scope: endorsement.scope,
+            },
+          }
+      : {}),
   });
   ctx.stdout.write(`${res.commentId}\n`);
   copyWarn(v, artifact, res);
-  ctx.stderr.write(`INFO ✓ recorded ${res.receipt.gate} ${res.receipt.verdict} on ${res.receipt.issue} (artifact sha256 ${res.receipt.artifact.sha256.slice(0, 12)}${storedNote(res.recordSha256)}${linkNote(link, res)})\n`);
+  const stampNote = res.mandateStamped === true ? `, mandate stamped, record ${res.recordSha256?.slice(0, 12)}` : storedNote(res.recordSha256);
+  ctx.stderr.write(`INFO ✓ recorded ${res.receipt.gate} ${res.receipt.verdict} on ${res.receipt.issue} (artifact sha256 ${res.receipt.artifact.sha256.slice(0, 12)}${stampNote}${linkNote(link, res)})\n`);
   return 0;
 }
 

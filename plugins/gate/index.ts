@@ -149,7 +149,7 @@ const ROWS = {
   gate: { impl: "ts", summary: "Gate receipts on tracker issues (record, skip, check, ci); not feature flags" },
   surface: { impl: "ts", summary: "The per-surface kill switch and the unlock roll-up (lock, unlock, digest)" },
   "gate record": {
-    summary: "Append a gate-receipt@v2 comment to an issue",
+    summary: "Append a gate-receipt@v2 comment to an issue (or gate-receipt@v3 when stamped with --mandate)",
     flags: [
       v("--issue"),
       v("--verdict"),
@@ -158,6 +158,7 @@ const ROWS = {
       f("--doctrine"),
       v("--impact"),
       v("--authorized"),
+      v("--mandate"),
       r("--evidence"),
       rf("--log"),
       rf("--test-run"),
@@ -169,7 +170,7 @@ const ROWS = {
     ],
     pos: ["gate?"],
     usage:
-      "<gate> --issue <KEY> [--verdict PASS|AMENDED|BLOCKING] [--artifact <path>] [--rubric <name@version>]... [--doctrine <path>] [--impact U0|U1|U2|U3] [--authorized <grant>] [--evidence <text>]... [--log|--test-run|--e2e|--review-report|--screenshot|--video <file>]... [--actor <who>]",
+      "<gate> --issue <KEY> [--verdict PASS|AMENDED|BLOCKING] [--artifact <path>] [--rubric <name@version>]... [--doctrine <path>] [--impact U0|U1|U2|U3] [--authorized <grant>] [--mandate <handle>] [--evidence <text>]... [--log|--test-run|--e2e|--review-report|--screenshot|--video <file>]... [--actor <who>]",
   },
   "gate skip": {
     summary: "Append a SKIPPED gate receipt that names its reason and the grant (human, doctrine, repo, or signed mandate) behind it",

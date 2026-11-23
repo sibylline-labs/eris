@@ -388,7 +388,15 @@ export async function humanSignoff(input: Pick<UnlockInput, "ep" | "g" | "cwd" |
   if (l === undefined) return { why: "missing" };
   const judged = await statusOf(
     {
-      input: { ep: input.ep, g: input.g, cwd: input.cwd, issue, reviews: input.reviews, issueReceipts: receiptsOfListing(listing.receipts) },
+      input: {
+        ep: input.ep,
+        g: input.g,
+        cwd: input.cwd,
+        issue,
+        reviews: input.reviews,
+        issueReceipts: receiptsOfListing(listing.receipts),
+        mandateActive: listing.mandateActive,
+      },
       digests: new Map(),
       fresh: new Map(),
       gitRepos: [],
@@ -457,7 +465,12 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
   const reviewSkills = Object.keys(baseRegistry?.review_skills ?? {}).sort();
   const issueReceipts = receiptsOfListing(listing.receipts);
   const atHead: CheckInput["head"] = { headSha: head, headSource: "--head-sha", base: input.base };
-  const judgeOn = (issue: string, at?: CheckInput["head"], requiredEffort?: GateReviewEffort): Checking => ({
+  const judgeOn = (
+    issue: string,
+    at?: CheckInput["head"],
+    requiredEffort?: GateReviewEffort,
+    extra?: { readonly issueReceipts?: ReadonlyArray<GateReceipt>; readonly mandateActive?: boolean | undefined },
+  ): Checking => ({
     input: {
       ep: input.ep,
       g,
@@ -466,9 +479,10 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
       warn: input.warn,
       reviews: input.reviews,
       reviewSkills,
+      mandateActive: extra?.mandateActive ?? listing.mandateActive,
       ...(at !== undefined ? { head: at } : {}),
       ...(requiredEffort !== undefined ? { requiredEffort } : {}),
-      ...(issue === input.issue ? { issueReceipts } : {}),
+      ...(extra?.issueReceipts !== undefined ? { issueReceipts: extra.issueReceipts } : issue === input.issue ? { issueReceipts } : {}),
     },
     digests,
     fresh,
@@ -542,7 +556,8 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
       if (!twoWay) reasons.push(`${name}: not on the base registry yet (a surface the PR adds unlocks after it merges)`);
       continue;
     }
-    const ledgerReceipts = surface.ledger === undefined ? undefined : unwrap(await retryRateLimited(() => listReceipts(input.ep, surface.ledger!), input.readRetry)).receipts;
+    const ledgerListing = surface.ledger === undefined ? undefined : unwrap(await retryRateLimited(() => listReceipts(input.ep, surface.ledger!), input.readRetry));
+    const ledgerReceipts = ledgerListing?.receipts;
     const lock = surface.ledger === undefined || ledgerReceipts === undefined ? { locked: false } : lockState(surface.ledger, ledgerReceipts);
     input.out(`@lock\t${lock.locked ? "locked" : "open"}\t${name}`);
     if (lock.locked) {
@@ -591,7 +606,10 @@ export async function checkUnlock(input: UnlockInput): Promise<Decision> {
     const ledger = surface.ledger;
     const audit = latestByGate(ledger, ledgerReceipts).get(AUDIT_GATE);
     const ttl = surface.audit_ttl ?? DEFAULT_AUDIT_TTL;
-    const judged = audit === undefined ? undefined : await statusOf(judgeOn(ledger), audit, read);
+    const judged =
+      audit === undefined
+        ? undefined
+        : await statusOf(judgeOn(ledger, undefined, undefined, { issueReceipts: receiptsOfListing(ledgerReceipts), mandateActive: ledgerListing?.mandateActive }), audit, read);
     const age = audit === undefined ? Infinity : input.now.getTime() - Date.parse(audit.at);
     const baseline = audit === undefined ? "missing" : judged?.status !== "pass" ? "failing" : age > ttlMs(ttl) ? "stale" : "fresh";
     input.out(`@baseline\t${baseline}\t${name}`);
