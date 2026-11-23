@@ -61,7 +61,8 @@ plugins/gate/           # `eris gate record|skip|check|ci`: index.ts (the manife
                         #   org's pulled tree a build supplies), gate.ts (the command line and the one failure render), record.ts
                         #   (record and skip), check.ts (the statuses and the derived rows), artifact.ts and git.ts (where an
                         #   artifact lives, read through git), floor.ts, ladder.ts, burden.ts, surfaces.ts (the floor, the door rung,
-                        #   the evidence burden and the surfaces a change crosses), render.ts and templates/ (the comment prose),
+                        #   the evidence burden and the surfaces a change crosses), shape.ts (the lines a zero-downtime,
+                        #   first-contact or deployed receipt carries), render.ts and templates/ (the comment prose),
                         #   actor.ts (who recorded it), store.ts (the endpoint); `ci`: ci.ts (the event,
                         #   the route, the GET-only fetch), ci-verb.ts (the verb and its legs), registry.ts (.claude/surfaces.yml read
                         #   and matched), monotone.ts (the monotone leg), unlock.ts (the unlock leg), ledger.ts (lock and budget
