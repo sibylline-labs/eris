@@ -39,5 +39,6 @@ export * from "./receipt";
 export * from "./review-report";
 export * from "./surfaces-eval";
 export * from "./monotone";
+export * from "./ratchet";
 export * from "./ladder";
 export * from "./remediate";

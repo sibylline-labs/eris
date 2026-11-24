@@ -1,16 +1,18 @@
 /**
  * monotone.ts — pure monotone surface bar classification: compares two sides of `.claude/surfaces.yml`,
- * surface vocabularies and registered review-skill checklists, one row per dimension. Zero filesystem
+ * surface vocabularies, registered review-skill checklists and the `eris.yaml`-declared ratchet files
+ * (./ratchet.ts), one row per dimension. Zero filesystem
  * or git I/O; the git reader and CLI driver live in the gate plugin.
  */
 
 import { createHash } from "node:crypto";
 import { CLASS_HEADING, classIds } from "./review-report";
 import { DEFAULT_AUDIT_TTL, DEFAULT_CHANGE_BUDGET, DEFAULT_SEVERITY_FLOOR, SEVERITY_FLOORS, type SurfaceEntry, type SurfacesFile, UNLOCK_ACTIONS } from "./surfaces";
+import { classifyRatchets, type RatchetSide } from "./ratchet";
 import { vocabularyPath } from "./surfaces-eval";
 
 export type MonotoneVerdict = "tighter" | "same" | "wider";
-export type MonotoneScope = "surface" | "vocabulary" | "review-skill";
+export type MonotoneScope = "surface" | "vocabulary" | "review-skill" | "ratchet";
 
 export interface Dim {
   readonly scope: MonotoneScope;
@@ -29,6 +31,8 @@ export interface MonotoneSide {
   readonly files: ReadonlyMap<string, FileState>;
   /** Head only: the content of each changed path under a review skill directory (`contentTag`). */
   readonly digests?: ReadonlyMap<string, string>;
+  /** The root `eris.yaml`'s declared ratchet files on this side; absent reads as none declared. */
+  readonly ratchets?: RatchetSide;
 }
 
 /** A human sign-off's gap (null: it holds) and, when it holds, the bytes of the artifact it signed. */
@@ -172,6 +176,8 @@ export function classifyClasses(base: FileState, head: FileState): { verdict: Mo
   return { verdict: "tighter", detail: `classes added ${classIds(tail).join(",")}` };
 }
 
+const NO_RATCHETS: RatchetSide = { declared: [], files: new Map() };
+
 const fileOf = (side: MonotoneSide, path: string): FileState => side.files.get(path) ?? ABSENT;
 
 /**
@@ -215,7 +221,8 @@ export function classifyMonotone(base: MonotoneSide, head: MonotoneSide, changed
       rows.push(at("file", "wider", `${what} changed (review skills are human-edited; head ${head.digests?.get(p) ?? "unread"})`));
     }
   }
-  const order: Record<MonotoneScope, number> = { surface: 0, vocabulary: 1, "review-skill": 2 };
+  if (base.ratchets !== undefined || head.ratchets !== undefined) rows.push(...classifyRatchets(base.ratchets ?? NO_RATCHETS, head.ratchets ?? NO_RATCHETS));
+  const order: Record<MonotoneScope, number> = { surface: 0, vocabulary: 1, "review-skill": 2, ratchet: 3 };
   // Code-point order, never locale order: a surface-widen artifact matches rows verbatim on any host.
   const byCode = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
   return rows.sort((x, y) => order[x.scope] - order[y.scope] || byCode(x.subject, y.subject) || byCode(x.field, y.field) || byCode(x.detail, y.detail));

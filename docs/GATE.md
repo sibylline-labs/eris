@@ -233,7 +233,7 @@ leg's failure:
 | Leg | What it checks |
 |---|---|
 | `profile` | when `settings.ci.check_profile_in_ci` is `on`: the hosted posture's `profile_default` (default `spine`) from the hosted bundle's profiles, as `check --profile --dry-run` does. A gate the posture sets `off` reads `skipped`. |
-| `monotone` | `.claude/surfaces.yml` (`--registry`), each surface's vocabulary and each registered review skill at the merge-base against the head, one `@monotone\t<scope>\t<subject>\t<field>\t<tighter\|wider>\t<detail>` row per changed dimension. Any wider row fails (`gate-monotone-wider`) unless the issue's latest `surface-widen` receipt passes with a human grant and its artifact carries every wider row verbatim. |
+| `monotone` | `.claude/surfaces.yml` (`--registry`), each surface's vocabulary, each registered review skill and each ratchet file the root `eris.yaml` declares ([Ratchets](#ratchets)) at the merge-base against the head, one `@monotone\t<scope>\t<subject>\t<field>\t<tighter\|wider>\t<detail>` row per changed dimension. Any wider row fails (`gate-monotone-wider`) unless the issue's latest `surface-widen` receipt passes with a human grant and its artifact carries every wider row verbatim. |
 | `unlock` | whether the merge may proceed without a human on each registered surface the diff crosses. When a surface is crossed it first prints `@door\t<one-way\|two-way>\t<source>`: every signal can only close the door, so it reads one-way when the latest `define-future` (bar a valid doctrine/repo skip) does not pass, its verified artifact is a graph-target delta removing or changing anything (including sparse v1 deltas omitting empty fields) or failing strict decode, or a `door:` evidence line says `one-way` or counts `-n`, `−n` (`U+2212`), or `~n` above 0; when any earlier `define-future` on the issue (`define-future history`) has unverifiable recorded bytes, an invalid or removing/changing delta, or an inline one-way `door:` line (`text`, `log`, `test-run`, `e2e`); or when the issue is unclassified or its class's unladdered rung is human-before. A clean two-way merge with no governance path prints `@surface` and `@lock` per crossed surface and `@unlock\tnot-needed\tmerge` (a locked surface or `signoff.two-way: human` keeps it human-signed). A one-way merge checks the bar's gate rows, `@baseline`, `@budget`, `@announce`, and `@governance` plus `@monotone` rows for a governance edit; when `adversarial-review` has no receipt bound to the head (and no receipt naming no commit) it prints `@dispatch\tadversarial-review\teris loop launch ...` with the shell-quoted main clone just before `@unlock\thuman`. It reads `unlocked` when `signoff.unlock: on` and every bar gate passes bound to the head, or `human-signed` on a passing human `door-signoff` carrying `door: merge`; anything else fails (`gate-unlock-human`), naming every reason. |
 
 A PR with no key: under `settings.ci.untracked_prs: block` it fails (`gate-issue-missing`). An author
@@ -244,6 +244,34 @@ registered surface (the registry at the fork or at the head) or the registry its
 
 The check needs the PR's base and head commits in the checkout (`fetch-depth: 0`); it accepts the
 merge commit a `pull_request` workflow checks out, judging the PR head that is its second parent.
+
+### Ratchets
+
+A repo freezes a shrink-only baseline (a per-file size budget, a citation count, an `exempt` glob
+list) by listing its JSON file in the root `eris.yaml`:
+
+```yaml
+ratchets:
+  - scripts/size-ratchet.frozen.json
+```
+
+The monotone leg then reads each declared file at the merge-base and at the head and prints one
+`ratchet\t<file>#<json pointer>\t<field>\t<tighter|wider>\t<detail>` row per changed leaf (the pointer
+is RFC 6901, so `apps/a.ts` reads `apps~1a.ts`):
+
+| Change | Field | Verdict |
+|---|---|---|
+| a number goes down / up | `value` | tighter / wider |
+| a key holding a number is removed / added (an object of them, leaf by leaf) | `key` | tighter / wider |
+| a member of a list of strings is removed / added | `member` | tighter / wider |
+| the file is added / deleted | `file` | tighter / wider |
+| the path is newly listed / dropped from `ratchets:` | `declaration` | tighter / wider |
+| anything else (a string, a boolean, a mixed list, a type change, a non-number key removed) | `value` or `key` | wider |
+
+A wider row passes only through the issue's human `surface-widen` receipt, exactly as a surface row
+does. eris reads shape, not meaning: a consumer whose file holds ceilings decodes it strictly, so a
+removed ceiling (which reads tighter here) fails its own check. A file that is not JSON, or a
+`ratchets:` that is not a list of repo-relative paths, fails closed (`gate-ratchet-invalid`).
 
 ## surface
 

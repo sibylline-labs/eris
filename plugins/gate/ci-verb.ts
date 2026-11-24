@@ -51,7 +51,8 @@ nothing is recorded. Prints '@policy\\t<bundle_sha>\\t<active posture>',
     profile   the hosted posture's profile_default (default spine), checked
               as 'gate check --profile --dry-run' does: a gate the posture sets
               off reads skipped (when settings.ci.check_profile_in_ci is on)
-    monotone  the registry, its vocabularies and review skills at the merge-base
+    monotone  the registry, its vocabularies and review skills, and every JSON
+              file the root eris.yaml lists under ratchets:, at the merge-base
               against the head; a wider row passes only when the issue's
               surface-widen receipt carries it with a human grant
     unlock    whether the merge may proceed without a human on each crossed

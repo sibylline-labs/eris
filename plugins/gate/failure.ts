@@ -29,6 +29,7 @@ export type GateSlug =
   | "gate-surfaces-invalid"
   | "gate-monotone-wider"
   | "gate-monotone-unresolved"
+  | "gate-ratchet-invalid"
   | "gate-unlock-human"
   | "gate-unlock-unresolved"
   | "surface-lock-unauthorized"

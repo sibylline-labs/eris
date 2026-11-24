@@ -123,13 +123,14 @@ const REGISTRY = `surfaces:
 
 /**
  * `acme/shop` on `main` with the auth surface registered, checked out on `feat`, whose one commit runs
- * `change` and commits a review note. Returns the checkout, the head and the base sha.
+ * `change` and commits a review note; `seed` adds files to the base commit. Returns the checkout, the head and the base sha.
  */
-function shop(change: (d: string) => void = (d) => write(d, "src/auth/login.ts", "export const a = 2;\n")) {
+function shop(change: (d: string) => void = (d) => write(d, "src/auth/login.ts", "export const a = 2;\n"), seed: (d: string) => void = () => {}) {
   const d = realpathSync(mkdtempSync(join(sandbox, "repo-")));
   write(d, ".claude/surfaces.yml", REGISTRY);
   write(d, "src/auth/login.ts", "export const a = 1;\n");
   write(d, "src/other.ts", "x\n");
+  seed(d);
   git(d, "init", "-q", "-b", "main");
   git(d, "remote", "add", "origin", "git@github.com:acme/shop.git");
   git(d, "add", "-A");
@@ -369,6 +370,24 @@ describe("eris gate ci: a ticketed PR", () => {
     expect(r.out).toEndWith("@ci\tunlock\tfail\n");
     expect(r.err).toContain("slug: gate-monotone-wider");
     expect(r.err).not.toContain("gate monotone");
+  });
+
+  // admits: integration: a keyed PR raising an eris.yaml-declared ratchet must fail the monotone leg with the ratchet row, read from the
+  // base commit and the head checkout; a surface-only reader would pass it.
+  it("fails the monotone leg on a raised eris.yaml ratchet with its ratchet row (gate-monotone-wider)", async () => {
+    settings = ci({ check_profile_in_ci: "off" });
+    const frozen = (lines: number) => `${JSON.stringify({ baseline: { "src/big.ts": { lines } } })}\n`;
+    const { d, head, base } = shop(
+      (dir) => write(dir, "scripts/size.frozen.json", frozen(1200)),
+      (dir) => {
+        write(dir, "eris.yaml", "service: shop\nratchets:\n  - scripts/size.frozen.json\n");
+        write(dir, "scripts/size.frozen.json", frozen(1100));
+      },
+    );
+    const r = await gateCi(d, event(head, base));
+    expect(r.code).toBe(3);
+    expect(r.out).toContain("@monotone\tratchet\tscripts/size.frozen.json#/baseline/src~1big.ts/lines\tvalue\twider\t1100 -> 1200\n@ci\tmonotone\tfail\n");
+    expect(r.err).toContain("slug: gate-monotone-wider");
   });
 
   // admits: boundary-io: a malformed event must fail closed (no fetch), never route as an untracked PR; the event is parsed from a file.
