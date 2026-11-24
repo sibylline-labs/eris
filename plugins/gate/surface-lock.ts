@@ -9,7 +9,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type GateActor, isHumanGrant, listReceipts, retryRateLimited } from "eris/gates-contract";
+import { type GateActor, isBlankGrant, isHumanGrant, listReceipts, retryRateLimited } from "eris/gates-contract";
 import { precondition, unwrap, usage } from "./failure";
 import type { ReceiptLink } from "./index";
 import { lockState, SURFACE_LOCK_GATE } from "./ledger";
@@ -63,7 +63,7 @@ export async function setLock(run: WriteRun, input: SetLockInput): Promise<SetLo
   if (!isHumanGrant(grant)) {
     return precondition(
       "surface-lock-unauthorized",
-      `surface ${input.to === "locked" ? "lock" : "unlock"} ${input.name}: ${grant === "" ? "no --authorized grant" : `--authorized ${grant} is not a human grant`}`,
+      `surface ${input.to === "locked" ? "lock" : "unlock"} ${input.name}: ${isBlankGrant(grant) ? "no --authorized grant" : `--authorized ${grant} is not a human grant`}`,
       "A lock and its lift are human writes: --authorized 'Dan asked: <request>'. A doctrine: grant never signs.",
     );
   }

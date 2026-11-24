@@ -381,6 +381,16 @@ describe("profiles and doctrine", () => {
     expect(human.code).toBe(0);
     expect(posts()[0]!.receipt).toMatchObject({ verdict: "SKIPPED", authorized: "someone asked: skip it", reason: "covered elsewhere" });
   });
+
+  // admits: boundary-io: a skip whose --authorized is only invisible characters must be refused as blank before anything is sent; observed at the exit code, the stderr line and the empty POST log.
+  it("refuses a skip whose grant is only invisible characters", async () => {
+    const plan = join(home, "plan.md");
+    writeFileSync(plan, "plan");
+    const blank = await gate(["skip", "plan-review", "--issue", ISSUE, "--reason", "covered elsewhere", "--authorized", "\u200B\uFEFF", "--artifact", plan, "--actor", "a@example.com"]);
+    expect(blank.code).toBe(2);
+    expect(blank.err).toContain("--authorized is blank");
+    expect(posts()).toEqual([]);
+  });
 });
 
 describe("floor, door, remediate and asks rows", () => {
