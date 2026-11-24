@@ -40,10 +40,14 @@ export function repoGrantShaped(grant: string): boolean {
   return /^repo(?::|_|\b)/i.test(unwrap(grant));
 }
 
+/** Whether a grant has no visible text: empty, or only whitespace, format (`U+200B`, `U+FEFF`) and control characters. */
+export function isBlankGrant(grant: string): boolean {
+  return /^[\s\p{Cf}\p{Cc}]*$/u.test(grant);
+}
+
 /** A human grant: set, not blank, and neither a doctrine nor a repo grant in any spelling. */
 export function isHumanGrant(grant: string | undefined): grant is string {
-  const g = grant?.trim();
-  return g !== undefined && g !== "" && !doctrineShaped(g) && !repoGrantShaped(g);
+  return grant !== undefined && !isBlankGrant(grant) && !doctrineShaped(grant) && !repoGrantShaped(grant);
 }
 
 /** The posture a well-formed `doctrine:<posture>` grant names (one non-space token), else null. */

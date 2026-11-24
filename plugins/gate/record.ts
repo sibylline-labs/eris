@@ -52,6 +52,7 @@ import {
   INLINE_MAX_BYTES,
   ISSUE_KEY,
   isGateReviewReportEvidence,
+  isBlankGrant,
   isHumanGrant,
   type KnownActors,
   listReceipts,
@@ -374,7 +375,7 @@ export async function recordGate(run: WriteRun, input: RecordInput): Promise<Rec
   }
   // A grant is stored as written once trimmed; a blank one is no grant.
   const authorized = input.authorized?.trim();
-  if (authorized === "") usage("--authorized is blank", "Name the grant: '<name> asked: <request>', or doctrine:<posture>.");
+  if (authorized !== undefined && isBlankGrant(authorized)) usage("--authorized is blank", "Name the grant: '<name> asked: <request>', or doctrine:<posture>.");
   const artifactBytes = readFileFor(run.cwd, input.artifact, "--artifact");
   const artifactSha = sha256Hex(artifactBytes);
   const located = await locateArtifact(run.g, run.cwd, input.artifact, artifactSha);
@@ -614,7 +615,7 @@ export async function skipGate(run: WriteRun, input: SkipInput): Promise<Recorde
     usage("gate skip: missing --authorized", "A skip names the grant behind it: --authorized '<name> asked: <request>', doctrine:<posture>, or --mandate <mnd_ handle>.");
   }
   const grant = input.authorized?.trim();
-  if (grant === "") usage("--authorized is blank", "Name the grant: '<name> asked: <request>', or doctrine:<posture>.");
+  if (grant !== undefined && isBlankGrant(grant)) usage("--authorized is blank", "Name the grant: '<name> asked: <request>', or doctrine:<posture>.");
   // Beside a mandate, a prose grant is context: the stamp authorizes, so it is not judged here.
   const judged = input.mandate === undefined ? grant : undefined;
   const doctrineBytes = judged !== undefined && doctrineShaped(judged) ? checkDoctrineGrant(run, input, judged) : undefined;
