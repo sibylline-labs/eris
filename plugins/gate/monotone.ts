@@ -1,7 +1,8 @@
 /**
  * monotone.ts — the monotone surface bar: pure classification comes from `eris/gates-contract`; this
  * module adds the git merge-base/working-tree reader (`readMonotoneSides`) and CLI/CI judge
- * (`judgeMonotone`).
+ * (`judgeMonotone`). The reader also reads the root `eris.yaml`'s `ratchets:` and each declared JSON
+ * file on both sides; anything it cannot read as declared stops with `gate-ratchet-invalid`.
  */
 
 import { lstatSync, readFileSync, readlinkSync } from "node:fs";
@@ -22,6 +23,8 @@ import {
   type MonotoneSignoff,
   type MonotoneVerdict,
   named,
+  type RatchetFile,
+  type RatchetSide,
   neededPaths,
   rowLine,
   skillDir,
@@ -67,6 +70,49 @@ export interface MonotoneSides {
   readonly base: MonotoneSide;
   readonly head: MonotoneSide;
   readonly changed: ReadonlyArray<string>;
+}
+
+function ratchetInvalid(what: string): never {
+  return precondition(
+    "gate-ratchet-invalid",
+    what,
+    "Fix the file so it parses (JSON for a ratchet, YAML for eris.yaml), or list only existing repo-relative files under eris.yaml `ratchets:`; a ratchet that cannot be read is never read as unchanged.",
+  );
+}
+
+/** Drop a leading UTF-8 byte-order mark, which editors may save and neither parser accepts as content. */
+const unBom = (t: string): string => (t.charCodeAt(0) === 0xfeff ? t.slice(1) : t);
+
+/** A repo-relative path a ratchet may name: no absolute path, no `..` or `.` segment, no backslash. */
+const RATCHET_PATH = /^(?!\/)(?!.*(?:^|\/)\.{1,2}(?:\/|$))(?!.*\\)[^\u0000]+$/;
+
+/** The `ratchets:` list of one side's root `eris.yaml` text (none: `[]`). */
+function declaredRatchets(label: string, state: FileState): string[] {
+  if (state.kind === "absent") return [];
+  if (state.kind === "symlink") return ratchetInvalid(`eris.yaml (${label}) is a symlink; the root eris.yaml must be a regular file`);
+  let doc: unknown;
+  try {
+    doc = Bun.YAML.parse(unBom(state.text));
+  } catch (e) {
+    return ratchetInvalid(`eris.yaml (${label}) is not YAML: ${e instanceof Error ? e.message : "parse failed"}`);
+  }
+  const list = typeof doc === "object" && doc !== null && !Array.isArray(doc) ? (doc as Record<string, unknown>).ratchets : undefined;
+  if (list === undefined || list === null) return [];
+  if (!Array.isArray(list) || !list.every((p): p is string => typeof p === "string" && RATCHET_PATH.test(p)) || new Set(list).size !== list.length) {
+    return ratchetInvalid(`eris.yaml (${label}): ratchets must be a list of unique repo-relative file paths (no absolute path, '.' or '..' segment)`);
+  }
+  return list;
+}
+
+/** One declared ratchet file on one side, parsed. */
+function ratchetFile(label: string, path: string, state: FileState): RatchetFile {
+  if (state.kind === "absent") return { kind: "absent" };
+  if (state.kind === "symlink") return ratchetInvalid(`${path} (${label}) is a symlink; a ratchet must be a regular file`);
+  try {
+    return { kind: "json", value: JSON.parse(unBom(state.text)) };
+  } catch (e) {
+    return ratchetInvalid(`${path} (${label}) is not JSON: ${e instanceof Error ? e.message : "parse failed"}`);
+  }
 }
 
 function decodeSide(label: string, path: string, text: string | null): SurfacesFile | null {
@@ -124,6 +170,21 @@ export async function readMonotoneSides(input: { readonly cwd: string; readonly 
     baseFiles.set(p, await atBase(p));
     headFiles.set(p, atHead(p));
   }
+  const declaredBase = declaredRatchets("merge-base", await atBase("eris.yaml"));
+  const declaredHead = declaredRatchets("working tree", atHead("eris.yaml"));
+  const ratchetBase = new Map<string, RatchetFile>();
+  const ratchetHead = new Map<string, RatchetFile>();
+  for (const p of [...new Set([...declaredBase, ...declaredHead])].sort()) {
+    const b = ratchetFile("merge-base", p, await atBase(p));
+    const h = ratchetFile("working tree", p, atHead(p));
+    if (declaredBase.includes(p) && declaredHead.includes(p) && b.kind === "absent" && h.kind === "absent") {
+      return ratchetInvalid(`${p} is declared under eris.yaml ratchets: but exists on neither side`);
+    }
+    ratchetBase.set(p, b);
+    ratchetHead.set(p, h);
+  }
+  const ratchets = (declared: string[], files: Map<string, RatchetFile>): RatchetSide => ({ declared, files });
+
   const tracked = await changedPaths(g, top, fork);
   const untracked = await untrackedFiles(g, top);
   if (tracked === null || untracked === null) return failed("git could not list the changes");
@@ -134,7 +195,13 @@ export async function readMonotoneSides(input: { readonly cwd: string; readonly 
     const f = atHead(p);
     digests.set(p, f.kind === "text" ? contentTag(readFileSync(join(top, p))) : contentTag(f));
   }
-  return { top, fork, base: { registry: baseReg, files: baseFiles }, head: { registry: headReg, files: headFiles, digests }, changed };
+  return {
+    top,
+    fork,
+    base: { registry: baseReg, files: baseFiles, ratchets: ratchets(declaredBase, ratchetBase) },
+    head: { registry: headReg, files: headFiles, digests, ratchets: ratchets(declaredHead, ratchetHead) },
+    changed,
+  };
 }
 
 /**

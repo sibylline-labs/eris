@@ -1771,8 +1771,9 @@ Exit 3.
 
 ### gate-monotone-wider
 
-`eris gate ci`'s monotone leg found that the `.claude/surfaces.yml` diff, a surface vocabulary or a
-registered review skill widens the surface bar on at least one dimension; the `@monotone` rows name
+`eris gate ci`'s monotone leg found that the `.claude/surfaces.yml` diff, a surface vocabulary, a
+registered review skill or a ratchet file the root `eris.yaml` declares widens the surface bar on at
+least one dimension; the `@monotone` rows name
 each. The issue's latest `surface-widen` receipt is missing, does not pass, carries no human
 `--authorized` grant (a `doctrine:` grant never approves a widening), or its artifact lacks one of the
 wider rows. Tighten instead, or have a human approve the widening: save the `@monotone` rows the run
@@ -1785,6 +1786,15 @@ printed (without the `@monotone` prefix) to a file, commit and push it, record
 `eris gate ci`'s monotone leg could not read the two sides: the directory is not in a git checkout,
 the event's base sha names no commit here or shares no history with `HEAD`, or git could not list the
 changes or read a file at the merge-base. Check out the PR with `fetch-depth: 0`. Exit 3.
+
+### gate-ratchet-invalid
+
+`eris gate ci`'s monotone leg could not read a ratchet as declared, so it fails closed rather than read
+it as unchanged: the root `eris.yaml` on one side is not YAML or is a symlink; its `ratchets:` is not a
+list of unique repo-relative file paths (no absolute path, `.` or `..` segment); a declared file is not
+JSON or is a symlink; or a file declared on both sides exists on neither. The failure names the file
+and the side (`merge-base` or `working tree`). Fix the file, or list only existing files under
+`ratchets:` ([GATE.md](GATE.md#ratchets)). Exit 3.
 
 ### gate-unlock-human
 
